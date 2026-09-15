@@ -39,6 +39,12 @@ Downloaded receipts and order history remain available offline. Live updates res
 
 Restaurant menus can be saved locally, edited, shared as JSON, and imported with a preview. [Example menu](Docs/restaurant-menu.example.json). Saved receiving accounts and room sessions use encrypted native storage backed by Android Keystore or iOS Keychain.
 
+## Convert a restaurant menu with AI
+
+Give your AI agent a menu PDF, photos or text together with the [copy-paste prompt](Docs/AI_MENU_PROMPT.md), [JSON Schema](Docs/restaurant-menu.schema.json), and [complete example](Docs/restaurant-menu.example.json). It produces a `restaurant-menu.json` file with the restaurant, categories, prices, sizes and extras.
+
+Review the extracted menu, then open **Restaurant library → Import menu JSON → Confirm import** in Food Run. The [menu import guide](Docs/RESTAURANT_MENU_IMPORT.md) explains the workflow, currency conversion, tax rules, missing information and updates to saved restaurants.
+
 ## Features
 
 - A home screen that explains group meals and Quick Spin, with saved tables for returning groups.

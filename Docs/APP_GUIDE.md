@@ -44,7 +44,7 @@ Use **Restaurant library** to create a restaurant or import a menu JSON file. Re
 
 Saved restaurants can be edited, shared as JSON and imported on another phone. **Save restaurant** copies the current room's restaurant to that device's library. Sharing opens the native share sheet; it does not publish a menu automatically.
 
-The JSON format supports categories, variants, options, availability and pricing rules. See the [example menu](restaurant-menu.example.json). The native editor provides a simpler item-entry flow; JSON is useful for richer menus.
+The JSON format supports categories, variants, options, availability and pricing rules. To convert a menu PDF, photos or text with an AI agent, use the [menu import guide](RESTAURANT_MENU_IMPORT.md), [copy-paste prompt](AI_MENU_PROMPT.md), [JSON Schema](restaurant-menu.schema.json) and [example menu](restaurant-menu.example.json). The native editor provides a simpler item-entry flow; JSON is useful for richer menus.
 
 ## 4. Gather, get ready and spin together
 

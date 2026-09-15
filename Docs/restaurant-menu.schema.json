@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/KarimMetawea/FoodRun/main/Docs/restaurant-menu.schema.json",
+  "title": "Food Run restaurant menu — version 1",
+  "description": "A restaurant export that Food Run can preview and import. Give this schema and the companion AI prompt to a menu-conversion agent. Import the generated restaurant JSON, not this schema document.",
+  "$comment": "Source of truth: order-domain Menu.kt and JsonInputValidation.kt. The app additionally checks unique IDs, references, relative option limits, UTF-16 string lengths, integer token encoding, duplicate object keys, 2 MiB size and nesting depth <= 24. Defaults describe Kotlin decoder behavior; generators should emit every field shown in the example.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exportId", "restaurant"],
+  "properties": {
+    "schema": { "const": "foodrun.restaurant", "default": "foodrun.restaurant" },
+    "schemaVersion": { "type": "integer", "const": 1, "default": 1 },
+    "exportId": { "$ref": "#/$defs/label", "description": "Export identity. Generate a UUID for a new restaurant export; preserve it when revising an existing export." },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807, "default": 1 },
+    "restaurant": { "$ref": "#/$defs/restaurant" }
+  },
+  "$defs": {
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "\\S",
+      "not": { "pattern": "[\\u0000-\\u001F]" },
+      "description": "Nonblank ID or name, with no control characters below U+0020. The app measures length in UTF-16 code units."
+    },
+    "money": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000000,
+      "description": "Nonnegative integer minor units: AED/USD/EUR/GBP/SAR/EGP ×100, KWD/BHD/OMR ×1000, JPY ×1. Write integer digits, without quotes, decimal points or exponent notation."
+    },
+    "phone": {
+      "type": ["string", "null"],
+      "pattern": "^\\+?[0-9 ()-]{5,24}$",
+      "not": { "type": "string", "pattern": "[\\r\\n]" },
+      "default": null,
+      "description": "Prefer +country-code and digits when the country is known. Use null for an unknown number. No URLs or extensions."
+    },
+    "restaurant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "menu"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label", "description": "Stable restaurant/branch identity. A matching ID replaces the saved library entry on confirmed import." },
+        "name": { "$ref": "#/$defs/label" },
+        "branchName": { "type": "string", "maxLength": 160, "default": "" },
+        "currency": { "type": "string", "enum": ["AED", "USD", "EUR", "GBP", "SAR", "EGP", "KWD", "BHD", "OMR", "JPY"], "default": "AED" },
+        "contact": { "$ref": "#/$defs/contact", "default": {} },
+        "pricing": { "$ref": "#/$defs/pricing", "default": {} },
+        "notes": { "type": "string", "maxLength": 4000, "default": "" },
+        "menu": { "$ref": "#/$defs/menu" }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phoneE164": { "$ref": "#/$defs/phone" },
+        "whatsappE164": { "$ref": "#/$defs/phone" },
+        "address": { "type": ["string", "null"], "maxLength": 1000, "default": null }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "taxTreatment": { "type": "string", "enum": ["included", "added", "unspecified"], "default": "included", "description": "Use unspecified when the source does not say. Only added causes Food Run to calculate extra tax." },
+        "taxRateBasisPoints": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000, "default": null, "description": "Percentage ×100; 5% = 500. Required and non-null when taxTreatment is added." },
+        "defaultDeliveryFeeMinor": { "$ref": "#/$defs/money", "default": 0 },
+        "defaultServiceFeeMinor": { "$ref": "#/$defs/money", "default": 0 },
+        "minimumOrderMinor": { "$ref": "#/$defs/money", "default": 0 }
+      },
+      "if": { "required": ["taxTreatment"], "properties": { "taxTreatment": { "const": "added" } } },
+      "then": { "required": ["taxRateBasisPoints"], "properties": { "taxRateBasisPoints": { "type": "integer" } } }
+    },
+    "menu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["categories", "items"],
+      "properties": {
+        "categories": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/category" } },
+        "optionGroups": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/optionGroup" }, "default": [] },
+        "items": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/$defs/item" } }
+      }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label" },
+        "name": { "$ref": "#/$defs/label" },
+        "sortOrder": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647, "default": 0 }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "categoryId", "name", "basePriceMinor"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label" },
+        "categoryId": { "$ref": "#/$defs/label", "description": "Must reference an existing menu.categories[].id." },
+        "name": { "$ref": "#/$defs/label" },
+        "description": { "type": "string", "maxLength": 2000, "default": "" },
+        "basePriceMinor": { "$ref": "#/$defs/money", "description": "Full item price when there are no variants. For variants, use the listed default size price, or the cheapest size if no default is stated; a selected variant replaces this amount." },
+        "available": { "type": "boolean", "default": true },
+        "variants": { "type": "array", "maxItems": 30, "items": { "$ref": "#/$defs/variant" }, "default": [] },
+        "optionGroupIds": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/label" }, "default": [], "description": "References to menu.optionGroups[].id. Only linked groups apply to this item." }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "priceMinor"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label" },
+        "name": { "$ref": "#/$defs/label" },
+        "priceMinor": { "$ref": "#/$defs/money", "description": "Full replacement price for this size/variant, not an increment added to basePriceMinor." }
+      }
+    },
+    "optionGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "options"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label" },
+        "name": { "$ref": "#/$defs/label" },
+        "minSelections": { "type": "integer", "minimum": 0, "maximum": 30, "default": 0 },
+        "maxSelections": { "type": "integer", "minimum": 0, "maximum": 30, "default": 1 },
+        "options": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "$ref": "#/$defs/option" } }
+      },
+      "description": "The app also requires 0 <= minSelections <= maxSelections <= options.length. Each option can be selected once per item."
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "priceDeltaMinor"],
+      "properties": {
+        "id": { "$ref": "#/$defs/label", "description": "Must be unique across every option group in this menu." },
+        "name": { "$ref": "#/$defs/label" },
+        "priceDeltaMinor": { "$ref": "#/$defs/money", "description": "Amount added to the selected variant or base price; zero for a free choice. Negative discounts are unsupported." }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.signing/
+.idea/
+Distributions/*.apk
+Distributions/*.aab

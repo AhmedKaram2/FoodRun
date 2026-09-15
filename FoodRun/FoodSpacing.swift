@@ -1,0 +1,53 @@
+import SwiftUI
+
+enum FoodSpacing {
+    static let s0: CGFloat = 0
+    static let s1: CGFloat = 1
+    static let s2: CGFloat = 2
+    static let s3: CGFloat = 3
+    static let s4: CGFloat = 4
+    static let s5: CGFloat = 5
+    static let s6: CGFloat = 6
+    static let s7: CGFloat = 7
+    static let s8: CGFloat = 8
+    static let s9: CGFloat = 9
+    static let s10: CGFloat = 10
+    static let s11: CGFloat = 11
+    static let s12: CGFloat = 12
+    static let s13: CGFloat = 13
+    static let s14: CGFloat = 14
+    static let s16: CGFloat = 16
+    static let s17: CGFloat = 17
+    static let s18: CGFloat = 18
+    static let s19: CGFloat = 19
+    static let s20: CGFloat = 20
+    static let s21: CGFloat = 21
+    static let s22: CGFloat = 22
+    static let s24: CGFloat = 24
+    static let s25: CGFloat = 25
+    static let s26: CGFloat = 26
+    static let s28: CGFloat = 28
+    static let s30: CGFloat = 30
+    static let s32: CGFloat = 32
+    static let s34: CGFloat = 34
+    static let s37: CGFloat = 37
+    static let s38: CGFloat = 38
+    static let s40: CGFloat = 40
+    static let s44: CGFloat = 44
+    static let s48: CGFloat = 48
+    static let s50: CGFloat = 50
+    static let s51: CGFloat = 51
+    static let s52: CGFloat = 52
+    static let s57: CGFloat = 57
+    static let s66: CGFloat = 66
+    static let s70: CGFloat = 70
+    static let s74: CGFloat = 74
+    static let s76: CGFloat = 76
+    static let s79: CGFloat = 79
+    static let s112: CGFloat = 112
+    static let s355: CGFloat = 355
+    static let s450: CGFloat = 450
+    static let s490: CGFloat = 490
+    static let overlapSmall: CGFloat = -2
+    static let overlapAvatars: CGFloat = -9
+}

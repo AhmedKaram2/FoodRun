@@ -6,16 +6,18 @@ A Kotlin Multiplatform app for choosing who picks up food and organizing group m
 
 ## See the app
 
-[![Food Run app and architecture demo](Docs/media/demo-poster.jpg)](Docs/media/food-run-demo.mp4)
-
-**[Watch the 60-second demo](Docs/media/food-run-demo.mp4)** · **[App guide and screenshots](Docs/APP_GUIDE.md)** · **[Architecture](Docs/ARCHITECTURE.md)** · **[Test report](Docs/GROUP_ORDER_TEST_REPORT.md)**
+The refreshed interface makes group meals easier to follow: a clearer home screen, room progress, expandable management controls, and primary actions that stay within reach.
 
 <table>
-<tr><th>iOS · Quick Spin</th><th>Android · permanent room</th><th>iOS · offline receipt</th></tr>
-<tr><td><img src="Docs/media/ios-wheel.jpg" width="240" alt="Food Run wheel with ten friends"></td><td><img src="Docs/media/android-room.png" width="240" alt="Android room on its second order"></td><td><img src="Docs/media/ios-offline-receipt.jpg" width="240" alt="Settled receipt and recipient available offline"></td></tr>
+<tr><th>iOS · home</th><th>iOS · Quick Spin</th><th>Android · shared room</th></tr>
+<tr><td><img src="Docs/media/ios-home.jpg" width="240" alt="Food Run home with group meal actions and Quick Spin"></td><td><img src="Docs/media/ios-wheel.jpg" width="240" alt="Responsive pickup wheel with visible crew controls and a pinned spin button"></td><td><img src="Docs/media/android-room.png" width="240" alt="Friday lunch club with order progress and the organizer's pinned spin action"></td></tr>
+<tr><th>iOS · connection</th><th>iOS · restaurant library</th><th>iOS · winner</th></tr>
+<tr><td><img src="Docs/media/ios-connection.jpg" width="240" alt="Hub pairing with expandable manual connection fields"></td><td><img src="Docs/media/ios-library.jpg" width="240" alt="Empty restaurant library with a clear Add restaurant action"></td><td><img src="Docs/media/ios-winner.jpg" width="240" alt="Fakhr selected for pickup with confirmation and sharing controls"></td></tr>
 </table>
 
-All documentation, screenshots, diagram sources and MP4 files live in this repository. The [media index](Docs/media/README.md) includes a video transcript and reproduction commands. Captures use demonstration restaurant/bank data.
+**[UI/UX review and validation](Docs/UIUX_REVIEW.md)** · **[App guide](Docs/APP_GUIDE.md)** · **[Full screenshot gallery](Docs/media/README.md)** · **[Architecture](Docs/ARCHITECTURE.md)**
+
+Screenshots are actual native simulator/emulator captures from the UI/UX refresh. The [earlier 60-second app and architecture demo](Docs/media/food-run-demo.mp4) documents the previous interface. All media is tracked in this repository and uses demonstration data.
 
 ## Install on Android
 
@@ -39,6 +41,10 @@ Restaurant menus can be saved locally, edited, shared as JSON, and imported with
 
 ## Features
 
+- A home screen that explains group meals and Quick Spin, with saved tables for returning groups.
+- Room progress from gathering through settlement, with menus and personal orders before the member list.
+- Persistent primary actions, expandable optional fields, and visible loading/error feedback.
+- Improved contrast, scalable iOS text, and a wheel that adapts to screen height.
 - Equal random chances for everyone included on the wheel.
 - Smooth 5.4-second slowdown, moving pointer, optional haptic ticks, spring winner reveal and finite confetti.
 - Include or sit out friends; at least one person stays in.
@@ -56,7 +62,7 @@ Each spin is independent, so a previous winner can win again. Kotlin chooses the
 
 KMP owns form drafts, validation, navigation, application state and display models. Native adapters handle lifecycle, animation, secure storage, pinned transport, discovery and system sharing. The local JVM hub authorizes room changes, chooses shared spin results and persists group orders. Quick Spin operates separately using local preferences.
 
-Reusable buttons, controlled inputs, avatars, cards and dividers preserve Food Run’s orange/cream theme. The focused local [IosComponents package](Packages/IosComponents) is adapted from the supplied MOHRE library; Android has equivalent Compose components. Source provenance and fixes are in [component reuse](Docs/component-reuse.md).
+Reusable buttons, controlled inputs, avatars, cards and dividers preserve Food Run’s warm cream and orange palette, with deep green accents for group meals. The focused local [IosComponents package](Packages/IosComponents) is adapted from the supplied MOHRE library; Android has equivalent Compose components. Source provenance and fixes are in [component reuse](Docs/component-reuse.md).
 
 The app uses English copy centralized in KMP. `shared` contains application state and presentation, `order-domain` contains menu/billing rules, and `order-contract` defines the wire protocol. The hub encrypts record bodies in SQLite. Read the [full architecture guide](Docs/ARCHITECTURE.md) for the module map, sequence/state diagrams, privacy, recovery and current scaling limits; see the [implementation plan](Docs/GROUP_ORDER_PLAN.md) for product decisions.
 
@@ -97,6 +103,10 @@ After changing project structure, regenerate the project with `xcodegen generate
 
 ## Validation
 
+The UI/UX refresh passed **79 automated tests**: **55 shared JVM tests** and **24 iOS tests**. Both native apps build successfully. Simulator/emulator walkthroughs cover navigation, Quick Spin, forms, room creation and readiness, including Android text at 140% size. The [UI/UX report](Docs/UIUX_REVIEW.md#verification) records the checks and their limits.
+
+### Earlier release verification
+
 Food Run 1.1 passed **146 automated tests with zero failures or skips**, plus the actual Android↔iOS order/payment flow, offline/server restart recovery and permanent-room reuse. The [test report](Docs/GROUP_ORDER_TEST_REPORT.md) records evidence, artifacts and simulator/emulator limits. The following original Quick Spin regression checks remain part of the expanded suites:
 
 - **33 shared tests passed:** wheel landing, random eligibility, persistence, drafts, navigation, cancellation, save failures and timezone formatting.
@@ -104,6 +114,6 @@ Food Run 1.1 passed **146 automated tests with zero failures or skips**, plus th
 - Android signed release build and lint passed; APK signature and 16 KB alignment verified.
 - Installed and exercised the release on an Android emulator; built and launched the updated iOS app on iPhone 16e.
 - [Audit and verification](Docs/AUDIT.md), [shared coverage](Docs/SHARED_COVERAGE.md), [Android audit](Docs/android-audit.md).
-- Previews: [Android](Preview/android-main.png), [winner](Preview/android-winner.png), [crew](Preview/android-crew.png).
+- Earlier Quick Spin captures: [Android](Preview/android-main.png), [winner](Preview/android-winner.png), [crew](Preview/android-crew.png). Current screenshots are in the [media gallery](Docs/media/README.md).
 
 Pinned build versions are in the Gradle files. Nunito is bundled under its [Open Font License](Licenses/Nunito-OFL.txt).

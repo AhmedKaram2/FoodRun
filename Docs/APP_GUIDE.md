@@ -1,19 +1,19 @@
 # Food Run — app guide
 
-Food Run helps a group choose who collects the food, agree on an order, and track who owes the payer. It runs on Android and iOS with a matching cream and orange theme.
+Food Run helps a group choose who collects the food, agree on an order, and track who owes the payer. It runs on Android and iOS with a matching warm cream, orange and deep green theme.
 
-[Watch the 60-second app and architecture demo](media/food-run-demo.mp4) · [Architecture](ARCHITECTURE.md) · [Hub setup](../room-server/README.md)
+[UI/UX review](UIUX_REVIEW.md) · [Earlier app and architecture demo](media/food-run-demo.mp4) · [Architecture](ARCHITECTURE.md) · [Hub setup](../room-server/README.md)
 
 ## A quick look
 
 <table>
 <tr><th>Start here · iOS</th><th>The wheel · iOS</th><th>Shared room · Android</th></tr>
-<tr><td><img src="media/ios-home.jpg" width="250" alt="Food Run home with create, join, Quick Spin and a saved room"></td><td><img src="media/ios-wheel.jpg" width="250" alt="Quick Spin wheel with the ten default friends"></td><td><img src="media/android-room.png" width="250" alt="Android organizer in order two of a permanent room"></td></tr>
-<tr><th>Restaurant library · iOS</th><th>Offline receipt · iOS</th><th>Past orders · iOS</th></tr>
-<tr><td><img src="media/ios-library.jpg" width="250" alt="Saved restaurant with import, edit and JSON sharing"></td><td><img src="media/ios-offline-receipt.jpg" width="250" alt="Downloaded settled receipt and its original recipient while offline"></td><td><img src="media/ios-history.jpg" width="250" alt="Past order one and its settled receipt"></td></tr>
+<tr><td><img src="media/ios-home.jpg" width="250" alt="Refreshed home with group meal and Quick Spin choices"></td><td><img src="media/ios-wheel.jpg" width="250" alt="Quick Spin with visible crew controls and a pinned spin button"></td><td><img src="media/android-room.png" width="250" alt="Room progress, readiness and the next main action"></td></tr>
+<tr><th>Connect · iOS</th><th>Restaurant library · iOS</th><th>Winner · iOS</th></tr>
+<tr><td><img src="media/ios-connection.jpg" width="250" alt="Expandable manual pairing fields"></td><td><img src="media/ios-library.jpg" width="250" alt="Restaurant library empty state and Add restaurant action"></td><td><img src="media/ios-winner.jpg" width="250" alt="Fakhr selected for the food pickup"></td></tr>
 </table>
 
-Screens are actual emulator/simulator captures. Together Kitchen, the restaurant contact, Test Bank account and payments are demonstration data. The video combines a real wheel recording with screen captures and a rendered architecture diagram; it is not a continuous recording of the entire order/payment test.
+These are actual captures of the refreshed app. Friday lunch club, Alex QA, and The Lunch Spot are demonstration data. See the [media index](media/README.md) for additional screenshots and the separately labeled earlier receipt/history verification captures. The earlier video shows the previous interface.
 
 ## 1. Pick someone without a room
 
@@ -24,11 +24,13 @@ Open **Quick Spin**. The default crew is Karim, Karam, Hassan, Mersal, Baraa, Fa
 - Spin, see the selected person, and optionally share the result using the system share sheet.
 - The crew and recent pickup history stay on this device. No hub is needed.
 
-Each included person has an equal chance. Spins are independent; the same person can win twice.
+The spin button stays at the bottom while you review the wheel or crew. Each included person has an equal chance. Spins are independent; the same person can win twice.
 
 ## 2. Create a permanent table
 
 Start the local hub on a Mac or PC using the [setup instructions](../room-server/README.md). Keep the computer awake and connect the phones to the same reachable local network.
+
+Use the pairing link or QR code; expand **Enter connection details manually** when you need the hub address and fingerprint fields.
 
 The organizer opens **Create a room**, connects to the hub using its pairing information, chooses a restaurant, sets fees and creates the room. Friends use **Join a room** with the same hub and the six-digit room code. The organizer approves new members.
 
@@ -45,6 +47,8 @@ Saved restaurants can be edited, shared as JSON and imported on another phone. *
 The JSON format supports categories, variants, options, availability and pricing rules. See the [example menu](restaurant-menu.example.json). The native editor provides a simpler item-entry flow; JSON is useful for richer menus.
 
 ## 4. Gather, get ready and spin together
+
+The room shows **Gather → Pick payer → Order → Settle** progress. **Room options & adjustments** contains receipts, past orders, saved-restaurant actions and management controls. The invite shortcut sits beside the room code.
 
 Everyone ordering chooses daily participation and marks themselves ready. Members who can contact, order and pay for the group explicitly enable that eligibility. A spectator can watch without entering the payer selection or receiving private financial details.
 
@@ -88,5 +92,7 @@ Live room, spin and payment updates require the local hub. Returning to the loca
 | Next order is unavailable | Finish fulfillment, confirm transfers and resolve every balance/refund first. |
 
 ## Verification
+
+The current UI/UX refresh passed **79 tests** and native builds, plus simulator/emulator walkthroughs. See the [UI/UX review](UIUX_REVIEW.md#verification).
 
 The documented 1.1 run passed **146 automated tests** and a complete Android ↔ iOS order/payment/recovery workflow. See the [test report](GROUP_ORDER_TEST_REPORT.md) for exact coverage and limits. Physical-phone camera scanning, Windows execution, real restaurant calls and real bank transfers were outside that test run.

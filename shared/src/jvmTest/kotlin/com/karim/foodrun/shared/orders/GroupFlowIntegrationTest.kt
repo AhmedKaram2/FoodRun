@@ -104,9 +104,13 @@ class GroupFlowIntegrationTest {
         val (host, _) = bus.phone(); val (second, secondPhone) = bus.phone(); val (third, _) = bus.phone()
         create(host, bus); join(second, "Karam", host, bus); join(third, "Hassan", host, bus)
         val people = listOf(host, second, third)
+        assertEquals(GroupAction.READY, host.state.primaryAction?.action)
+        assertEquals(0, host.state.progressStep)
         people.forEach { it.update(GroupFieldKey.ELIGIBLE, "true"); it.dispatch(GroupAction.READY); bus.drain(); bus.sync() }
+        assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
         host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
         assertEquals(RoomPhase.SPINNING, host.room().phase)
+        assertEquals(1, host.state.progressStep)
         assertEquals(1, people.map { it.room().spin!!.id }.distinct().size)
         bus.time += 10000; bus.server.tick(); bus.sync()
         val payer = people.single { it.me() == host.room().spin!!.winnerId }

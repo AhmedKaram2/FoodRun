@@ -15,17 +15,21 @@ import com.karim.foodrun.shared.Person
 
 /** Food Run's native rendering tokens. No application rules belong in this layer. */
 object FoodColors {
-    val Cream = Color(0xFFFFF9EF)
-    val Ink = Color(0xFF29251F)
-    val Muted = Color(0xFF82796D)
-    val Orange = Color(0xFFEA5B2A)
-    val OrangeLight = Color(0xFFFF7D46)
-    val Line = Color(0xFFEAE0D1)
+    val Cream = Color(0xFFFAF7F2)
+    val Ink = Color(0xFF292C28)
+    val Muted = Color(0xFF696C63)
+    val Orange = Color(0xFFBE431E)
+    val OrangeLight = Color(0xFFBE431E)
+    val Hero = Color(0xFF263B32)
+    val OnHero = Color(0xFFDCE5D8)
+    val SuccessWash = Color(0xFFEAF1E5)
+    val AccentWash = Color(0xFFFBEEE7)
+    val Line = Color(0xFFE6E4DC)
     val White = Color.White
     val Clear = Color.Transparent
     val WheelRim = Color(0xFFFFFDF7)
     val Sage = Color(0xFF9BAF72)
-    val Success = Color(0xFF6F9662)
+    val Success = Color(0xFF476B3F)
     val Error = Color(0xFFB53617)
     val Card = White.copy(alpha = 0.80f)
     val SubtleCard = White.copy(alpha = 0.62f)
@@ -70,7 +74,7 @@ object FoodRadius {
     val Input = 16.dp
     val Add = 18.dp
     val Toggle = 20.dp
-    val Card = 22.dp
+    val Card = 18.dp
     val Dialog = 30.dp
     val Sheet = 32.dp
 }
@@ -91,7 +95,7 @@ object FoodSize {
     val MaxDialogWidth = 420.dp
     val ErrorBanner = 160.dp
     val Wheel = 355.dp
-    val ButtonShadow = 12.dp
+    val ButtonShadow = 4.dp
     val Border = 1.dp
     val SelectionBorder = 1.5.dp
     val AvatarBorder = 2.5.dp
@@ -145,8 +149,8 @@ object FoodType {
         fontFamily = Rounded,
         fontSize = 12.sp,
     )
-    val Body = TextStyle(fontSize = 14.sp)
-    val Input = TextStyle(fontSize = 16.sp)
+    val Body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp)
+    val Input = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
     val Caption = TextStyle(fontSize = 12.sp)
     val SmallCaption = TextStyle(fontSize = 11.sp)
     val Status = Caption.copy(fontWeight = FontWeight.SemiBold)

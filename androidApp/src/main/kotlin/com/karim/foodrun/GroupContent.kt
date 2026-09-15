@@ -1,5 +1,12 @@
 package com.karim.foodrun
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,12 +66,13 @@ internal fun GroupErrorBanner(message: String) {
 internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: GroupController) {
     if (field.toggle) {
         Row(
-            modifier = Modifier.fillMaxWidth().toggleable(
+            modifier = Modifier.fillMaxWidth().background(FoodColors.Card, RoundedCornerShape(FoodRadius.Card))
+                .border(FoodSize.Border, FoodColors.Line, RoundedCornerShape(FoodRadius.Card)).toggleable(
                 value = field.value == "true",
                 enabled = !busy,
                 role = Role.Switch,
                 onValueChange = { controller.update(field.key, it.toString()) },
-            ).padding(vertical = FoodSpacing.XSmall).testTag(field.key.name),
+            ).padding(FoodSpacing.Large).testTag(field.key.name),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Medium),
         ) {
@@ -76,7 +84,7 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
         val keyboard = when (field.key) {
             GroupFieldKey.HUB_URL, GroupFieldKey.PAIRING_LINK -> KeyboardType.Uri
             GroupFieldKey.PHONE -> KeyboardType.Phone
-            GroupFieldKey.QUANTITY -> KeyboardType.Number
+            GroupFieldKey.QUANTITY, GroupFieldKey.ROOM_CODE -> KeyboardType.Number
             GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
             GroupFieldKey.DISCOUNT, GroupFieldKey.AMOUNT -> KeyboardType.Decimal
             else -> KeyboardType.Text
@@ -102,18 +110,19 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
 }
 
 @Composable
-internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: GroupController) {
+internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: GroupController, prominent: Boolean = button.primary) {
     val modifier = Modifier.testTag("action:${button.action.name}:${button.value}")
     val click = { controller.dispatch(button.action, button.value) }
-    if (button.primary) PrimaryButton(
+    if (prominent) PrimaryButton(
         text = button.title,
-        icon = null,
+        icon = groupActionIcon(button),
         modifier = modifier,
         enabled = !busy && button.enabled,
         onClick = click,
     ) else SecondaryButton(
+        destructive = button.destructive,
         text = button.title,
-        icon = null,
+        icon = groupActionIcon(button),
         modifier = modifier,
         enabled = !busy && button.enabled,
         onClick = click,
@@ -122,14 +131,28 @@ internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: G
 
 @Composable
 internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupController) {
-    FoodCard {
+    FoodCard(bordered = true) {
         Column(
             modifier = Modifier.padding(FoodSpacing.XLarge),
-            verticalArrangement = Arrangement.spacedBy(FoodSpacing.Small),
+            verticalArrangement = Arrangement.spacedBy(FoodSpacing.Content),
         ) {
-            Text(text = card.title, style = FoodType.SectionTitle, color = FoodColors.Ink)
-            if (card.badge.isNotEmpty()) Text(text = card.badge, style = FoodType.Status, color = FoodColors.Orange)
-            if (card.detail.isNotEmpty()) Text(text = card.detail, style = FoodType.Body, color = FoodColors.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), verticalAlignment = Alignment.Top) {
+                if (card.id.startsWith("member:") || card.id.startsWith("invite:")) {
+                    Box(Modifier.size(FoodSize.Avatar).background(FoodColors.SuccessWash, CircleShape), contentAlignment = Alignment.Center) {
+                        Text(card.title.take(1), style = FoodType.Avatar, color = FoodColors.Success)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
+                    Text(text = card.title, style = FoodType.Person, color = FoodColors.Ink)
+                    if (card.badge.isNotEmpty()) Text(text = card.badge, style = FoodType.Status, color = FoodColors.Orange,
+                        modifier = Modifier.background(FoodColors.AccentWash, RoundedCornerShape(FoodRadius.Card))
+                            .padding(horizontal = FoodSpacing.XSmall, vertical = FoodSpacing.XXSmall))
+                }
+            }
+            if (card.detail.isNotEmpty()) SelectionContainer {
+                Text(text = card.detail, style = FoodType.Body, color = FoodColors.Muted)
+            }
+            if (card.buttons.size > 1) FoodDivider()
             card.buttons.forEach { GroupActionButton(it, busy, controller) }
         }
     }

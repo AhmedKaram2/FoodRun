@@ -25,7 +25,7 @@ struct GroupErrorBanner: View {
     private var messageText: some View {
         Text(message)
             .font(FoodTypography.setting)
-            .foregroundStyle(FoodTheme.orange)
+            .foregroundStyle(FoodTheme.error)
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
             .accessibilityIdentifier("groupError")

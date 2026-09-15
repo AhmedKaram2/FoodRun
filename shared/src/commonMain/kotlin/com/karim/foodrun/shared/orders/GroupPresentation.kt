@@ -31,7 +31,14 @@ internal class GroupPresentation(private val c: GroupController) {
         if (c.library.pending != null && !c.busy) button("Retry saved request", GroupAction.RETRY, primary = true)
         return GroupState(c.page, title, subtitle, fields, cards, buttons, c.busy, c.online,
             if (c.session == null) "Local network · Android + iOS" else if(c.online) "Connected · saved on this device" else "Offline · saved receipt data · last sync ${c.reply?.serverTime?.let(::timeLabel) ?: "unavailable"}",
-            c.error, wheel, if (c.page == GroupPage.ROOM) room?.code ?: "" else "", c.page != GroupPage.HOME)
+            c.error, wheel, if (c.page == GroupPage.ROOM) room?.code ?: "" else "", c.page != GroupPage.HOME,
+            if (c.page != GroupPage.ROOM) -1 else when (room?.phase) {
+                RoomPhase.LOBBY -> 0
+                RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING -> 1
+                RoomPhase.COLLECTING, RoomPhase.REVIEW -> 2
+                RoomPhase.PLACED, RoomPhase.FULFILLED, RoomPhase.ARCHIVED -> 3
+                else -> -1
+            })
     }
     private fun home() {
         subtitle = "Gather your people. Share a meal."
@@ -68,12 +75,13 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     private fun library() {
         title = "Restaurant library"; subtitle = "Your favorites, saved on your device."
-        button("Add restaurant", GroupAction.NEW_RESTAURANT); button("Import menu JSON", GroupAction.IMPORT_MENU)
+        button("Add restaurant", GroupAction.NEW_RESTAURANT, primary = c.library.restaurants.isEmpty() && c.importPreview == null); button("Import menu JSON", GroupAction.IMPORT_MENU)
         field(GroupFieldKey.JSON_MENU, "Or paste a menu JSON file", multiline = true)
         if(c.text(GroupFieldKey.JSON_MENU).isNotBlank()) button("Preview JSON", GroupAction.PREVIEW_IMPORT)
         c.importPreview?.let { card("preview", "Import ${it.restaurant.name}", "${it.restaurant.menu.items.size} items · ${it.restaurant.currency}\nMatching restaurant IDs update the saved copy. Room menus stay unchanged."); button("Confirm import", GroupAction.CONFIRM_IMPORT, primary = true) }
         c.library.restaurants.forEach { e -> card("restaurant:${e.restaurant.id}", e.restaurant.name, "${e.restaurant.branchName} · ${e.restaurant.menu.items.size} items · ${e.restaurant.currency}", actions = listOf(
             GroupButton("Use for order", GroupAction.SELECT_RESTAURANT, e.restaurant.id), GroupButton("Edit", GroupAction.EDIT_RESTAURANT, e.restaurant.id), GroupButton("Share JSON", GroupAction.EXPORT_MENU, e.restaurant.id), GroupButton("Delete saved copy", GroupAction.DELETE_RESTAURANT, e.restaurant.id, destructive = true))) }
+        if (c.library.restaurants.isEmpty() && c.importPreview == null) card("empty", "Your next favorite starts here", "Add a restaurant and its menu, or import a menu shared by a friend.")
         c.reply?.room?.takeIf { (it.ownerId == c.me() || it.payerId == c.me()) && it.phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW) }?.let { room ->
             c.library.restaurants.firstOrNull { it.restaurant.id == room.restaurant.id }?.let { saved ->
                 field(GroupFieldKey.REASON, "Reason for updating the room menu")
@@ -112,8 +120,8 @@ internal class GroupPresentation(private val c: GroupController) {
         field(GroupFieldKey.REASON, "Reason for removal, reroll, reopening or adjustment")
         when(r.phase) {
             RoomPhase.LOBBY -> {
-                if(!me.guest) { button(if(me.participating) "Skip this order" else "Join this order", GroupAction.PARTICIPATE, (!me.participating).toString()); field(GroupFieldKey.ELIGIBLE, "I can contact, order and pay for the group", toggle = true); button("I'm ready", GroupAction.READY, primary = true) }
-                if(owner) { button("Spin together", GroupAction.PREPARE_SPIN, primary = true); button("Cancel today's order", GroupAction.CANCEL) }
+                if(!me.guest) { button(if(me.participating) "Skip this order" else "Join this order", GroupAction.PARTICIPATE, (!me.participating).toString()); field(GroupFieldKey.ELIGIBLE, "I can contact, order and pay for the group", toggle = true); button("I'm ready", GroupAction.READY, primary = !me.ready) }
+                if(owner) { button("Spin together", GroupAction.PREPARE_SPIN, primary = me.guest || me.ready); button("Cancel today's order", GroupAction.CANCEL) }
             }
             RoomPhase.PREPARING_SPIN -> { card("prepare", "Getting everyone in sync", "Waiting for participating phones to acknowledge the countdown."); if(owner) button("Stop waiting", GroupAction.ABORT_SPIN) }
             RoomPhase.SPINNING -> card("spinning", "One spin. One result.", "Stay here to watch the wheel together.")

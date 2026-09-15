@@ -28,12 +28,45 @@ data class GroupState(
     val fields: List<GroupField> = emptyList(), val cards: List<GroupCard> = emptyList(), val buttons: List<GroupButton> = emptyList(),
     val busy: Boolean = false, val online: Boolean = false, val status: String = "", val error: String = "", val wheel: GroupWheel? = null,
     val roomCode: String = "", val canGoBack: Boolean = false,
-)
+    val progressStep: Int = -1,
+) {
+    val primaryAction: GroupButton? get() = buttons.firstOrNull { it.primary }
+    val utilityButtons: List<GroupButton> get() = if (page == GroupPage.ROOM) buttons.filter {
+        it.action in GroupLayout.roomUtilities && it != primaryAction
+    } else emptyList()
+    val inlineButtons: List<GroupButton> get() = buttons.filter { it != primaryAction && it !in utilityButtons }
+    val extraFields: List<GroupField> get() = fields.filter {
+        when (page) {
+            GroupPage.CONNECT -> it.key in listOf(GroupFieldKey.HUB_URL, GroupFieldKey.FINGERPRINT)
+            GroupPage.LIBRARY -> it.key == GroupFieldKey.JSON_MENU
+            GroupPage.ROOM -> it.key in GroupLayout.roomExtraFields
+            else -> false
+        }
+    }
+    val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
+    val sections: List<GroupSection> get() = GroupLayout.sections(page, cards)
+}
 interface GroupObserver { fun changed(state: GroupState) }
 object GroupText {
     val brand = "FOOD RUN / TOGETHER"
     val back = "Back"
     val backToRooms = "Back to rooms"
+    val homeTitle = "Good food.\nBetter together."
+    val homeSubtitle = "Make the next meal a group effort."
+    val groupEyebrow = "A TABLE FOR EVERYONE"
+    val groupTitle = "One room. The whole crew."
+    val groupDescription = "Choose food, pick a payer and keep every order together."
+    val quickDescription = "Pick who's getting the food. No setup needed."
+    val libraryDescription = "Keep your favorite menus close."
+    val savedRooms = "Your tables"
+    val explore = "Make it a Food Run"
+    val roomCode = "ROOM CODE"
+    val roomOptions = "Room options & adjustments"
+    val manualConnection = "Enter connection details manually"
+    val pasteMenu = "Paste menu JSON"
+    val details = "Your details"
+    val working = "Updating your table…"
+    val progressSteps = listOf("Gather", "Pick payer", "Order", "Settle")
 }
 interface GroupReplyCallback { fun complete(body: String, error: String) }
 interface GroupSubscription { fun cancel() }

@@ -2,6 +2,7 @@ package com.karim.foodrun
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -53,6 +54,7 @@ fun SecondaryButton(
     icon: ImageVector?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
     FoodActionButton(
@@ -61,6 +63,7 @@ fun SecondaryButton(
         modifier = modifier,
         enabled = enabled,
         primary = false,
+        destructive = destructive,
         onClick = onClick,
     )
 }
@@ -72,6 +75,7 @@ private fun FoodActionButton(
     modifier: Modifier,
     enabled: Boolean,
     primary: Boolean,
+    destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -82,7 +86,7 @@ private fun FoodActionButton(
         label = "button press",
     )
     val shape = RoundedCornerShape(if (primary) FoodRadius.Card else FoodRadius.Add)
-    val foreground = if (primary) FoodColors.White else FoodColors.Orange
+    val foreground = if (primary) FoodColors.White else if (destructive) FoodColors.Error else FoodColors.Ink
     Row(
         modifier = modifier
             .graphicsLayer {
@@ -101,10 +105,12 @@ private fun FoodActionButton(
             .background(
                 brush = Brush.verticalGradient(
                     if (primary) listOf(FoodColors.OrangeLight, FoodColors.Orange)
-                    else listOf(FoodColors.OrangeWash, FoodColors.OrangeWash),
+                    else if (destructive) listOf(FoodColors.OrangeWash, FoodColors.OrangeWash)
+                    else listOf(FoodColors.Cream, FoodColors.Cream),
                 ),
                 shape = shape,
             )
+            .border(FoodSize.Border, if (primary) FoodColors.Clear else FoodColors.Line, shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,

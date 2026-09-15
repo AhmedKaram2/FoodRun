@@ -12,7 +12,8 @@ struct ContentView: View {
                     store: store,
                     wheelWidth: min(
                         geometry.size.width - FoodSpacing.s74,
-                        FoodSpacing.s355
+                        FoodSpacing.s355,
+                        geometry.size.height * 0.39
                     )
                 )
 

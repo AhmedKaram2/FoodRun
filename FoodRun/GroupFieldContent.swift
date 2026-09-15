@@ -14,11 +14,14 @@ struct GroupFieldContent: View {
                 set: { onChange($0 ? "true" : "false") }
             ))
             .font(FoodTypography.setting)
+            .foregroundStyle(FoodTheme.ink)
+            .padding(FoodSpacing.s16)
+            .foodCard(showsBorder: true)
             .disabled(!enabled)
             .accessibilityIdentifier(field.key.name)
         } else {
             VStack(alignment: .leading, spacing: FoodSpacing.s8) {
-                Text(field.label).font(FoodTypography.captionButton).foregroundStyle(FoodTheme.muted)
+                Text(field.label).font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
                 input
             }
         }
@@ -64,7 +67,7 @@ struct GroupFieldContent: View {
         case .hubUrl, .pairingLink: .URL
         case .phone: .phonePad
         case .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice: .decimalPad
-        case .quantity: .numberPad
+        case .quantity, .roomCode: .numberPad
         default: .default
         }
     }

@@ -13,8 +13,6 @@ struct FoodRunContent: View {
                 introduction
                     .padding(.bottom, FoodSpacing.s20)
                 wheelSection(width: wheelWidth)
-                actionSection
-                    .padding(.top, FoodSpacing.s16)
                 crewCard
                     .padding(.top, FoodSpacing.s16)
                     .padding(.bottom, FoodSpacing.s24)
@@ -23,6 +21,15 @@ struct FoodRunContent: View {
             .padding(.top, FoodSpacing.s8)
             .frame(maxWidth: FoodSpacing.s490)
             .frame(maxWidth: .infinity)
+        }
+        .safeAreaInset(edge: .bottom, spacing: FoodSpacing.s0) {
+            actionSection
+                .padding(.horizontal, FoodSpacing.s24)
+                .padding(.vertical, FoodSpacing.s12)
+                .frame(maxWidth: FoodSpacing.s490)
+                .frame(maxWidth: .infinity)
+                .background(FoodTheme.cream)
+                .overlay(alignment: .top) { FoodDivider() }
         }
     }
 
@@ -125,6 +132,7 @@ struct FoodRunContent: View {
             Text(store.missionLabel)
                 .font(FoodTypography.footer)
                 .foregroundStyle(FoodTheme.muted)
+                .multilineTextAlignment(.center)
         }
     }
 

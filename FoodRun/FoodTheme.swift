@@ -2,16 +2,21 @@ import SwiftUI
 import IosComponents
 
 enum FoodTheme {
-    static let cream = Color(hex: 0xFFF9EF)
-    static let ink = Color(hex: 0x29251F)
-    static let muted = Color(hex: 0x82796D)
-    static let orange = Color(hex: 0xEA5B2A)
-    static let line = Color(hex: 0xEAE0D1)
+    static let cream = Color(hex: 0xFAF7F2)
+    static let ink = Color(hex: 0x292C28)
+    static let muted = Color(hex: 0x696C63)
+    static let orange = Color(hex: 0xBE431E)
+    static let line = Color(hex: 0xE6E4DC)
+    static let accentWash = Color(hex: 0xFBEEE7)
+    static let hero = Color(hex: 0x263B32)
+    static let onHero = Color(hex: 0xDCE5D8)
+    static let successWash = Color(hex: 0xEAF1E5)
+    static let error = Color(hex: 0xAF3025)
     static let white = Color.white
     static let black = Color.black
     static let wheelRim = Color(hex: 0xFFFDF7)
     static let sage = Color(hex: 0x9BAF72)
-    static let available = Color(hex: 0x6F9662)
+    static let available = Color(hex: 0x476B3F)
     static let palette: [Color] = [
         Color(hex: 0xF49A79), Color(hex: 0xF5CB69), Color(hex: 0xBAD4AD),
         Color(hex: 0xB8CBEB), Color(hex: 0xCEBAE4), Color(hex: 0xF2B4BD),
@@ -24,7 +29,7 @@ enum FoodTheme {
             onPrimary: white,
             secondary: ink,
             tertiary: muted,
-            error: orange,
+            error: error,
             background: cream,
             outline: line
         ),
@@ -44,7 +49,7 @@ enum FoodRadius {
     static let input: CGFloat = 16
     static let secondaryButton: CGFloat = 18
     static let setting: CGFloat = 20
-    static let button: CGFloat = 22
+    static let button: CGFloat = 18
     static let group: CGFloat = 24
     static let winner: CGFloat = 34
 }
@@ -65,23 +70,23 @@ enum FoodMotion {
 
 enum FoodTypography {
     static let brand = Font.system(size: 15, weight: .black, design: .rounded)
-    static let hero = Font.system(size: 37, weight: .heavy, design: .rounded)
-    static let sheetTitle = Font.system(size: 30, weight: .heavy, design: .rounded)
-    static let formTitle = Font.system(size: 25, weight: .heavy, design: .rounded)
+    static let hero = Font.system(.largeTitle, design: .rounded, weight: .heavy)
+    static let sheetTitle = Font.system(.title, design: .rounded, weight: .heavy)
+    static let formTitle = Font.system(.title2, design: .rounded, weight: .bold)
     static let button = Font.system(.headline, design: .rounded, weight: .bold)
     static let bodyBold = Font.system(.body, design: .rounded, weight: .bold)
     static let input = Font.system(.body, design: .rounded, weight: .semibold)
     static let setting = Font.system(.subheadline, design: .rounded, weight: .semibold)
     static let captionButton = Font.system(.caption, design: .rounded, weight: .bold)
     static let emptyTitle = Font.system(.title3, design: .rounded, weight: .bold)
-    static let subtitle = Font.system(size: 14, weight: .medium)
-    static let footer = Font.system(size: 12, weight: .medium)
-    static let metadata = Font.system(size: 11, weight: .medium)
-    static let status = Font.system(size: 12, weight: .semibold, design: .rounded)
-    static let crewTitle = Font.system(size: 14, weight: .bold, design: .rounded)
-    static let crewAction = Font.system(size: 12, weight: .bold, design: .rounded)
+    static let subtitle = Font.system(.subheadline, weight: .medium)
+    static let footer = Font.system(.caption, weight: .medium)
+    static let metadata = Font.system(.caption, weight: .medium)
+    static let status = Font.system(.caption, design: .rounded, weight: .semibold)
+    static let crewTitle = Font.system(.subheadline, design: .rounded, weight: .bold)
+    static let crewAction = Font.system(.caption, design: .rounded, weight: .bold)
     static let share = Font.system(size: 13, weight: .semibold, design: .rounded)
-    static let eyebrow = Font.system(size: 10, weight: .heavy, design: .rounded)
+    static let eyebrow = Font.system(.caption2, design: .rounded, weight: .heavy)
     static let winnerIntro = Font.system(size: 16, weight: .semibold, design: .rounded)
     static let winner = Font.system(size: 57, weight: .heavy, design: .rounded)
     static let wheelCenter = Font.system(size: 8, weight: .black, design: .rounded)

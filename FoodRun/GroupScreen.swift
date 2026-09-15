@@ -6,13 +6,15 @@ struct GroupScreen: View {
     let wheelStore: WheelStore
     @Environment(\.scenePhase) private var scenePhase
     private var state: GroupState { store.state }
+    @State private var optionsExpanded = false
     var body: some View {
         Group {
             if state.page == .quickSpin {
-                VStack {
-                    Button(GroupText.shared.backToRooms) { store.dispatch(.back) }
-                        .font(FoodTypography.button)
-                        .padding(FoodSpacing.s12)
+                VStack(spacing: FoodSpacing.s0) {
+                    Button { store.dispatch(.back) } label: {
+                        Label(GroupText.shared.backToRooms, systemImage: "chevron.left")
+                            .font(FoodTypography.setting).frame(minHeight: FoodSpacing.s44)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, FoodSpacing.s24)
                     ContentView(store: wheelStore)
                 }
             } else { content }
@@ -27,29 +29,57 @@ struct GroupScreen: View {
         ScrollViewReader { scroll in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: FoodSpacing.s16) {
-                    header.id("groupHeader")
-                    if state.busy { ProgressView().frame(maxWidth: .infinity) }
-                    if let wheel = state.wheel { GroupWheelContent(wheel: wheel).id(wheel.round.id) }
-                    ForEach(state.fields, id: \.key.name) { field in
-                        GroupFieldContent(field: field, enabled: !state.busy) { store.controller.update(key: field.key, value: $0) }
+                    if state.page == .home {
+                        GroupHomeContent(state: state, dispatch: store.dispatch).id("groupHeader")
+                    } else {
+                        header.id("groupHeader")
+                        if state.progressStep >= 0 { GroupProgress(step: Int(state.progressStep)) }
+                        if let wheel = state.wheel { GroupWheelContent(wheel: wheel).id(wheel.round.id) }
+                        ForEach(state.mainFields, id: \.key.name) { field in fieldContent(field) }
+                        if state.page != .room { extraOptions }
+                        ForEach(state.inlineButtons, id: \.viewID) { button in
+                            GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch, prominent: false)
+                        }
+                        ForEach(Array(state.sections.enumerated()), id: \.offset) { _, section in
+                            if !section.title.isEmpty { GroupSectionHeading(title: section.title, count: section.cards.count) }
+                            ForEach(section.cards, id: \.id) { card in
+                                GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
+                            }
+                        }
+                        if state.page == .room { extraOptions }
                     }
-                    ForEach(state.buttons, id: \.viewID) { button in actionButton(button) }
-                    ForEach(state.cards, id: \.id) { card in cardContent(card) }
                 }
                 .frame(maxWidth: FoodSpacing.s490)
                 .padding(FoodSpacing.s24)
                 .frame(maxWidth: .infinity)
             }
+            .id(state.page.name)
             .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("groupScreen")
             .safeAreaInset(edge: .top, spacing: FoodSpacing.s0) {
-                if !state.error.isEmpty { GroupErrorBanner(message: state.error) }
+                VStack(spacing: FoodSpacing.s0) {
+                    if !state.error.isEmpty { GroupErrorBanner(message: state.error) }
+                    if state.busy {
+                        ProgressView(GroupText.shared.working).font(FoodTypography.status)
+                            .padding(FoodSpacing.s8).frame(maxWidth: .infinity).background(FoodTheme.cream)
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: FoodSpacing.s0) {
+                if state.page != .home, let primary = state.primaryAction {
+                    actionButton(primary).padding(FoodSpacing.s16)
+                        .frame(maxWidth: FoodSpacing.s490).frame(maxWidth: .infinity)
+                        .background(FoodTheme.cream)
+                        .overlay(alignment: .top) { FoodDivider() }
+                }
             }
             .onChange(of: state.error, initial: true) { _, message in
                 guard !message.isEmpty, scenePhase == .active else { return }
+                if !state.extraFields.isEmpty { optionsExpanded = true }
                 UIAccessibility.post(notification: .announcement, argument: message)
             }
             .onChange(of: state.page) { _, _ in
+                optionsExpanded = false
                 scroll.scrollTo("groupHeader", anchor: .top)
             }
             .toolbar {
@@ -63,42 +93,63 @@ struct GroupScreen: View {
         }
     }
     private var header: some View {
-        VStack(alignment: .leading, spacing: FoodSpacing.s8) {
-            if state.canGoBack {
-                Button(GroupText.shared.back) { store.dispatch(.back) }
-                    .font(FoodTypography.button)
-                    .frame(minHeight: FoodSpacing.s44)
-            }
-            Text(GroupText.shared.brand).font(FoodTypography.eyebrow).tracking(FoodSpacing.s2).foregroundStyle(FoodTheme.orange)
-            Text(state.title).font(FoodTypography.hero).foregroundStyle(FoodTheme.ink)
-            Text(state.subtitle).font(FoodTypography.input).foregroundStyle(FoodTheme.muted)
-            HStack(spacing: FoodSpacing.s8) {
-                Circle().fill(state.online ? FoodTheme.available : FoodTheme.muted).frame(width: FoodSpacing.s8, height: FoodSpacing.s8)
-                Text(state.status).font(FoodTypography.status).foregroundStyle(FoodTheme.muted)
-            }
-            if !state.roomCode.isEmpty { Text(state.roomCode).font(FoodTypography.sheetTitle).foregroundStyle(FoodTheme.orange).textSelection(.enabled).accessibilityIdentifier("roomCode") }
-        }
-    }
-    @ViewBuilder private func actionButton(_ button: GroupButton) -> some View {
-        if button.primary {
-            PrimaryButton(title: button.title, symbol: "arrow.right", isDisabled: state.busy || !button.enabled) { store.dispatch(button.action, button.value) }
-                .accessibilityIdentifier("action:\(button.action.name):\(button.value)")
-        } else {
-            SecondaryButton(title: button.title, symbol: button.destructive ? "trash" : "arrow.right", isDisabled: state.busy || !button.enabled) { store.dispatch(button.action, button.value) }
-                .accessibilityIdentifier("action:\(button.action.name):\(button.value)")
-        }
-    }
-    private func cardContent(_ card: GroupCard) -> some View {
         VStack(alignment: .leading, spacing: FoodSpacing.s12) {
-            Text(card.title).font(FoodTypography.bodyBold).foregroundStyle(FoodTheme.ink)
-            if !card.badge.isEmpty { Text(card.badge).font(FoodTypography.status).foregroundStyle(FoodTheme.orange) }
-            if !card.detail.isEmpty { Text(card.detail).font(FoodTypography.setting).foregroundStyle(FoodTheme.muted).textSelection(.enabled) }
-            ForEach(card.buttons, id: \.viewID) { button in actionButton(button) }
+            HStack {
+                if state.canGoBack {
+                    Button { store.dispatch(.back) } label: {
+                        Label(GroupText.shared.back, systemImage: "chevron.left").font(FoodTypography.setting)
+                            .frame(minHeight: FoodSpacing.s44)
+                    }
+                }
+                Spacer()
+                Text(FoodStrings.text.brand).font(FoodTypography.eyebrow).tracking(FoodSpacing.s2).foregroundStyle(FoodTheme.muted)
+            }
+            Text(state.title).font(FoodTypography.hero).foregroundStyle(FoodTheme.ink)
+                .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            if !state.subtitle.isEmpty {
+                Text(state.subtitle).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.muted)
+            }
+            if !state.status.isEmpty {
+                Label(state.status, systemImage: state.online ? "wifi" : "externaldrive")
+                    .font(FoodTypography.status).foregroundStyle(FoodTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !state.roomCode.isEmpty {
+                HStack {
+                    VStack(alignment: .leading, spacing: FoodSpacing.s4) {
+                        Text(GroupText.shared.roomCode).font(FoodTypography.eyebrow).tracking(FoodSpacing.s1).foregroundStyle(FoodTheme.muted)
+                        Text(state.roomCode).font(FoodTypography.formTitle).tracking(FoodSpacing.s3)
+                            .foregroundStyle(FoodTheme.ink).textSelection(.enabled).accessibilityIdentifier("roomCode")
+                    }
+                    Spacer()
+                    Button { store.dispatch(.shareRoom) } label: {
+                        Image(systemName: "square.and.arrow.up").font(FoodTypography.brandIcon)
+                            .frame(width: FoodSpacing.s48, height: FoodSpacing.s48)
+                    }.disabled(state.busy).accessibilityLabel("Invite people")
+                }.padding(FoodSpacing.s16).foodCard(showsBorder: true)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(FoodSpacing.s20).foodCard(showsBorder: true)
     }
-}
 
-private extension GroupButton {
-    var viewID: String { "\(action.name):\(value)" }
+    @ViewBuilder private var extraOptions: some View {
+        if !state.extraFields.isEmpty || !state.utilityButtons.isEmpty {
+            DisclosureGroup(isExpanded: $optionsExpanded) {
+                VStack(spacing: FoodSpacing.s16) {
+                    ForEach(state.extraFields, id: \.key.name) { field in fieldContent(field) }
+                    ForEach(state.utilityButtons, id: \.viewID) { button in actionButton(button) }
+                }.padding(.top, FoodSpacing.s16)
+            } label: {
+                Text(state.page == .connect ? GroupText.shared.manualConnection : state.page == .library ? GroupText.shared.pasteMenu : GroupText.shared.roomOptions)
+                    .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink).frame(minHeight: FoodSpacing.s44)
+                    .accessibilityIdentifier("groupOptions")
+            }
+            .padding(FoodSpacing.s16).foodCard(showsBorder: true)
+        }
+    }
+    private func fieldContent(_ field: GroupField) -> some View {
+        GroupFieldContent(field: field, enabled: !state.busy) { store.controller.update(key: field.key, value: $0) }
+    }
+    private func actionButton(_ button: GroupButton) -> some View {
+        GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch)
+    }
 }

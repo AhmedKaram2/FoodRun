@@ -1,0 +1,123 @@
+import SwiftUI
+import FoodRunShared
+
+struct GroupIcon: View {
+    let symbol: String
+    var accented = false
+    var body: some View {
+        Image(systemName: symbol).font(FoodTypography.brandIcon)
+            .foregroundStyle(accented ? FoodTheme.orange : FoodTheme.available)
+            .frame(width: FoodSpacing.s44, height: FoodSpacing.s44)
+            .background(accented ? FoodTheme.accentWash : FoodTheme.successWash, in: RoundedRectangle(cornerRadius: FoodRadius.avatar))
+            .accessibilityHidden(true)
+    }
+}
+
+struct GroupSectionHeading: View {
+    let title: String
+    var count: Int? = nil
+    var body: some View {
+        HStack {
+            Text(title).font(FoodTypography.bodyBold).accessibilityAddTraits(.isHeader)
+            Spacer()
+            if let count { Text("\(count)").font(FoodTypography.status).foregroundStyle(FoodTheme.muted) }
+        }.foregroundStyle(FoodTheme.ink).padding(.top, FoodSpacing.s8)
+    }
+}
+
+struct GroupActionContent: View {
+    let button: GroupButton
+    let busy: Bool
+    let dispatch: (GroupAction, String) -> Void
+    var prominent: Bool? = nil
+    var body: some View {
+        Group {
+            if prominent ?? button.primary {
+                PrimaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled) { dispatch(button.action, button.value) }
+            } else {
+                SecondaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled, destructive: button.destructive) { dispatch(button.action, button.value) }
+            }
+        }.accessibilityIdentifier("action:\(button.action.name):\(button.value)")
+    }
+}
+
+struct GroupCardContent: View {
+    let card: GroupCard
+    let busy: Bool
+    let dispatch: (GroupAction, String) -> Void
+    private var member: Bool { card.id.hasPrefix("member:") || card.id.hasPrefix("invite:") }
+    var body: some View {
+        VStack(alignment: .leading, spacing: FoodSpacing.s14) {
+            HStack(alignment: .top, spacing: FoodSpacing.s12) {
+                if member {
+                    Text(String(card.title.prefix(1))).font(FoodTypography.avatarMedium)
+                        .foregroundStyle(FoodTheme.available).frame(width: FoodSpacing.s40, height: FoodSpacing.s40)
+                        .background(FoodTheme.successWash, in: Circle()).accessibilityHidden(true)
+                } else if card.id.hasPrefix("session:") || card.id.hasPrefix("restaurant:") || card.id == "empty" {
+                    GroupIcon(symbol: card.id.hasPrefix("session:") ? "person.2" : "fork.knife")
+                }
+                VStack(alignment: .leading, spacing: FoodSpacing.s6) {
+                    Text(card.title).font(FoodTypography.bodyBold).foregroundStyle(FoodTheme.ink)
+                    if !card.badge.isEmpty {
+                        Text(card.badge).font(FoodTypography.status).foregroundStyle(FoodTheme.orange)
+                            .padding(.horizontal, FoodSpacing.s8).padding(.vertical, FoodSpacing.s4)
+                            .background(FoodTheme.accentWash, in: Capsule())
+                    }
+                    if member && !card.detail.isEmpty { detail }
+                }
+                Spacer(minLength: FoodSpacing.s0)
+            }
+            if !member && !card.detail.isEmpty { detail }
+            if !card.buttons.isEmpty {
+                if card.buttons.count > 1 { FoodDivider() }
+                ForEach(card.buttons, id: \.viewID) { button in
+                    GroupActionContent(button: button, busy: busy, dispatch: dispatch)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(FoodSpacing.s20).foodCard(showsBorder: true)
+    }
+    private var detail: some View {
+        Text(card.detail).font(FoodTypography.setting).foregroundStyle(FoodTheme.muted)
+            .lineSpacing(FoodSpacing.s4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+    }
+}
+
+struct GroupProgress: View {
+    let step: Int
+    var body: some View {
+        HStack(alignment: .top, spacing: FoodSpacing.s8) {
+            ForEach(Array(GroupText.shared.progressSteps.enumerated()), id: \.offset) { index, title in
+                VStack(alignment: .leading, spacing: FoodSpacing.s8) {
+                    Capsule().fill(index <= step ? FoodTheme.available : FoodTheme.line).frame(height: FoodSpacing.s4)
+                    Text(title).font(FoodTypography.status).foregroundStyle(index == step ? FoodTheme.ink : FoodTheme.muted)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.vertical, FoodSpacing.s12)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(step + 1) of 4: \(GroupText.shared.progressSteps[step])")
+    }
+}
+
+extension GroupButton {
+    var viewID: String { "\(action.name):\(value)" }
+    var symbol: String {
+        if destructive { return "trash" }
+        switch action {
+        case .create, .createRoom, .theNewRestaurant, .addMenuItem, .addCartItem: return "plus"
+        case .join, .joinRoom, .resume: return "person.2"
+        case .quickSpin, .prepareSpin: return "arrow.triangle.2.circlepath"
+        case .openLibrary, .openItem, .selectRestaurant: return "fork.knife"
+        case .openReceipts, .shareReceipt: return "doc.text"
+        case .openHistory: return "clock.arrow.circlepath"
+        case .shareRoom, .exportMenu, .shareRestaurantOrder: return "square.and.arrow.up"
+        case .scan: return "qrcode.viewfinder"
+        case .discover, .connect: return "wifi"
+        case .ready, .confirmQuote, .saveRestaurant, .acceptDuty: return "checkmark"
+        case .openAccount, .shareAccount, .declareTransfer: return "creditcard"
+        case .importMenu: return "square.and.arrow.down"
+        default: return "arrow.right"
+        }
+    }
+}

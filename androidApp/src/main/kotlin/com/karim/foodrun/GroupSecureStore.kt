@@ -87,3 +87,10 @@ internal fun InputStream.readBounded(limit: Int): ByteArray {
         output.write(buffer, 0, count)
     }
 }
+
+/** Reject damaged text instead of silently replacing restaurant names or menu options. */
+internal fun InputStream.readUtf8Bounded(limit: Int): String = Charsets.UTF_8.newDecoder()
+    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+    .decode(java.nio.ByteBuffer.wrap(readBounded(limit)))
+    .toString()

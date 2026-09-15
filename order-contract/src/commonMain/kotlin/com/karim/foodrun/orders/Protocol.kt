@@ -1,6 +1,8 @@
 package com.karim.foodrun.orders
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
     CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
@@ -16,6 +18,10 @@ import kotlinx.serialization.Serializable
     val restaurant: Restaurant? = null, val expectedNames: List<String> = emptyList(), val destination: String = "", val deadline: Long = 0,
     val fees: FeePolicy? = null, val cart: MemberCart? = null, val account: ReceivingAccount? = null,
     val amount: Long = 0, val transferId: String = "", val historyOffset: Int = 0,
+    // Omit the legacy default so commands saved before this field retain their replay digest.
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val expectedOrderNumber: Long = 0,
 )
 @Serializable data class RoomReply(
     val protocolVersion: Int = 1, val ok: Boolean = true, val error: String = "", val code: String = "",

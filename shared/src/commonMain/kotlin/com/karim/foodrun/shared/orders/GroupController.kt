@@ -7,6 +7,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var library = GroupLibrary()
     internal var page = GroupPage.HOME
     internal var draft = mutableMapOf<GroupFieldKey, String>()
+    internal val formDrafts = GroupDraftMemory()
     internal var error = ""
     internal var busy = false
     internal var online = false
@@ -42,7 +43,21 @@ class GroupController(val platform: GroupPlatform) {
     fun close() { watching?.cancel(); watching = null; observer = null; generation++ }
     fun foreground() { active = true; if (session != null) startWatching() }
     fun background() { active = false; watching?.cancel(); watching = null; online = false; generation++; publish() }
-    fun update(key: GroupFieldKey, value: String) { draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else 4000); error = ""; publish() }
+    fun update(key: GroupFieldKey, value: String) {
+        if (busy) return
+        try {
+            error = ""
+            if (key == GroupFieldKey.ELIGIBLE) {
+                val room = room()
+                val member = room.members.single { it.id == me() }
+                require(page == GroupPage.ROOM && room.phase == RoomPhase.LOBBY) { "Payment consent can only change while gathering. Refresh the room." }
+                require(member.approved && !member.guest && member.participating) { "Join this order before choosing whether to pay." }
+                require(library.pending == null) { "Retry the saved request before changing payment consent." }
+                if (member.eligible != (value == "true")) command(CommandKind.READY, flag = member.ready, eligible = value == "true")
+            } else draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else 4000)
+        } catch (e: Exception) { error = e.message ?: "This change could not be saved." }
+        publish()
+    }
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
@@ -60,7 +75,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.CONFIRM_IMPORT -> { val item = requireNotNull(importPreview); saveRestaurant(item); importPreview = null; draft.remove(GroupFieldKey.JSON_MENU) }
             GroupAction.EXPORT_MENU -> { val item = library.restaurants.single { it.restaurant.id == value }; platform.share(orderJson.encodeToString(item), "restaurant-menu.json") }
             GroupAction.SAVE_RESTAURANT -> saveEditor()
-            GroupAction.DELETE_RESTAURANT -> { library = library.copy(restaurants = library.restaurants.filterNot { it.restaurant.id == value }); persist() }
+            GroupAction.DELETE_RESTAURANT -> deleteRestaurant(value)
             GroupAction.SELECT_RESTAURANT -> { selectedRestaurant = library.restaurants.single { it.restaurant.id == value }; seedFees(selectedRestaurant!!.restaurant); joinMode = false; page = if(library.selectedHub == null && !nextOrder) GroupPage.CONNECT else GroupPage.SETUP }
             GroupAction.ADD_MENU_ITEM -> addMenuItem()
             GroupAction.REMOVE_MENU_ITEM -> { editingRestaurant = editingRestaurant?.let { it.copy(restaurant = it.restaurant.copy(menu = it.restaurant.menu.copy(items = it.restaurant.menu.items.filterNot { item -> item.id == value }))) } }
@@ -76,11 +91,12 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.TOGGLE_OPTION -> options = if (value in options) options - value else options + value
             GroupAction.ADD_CART_ITEM -> addCartItem()
             GroupAction.REMOVE_CART_ITEM -> { val cart = myCart(); command(CommandKind.CART, cart = cart.copy(lines = cart.lines.filterNot { it.id == value }), revision = cart.revision) }
-            GroupAction.OPEN_ACCOUNT -> { page = GroupPage.ACCOUNT; selectedAccount = null }
+            GroupAction.OPEN_ACCOUNT -> page = GroupPage.ACCOUNT
+            GroupAction.NEW_ACCOUNT -> newAccount()
             GroupAction.SELECT_ACCOUNT -> { selectedAccount = library.accounts.single { it.id == value }; seedAccount(selectedAccount!!) }
             GroupAction.SAVE_ACCOUNT -> saveAccount()
             GroupAction.SHARE_ACCOUNT -> { saveAccount(); command(CommandKind.SHARE_ACCOUNT, account = selectedAccount); page = GroupPage.ROOM }
-            GroupAction.DELETE_ACCOUNT -> { library = library.copy(accounts = library.accounts.filterNot { it.id == value }); persist(); selectedAccount = null }
+            GroupAction.DELETE_ACCOUNT -> deleteAccount(value)
             GroupAction.OPEN_RECEIPTS -> page = GroupPage.RECEIPTS
             GroupAction.OPEN_HISTORY -> page = GroupPage.HISTORY
             GroupAction.LOAD_OLDER_HISTORY -> loadOlderHistory()
@@ -91,7 +107,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.SHARE_RESTAURANT_ORDER -> platform.share(GroupPresentation(this).restaurantOrderText(), "")
             GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share("Food Run · ${room().name}\nRoom code: ${room().code}\n${pairingLink(s.hub)}\nJoin once; this room stays in your app.", "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
-            GroupAction.NEXT_ORDER -> { nextOrder = true; selectedRestaurant = RestaurantExport(exportId = room().restaurant.id, restaurant = room().restaurant); seedFees(room().restaurant); page = GroupPage.SETUP }
+            GroupAction.NEXT_ORDER -> prepareNextOrder()
             else -> dispatchRoom(action, value)
         } } catch (e: Exception) { error = e.message ?: "This action could not be completed." }
         publish()
@@ -99,7 +115,9 @@ class GroupController(val platform: GroupPlatform) {
     internal fun room(): Room = requireNotNull(reply?.room) { "Open a saved room first." }
     internal fun me(): String = session?.memberId ?: ""
     internal fun myCart(): MemberCart = room().carts.singleOrNull { it.memberId == me() } ?: MemberCart(me())
-    internal fun text(key: GroupFieldKey) = draft[key] ?: ""
+    internal fun text(key: GroupFieldKey): String = if (key == GroupFieldKey.ELIGIBLE)
+        (reply?.room?.members?.singleOrNull { it.id == me() }?.eligible ?: false).toString()
+    else draft[key] ?: ""
     internal fun flag(key: GroupFieldKey) = text(key) == "true"
     internal fun serverNow() = platform.now() + offset
     internal fun serverOffset() = offset
@@ -125,13 +143,13 @@ class GroupController(val platform: GroupPlatform) {
         require(fingerprint.matches(Regex("[a-f0-9]{64}"))) { "Paste the server's full SHA-256 fingerprint or scan its pairing QR." }
         val hub = HubPairing(url, fingerprint)
         val previousSession = session
-        library = library.copy(
+        replaceLibrary(library.copy(
             selectedHub = hub,
             sessions = library.sessions.map { if (it.hub.fingerprint == fingerprint) it.copy(hub = hub) else it },
             pendingHub = library.pendingHub?.let { if (it.fingerprint == fingerprint) hub else it },
-        )
+        ))
         session = previousSession?.let { old -> library.sessions.singleOrNull { it.roomId == old.roomId } ?: old }
-        persist(); page = GroupPage.SETUP
+        page = GroupPage.SETUP
     }
     private fun createRoom() {
         val r = requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant
@@ -140,7 +158,10 @@ class GroupController(val platform: GroupPlatform) {
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION))
         else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION), fees = fees))
     }
-    private fun back() { page = when (page) { GroupPage.ITEM, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM; GroupPage.RESTAURANT -> GroupPage.LIBRARY; GroupPage.LIBRARY -> libraryReturnPage; else -> GroupPage.HOME } }
+    private fun back() {
+        if (page == GroupPage.RESTAURANT) formDrafts.finishRestaurant(draft)
+        page = when (page) { GroupPage.ITEM, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM; GroupPage.RESTAURANT -> GroupPage.LIBRARY; GroupPage.LIBRARY -> libraryReturnPage; else -> GroupPage.HOME }
+    }
     private fun resume(s: StoredSession) {
         watching?.cancel(); generation++; session = s; reply = library.snapshots[s.roomId]; online = false
         reply?.room?.let(::seedRoomDrafts)
@@ -151,19 +172,18 @@ class GroupController(val platform: GroupPlatform) {
         draft[GroupFieldKey.SERVICE_FEE] = Money.format(room.fees.service, room.restaurant.currency).substringAfter(' ')
         draft[GroupFieldKey.DISCOUNT] = Money.format(room.fees.discount, room.restaurant.currency).substringAfter(' ')
         draft[GroupFieldKey.PROPORTIONAL] = room.fees.proportionalDelivery.toString()
-        draft[GroupFieldKey.ELIGIBLE] = room.members.singleOrNull { it.id == me() }?.eligible?.toString() ?: "false"
     }
     internal fun command(kind: CommandKind, memberId: String = "", text: String = "", flag: Boolean = false, eligible: Boolean = false, revision: Long = room().revision, cart: MemberCart? = null, account: ReceivingAccount? = null, fees: FeePolicy? = null, amount: Long = 0, transferId: String = "", restaurant: Restaurant? = null, expectedNames: List<String> = emptyList(), destination: String = "", name: String = "") {
         val s = requireNotNull(session)
-        send(RoomCommand(commandId = platform.uuid(), kind = kind, roomId = s.roomId, token = s.token, expectedRevision = revision, memberId = memberId, text = text, flag = flag, eligible = eligible, cart = cart, account = account, fees = fees, amount = amount, transferId = transferId, restaurant = restaurant, expectedNames = expectedNames, destination = destination, name = name))
+        send(RoomCommand(commandId = platform.uuid(), kind = kind, roomId = s.roomId, token = s.token, expectedRevision = revision, expectedOrderNumber = room().orderNumber, memberId = memberId, text = text, flag = flag, eligible = eligible, cart = cart, account = account, fees = fees, amount = amount, transferId = transferId, restaurant = restaurant, expectedNames = expectedNames, destination = destination, name = name))
     }
     private fun send(c: RoomCommand, retry: Boolean = false) {
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN)) null else library.sessions.single { it.roomId == c.roomId }
         val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(library.selectedHub)
-        library = library.copy(pending = c, pendingHub = hub); persist(); busy = true; publish()
+        replaceLibrary(library.copy(pending = c, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
-        platform.request(hub, orderJson.encodeToString(c), object : GroupReplyCallback {
+        try { platform.request(hub, orderJson.encodeToString(c), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false
                 if (error.isNotBlank()) { online = false; this@GroupController.error = "$error Your request is saved. Retry to confirm its result."; publish(); return }
@@ -174,8 +194,8 @@ class GroupController(val platform: GroupPlatform) {
                             online = false
                             this@GroupController.error = "${next.error} Your request remains saved; retry to confirm its result."
                         } else {
-                            library = library.copy(pending = null, pendingHub = null)
-                            this@GroupController.error = next.error; persist()
+                            replaceLibrary(library.copy(pending = null, pendingHub = null))
+                            this@GroupController.error = next.error
                         }
                         publish(); return
                     }
@@ -185,11 +205,15 @@ class GroupController(val platform: GroupPlatform) {
                         val s = StoredSession(hub, room.id, next.token, next.memberId, room.name)
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = c.name)
                     }
-                    accept(next, sentAt); library = library.copy(pending = null, pendingHub = null); persist(); page = GroupPage.ROOM; startWatching()
+                    accept(next, sentAt); replaceLibrary(library.copy(pending = null, pendingHub = null)); page = GroupPage.ROOM; startWatching()
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Invalid hub response." }
                 publish()
             }
-        })
+        }) } catch (failure: Exception) {
+            busy = false; online = false
+            error = "${failure.message ?: "Connection failed."} Your request is saved. Retry to confirm its result."
+            publish()
+        }
     }
     private fun accept(next: RoomReply, sentAt: Long) {
         require(next.protocolVersion == 1) { "Update Food Run to connect to this hub." }
@@ -201,17 +225,15 @@ class GroupController(val platform: GroupPlatform) {
         val previousRoom = reply?.room
         val changedOrder = previousRoom?.id != room.id || previousRoom.orderNumber != room.orderNumber
         val changedFees = previousRoom?.fees != room.fees
-        val changedEligibility = previousRoom?.members?.singleOrNull { it.id == s.memberId }?.eligible != room.members.singleOrNull { it.id == s.memberId }?.eligible
         val cached = library.snapshots[room.id]
         val combinedHistory = (next.history + (cached?.history ?: emptyList())).distinctBy { it.number }.sortedByDescending { it.number }
         val nextOffset = if (cached?.room?.orderNumber == room.orderNumber && cached.history.size > next.history.size) cached.historyNextOffset else next.historyNextOffset
         val combined = next.copy(history = combinedHistory, historyNextOffset = nextOffset)
-        reply = combined; online = active
-        if (changedOrder || changedFees) seedRoomDrafts(room)
-        else if (changedEligibility) draft[GroupFieldKey.ELIGIBLE] = room.members.singleOrNull { it.id == s.memberId }?.eligible?.toString() ?: "false"
         if (needsSave || library.pending == null && next.token.isNotEmpty()) {
-            library = library.copy(snapshots = library.snapshots + (room.id to combined.copy(token = ""))); persist()
+            replaceLibrary(library.copy(snapshots = library.snapshots + (room.id to combined.copy(token = ""))))
         }
+        reply = combined; online = active
+        if (changedOrder || changedFees) formDrafts.acceptRoomFees(room, page, libraryReturnPage, draft)
     }
     private fun startWatching() {
         if (!active) return
@@ -242,7 +264,7 @@ class GroupController(val platform: GroupPlatform) {
         val s = requireNotNull(session); val offset = reply?.historyNextOffset ?: -1
         require(offset >= 0) { "All available history is downloaded." }; busy = true
         val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = s.roomId, token = s.token, historyOffset = offset)
-        platform.request(s.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+        try { platform.request(s.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false
                 if(session?.roomId != s.roomId) return
@@ -251,12 +273,17 @@ class GroupController(val platform: GroupPlatform) {
                     val response = decodeReply(body); require(response.ok) { response.error }
                     require(response.protocolVersion == 1 && response.room?.id == s.roomId && response.memberId == s.memberId) { "Hub returned a different room or unsupported history format." }
                     val history = ((reply?.history ?: emptyList()) + response.history).distinctBy { it.number }.sortedByDescending { it.number }
-                    reply = requireNotNull(reply).copy(history = history, historyNextOffset = response.historyNextOffset)
-                    library = library.copy(snapshots = library.snapshots + (s.roomId to reply!!)); persist()
+                    val combined = requireNotNull(reply).copy(history = history, historyNextOffset = response.historyNextOffset)
+                    replaceLibrary(library.copy(snapshots = library.snapshots + (s.roomId to combined)))
+                    reply = combined
                 } catch(e: Exception) { this@GroupController.error = e.message ?: "History could not be downloaded. Retry when connected." }
                 publish()
             }
-        })
+        }) } catch (failure: Exception) {
+            busy = false
+            error = failure.message ?: "History could not be downloaded. Retry when connected."
+            publish()
+        }
     }
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString(body) }
         catch (_: SerializationException) { error("The hub response could not be read. Update the app and hub to matching versions, then retry.") }

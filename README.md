@@ -111,6 +111,10 @@ After changing project structure, regenerate the project with `xcodegen generate
 
 The UI/UX refresh passed **79 automated tests**: **55 shared JVM tests** and **24 iOS tests**. Both native apps build successfully. Simulator/emulator walkthroughs cover navigation, Quick Spin, forms, room creation and readiness, including Android text at 140% size. The [UI/UX report](Docs/UIUX_REVIEW.md#verification) records the checks and their limits.
 
+### State consistency verification
+
+The latest fixes pass **190 automated tests**, Android/iOS builds and a fresh two-device order, receipt, reimbursement and offline/reconnect flow. Payer eligibility now defaults on and its switch is hidden. See the [state consistency report](Docs/CONSISTENCY_TEST_REPORT.md) for exact coverage, the other corrected defects and platform limits.
+
 ### Earlier release verification
 
 Food Run 1.1 passed **146 automated tests with zero failures or skips**, plus the actual Android↔iOS order/payment flow, offline/server restart recovery and permanent-room reuse. The [test report](Docs/GROUP_ORDER_TEST_REPORT.md) records evidence, artifacts and simulator/emulator limits. The following original Quick Spin regression checks remain part of the expanded suites:

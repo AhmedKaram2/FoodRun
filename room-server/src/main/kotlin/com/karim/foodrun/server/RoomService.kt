@@ -57,7 +57,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun create(c: RoomCommand): RoomReply {
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
         MenuValidation.label(c.name); MenuValidation.label(c.text)
-        val person = Member(uuid(), c.name.trim(), approved = true, lastSeen = clock())
+        val person = Member(uuid(), c.name.trim(), approved = true, eligible = true, lastSeen = clock())
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
         val room = Room(uuid(), code, person.id, c.text.trim(), requireNotNull(c.restaurant), c.expectedNames, c.flag, c.destination, c.deadline, c.fees ?: FeePolicy(), members = listOf(person), createdAt = clock(), updatedAt = clock())
@@ -71,7 +71,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val room = db.roomByCode(c.code) ?: error("Room code was not found.")
         require(room.members.count { !it.removed } < 60) { "Too many pending participants. Ask the organizer to remove unused requests." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
-        val person = Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock())
+        val person = Member(uuid(), c.name.trim(), guest = c.guest, eligible = !c.guest, lastSeen = clock())
         val next = room.copy(members = room.members + person, revision = room.revision + 1, updatedAt = clock()); requireLoadable(next); db.save(next)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(next, person.id).copy(token = token)

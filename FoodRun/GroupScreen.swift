@@ -26,7 +26,8 @@ struct GroupScreen: View {
         }
     }
     private var content: some View {
-        ScrollViewReader { scroll in
+        let state = store.state
+        return ScrollViewReader { scroll in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: FoodSpacing.s16) {
                     if state.page == .home {

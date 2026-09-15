@@ -14,7 +14,6 @@ import com.karim.foodrun.orders.HubPairing
 import com.karim.foodrun.shared.orders.GroupPlatform
 import com.karim.foodrun.shared.orders.GroupReplyCallback
 import com.karim.foodrun.shared.orders.GroupSubscription
-import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
 
@@ -43,8 +42,10 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
             if (uri == null) callback?.complete("", context.getString(R.string.group_import_cancelled))
             else files.execute {
                 try {
-                    val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readBounded(MAX_MENU_BYTES) }
-                    main.post { if (!closed) callback?.complete(bytes.toString(Charsets.UTF_8), "") }
+                    val menu = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readUtf8Bounded(MAX_MENU_BYTES) }
+                    main.post { if (!closed) callback?.complete(menu, "") }
+                } catch (_: java.nio.charset.CharacterCodingException) {
+                    main.post { if (!closed) callback?.complete("", context.getString(R.string.group_menu_invalid_encoding)) }
                 } catch (_: IllegalArgumentException) {
                     main.post { if (!closed) callback?.complete("", context.getString(R.string.group_menu_too_large)) }
                 } catch (_: Exception) {
@@ -81,10 +82,7 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
             intent.type = "text/plain"
             intent.putExtra(Intent.EXTRA_TEXT, text)
         } else {
-            require(fileName.matches(Regex("[a-zA-Z0-9_.-]{1,80}")) && !fileName.startsWith('.'))
-            val directory = File(context.cacheDir, "exports").apply { check(isDirectory || mkdirs()) }
-            val file = File(directory, fileName)
-            file.writeText(text)
+            val file = createGroupExportFile(context.cacheDir, fileName, text)
             val uri = FileProvider.getUriForFile(current, "${context.packageName}.files", file)
             intent.type = if (fileName.endsWith(".json")) "application/json" else "text/plain"
             intent.putExtra(Intent.EXTRA_STREAM, uri)

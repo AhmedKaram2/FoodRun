@@ -78,6 +78,37 @@ class GroupNativeTest {
     }
 
     @Test
+    fun menuTextPreservesUnicodeAndRejectsCorruptedTextInsideValidJson() {
+        val menu = "{\"name\":\"مطعم 🍔\"}"
+        val bytes = menu.toByteArray(Charsets.UTF_8)
+        assertEquals(menu, ByteArrayInputStream(bytes).readUtf8Bounded(bytes.size))
+        assertTrue(runCatching { ByteArrayInputStream(bytes).readUtf8Bounded(bytes.size - 1) }.isFailure)
+
+        for (brokenText in listOf(byteArrayOf(0xff.toByte()), byteArrayOf(0xc3.toByte()), byteArrayOf(0xed.toByte(), 0xa0.toByte(), 0x80.toByte()))) {
+            val corruptedJson = "{\"name\":\"".toByteArray() + brokenText + "\"}".toByteArray()
+            // Replacement decoding would still produce parseable JSON, silently changing the menu.
+            val failure = runCatching { ByteArrayInputStream(corruptedJson).readUtf8Bounded(corruptedJson.size) }.exceptionOrNull()
+            assertTrue("Malformed UTF-8 must reject the import", failure is java.nio.charset.CharacterCodingException)
+        }
+    }
+
+    @Test
+    fun sharingAnotherReceiptDoesNotOverwriteAnAlreadyGrantedFile() {
+        val directory = File(context.cacheDir, "export-test-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        try {
+            val first = createGroupExportFile(directory, "receipt.txt", "Karim: AED 25.00")
+            val second = createGroupExportFile(directory, "receipt.txt", "Hassan: AED 40.00")
+            assertNotEquals(first.path, second.path)
+            assertEquals("receipt.txt", first.name)
+            assertEquals("receipt.txt", second.name)
+            assertEquals("Karim: AED 25.00", first.readText())
+            assertEquals("Hassan: AED 40.00", second.readText())
+            assertTrue(runCatching { createGroupExportFile(directory, "../outside", "private receipt") }.isFailure)
+            assertFalse(File(directory, "outside").exists())
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
     fun activityRecreationKeepsTheSameControllerAndDraft() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var original: GroupController

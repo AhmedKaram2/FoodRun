@@ -18,7 +18,11 @@ internal class RoomFixture : AutoCloseable {
     fun id(): String = UUID.randomUUID().toString()
     fun execute(c: RoomCommand): RoomReply = service.execute(c).also { assertTrue(it.ok, "${c.kind}: ${it.error}") }
     fun state(actor: RoomReply = owner): RoomReply = service.snapshot(requireNotNull(owner.room).id, actor.token)
-    fun command(actor: RoomReply, kind: CommandKind): RoomCommand = RoomCommand(commandId = id(), kind = kind, roomId = requireNotNull(owner.room).id, token = actor.token, expectedRevision = requireNotNull(state(actor).room).revision)
+    fun command(actor: RoomReply, kind: CommandKind): RoomCommand {
+        val room = requireNotNull(state(actor).room)
+        return RoomCommand(commandId = id(), kind = kind, roomId = room.id, token = actor.token,
+            expectedRevision = room.revision, expectedOrderNumber = room.orderNumber)
+    }
     fun send(actor: RoomReply, kind: CommandKind, modify: (RoomCommand) -> RoomCommand = { it }): RoomReply = execute(modify(command(actor, kind)))
     fun join(name: String = "Member", guest: Boolean = false): RoomReply = execute(RoomCommand(commandId = id(), kind = CommandKind.JOIN, name = name, code = requireNotNull(owner.room).code, guest = guest))
     fun approve(actor: RoomReply) = send(owner, CommandKind.APPROVE) { it.copy(memberId = actor.memberId) }

@@ -66,7 +66,9 @@ struct GroupFieldContent: View {
         switch field.key {
         case .hubUrl, .pairingLink: .URL
         case .phone: .phonePad
-        case .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice: .decimalPad
+        // Bill adjustments accept a leading minus; decimalPad has no minus key.
+        case .amount: .numbersAndPunctuation
+        case .deliveryFee, .serviceFee, .discount, .menuItemPrice: .decimalPad
         case .quantity, .roomCode: .numberPad
         default: .default
         }

@@ -85,8 +85,10 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             GroupFieldKey.HUB_URL, GroupFieldKey.PAIRING_LINK -> KeyboardType.Uri
             GroupFieldKey.PHONE -> KeyboardType.Phone
             GroupFieldKey.QUANTITY, GroupFieldKey.ROOM_CODE -> KeyboardType.Number
+            // Decimal input does not request a signed number pad. Keep minus accessible for bill reductions.
+            GroupFieldKey.AMOUNT -> KeyboardType.Ascii
             GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
-            GroupFieldKey.DISCOUNT, GroupFieldKey.AMOUNT -> KeyboardType.Decimal
+            GroupFieldKey.DISCOUNT -> KeyboardType.Decimal
             else -> KeyboardType.Text
         }
         FoodTextField(

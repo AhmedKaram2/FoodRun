@@ -50,7 +50,7 @@ The JSON format supports categories, variants, options, availability and pricing
 
 The room shows **Gather → Pick payer → Order → Settle** progress. **Room options & adjustments** contains receipts, past orders, saved-restaurant actions and management controls. The invite shortcut sits beside the room code.
 
-Everyone ordering chooses daily participation and marks themselves ready. Members who can contact, order and pay for the group explicitly enable that eligibility. A spectator can watch without entering the payer selection or receiving private financial details.
+Everyone ordering chooses daily participation and marks themselves ready. Payer eligibility is enabled by default; its separate consent switch is currently hidden. **Skip this order** excludes someone from that meal and its wheel. A spectator can watch without entering the payer selection or receiving private financial details.
 
 The organizer starts the shared wheel when the required people are present, ready and connected. The hub waits for preparation acknowledgements, chooses one eligible member and publishes a common start time and result. Both apps animate that same round. Reconnecting during a round shows its current progress/result.
 
@@ -83,7 +83,7 @@ Live room, spin and payment updates require the local hub. Returning to the loca
 | Situation | What to do |
 | --- | --- |
 | A friend is absent | Skip this order; the organizer must explicitly resolve absent expected invitations before spinning. |
-| Everyone wants food but nobody can pay | At least one ordering member must consent to being selected. |
+| A selected person cannot pay | They can decline, remain in the meal, and mark themselves ready while another eligible participant is selected. If nobody remains eligible, pause the order until someone can take responsibility. |
 | The restaurant or quote needs a correction | Use the permitted menu/reopen/fee controls before placement; review the new quote. |
 | The app says the room changed | Read the latest state before retrying; another device may have updated it. |
 | A request timed out | Use the saved retry action; the same command ID prevents duplicate application on the hub. |
@@ -93,6 +93,8 @@ Live room, spin and payment updates require the local hub. Returning to the loca
 
 ## Verification
 
-The current UI/UX refresh passed **79 tests** and native builds, plus simulator/emulator walkthroughs. See the [UI/UX review](UIUX_REVIEW.md#verification).
+The latest state-consistency and default-participation changes passed **190 tests**, native builds and a fresh Android ↔ iOS order/payment/recovery flow. See the [current verification report](CONSISTENCY_TEST_REPORT.md).
+
+The earlier UI/UX refresh passed **79 tests** and native builds, plus simulator/emulator walkthroughs. See the [UI/UX review](UIUX_REVIEW.md#verification).
 
 The documented 1.1 run passed **146 automated tests** and a complete Android ↔ iOS order/payment/recovery workflow. See the [test report](GROUP_ORDER_TEST_REPORT.md) for exact coverage and limits. Physical-phone camera scanning, Windows execution, real restaurant calls and real bank transfers were outside that test run.

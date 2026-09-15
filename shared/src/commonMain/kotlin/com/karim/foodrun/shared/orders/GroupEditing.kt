@@ -3,6 +3,7 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 internal fun GroupController.restaurantEditor(export: RestaurantExport?) {
+    formDrafts.beginRestaurant(draft)
     editingRestaurant = export ?: RestaurantExport(exportId = platform.uuid(), restaurant = Restaurant(platform.uuid(), "", menu = Menu(categories = listOf(MenuCategory("main", "Menu")))))
     val r = editingRestaurant!!.restaurant
     draft[GroupFieldKey.RESTAURANT_NAME] = r.name; draft[GroupFieldKey.BRANCH] = r.branchName
@@ -31,12 +32,14 @@ internal fun GroupController.saveEditor() {
     val r = export.restaurant.copy(name = text(GroupFieldKey.RESTAURANT_NAME).trim(), branchName = text(GroupFieldKey.BRANCH).trim(), currency = currency,
         contact = export.restaurant.contact.copy(phoneE164 = text(GroupFieldKey.PHONE).trim().ifEmpty { null }, address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
         pricing = export.restaurant.pricing.copy(defaultDeliveryFeeMinor = fees(currency).delivery, defaultServiceFeeMinor = fees(currency).service))
-    MenuValidation.validate(r); saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1)); page = GroupPage.LIBRARY
+    MenuValidation.validate(r); saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
+    formDrafts.finishRestaurant(draft); page = GroupPage.LIBRARY
 }
 internal fun GroupController.saveRestaurant(export: RestaurantExport) {
     MenuValidation.validate(export.restaurant)
     require(library.restaurants.size < 100 || library.restaurants.any { it.restaurant.id == export.restaurant.id }) { "Restaurant library limit reached." }
-    library = library.copy(restaurants = library.restaurants.filterNot { it.restaurant.id == export.restaurant.id } + export); persist()
+    replaceLibrary(library.copy(restaurants = library.restaurants.filterNot { it.restaurant.id == export.restaurant.id } + export))
+    if (selectedRestaurant?.restaurant?.id == export.restaurant.id) selectedRestaurant = export
 }
 internal fun GroupController.addCartItem() {
     val item = requireNotNull(selectedItem); val cart = myCart()
@@ -51,13 +54,18 @@ internal fun GroupController.seedAccount(a: ReceivingAccount) {
 internal fun GroupController.saveAccount() {
     val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), reply?.room?.restaurant?.currency ?: "AED")
     a.validate(); require(library.accounts.size < 20 || library.accounts.any { it.id == a.id }) { "Saved-account limit reached." }
-    library = library.copy(accounts = library.accounts.filterNot { it.id == a.id } + a); persist(); selectedAccount = a
+    replaceLibrary(library.copy(accounts = library.accounts.filterNot { it.id == a.id } + a)); selectedAccount = a
 }
 internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
     val r = room(); val reason = text(GroupFieldKey.REASON)
     when(action) {
         GroupAction.PARTICIPATE -> command(CommandKind.PARTICIPATE, flag = value == "true")
-        GroupAction.READY -> command(CommandKind.READY, flag = true, eligible = flag(GroupFieldKey.ELIGIBLE))
+        GroupAction.READY -> {
+            require(r.members.single { it.id == me() }.participating) { "Join this order before marking yourself ready." }
+            val member = r.members.single { it.id == me() }
+            val declinedThisOrder = r.pastSpins.any { it.winnerId == me() }
+            command(CommandKind.READY, flag = true, eligible = member.eligible || !declinedThisOrder)
+        }
         GroupAction.APPROVE -> command(CommandKind.APPROVE, memberId = value, flag = flag(GroupFieldKey.ELIGIBLE))
         GroupAction.APPROVE_LATE_JOIN -> command(CommandKind.APPROVE_LATE_JOIN, memberId = value)
         GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = reason)

@@ -32,6 +32,7 @@ class GroupFlowIntegrationTest {
     private class Phone(val bus: Bus, val saved: MutableMap<String, String>) : GroupPlatform {
         var watch: Pair<RoomCommand, GroupReplyCallback>? = null
         var dropNext = false
+        var throwNext = false
         var failureCode: String? = null
         val requestedHubs = mutableListOf<HubPairing>()
         var storageWorks = true
@@ -42,6 +43,7 @@ class GroupFlowIntegrationTest {
         override fun now() = bus.time
         override fun uuid() = UUID.randomUUID().toString()
         override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) {
+            if (throwNext) { throwNext = false; error("Transport could not start") }
             requestedHubs += hub
             val reply = bus.server.execute(orderJson.decodeFromString<RoomCommand>(body))
             val failure = failureCode; failureCode = null
@@ -76,8 +78,10 @@ class GroupFlowIntegrationTest {
             host.dispatch(GroupAction.APPROVE, c.me()); bus.drain(); bus.sync(); assertEquals("", host.state.error)
         }
         private fun review(host: GroupController, member: GroupController, bus: Bus) {
-            host.update(GroupFieldKey.ELIGIBLE, "true"); host.dispatch(GroupAction.READY); bus.drain()
+            host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); host.dispatch(GroupAction.READY); bus.drain()
             member.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+            // Exercise the supported legacy opt-out while keeping this helper's payer deterministic.
+            member.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain(); bus.sync()
             host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
             bus.time += 10000; bus.server.tick(); bus.sync()
             host.dispatch(GroupAction.ACCEPT_DUTY); bus.drain(); bus.sync()
@@ -100,13 +104,163 @@ class GroupFlowIntegrationTest {
         }
 
     }
+    @Test fun consentChangedAfterReadyIsSavedAndIncludedInEveryClientsSpin() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus)
+        listOf(host, member).forEach {
+            it.dispatch(GroupAction.READY); bus.drain()
+            it.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain(); bus.sync()
+        }
+        assertTrue(host.room().orderingMembers.none { it.eligible })
+        member.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); bus.sync()
+        listOf(host, member).forEach { controller ->
+            val savedMember = controller.room().members.single { it.id == member.me() }
+            assertTrue(savedMember.eligible, "Payment consent must reach the hub and every phone")
+            assertTrue(savedMember.ready, "Changing consent must preserve readiness")
+        }
+        host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
+        assertEquals("", host.state.error)
+        assertEquals(RoomPhase.SPINNING, host.room().phase)
+        assertEquals(listOf(member.me()), host.room().spin!!.memberIds)
+        assertEquals(host.room().spin, member.room().spin)
+    }
+    @Test fun consentBeforeReadyIsSavedWithoutMarkingMemberReady() = Bus().use { bus ->
+        val (host, _) = bus.phone(); create(host, bus)
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
+        host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); bus.sync()
+        assertTrue(host.room().orderingMembers.single().eligible)
+        assertFalse(host.room().orderingMembers.single().ready)
+        host.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+        assertTrue(host.room().orderingMembers.single().ready)
+        assertTrue(host.room().orderingMembers.single().eligible)
+    }
+    @Test fun revokingConsentAfterReadyRemovesMemberFromPayerCandidates() = Bus().use { bus ->
+        val (host, _) = bus.phone(); create(host, bus)
+        host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain()
+        host.dispatch(GroupAction.READY); bus.drain()
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain(); bus.sync()
+        assertFalse(host.room().orderingMembers.single().eligible)
+        assertTrue(host.room().orderingMembers.single().ready)
+        host.dispatch(GroupAction.PREPARE_SPIN); bus.drain()
+        assertEquals(RoomPhase.LOBBY, host.room().phase)
+        assertTrue(host.state.error.contains("consent"))
+    }
+    @Test fun skippedMemberCannotConsentOrBecomeReadyWithoutJoiningThisOrder() = Bus().use { bus ->
+        val (host, _) = bus.phone(); create(host, bus)
+        host.dispatch(GroupAction.PARTICIPATE, "false"); bus.drain(); bus.sync()
+        assertFalse(host.state.fields.any { it.key == GroupFieldKey.ELIGIBLE })
+        assertFalse(host.state.buttons.any { it.action == GroupAction.READY })
+        host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); bus.sync()
+        assertFalse(host.room().members.single().participating)
+        assertFalse(host.room().members.single().eligible)
+        assertTrue(host.state.error.contains("Join this order"))
+    }
+    @Test fun lostConsentAcknowledgementKeepsConfirmedValueAndRetriesAcrossRestart() = Bus().use { bus ->
+        val (host, phone) = bus.phone(); create(host, bus)
+        host.dispatch(GroupAction.READY); bus.drain()
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
+        val beforeConsent = host.room().revision
+        phone.dropNext = true
+        host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain()
+        assertNotNull(host.library.pending)
+        assertFalse(host.flag(GroupFieldKey.ELIGIBLE), "An unconfirmed switch must not pretend it was saved")
+        assertTrue(host.state.error.contains("Retry"))
+        val commandId = host.library.pending!!.commandId
+        host.close()
+        val (restored, _) = bus.phone(phone.saved)
+        restored.dispatch(GroupAction.RESUME, host.room().id)
+        restored.dispatch(GroupAction.RETRY); bus.drain(); bus.sync()
+        assertNull(restored.library.pending)
+        assertTrue(restored.flag(GroupFieldKey.ELIGIBLE))
+        assertTrue(restored.room().orderingMembers.single().ready)
+        assertEquals(beforeConsent + 1, restored.room().revision, "Retry must not apply consent twice: $commandId")
+    }
+    @Test fun consentStorageFailureDoesNotTurnSwitchOnOrSendRequest() = Bus().use { bus ->
+        val (host, phone) = bus.phone(); create(host, bus)
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
+        val requests = phone.requestedHubs.size
+        phone.storageWorks = false
+        host.update(GroupFieldKey.ELIGIBLE, "true")
+        assertTrue(host.state.error.contains("storage"))
+        assertFalse(host.state.busy)
+        assertFalse(host.flag(GroupFieldKey.ELIGIBLE))
+        assertEquals(requests, phone.requestedHubs.size)
+        assertNull(host.library.pending, "An unsaved request must not be described as saved")
+    }
+    @Test fun transportStartupFailureClearsBusyAndKeepsDurableConsentRetry() = Bus().use { bus ->
+        val (host, phone) = bus.phone(); create(host, bus)
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
+        phone.throwNext = true
+        host.update(GroupFieldKey.ELIGIBLE, "true")
+        assertFalse(host.state.busy)
+        assertFalse(host.flag(GroupFieldKey.ELIGIBLE))
+        assertTrue(host.state.error.contains("Retry"))
+        assertNotNull(orderJson.decodeFromString<GroupLibrary>(phone.saved.getValue("group-library-v1")).pending)
+        host.dispatch(GroupAction.RETRY); bus.drain(); bus.sync()
+        assertNull(host.library.pending)
+        assertTrue(host.flag(GroupFieldKey.ELIGIBLE))
+    }
+    @Test fun failedSnapshotSaveIsRetriedOnNextHeartbeatWithoutShowingUnsavedConsent() = Bus().use { bus ->
+        val (host, phone) = bus.phone(); create(host, bus)
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
+        val saved = host.room()
+        bus.db.save(saved.copy(members = saved.members.map { it.copy(eligible = true) }, revision = saved.revision + 1))
+        phone.storageWorks = false; bus.sync()
+        assertFalse(host.flag(GroupFieldKey.ELIGIBLE))
+        assertEquals(saved.revision, host.library.snapshots[saved.id]!!.room!!.revision)
+        phone.storageWorks = true; bus.sync()
+        assertTrue(host.flag(GroupFieldKey.ELIGIBLE))
+        val restored = orderJson.decodeFromString<GroupLibrary>(phone.saved.getValue("group-library-v1"))
+        assertTrue(restored.snapshots[saved.id]!!.room!!.members.single().eligible)
+    }
+    @Test fun payerConsentIsHiddenAndAllReadyParticipantsEnterTheWheelByDefault() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus)
+        listOf(host, member).forEach {
+            assertFalse(it.state.fields.any { field -> field.key == GroupFieldKey.ELIGIBLE })
+            assertTrue(it.room().members.single { m -> m.id == it.me() }.eligible)
+            assertFalse(it.room().members.single { m -> m.id == it.me() }.ready)
+            it.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+        }
+        host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
+        assertEquals(RoomPhase.SPINNING, host.room().phase)
+        assertEquals(setOf(host.me(), member.me()), host.room().spin!!.memberIds.toSet())
+    }
+    @Test fun readyRestoresLegacyOptOutWithoutRequiringAHiddenSwitch() = Bus().use { bus ->
+        val (host, _) = bus.phone(); create(host, bus)
+        host.dispatch(GroupAction.READY); bus.drain()
+        host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain(); bus.sync()
+        assertEquals(GroupAction.READY, host.state.primaryAction?.action)
+        host.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+        assertTrue(host.room().orderingMembers.single().eligible)
+        assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
+    }
+    @Test fun declinedPayerCanStayInTheMealWithoutReenteringTheNextSpin() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus)
+        val people = listOf(host, member)
+        people.forEach { it.dispatch(GroupAction.READY); bus.drain(); bus.sync() }
+        host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
+        bus.time += 10000; bus.server.tick(); bus.sync()
+        val selected = people.single { it.me() == host.room().spin!!.winnerId }
+        selected.update(GroupFieldKey.REASON, "Unable to advance payment today")
+        selected.dispatch(GroupAction.DECLINE_DUTY); bus.drain(); bus.sync()
+        selected.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+        val declined = host.room().members.single { it.id == selected.me() }
+        assertTrue(declined.participating)
+        assertTrue(declined.ready)
+        assertFalse(declined.eligible)
+        host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
+        assertEquals(RoomPhase.SPINNING, host.room().phase)
+        assertEquals(people.filterNot { it === selected }.map { it.me() }, host.room().spin!!.memberIds)
+    }
     @Test fun threeClientsCompleteMealPersistReceiptAndReuseRoomDaysLater() = Bus().use { bus ->
         val (host, _) = bus.phone(); val (second, secondPhone) = bus.phone(); val (third, _) = bus.phone()
         create(host, bus); join(second, "Karam", host, bus); join(third, "Hassan", host, bus)
         val people = listOf(host, second, third)
         assertEquals(GroupAction.READY, host.state.primaryAction?.action)
         assertEquals(0, host.state.progressStep)
-        people.forEach { it.update(GroupFieldKey.ELIGIBLE, "true"); it.dispatch(GroupAction.READY); bus.drain(); bus.sync() }
+        people.forEach { it.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); it.dispatch(GroupAction.READY); bus.drain(); bus.sync() }
         assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
         host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
         assertEquals(RoomPhase.SPINNING, host.room().phase)
@@ -187,7 +341,7 @@ class GroupFlowIntegrationTest {
     }
     @Test fun delayedRequestAfterBackgroundDoesNotReconnectUntilForeground() = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)
-        c.update(GroupFieldKey.ELIGIBLE, "true"); c.dispatch(GroupAction.READY)
+        c.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); c.dispatch(GroupAction.READY)
         c.background(); bus.drain()
         assertNull(phone.watch)
         assertNull(orderJson.decodeFromString<GroupLibrary>(phone.saved.getValue("group-library-v1")).pending)
@@ -228,7 +382,7 @@ class GroupFlowIntegrationTest {
     @Test fun uncertainServerFailureKeepsCommandForIdempotentRetry(): Unit = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)
         phone.failureCode = "HUB_UNAVAILABLE"
-        c.update(GroupFieldKey.ELIGIBLE, "true"); c.dispatch(GroupAction.READY); bus.drain()
+        c.dispatch(GroupAction.READY); bus.drain()
         val pending = requireNotNull(c.library.pending)
         c.dispatch(GroupAction.RETRY); bus.drain(); bus.sync()
         assertNull(c.library.pending)
@@ -237,7 +391,7 @@ class GroupFlowIntegrationTest {
     @Test fun rejectedSpinAcknowledgementRetriesAfterOtherMemberReconnects(): Unit = Bus().use { bus ->
         val (host, _) = bus.phone(); val (member, _) = bus.phone()
         create(host, bus); join(member, "Karam", host, bus)
-        host.update(GroupFieldKey.ELIGIBLE, "true"); host.dispatch(GroupAction.READY); bus.drain()
+        host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); host.dispatch(GroupAction.READY); bus.drain()
         member.dispatch(GroupAction.READY); bus.drain(); bus.sync()
         member.background()
         host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); bus.sync()

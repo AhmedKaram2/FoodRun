@@ -114,13 +114,18 @@ internal class GroupPresentation(private val c: GroupController) {
             if(owner && !m.approved && r.phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING) && (r.phase == RoomPhase.LOBBY || m.guest || payer || m.latePayerApproved)) actions += GroupButton("Approve join", GroupAction.APPROVE, m.id)
             if(payer && !m.approved && !m.guest && !m.latePayerApproved && r.phase == RoomPhase.COLLECTING) actions += GroupButton("Accept this late orderer", GroupAction.APPROVE_LATE_JOIN, m.id)
             if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY) { actions += GroupButton("Remove from room", GroupAction.REMOVE, m.id, destructive = true); if(m.approved && !m.guest) actions += GroupButton("Make organizer", GroupAction.HANDOVER, m.id) }
-            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.approved) "Pending" else if(!m.guest && !m.participating) "Skipping this order" else if(m.ready) "Ready" else "Joined", actions)
+            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.approved) "Pending" else if(!m.guest && !m.participating) "Skipping this order" else if(m.ready && m.eligible) "Ready · Willing to pay" else if(m.ready) "Ready" else if(m.eligible) "Willing to pay" else "Joined", actions)
         }
         if(owner) r.expectedNames.filter { name -> r.orderingMembers.none { it.name.equals(name.trim(), true) } }.forEach { card("invite:$it", it, "Expected · not participating today", actions = if(r.phase == RoomPhase.LOBBY) listOf(GroupButton("Remove invitation", GroupAction.REMOVE, "invite:$it")) else emptyList()) }
         field(GroupFieldKey.REASON, "Reason for removal, reroll, reopening or adjustment")
         when(r.phase) {
             RoomPhase.LOBBY -> {
-                if(!me.guest) { button(if(me.participating) "Skip this order" else "Join this order", GroupAction.PARTICIPATE, (!me.participating).toString()); field(GroupFieldKey.ELIGIBLE, "I can contact, order and pay for the group", toggle = true); button("I'm ready", GroupAction.READY, primary = !me.ready) }
+                if(!me.guest) {
+                    button(if(me.participating) "Skip this order" else "Join this order", GroupAction.PARTICIPATE, (!me.participating).toString())
+                    if(me.participating) {
+                        button("I'm ready", GroupAction.READY, primary = !me.ready || !me.eligible)
+                    }
+                }
                 if(owner) { button("Spin together", GroupAction.PREPARE_SPIN, primary = me.guest || me.ready); button("Cancel today's order", GroupAction.CANCEL) }
             }
             RoomPhase.PREPARING_SPIN -> { card("prepare", "Getting everyone in sync", "Waiting for participating phones to acknowledge the countdown."); if(owner) button("Stop waiting", GroupAction.ABORT_SPIN) }
@@ -180,6 +185,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     private fun accounts() {
         title = "Receiving account"; subtitle = "Saved securely on this device. Share only the account you choose for this order."
+        if(c.library.accounts.isNotEmpty()) button("Add another account", GroupAction.NEW_ACCOUNT)
         c.library.accounts.forEach { a -> card("saved-account:${a.id}", "${a.holder} · ${a.bank}", "•••• ${a.identifier.takeLast(4)}", if(c.selectedAccount?.id == a.id) "Selected" else "", listOf(GroupButton("Select", GroupAction.SELECT_ACCOUNT, a.id), GroupButton("Delete saved account", GroupAction.DELETE_ACCOUNT, a.id, destructive = true))) }
         field(GroupFieldKey.ACCOUNT_HOLDER, "Account holder"); field(GroupFieldKey.ACCOUNT_BANK, "Bank name"); field(GroupFieldKey.ACCOUNT_IDENTIFIER, "IBAN / account identifier")
         button("Save on this device", GroupAction.SAVE_ACCOUNT); button("Share this account for the order", GroupAction.SHARE_ACCOUNT, primary = true)

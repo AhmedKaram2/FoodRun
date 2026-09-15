@@ -4,6 +4,8 @@ import com.karim.foodrun.orders.*
 
 class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int) {
     fun apply(r: Room, actorId: String, c: RoomCommand, now: Long): Room {
+        require(c.expectedOrderNumber > 0) { "Update Food Run before changing this order, then refresh the room and try again." }
+        require(c.expectedOrderNumber == r.orderNumber) { "This request belongs to an earlier order. Refresh the room and review today's order before trying again." }
         val actor = RoomRules.member(r, actorId)
         require(actor.approved) { "Wait for organizer approval." }
         fun owner() { require(actorId == r.ownerId) { "Only the organizer can do this." } }
@@ -20,7 +22,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 Room(r.id, r.code, r.ownerId, r.name, restaurant,
                     expectedNames = c.expectedNames, deliveryMode = c.flag, destination = c.destination,
                     deadline = c.deadline, fees = c.fees ?: FeePolicy(restaurant.pricing.defaultDeliveryFeeMinor, restaurant.pricing.defaultServiceFeeMinor),
-                    members = r.members.filterNot { it.removed }.map { it.copy(ready = false, eligible = false, participating = it.id == r.ownerId, latePayerApproved = false) },
+                    members = r.members.filterNot { it.removed }.map { it.copy(ready = false, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
                     revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
                 ).also(RoomRules::validateRoom)
             }
@@ -46,7 +48,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PARTICIPATE -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)
-                r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = false, eligible = false) else it })
+                r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = false, eligible = c.flag && (!it.participating || it.eligible)) else it })
             }
             CommandKind.READY -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)

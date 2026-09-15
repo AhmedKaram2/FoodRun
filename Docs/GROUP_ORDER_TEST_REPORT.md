@@ -1,5 +1,7 @@
 # Food Run 1.1 verification
 
+This is the earlier release baseline. The [state consistency report](CONSISTENCY_TEST_REPORT.md) records the subsequent user-reported consent defect, related fixes, current default-on behavior and fresh verification. The older passing matrix did not establish that all app flows were complete.
+
 Date: 15 September 2026. Scope: local Mac hub, Android emulator and iPhone 16e simulator, as requested. Test transfers, bank accounts and restaurant contacts were fictitious; no real restaurant order or bank transfer was made.
 
 **Final result: 146 automated tests passed, zero failures, zero skips.** The cross-platform UI flow and recovery checks below also passed after the identified defects were fixed.

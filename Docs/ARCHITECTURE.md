@@ -83,7 +83,7 @@ There is no room/membership expiry timer. Presence is temporary and only determi
 
 ## Shared spin
 
-1. The hub checks expected attendees, readiness, recent presence and at least one consenting eligible payer.
+1. The hub checks expected attendees, readiness, recent presence and at least one eligible payer. New ordering participants default to eligible; the separate consent switch is hidden. Guests, skipped members and participants who declined duty are excluded as applicable.
 2. It creates a preparation ID. Ordering participants acknowledge that preparation.
 3. The hub selects the winner using `SecureRandom`, persists the round and publishes candidate IDs, winner, start time, duration and turns.
 4. Both native renderers use the same `SpinRound.rotation(now)` curve with a server clock offset. The group spin lasts 6.5 seconds; local Quick Spin uses its own 5.4-second plan.
@@ -140,6 +140,6 @@ Off-network access, push notifications, cloud accounts, multiple restaurants wit
 
 ## Verification and media sources
 
-The [1.1 report](GROUP_ORDER_TEST_REPORT.md) records 146 passing tests and an actual Android ↔ iOS order, payment, offline recovery and next-order run. [UI flows](../Tests/UI/README.md) and platform audits explain reproducible integration setup. Passing this matrix does not establish every physical device/router condition.
+The [state consistency report](CONSISTENCY_TEST_REPORT.md) records the latest 190-test matrix and a fresh Android ↔ iOS order, payment, offline recovery and next-order run. Mutations now carry `expectedOrderNumber`, independently of room/cart/quote revisions, to prevent a delayed command from affecting another meal in a permanent room. [UI flows](../Tests/UI/README.md) and platform audits explain reproducible integration setup. Passing this matrix does not establish every physical device/router condition.
 
 Diagram source: [GenerateShowcase.swift](../Scripts/GenerateShowcase.swift). Video assembly: [build-showcase.py](../Scripts/build-showcase.py). [Media index and transcript](media/README.md) describe the captures and video chapters.

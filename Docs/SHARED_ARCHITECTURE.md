@@ -1,4 +1,6 @@
-# Shared application contract
+# Quick Spin shared application contract
+
+This document covers the original offline Quick Spin feature. The [full architecture guide](ARCHITECTURE.md) covers group ordering, native network adapters, secure storage and the local hub added in 1.1.
 
 Food Run uses native SwiftUI and Jetpack Compose rendering over one Kotlin Multiplatform application contract. Its cream, orange, typography, wheel motion and platform haptics stay native.
 
@@ -20,7 +22,7 @@ FoodRunController.state
 
 `FoodRunController` owns the roster, selected crew, add-person draft and validation, navigation, pending spin plan, winner, history, user preferences and derived presentation values. `FoodRunSession` applies domain rules and coordinates persistence. `PreferencesFoodRunRepository` owns the version 1 JSON schema and sanitizes restored data. The public `FoodRunEngine` remains a small compatibility facade for earlier clients and baseline tests.
 
-The shared module has no MOHRE runtime, navigation, dependency injection, form engine or network dependency. The requested ten names are real product configuration.
+The Quick Spin path has no MOHRE runtime, form engine or network dependency. It has its own shared navigation contract. The requested ten names are real product configuration.
 
 ## Native bridge
 
@@ -73,7 +75,5 @@ Saves commit the new in-memory domain snapshot only after the storage adapter ac
 | LoadableList | No remote idle/loading/error list lifecycle exists. Native lazy lists render the local crew/history; empty history is an explicit shared state value. |
 | Concurrency | No shared coroutine scopes or detached jobs. UI-thread confinement, synchronous state transitions, observer cancellation, duplicate spin guards and animation cancellation are explicit. |
 | Cleanup | Serialization moved out of the application controller; duplicated validation, state and formatting are removed from native rendering as adapters migrate. |
-
-No commits or global skill log changes are made: this standalone app folder is not a Git repository. The user's requested scope already authorizes the applicable fixes.
 
 Final shared validation: **33 JVM tests passed, with zero failures or errors**. The native bridge review identified feedback replay, lazy roster rendering and error presentation concerns; those are owned by the corresponding platform changes.

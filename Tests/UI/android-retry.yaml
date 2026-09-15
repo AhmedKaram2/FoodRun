@@ -1,0 +1,10 @@
+appId: com.karim.foodrun
+---
+- scrollUntilVisible:
+    element:
+      id: "action:RETRY:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:RETRY:"
+- assertVisible: "Lunch Together QA"

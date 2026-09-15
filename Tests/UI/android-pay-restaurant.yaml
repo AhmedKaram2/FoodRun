@@ -1,0 +1,37 @@
+appId: com.karim.foodrun
+---
+- scrollUntilVisible:
+    element:
+      id: AMOUNT
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: AMOUNT
+- inputText: "79"
+- scrollUntilVisible:
+    element:
+      id: "action:PAY_RESTAURANT:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:PAY_RESTAURANT:"
+- assertVisible:
+    id: groupError
+- scrollUntilVisible:
+    element:
+      id: AMOUNT
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: AMOUNT
+- eraseText
+- inputText: "80.00"
+- scrollUntilVisible:
+    element:
+      id: "action:PAY_RESTAURANT:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:PAY_RESTAURANT:"
+- assertNotVisible:
+    id: groupError

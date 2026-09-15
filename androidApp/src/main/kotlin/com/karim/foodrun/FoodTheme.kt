@@ -89,6 +89,7 @@ object FoodSize {
     val SelectionIcon = 17.dp
     val MaxContentWidth = 490.dp
     val MaxDialogWidth = 420.dp
+    val ErrorBanner = 160.dp
     val Wheel = 355.dp
     val ButtonShadow = 12.dp
     val Border = 1.dp

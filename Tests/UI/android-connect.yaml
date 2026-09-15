@@ -1,0 +1,4 @@
+appId: com.karim.foodrun
+---
+- tapOn: "Create a room"
+- assertVisible: "Connect to your table"

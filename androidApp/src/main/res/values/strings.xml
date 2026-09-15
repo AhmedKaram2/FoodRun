@@ -1,3 +1,18 @@
 <resources>
     <string name="app_name">Food Run</string>
+    <string name="group_menu_too_large">Menu exceeds 2 MB. Choose a smaller JSON file.</string>
+    <string name="group_menu_open_failed">Could not open this menu. Check the file and try importing again.</string>
+    <string name="group_import_cancelled">Menu import cancelled.</string>
+    <string name="group_scan_prompt">Scan the Food Run server QR</string>
+    <string name="group_scan_cancelled">QR scanning cancelled or unavailable. You can paste the pairing link instead.</string>
+    <string name="group_share_failed">Open Food Run to share this file.</string>
+    <string name="group_import_active">Finish the current menu import first.</string>
+    <string name="group_scan_active">Finish the current QR scan first.</string>
+    <string name="group_network_unavailable">Hub unavailable. Check Wi-Fi, the computer and your pairing fingerprint.</string>
+    <string name="group_http_failed">Hub returned %1$d. Retry shortly.</string>
+    <string name="group_response_failed">Could not read the hub response. Check the server version and retry.</string>
+    <string name="group_reconnecting">Connection paused. Reconnecting to your local hub…</string>
+    <string name="group_discovery_cancelled">Previous hub search cancelled.</string>
+    <string name="group_discovery_failed">Discovery unavailable. Paste the hub pairing link.</string>
+    <string name="group_hub_not_found">No hub found. Keep the server awake or paste its pairing link.</string>
 </resources>

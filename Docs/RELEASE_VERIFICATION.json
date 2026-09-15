@@ -1,0 +1,32 @@
+{
+  "version": "1.1",
+  "date": "2026-09-15",
+  "tests": {
+    "shared": 50,
+    "domain": 26,
+    "protocol": 4,
+    "server": 36,
+    "android_native": 6,
+    "ios_native": 24,
+    "total": 146,
+    "failures": 0,
+    "skipped": 0
+  },
+  "artifacts": [
+    {
+      "file": "Distributions/FoodRun-1.1.apk",
+      "bytes": 7898104,
+      "sha256": "130437bcaf13338f3928d1490c3984c9d676132d1a599f12921c6c65c2162d08"
+    },
+    {
+      "file": "Distributions/FoodRun-Hub-1.1.zip",
+      "bytes": 31127897,
+      "sha256": "d3b6e24460b2c34e46d664f8a0495e7c2b6f9c5abfddb91f31e9491e3ae7afa4"
+    },
+    {
+      "file": "Distributions/FoodRun-iOS-Simulator-1.1.zip",
+      "bytes": 2597916,
+      "sha256": "a6c50727a5e023bc9ddae1bf45ecf711eec9c848ee9ef366f2213ff1a46ce468"
+    }
+  ]
+}

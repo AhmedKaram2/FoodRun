@@ -1,0 +1,20 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: "action:SELECT_RESTAURANT:.*"
+- scrollUntilVisible:
+    element:
+      id: DELIVERY_FEE
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: DELIVERY_FEE
+- eraseText
+- inputText: "10.00"
+- scrollUntilVisible:
+    element:
+      id: "action:CREATE_ROOM:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:CREATE_ROOM:"

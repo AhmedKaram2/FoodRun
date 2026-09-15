@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "FoodRun"
-include(":shared", ":androidApp")
+include(":shared", ":androidApp", ":order-domain", ":order-contract", ":room-server")

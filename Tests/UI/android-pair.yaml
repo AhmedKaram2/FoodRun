@@ -1,0 +1,13 @@
+appId: com.karim.foodrun
+---
+- tapOn: "Create a room"
+- tapOn:
+    id: PAIRING_LINK
+- inputText: "${HUB_PAIRING}"
+- scrollUntilVisible:
+    element:
+      id: "action:CONNECT:"
+    direction: DOWN
+- tapOn:
+    id: "action:CONNECT:"
+- assertVisible: "Create your room"

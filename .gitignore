@@ -12,3 +12,6 @@ local.properties
 .idea/
 Distributions/*.apk
 Distributions/*.aab
+.hub-test/
+FoodRunTests/HubIntegrationConfig.json
+Distributions/*.zip

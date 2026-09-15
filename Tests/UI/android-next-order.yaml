@@ -1,0 +1,19 @@
+appId: com.karim.foodrun
+---
+- tapOn: "Back"
+- scrollUntilVisible:
+    element:
+      id: "action:NEXT_ORDER:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:NEXT_ORDER:"
+- scrollUntilVisible:
+    element:
+      id: "action:CREATE_ROOM:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:CREATE_ROOM:"
+- assertVisible: "${ROOM_CODE}"
+- assertVisible: "Order #2.*"

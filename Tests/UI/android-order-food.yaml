@@ -1,0 +1,25 @@
+appId: com.karim.foodrun
+---
+- scrollUntilVisible:
+    element:
+      id: "action:OPEN_ITEM:.*"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:OPEN_ITEM:.*"
+- tapOn:
+    id: "action:ADD_CART_ITEM:"
+- scrollUntilVisible:
+    element:
+      id: "action:SUBMIT_CART:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:SUBMIT_CART:"
+- scrollUntilVisible:
+    element:
+      id: "action:REVIEW:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:REVIEW:"

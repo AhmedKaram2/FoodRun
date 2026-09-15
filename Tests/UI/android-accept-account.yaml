@@ -1,0 +1,32 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: "action:ACCEPT_DUTY:"
+- scrollUntilVisible:
+    element:
+      id: "action:OPEN_ACCOUNT:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:OPEN_ACCOUNT:"
+- tapOn:
+    id: ACCOUNT_HOLDER
+- inputText: "Karim Android"
+- tapOn:
+    id: ACCOUNT_BANK
+- inputText: "Test Bank"
+- scrollUntilVisible:
+    element:
+      id: ACCOUNT_IDENTIFIER
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: ACCOUNT_IDENTIFIER
+- inputText: "123456789012"
+- scrollUntilVisible:
+    element:
+      id: "action:SHARE_ACCOUNT:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:SHARE_ACCOUNT:"

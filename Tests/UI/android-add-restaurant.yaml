@@ -1,0 +1,42 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: "action:NEW_RESTAURANT:"
+- assertVisible: "Build your menu"
+- tapOn:
+    id: RESTAURANT_NAME
+- inputText: "Together Kitchen"
+- tapOn:
+    id: PHONE
+- inputText: "+971500000000"
+- scrollUntilVisible:
+    element:
+      id: MENU_ITEM_NAME
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: MENU_ITEM_NAME
+- inputText: "Chicken Burger"
+- scrollUntilVisible:
+    element:
+      id: MENU_ITEM_PRICE
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: MENU_ITEM_PRICE
+- inputText: "35"
+- scrollUntilVisible:
+    element:
+      id: "action:ADD_MENU_ITEM:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:ADD_MENU_ITEM:"
+- scrollUntilVisible:
+    element:
+      id: "action:SAVE_RESTAURANT:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:SAVE_RESTAURANT:"
+- assertVisible: "Restaurant library"

@@ -1,0 +1,68 @@
+{
+  "schema": "foodrun.restaurant",
+  "schemaVersion": 1,
+  "exportId": "d736864e-ea04-4242-9db5-8cf2e9c6ce85",
+  "revision": 1,
+  "restaurant": {
+    "id": "bb472b2a-eb47-4bc3-8b80-dbf3916edb94",
+    "name": "Example Kitchen",
+    "branchName": "Example branch",
+    "currency": "AED",
+    "contact": {
+      "phoneE164": null,
+      "whatsappE164": null,
+      "address": null
+    },
+    "pricing": {
+      "taxTreatment": "included",
+      "taxRateBasisPoints": null,
+      "defaultDeliveryFeeMinor": 1000,
+      "defaultServiceFeeMinor": 0,
+      "minimumOrderMinor": 0
+    },
+    "notes": "Fictional example. Enter a real restaurant contact and verify prices before ordering.",
+    "menu": {
+      "categories": [
+        { "id": "mains", "name": "Mains", "sortOrder": 0 },
+        { "id": "drinks", "name": "Drinks", "sortOrder": 1 }
+      ],
+      "optionGroups": [
+        {
+          "id": "burger-extras",
+          "name": "Extras",
+          "minSelections": 0,
+          "maxSelections": 2,
+          "options": [
+            { "id": "extra-cheese", "name": "Extra cheese", "priceDeltaMinor": 300 },
+            { "id": "extra-sauce", "name": "Extra sauce", "priceDeltaMinor": 100 }
+          ]
+        }
+      ],
+      "items": [
+        {
+          "id": "burger",
+          "categoryId": "mains",
+          "name": "Burger",
+          "description": "Example menu item",
+          "basePriceMinor": 3500,
+          "available": true,
+          "variants": [
+            { "id": "regular", "name": "Regular", "priceMinor": 3500 },
+            { "id": "large", "name": "Large", "priceMinor": 4200 }
+          ],
+          "optionGroupIds": ["burger-extras"]
+        },
+        {
+          "id": "water",
+          "categoryId": "drinks",
+          "name": "Water",
+          "description": "Example menu item",
+          "basePriceMinor": 300,
+          "available": true,
+          "variants": [],
+          "optionGroupIds": []
+        }
+      ]
+    }
+  }
+}

@@ -9,25 +9,40 @@
 /* Begin PBXBuildFile section */
 		0DB91B5A77A2E25B94009D8D /* FoodRunApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646BFA5B0B22080363718416 /* FoodRunApp.swift */; };
 		114E1C1ADDF4EBAD7330CFB5 /* FoodAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46371208348C485813B172B /* FoodAvatar.swift */; };
+		17BB84C7F7D9F3F650511D0E /* GroupErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */; };
 		265C1986C54D969834712885 /* IosComponents in Frameworks */ = {isa = PBXBuildFile; productRef = 60612AEDFDB3129A7A02D421 /* IosComponents */; };
 		26D0EF53F7AA7D00B03EDA43 /* SecondaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC253B6DF222629E3FC4E7 /* SecondaryButton.swift */; };
 		2A3C9A68EDD31D3584A46E90 /* WheelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20BDDF0C57D13FCB13D4675F /* WheelTests.swift */; };
 		2BB159A8514077E5CAFF07B8 /* FoodRunContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF428D885982E8985128FCC /* FoodRunContent.swift */; };
+		31D72B021255ED33FB30C766 /* GroupIosPlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EDA2481A484F33F5E252A90 /* GroupIosPlatform.swift */; };
 		4C63C9F6664506A7287FE025 /* FoodTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C80F0AC650BBC2AF0E8044 /* FoodTheme.swift */; };
+		4CE77393848EEAF54DBA49BC /* GroupDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AFADD9A5932A41AB360F482 /* GroupDocuments.swift */; };
 		50EC4815F8B4F4030339CCF3 /* FoodDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DC71AC3602E0939B3581B9 /* FoodDivider.swift */; };
+		5AC6EF0799139DD588C923E5 /* GroupQrScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EA92B7E2FC925EF435699F3 /* GroupQrScanner.swift */; };
+		6494BEBF4615E91793149F22 /* HubWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC906C863B2809C5D012FF8 /* HubWatch.swift */; };
 		680CD6B6BD986C7512C687A0 /* IosFoodRunStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E83FA3C08D95C98F7D638249 /* IosFoodRunStorage.swift */; };
 		6B7553C685335A6F357C2284 /* FoodTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367738836AC794D05A6865E0 /* FoodTextField.swift */; };
 		70521C5E483BDE0DFB548B9C /* HistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BF4D7E6831B16AE13896E8 /* HistorySheet.swift */; };
+		92E3E495413FABF77D03BD36 /* GroupSecureStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C06903543AE297091C968 /* GroupSecureStorage.swift */; };
 		952E591AD207F7025D1C53C8 /* FoodSpacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FBDF448534DB804DA70B51 /* FoodSpacing.swift */; };
+		AE93EF728EDE8E5968469C56 /* GroupScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D931058D2618B0FD63046799 /* GroupScreen.swift */; };
+		B32688F1F6CF5BE5947A6A11 /* CertificatePinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0E87E787B678A585A289FC /* CertificatePinTests.swift */; };
 		B955CE75237939C6B3A52A80 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E503A8239E5FCB10C6D92F1F /* Assets.xcassets */; };
+		BFB9B7E5D52E69057F108F77 /* GroupWheelContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F8EBB3C6C421FFD061B7A4 /* GroupWheelContent.swift */; };
 		BFCDD5AE1F3A4DDB80351C04 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2238643A86ADE70CC86A5383 /* ContentView.swift */; };
 		C0571964BF3CE1C00029B6CA /* WheelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CCC4FE49C4E9D84F047173 /* WheelStore.swift */; };
+		C6F9455353EE9772D0CCE6D3 /* GroupFieldContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B9858DD26A206478178359 /* GroupFieldContent.swift */; };
 		C887E7F854F2BF3B74802136 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2C12F70662E753C985622D /* PrimaryButton.swift */; };
+		C94D4759DED9C856C9B5B224 /* GroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B79683C177ADDBCEC4DEABF /* GroupStore.swift */; };
+		C9EB22AE5378827B5B135F34 /* GroupNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9119EC0F035B4C43268DAA21 /* GroupNativeTests.swift */; };
 		CC1EE76CEE8CA3C406DE06E9 /* FoodCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127759EA2557C85AA4863656 /* FoodCard.swift */; };
 		D6B7BAED8304CB0B452B019E /* CrewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31BEEF71FAEF9FA313BFD9B5 /* CrewSheet.swift */; };
+		DE7D0AA566D31E3793DDE14B /* GroupDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE408DE97B1461FDECCA0B2E /* GroupDiscovery.swift */; };
 		E1125502A53EE4A0EF6E9227 /* PresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE62BA5FB12412A943452C7 /* PresentationModels.swift */; };
 		EA7F80AA4CBF26702A37142A /* AddPersonSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */; };
+		ECAE63F9915353041BAC5037 /* HubIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E10D87CAA45A8E20CA969E4 /* HubIntegrationTests.swift */; };
 		ECB160CE060B6F1C85F64692 /* FoodStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95E8BA7ABA2FD655C6B9CFE2 /* FoodStrings.swift */; };
+		ED9E903A88F58D078B38DA91 /* PinnedHubSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E02EE35503DE3EF46660CC /* PinnedHubSession.swift */; };
 		F4E51278047D4A977D1DC1C9 /* WheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86234D1590C292B9C1EB337C /* WheelView.swift */; };
 		F5E562EB94FF2393802663A0 /* WinnerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8290882A20F8879FDD30BAB8 /* WinnerOverlay.swift */; };
 /* End PBXBuildFile section */
@@ -43,7 +58,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupErrorBanner.swift; sourceTree = "<group>"; };
 		00FBDF448534DB804DA70B51 /* FoodSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodSpacing.swift; sourceTree = "<group>"; };
+		06B9858DD26A206478178359 /* GroupFieldContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupFieldContent.swift; sourceTree = "<group>"; };
 		127759EA2557C85AA4863656 /* FoodCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodCard.swift; sourceTree = "<group>"; };
 		16CCC4FE49C4E9D84F047173 /* WheelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WheelStore.swift; sourceTree = "<group>"; };
 		1A9F498F7FF03938D6138BD1 /* FoodRun.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FoodRun.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -53,19 +70,34 @@
 		2A7921FE3A46174CA12C60CE /* FoodRunTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FoodRunTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		31BEEF71FAEF9FA313BFD9B5 /* CrewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrewSheet.swift; sourceTree = "<group>"; };
 		367738836AC794D05A6865E0 /* FoodTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodTextField.swift; sourceTree = "<group>"; };
+		53F8EBB3C6C421FFD061B7A4 /* GroupWheelContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupWheelContent.swift; sourceTree = "<group>"; };
+		5EDA2481A484F33F5E252A90 /* GroupIosPlatform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupIosPlatform.swift; sourceTree = "<group>"; };
 		646BFA5B0B22080363718416 /* FoodRunApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodRunApp.swift; sourceTree = "<group>"; };
+		7266B16EB5672E60B19C2762 /* FoodRun.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FoodRun.entitlements; sourceTree = "<group>"; };
 		78DC71AC3602E0939B3581B9 /* FoodDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodDivider.swift; sourceTree = "<group>"; };
+		7EA92B7E2FC925EF435699F3 /* GroupQrScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupQrScanner.swift; sourceTree = "<group>"; };
+		7FC906C863B2809C5D012FF8 /* HubWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubWatch.swift; sourceTree = "<group>"; };
 		8290882A20F8879FDD30BAB8 /* WinnerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WinnerOverlay.swift; sourceTree = "<group>"; };
 		86234D1590C292B9C1EB337C /* WheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WheelView.swift; sourceTree = "<group>"; };
+		8B79683C177ADDBCEC4DEABF /* GroupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupStore.swift; sourceTree = "<group>"; };
+		8E10D87CAA45A8E20CA969E4 /* HubIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubIntegrationTests.swift; sourceTree = "<group>"; };
+		9119EC0F035B4C43268DAA21 /* GroupNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupNativeTests.swift; sourceTree = "<group>"; };
 		94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPersonSheet.swift; sourceTree = "<group>"; };
 		95E8BA7ABA2FD655C6B9CFE2 /* FoodStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodStrings.swift; sourceTree = "<group>"; };
 		98EC253B6DF222629E3FC4E7 /* SecondaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondaryButton.swift; sourceTree = "<group>"; };
+		9AFADD9A5932A41AB360F482 /* GroupDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDocuments.swift; sourceTree = "<group>"; };
 		9B2C12F70662E753C985622D /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
+		A71C06903543AE297091C968 /* GroupSecureStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSecureStorage.swift; sourceTree = "<group>"; };
 		B5C80F0AC650BBC2AF0E8044 /* FoodTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodTheme.swift; sourceTree = "<group>"; };
+		BB0E87E787B678A585A289FC /* CertificatePinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificatePinTests.swift; sourceTree = "<group>"; };
 		BFE62BA5FB12412A943452C7 /* PresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationModels.swift; sourceTree = "<group>"; };
 		C46371208348C485813B172B /* FoodAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodAvatar.swift; sourceTree = "<group>"; };
+		C5E02EE35503DE3EF46660CC /* PinnedHubSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedHubSession.swift; sourceTree = "<group>"; };
+		CE408DE97B1461FDECCA0B2E /* GroupDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDiscovery.swift; sourceTree = "<group>"; };
+		D1A7CEB3D88CC2333E752064 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D5198F24E6BE066B2ECF6CE6 /* IosComponents */ = {isa = PBXFileReference; lastKnownFileType = folder; name = IosComponents; path = Packages/IosComponents; sourceTree = SOURCE_ROOT; };
 		D5BF4D7E6831B16AE13896E8 /* HistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistorySheet.swift; sourceTree = "<group>"; };
+		D931058D2618B0FD63046799 /* GroupScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupScreen.swift; sourceTree = "<group>"; };
 		E503A8239E5FCB10C6D92F1F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E83FA3C08D95C98F7D638249 /* IosFoodRunStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosFoodRunStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -109,14 +141,28 @@
 				C46371208348C485813B172B /* FoodAvatar.swift */,
 				127759EA2557C85AA4863656 /* FoodCard.swift */,
 				78DC71AC3602E0939B3581B9 /* FoodDivider.swift */,
+				7266B16EB5672E60B19C2762 /* FoodRun.entitlements */,
 				646BFA5B0B22080363718416 /* FoodRunApp.swift */,
 				1CF428D885982E8985128FCC /* FoodRunContent.swift */,
 				00FBDF448534DB804DA70B51 /* FoodSpacing.swift */,
 				95E8BA7ABA2FD655C6B9CFE2 /* FoodStrings.swift */,
 				367738836AC794D05A6865E0 /* FoodTextField.swift */,
 				B5C80F0AC650BBC2AF0E8044 /* FoodTheme.swift */,
+				CE408DE97B1461FDECCA0B2E /* GroupDiscovery.swift */,
+				9AFADD9A5932A41AB360F482 /* GroupDocuments.swift */,
+				0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */,
+				06B9858DD26A206478178359 /* GroupFieldContent.swift */,
+				5EDA2481A484F33F5E252A90 /* GroupIosPlatform.swift */,
+				7EA92B7E2FC925EF435699F3 /* GroupQrScanner.swift */,
+				D931058D2618B0FD63046799 /* GroupScreen.swift */,
+				A71C06903543AE297091C968 /* GroupSecureStorage.swift */,
+				8B79683C177ADDBCEC4DEABF /* GroupStore.swift */,
+				53F8EBB3C6C421FFD061B7A4 /* GroupWheelContent.swift */,
 				D5BF4D7E6831B16AE13896E8 /* HistorySheet.swift */,
+				7FC906C863B2809C5D012FF8 /* HubWatch.swift */,
+				D1A7CEB3D88CC2333E752064 /* Info.plist */,
 				E83FA3C08D95C98F7D638249 /* IosFoodRunStorage.swift */,
+				C5E02EE35503DE3EF46660CC /* PinnedHubSession.swift */,
 				BFE62BA5FB12412A943452C7 /* PresentationModels.swift */,
 				9B2C12F70662E753C985622D /* PrimaryButton.swift */,
 				98EC253B6DF222629E3FC4E7 /* SecondaryButton.swift */,
@@ -140,6 +186,9 @@
 		C742EC8858D458E20FC433DF /* FoodRunTests */ = {
 			isa = PBXGroup;
 			children = (
+				BB0E87E787B678A585A289FC /* CertificatePinTests.swift */,
+				9119EC0F035B4C43268DAA21 /* GroupNativeTests.swift */,
+				8E10D87CAA45A8E20CA969E4 /* HubIntegrationTests.swift */,
 				20BDDF0C57D13FCB13D4675F /* WheelTests.swift */,
 			);
 			path = FoodRunTests;
@@ -257,6 +306,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B32688F1F6CF5BE5947A6A11 /* CertificatePinTests.swift in Sources */,
+				C9EB22AE5378827B5B135F34 /* GroupNativeTests.swift in Sources */,
+				ECAE63F9915353041BAC5037 /* HubIntegrationTests.swift in Sources */,
 				2A3C9A68EDD31D3584A46E90 /* WheelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -277,8 +329,20 @@
 				ECB160CE060B6F1C85F64692 /* FoodStrings.swift in Sources */,
 				6B7553C685335A6F357C2284 /* FoodTextField.swift in Sources */,
 				4C63C9F6664506A7287FE025 /* FoodTheme.swift in Sources */,
+				DE7D0AA566D31E3793DDE14B /* GroupDiscovery.swift in Sources */,
+				4CE77393848EEAF54DBA49BC /* GroupDocuments.swift in Sources */,
+				17BB84C7F7D9F3F650511D0E /* GroupErrorBanner.swift in Sources */,
+				C6F9455353EE9772D0CCE6D3 /* GroupFieldContent.swift in Sources */,
+				31D72B021255ED33FB30C766 /* GroupIosPlatform.swift in Sources */,
+				5AC6EF0799139DD588C923E5 /* GroupQrScanner.swift in Sources */,
+				AE93EF728EDE8E5968469C56 /* GroupScreen.swift in Sources */,
+				92E3E495413FABF77D03BD36 /* GroupSecureStorage.swift in Sources */,
+				C94D4759DED9C856C9B5B224 /* GroupStore.swift in Sources */,
+				BFB9B7E5D52E69057F108F77 /* GroupWheelContent.swift in Sources */,
 				70521C5E483BDE0DFB548B9C /* HistorySheet.swift in Sources */,
+				6494BEBF4615E91793149F22 /* HubWatch.swift in Sources */,
 				680CD6B6BD986C7512C687A0 /* IosFoodRunStorage.swift in Sources */,
+				ED9E903A88F58D078B38DA91 /* PinnedHubSession.swift in Sources */,
 				E1125502A53EE4A0EF6E9227 /* PresentationModels.swift in Sources */,
 				C887E7F854F2BF3B74802136 /* PrimaryButton.swift in Sources */,
 				26D0EF53F7AA7D00B03EDA43 /* SecondaryButton.swift in Sources */,
@@ -303,9 +367,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = FoodRun/FoodRun.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = FoodRun/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Food Run";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Food Run server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Food Run room and watch the same spin with people on your Wi-Fi.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -321,9 +389,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = FoodRun/FoodRun.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = FoodRun/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Food Run";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Food Run server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Food Run room and watch the same spin with people on your Wi-Fi.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -368,8 +440,10 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -394,7 +468,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -472,8 +546,10 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -492,7 +568,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

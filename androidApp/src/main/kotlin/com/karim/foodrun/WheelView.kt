@@ -68,7 +68,7 @@ fun WheelView(
 }
 
 @Composable
-private fun WheelCenter() {
+internal fun WheelCenter() {
     Column(
         modifier = Modifier
             .size(FoodWheelTokens.Hub)
@@ -89,7 +89,7 @@ private fun WheelCenter() {
 }
 
 @Composable
-private fun WheelPointer(
+internal fun WheelPointer(
     angle: Float,
     modifier: Modifier = Modifier,
 ) {

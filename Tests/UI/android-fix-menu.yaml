@@ -1,0 +1,17 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: MENU_ITEM_NAME
+- eraseText
+- inputText: "Chicken Burger"
+- tapOn:
+    id: MENU_ITEM_PRICE
+- inputText: "35.00"
+- tapOn:
+    id: "action:ADD_MENU_ITEM:"
+- scrollUntilVisible:
+    element:
+      id: "action:SAVE_RESTAURANT:"
+    direction: DOWN
+- tapOn:
+    id: "action:SAVE_RESTAURANT:"

@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 
 /** Controlled input: value, error and submission permission come from shared state. */
 @Composable
@@ -28,6 +30,13 @@ fun FoodTextField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     errorModifier: Modifier = Modifier,
+    multiline: Boolean = false,
+    secret: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions(
+        capitalization = KeyboardCapitalization.Words,
+        autoCorrectEnabled = false,
+        imeAction = ImeAction.Done,
+    ),
     onSubmit: () -> Unit,
 ) {
     Column {
@@ -35,7 +44,10 @@ fun FoodTextField(
             value = value,
             onValueChange = onValueChange,
             label = { Text(label) },
-            singleLine = true,
+            singleLine = !multiline,
+            minLines = if (multiline) 3 else 1,
+            maxLines = if (multiline) 6 else 1,
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             enabled = enabled,
             isError = error != null,
             textStyle = FoodType.Input,
@@ -52,11 +64,7 @@ fun FoodTextField(
                 errorTextColor = FoodColors.Ink,
                 errorContainerColor = FoodColors.White,
             ),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Words,
-                autoCorrectEnabled = false,
-                imeAction = ImeAction.Done,
-            ),
+            keyboardOptions = keyboardOptions,
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
             modifier = modifier
                 .fillMaxWidth()

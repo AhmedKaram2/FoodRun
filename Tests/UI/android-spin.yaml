@@ -1,0 +1,9 @@
+appId: com.karim.foodrun
+---
+- scrollUntilVisible:
+    element:
+      id: "action:PREPARE_SPIN:"
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: "action:PREPARE_SPIN:"

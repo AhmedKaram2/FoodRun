@@ -22,12 +22,17 @@ kotlin {
             isStatic = false
             binaryOption("bundleId", "com.karim.foodrun.shared")
             framework.add(this)
+            export(project(":order-domain"))
+            export(project(":order-contract"))
         }
     }
     sourceSets {
         commonMain.dependencies {
+            api(project(":order-domain"))
+            api(project(":order-contract"))
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
         }
         commonTest.dependencies { implementation(kotlin("test")) }
+        jvmTest.dependencies { implementation(project(":room-server")) }
     }
 }

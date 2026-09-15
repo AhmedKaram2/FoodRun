@@ -123,7 +123,7 @@ public struct BaseTextInputField: View {
                         .font(.system(size: iconSize))
                         .foregroundColor(iconTintColor)
                 }
-                TextField(placeholder, text: controlledText)
+                TextField(placeholder, text: controlledText, axis: singleLine ? .horizontal : .vertical)
                     .keyboardType(keyboardType)
                     .autocapitalization(capitalization)
                     .autocorrectionDisabled()
@@ -131,7 +131,7 @@ public struct BaseTextInputField: View {
                     .foregroundColor(textColor)
                     .font(font)
                     .lineLimit(maxLines)
-                    .multilineTextAlignment(singleLine ? .leading : .center)
+                    .multilineTextAlignment(.leading)
                     .frame(minHeight: minHeight)
                     .disabled(!enabled || readOnly)
                     .focused(focus ?? $localFocus)

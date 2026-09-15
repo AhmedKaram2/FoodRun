@@ -1,0 +1,15 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: NAME
+- inputText: "Karim Android"
+- tapOn:
+    id: ROOM_NAME
+- inputText: "Lunch Together QA"
+- scrollUntilVisible:
+    element:
+      id: "action:OPEN_LIBRARY:"
+    direction: DOWN
+- tapOn:
+    id: "action:OPEN_LIBRARY:"
+- assertVisible: "Restaurant library"

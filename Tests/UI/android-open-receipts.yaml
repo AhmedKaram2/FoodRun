@@ -1,0 +1,10 @@
+appId: com.karim.foodrun
+---
+- scrollUntilVisible:
+    element:
+      id: "action:OPEN_RECEIPTS:"
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: "action:OPEN_RECEIPTS:"
+- assertVisible: "Receipts"

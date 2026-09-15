@@ -1,14 +1,41 @@
 # Food Run 🍟
 
-A Kotlin Multiplatform app that chooses who picks up the food, with native SwiftUI on iOS and Jetpack Compose on Android.
+A Kotlin Multiplatform app for choosing who picks up food and organizing group meals, with native SwiftUI on iOS and Jetpack Compose on Android.
 
 **Crew:** Karim, Karam, Hassan, Mersal, Baraa, Fayed, Ayman, Rayan, Gaber and Fakhr. Add more people in **Who’s in? → Add person**.
 
+## See the app
+
+[![Food Run app and architecture demo](Docs/media/demo-poster.jpg)](Docs/media/food-run-demo.mp4)
+
+**[Watch the 60-second demo](Docs/media/food-run-demo.mp4)** · **[App guide and screenshots](Docs/APP_GUIDE.md)** · **[Architecture](Docs/ARCHITECTURE.md)** · **[Test report](Docs/GROUP_ORDER_TEST_REPORT.md)**
+
+<table>
+<tr><th>iOS · Quick Spin</th><th>Android · permanent room</th><th>iOS · offline receipt</th></tr>
+<tr><td><img src="Docs/media/ios-wheel.jpg" width="240" alt="Food Run wheel with ten friends"></td><td><img src="Docs/media/android-room.png" width="240" alt="Android room on its second order"></td><td><img src="Docs/media/ios-offline-receipt.jpg" width="240" alt="Settled receipt and recipient available offline"></td></tr>
+</table>
+
+All documentation, screenshots, diagram sources and MP4 files live in this repository. The [media index](Docs/media/README.md) includes a video transcript and reproduction commands. Captures use demonstration restaurant/bank data.
+
 ## Install on Android
 
-Send [FoodRun-1.0.apk](Distributions/FoodRun-1.0.apk) to your friends. Open it on an Android phone, allow installation from that browser or file app when Android asks, and tap **Install**. Requires Android 8.0 or later.
+Build a signed APK using the [Android instructions](#build-android), then send the resulting APK to your friends. Open it on an Android phone, allow installation from that browser or file app when Android asks, and tap **Install**. Requires Android 8.0 or later. Generated installer files and private signing keys are excluded from Git; this repository contains the source and showcase media.
 
-The APK is signed for installation and future updates. No account or internet connection is needed. Names and results are saved on each device independently.
+The APK is signed for installation and future updates. Quick Spin works offline. Group rooms use your own Mac/PC hub on the same local network; no cloud account is needed.
+
+## Group meals on your local network
+
+1. Build the hub distribution on a Mac or PC with Java 17 or newer. Follow the [hub setup guide](room-server/README.md#build-from-source) to build and start it with your computer's LAN address.
+2. Keep the computer awake and connect phones to the same network. In Food Run, create or join a room and scan the hub's setup QR or paste its pairing link.
+3. The organizer chooses a saved restaurant or creates/imports its menu, sets fees, and approves joining members. Participating members mark themselves ready before the shared wheel starts.
+4. The selected person accepts, shares a receiving account, contacts the restaurant, and records ordering/payment. Each member chooses food, confirms the quoted total and recipient, and declares reimbursement; the recipient confirms receipt.
+5. After fulfillment and settlement, start the next order in the same room.
+
+**Rooms and memberships do not expire automatically.** Join once, then open the saved room for future meals. Use **Join this order / Skip this order** for daily participation. The organizer can remove members explicitly. Preserve the hub's data and keys and the app's saved data; uninstalling/resetting storage removes that device's saved membership.
+
+Downloaded receipts and order history remain available offline. Live updates resume when the app reconnects to the hub. Payments are recorded manually; Food Run does not initiate bank transfers or contact restaurants automatically.
+
+Restaurant menus can be saved locally, edited, shared as JSON, and imported with a preview. [Example menu](Docs/restaurant-menu.example.json). Saved receiving accounts and room sessions use encrypted native storage backed by Android Keystore or iOS Keychain.
 
 ## Features
 
@@ -25,27 +52,13 @@ Each spin is independent, so a previous winner can win again. Kotlin chooses the
 
 ## Architecture
 
-```text
-SwiftUI screens                         Compose screens
-      ↓                                     ↓
-WheelStore (iOS adapter)          FoodRunViewModel (Android adapter)
-      └──────────────────┬──────────────────┘
-              FoodRunController
-         immutable state + typed events
-                       ↓
-              FoodRunSession
-         roster rules + random spin plan
-                       ↓
-              FoodRunRepository
-                       ↓
-       UserDefaults / SharedPreferences
-```
+![Native apps, shared Kotlin modules and the local hub](Docs/media/architecture.svg)
 
-KMP owns form drafts, validation, navigation destinations, selection, persistence schema, history dates and display copy. Native adapters handle lifecycle, animation frames, haptics, timezone offsets and storage access. Screens render observed state and send events. Crew rows render lazily as the list grows.
+KMP owns form drafts, validation, navigation, application state and display models. Native adapters handle lifecycle, animation, secure storage, pinned transport, discovery and system sharing. The local JVM hub authorizes room changes, chooses shared spin results and persists group orders. Quick Spin operates separately using local preferences.
 
 Reusable buttons, controlled inputs, avatars, cards and dividers preserve Food Run’s orange/cream theme. The focused local [IosComponents package](Packages/IosComponents) is adapted from the supplied MOHRE library; Android has equivalent Compose components. Source provenance and fixes are in [component reuse](Docs/component-reuse.md).
 
-The current release uses English copy centralized in KMP. It has no server or cross-device synchronization; the repository and copy boundaries allow these features to be added later without putting application rules in the views.
+The app uses English copy centralized in KMP. `shared` contains application state and presentation, `order-domain` contains menu/billing rules, and `order-contract` defines the wire protocol. The hub encrypts record bodies in SQLite. Read the [full architecture guide](Docs/ARCHITECTURE.md) for the module map, sequence/state diagrams, privacy, recovery and current scaling limits; see the [implementation plan](Docs/GROUP_ORDER_PLAN.md) for product decisions.
 
 ## Build Android
 
@@ -74,7 +87,7 @@ Prerequisites: macOS, Xcode, JDK 17+, and the Android SDK for Gradle project con
 2. Select **FoodRun** and an iPhone simulator.
 3. Run with **⌘R**; test with **⌘U**.
 
-The Xcode pre-build phase builds and embeds the shared Kotlin framework automatically. For a physical iPhone, select your Apple development team under **Signing & Capabilities** and run on the connected device. Requires iOS 17+.
+The Xcode pre-build phase builds and embeds the shared Kotlin framework automatically. Keep simulator ad-hoc signing enabled: Keychain storage requires the app's entitlements, so do not build with `CODE_SIGNING_ALLOWED=NO`. For a physical iPhone, select your Apple development team under **Signing & Capabilities** and run on the connected device. Requires iOS 17+.
 
 After changing project structure, regenerate the project with `xcodegen generate`. To build both shared Apple framework variants explicitly:
 
@@ -83,6 +96,8 @@ After changing project structure, regenerate the project with `xcodegen generate
 ```
 
 ## Validation
+
+Food Run 1.1 passed **146 automated tests with zero failures or skips**, plus the actual Android↔iOS order/payment flow, offline/server restart recovery and permanent-room reuse. The [test report](Docs/GROUP_ORDER_TEST_REPORT.md) records evidence, artifacts and simulator/emulator limits. The following original Quick Spin regression checks remain part of the expanded suites:
 
 - **33 shared tests passed:** wheel landing, random eligibility, persistence, drafts, navigation, cancellation, save failures and timezone formatting.
 - **12 iOS tests passed**, including the original preference/history migration.

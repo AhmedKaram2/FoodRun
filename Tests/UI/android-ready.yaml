@@ -1,0 +1,11 @@
+appId: com.karim.foodrun
+---
+- tapOn:
+    id: ELIGIBLE
+- scrollUntilVisible:
+    element:
+      id: "action:READY:"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "action:READY:"

@@ -10,7 +10,10 @@ class MenuImportTest {
     }
     @Test fun invalidSchemaOrUnknownKeysAreRejected() {
         assertFailsWith<IllegalArgumentException> { MenuValidation.import(orderJson.encodeToString(export.copy(schemaVersion = 2))) }
-        assertFailsWith<IllegalArgumentException> { MenuValidation.import(orderJson.encodeToString(export).dropLast(1) + ",\"secret\":1}") }
+        val unknown = assertFailsWith<IllegalArgumentException> { MenuValidation.import(orderJson.encodeToString(export).dropLast(1) + ",\"secret\":1}") }
+        assertEquals("Menu JSON does not match the Food Run format. Check its schema and field names.", unknown.message)
+        assertFalse(unknown.message.orEmpty().contains("offset"))
+        assertFalse(unknown.message.orEmpty().contains("path:"))
     }
     @Test fun duplicateKeysIncludingEscapedKeysCannotOverridePrices() {
         val valid = orderJson.encodeToString(export)
@@ -35,6 +38,9 @@ class MenuImportTest {
     @Test fun invalidTaxPhoneMoneyAndOptionLimitsAreRejected() {
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(pricing = RestaurantPricing(taxTreatment = TaxTreatment.ADDED))) }
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(contact = RestaurantContact("https://not-a-phone"))) }
+        assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(contact = RestaurantContact("-----"))) }
+        assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(contact = RestaurantContact(whatsappE164 = "+ (12)"))) }
+        MenuValidation.validate(restaurant.copy(contact = RestaurantContact("+971 (50) 123-4567")))
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(menu = restaurant.menu.copy(items = restaurant.menu.items.map { it.copy(basePriceMinor = -1) }))) }
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(menu = restaurant.menu.copy(optionGroups = listOf(OptionGroup("g", "Extras", minSelections = 2, options = listOf(MenuOption("o", "Extra", 0))))))) }
     }

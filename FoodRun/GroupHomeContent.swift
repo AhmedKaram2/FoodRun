@@ -28,7 +28,7 @@ struct GroupHomeContent: View {
                 }.foregroundStyle(FoodTheme.onHero)
                 Text(GroupText.shared.groupTitle).font(FoodTypography.formTitle).foregroundStyle(FoodTheme.white)
                 Text(GroupText.shared.groupDescription).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.onHero)
-                ForEach(state.buttons.filter { $0.action == .create || $0.action == .join }, id: \.viewID) { button in
+                ForEach(state.buttons.filter { $0.action == .create || $0.action == .join }, id: \.renderID) { button in
                     GroupActionContent(button: button, busy: state.busy, dispatch: dispatch)
                 }
             }
@@ -39,12 +39,12 @@ struct GroupHomeContent: View {
             if !rooms.isEmpty {
                 VStack(alignment: .leading, spacing: FoodSpacing.s12) {
                     GroupSectionHeading(title: GroupText.shared.savedRooms, count: rooms.count)
-                    ForEach(rooms, id: \.id) { card in GroupCardContent(card: card, busy: state.busy, dispatch: dispatch) }
+                    ForEach(rooms, id: \.renderID) { card in GroupCardContent(card: card, busy: state.busy, dispatch: dispatch) }
                 }
             }
             VStack(alignment: .leading, spacing: FoodSpacing.s12) {
                 GroupSectionHeading(title: GroupText.shared.explore)
-                ForEach(state.buttons.filter { $0.action == .quickSpin || $0.action == .openLibrary }, id: \.viewID) { button in
+                ForEach(state.buttons.filter { $0.action == .quickSpin || $0.action == .openLibrary }, id: \.renderID) { button in
                     Button { dispatch(button.action, button.value) } label: {
                         HStack(spacing: FoodSpacing.s14) {
                             GroupIcon(symbol: button.symbol, accented: button.action == .quickSpin)
@@ -61,7 +61,7 @@ struct GroupHomeContent: View {
                     .accessibilityIdentifier("action:\(button.action.name):\(button.value)")
                 }
             }
-            ForEach(state.buttons.filter { ![GroupAction.create, .join, .quickSpin, .openLibrary].contains($0.action) }, id: \.viewID) { button in
+            ForEach(state.buttons.filter { ![GroupAction.create, .join, .quickSpin, .openLibrary].contains($0.action) }, id: \.renderID) { button in
                 GroupActionContent(button: button, busy: state.busy, dispatch: dispatch)
             }
             if let about = state.cards.first(where: { $0.id == "about" }) {

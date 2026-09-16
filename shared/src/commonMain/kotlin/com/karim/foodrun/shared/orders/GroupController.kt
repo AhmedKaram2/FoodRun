@@ -15,6 +15,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var session: StoredSession? = null
     internal var selectedRestaurant: RestaurantExport? = null
     internal var editingRestaurant: RestaurantExport? = null
+    internal var editingRoomOrder: Pair<String, Long>? = null
     internal var importPreview: RestaurantExport? = null
     internal var selectedItem: MenuItem? = null
     internal var variant: String? = null
@@ -70,6 +71,15 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.OPEN_LIBRARY -> { libraryReturnPage = page; page = GroupPage.LIBRARY }
             GroupAction.NEW_RESTAURANT -> restaurantEditor(null)
             GroupAction.EDIT_RESTAURANT -> restaurantEditor(library.restaurants.single { it.restaurant.id == value })
+            GroupAction.EDIT_ROOM_RESTAURANT -> {
+                libraryReturnPage = GroupPage.ROOM
+                val room = room()
+                restaurantEditor(RestaurantExport(exportId = room.restaurant.id, restaurant = room.restaurant), forRoom = true)
+            }
+            GroupAction.SELECT_TAX_TREATMENT -> {
+                val treatment = TaxTreatment.valueOf(value)
+                editingRestaurant = editingRestaurant?.let { it.copy(restaurant = it.restaurant.copy(pricing = it.restaurant.pricing.copy(taxTreatment = treatment))) }
+            }
             GroupAction.IMPORT_MENU -> platform.importMenu(callback { body -> importPreview = MenuValidation.import(body); draft[GroupFieldKey.JSON_MENU] = body; page = GroupPage.LIBRARY; publish() })
             GroupAction.PREVIEW_IMPORT -> { importPreview = MenuValidation.import(text(GroupFieldKey.JSON_MENU)); page = GroupPage.LIBRARY }
             GroupAction.CONFIRM_IMPORT -> { val item = requireNotNull(importPreview); saveRestaurant(item); importPreview = null; draft.remove(GroupFieldKey.JSON_MENU) }
@@ -91,11 +101,19 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.TOGGLE_OPTION -> options = if (value in options) options - value else options + value
             GroupAction.ADD_CART_ITEM -> addCartItem()
             GroupAction.REMOVE_CART_ITEM -> { val cart = myCart(); command(CommandKind.CART, cart = cart.copy(lines = cart.lines.filterNot { it.id == value }), revision = cart.revision) }
-            GroupAction.OPEN_ACCOUNT -> page = GroupPage.ACCOUNT
+            GroupAction.OPEN_ACCOUNT -> {
+                reply?.room?.account?.let { selectedAccount = it; seedAccount(it) }
+                page = GroupPage.ACCOUNT
+            }
             GroupAction.NEW_ACCOUNT -> newAccount()
             GroupAction.SELECT_ACCOUNT -> { selectedAccount = library.accounts.single { it.id == value }; seedAccount(selectedAccount!!) }
             GroupAction.SAVE_ACCOUNT -> saveAccount()
-            GroupAction.SHARE_ACCOUNT -> { saveAccount(); command(CommandKind.SHARE_ACCOUNT, account = selectedAccount); page = GroupPage.ROOM }
+            GroupAction.SHARE_ACCOUNT -> {
+                require(library.pending == null) { "Retry the saved request before sharing another account." }
+                saveAccount()
+                if (reply?.room?.account?.let(::accountMatchesDraft) == true) page = GroupPage.ROOM
+                else command(CommandKind.SHARE_ACCOUNT, account = selectedAccount)
+            }
             GroupAction.DELETE_ACCOUNT -> deleteAccount(value)
             GroupAction.OPEN_RECEIPTS -> page = GroupPage.RECEIPTS
             GroupAction.OPEN_HISTORY -> page = GroupPage.HISTORY
@@ -159,8 +177,18 @@ class GroupController(val platform: GroupPlatform) {
         else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION), fees = fees))
     }
     private fun back() {
-        if (page == GroupPage.RESTAURANT) formDrafts.finishRestaurant(draft)
-        page = when (page) { GroupPage.ITEM, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM; GroupPage.RESTAURANT -> GroupPage.LIBRARY; GroupPage.LIBRARY -> libraryReturnPage; else -> GroupPage.HOME }
+        val roomRestaurantEditor = page == GroupPage.RESTAURANT && editingRoomOrder != null
+        if (page == GroupPage.RESTAURANT) {
+            formDrafts.finishRestaurant(draft)
+            editingRestaurant = null
+            editingRoomOrder = null
+        }
+        page = when (page) {
+            GroupPage.ITEM, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
+            GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
+            GroupPage.LIBRARY -> libraryReturnPage
+            else -> GroupPage.HOME
+        }
     }
     private fun resume(s: StoredSession) {
         watching?.cancel(); generation++; session = s; reply = library.snapshots[s.roomId]; online = false
@@ -205,7 +233,12 @@ class GroupController(val platform: GroupPlatform) {
                         val s = StoredSession(hub, room.id, next.token, next.memberId, room.name)
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = c.name)
                     }
-                    accept(next, sentAt); replaceLibrary(library.copy(pending = null, pendingHub = null)); page = GroupPage.ROOM; startWatching()
+                    accept(next, sentAt); replaceLibrary(library.copy(pending = null, pendingHub = null))
+                    if (c.kind == CommandKind.UPDATE_RESTAURANT && editingRoomOrder != null) {
+                        formDrafts.finishRestaurant(draft); editingRoomOrder = null
+                    }
+                    if (c.kind in listOf(CommandKind.PLACE, CommandKind.PAY_RESTAURANT, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND)) draft.remove(GroupFieldKey.REFERENCE)
+                    page = GroupPage.ROOM; startWatching()
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Invalid hub response." }
                 publish()
             }
@@ -234,6 +267,17 @@ class GroupController(val platform: GroupPlatform) {
         }
         reply = combined; online = active
         if (changedOrder || changedFees) formDrafts.acceptRoomFees(room, page, libraryReturnPage, draft)
+        acceptFinancialDrafts(previousRoom, room, changedOrder)
+        if (page in listOf(GroupPage.ITEM, GroupPage.ACCOUNT) && changedOrder) {
+            page = GroupPage.ROOM; selectedItem = null; selectedAccount = null
+            error = "A new order has started. Review it before choosing food or a receiving account."
+        } else if (page == GroupPage.ITEM && (room.phase != RoomPhase.COLLECTING || previousRoom?.restaurant?.menu != room.restaurant.menu)) {
+            page = GroupPage.ROOM; selectedItem = null
+            error = "Ordering or the menu changed. Review the latest order before choosing food."
+        } else if (page == GroupPage.ACCOUNT && room.phase !in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) {
+            page = GroupPage.ROOM
+            error = "The order has moved on. Its receiving account can no longer be changed."
+        }
     }
     private fun startWatching() {
         if (!active) return

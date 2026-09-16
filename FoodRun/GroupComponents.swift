@@ -33,11 +33,17 @@ struct GroupActionContent: View {
     var body: some View {
         Group {
             if prominent ?? button.primary {
-                PrimaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled) { dispatch(button.action, button.value) }
+                PrimaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled, action: performAction)
             } else {
-                SecondaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled, destructive: button.destructive) { dispatch(button.action, button.value) }
+                SecondaryButton(title: button.title, symbol: button.symbol, isDisabled: busy || !button.enabled, destructive: button.destructive, action: performAction)
             }
         }.accessibilityIdentifier("action:\(button.action.name):\(button.value)")
+    }
+
+    private func performAction() {
+        // A submitted form or a saved selection must not leave its old input over the next step.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        dispatch(button.action, button.value)
     }
 }
 
@@ -70,7 +76,7 @@ struct GroupCardContent: View {
             if !member && !card.detail.isEmpty { detail }
             if !card.buttons.isEmpty {
                 if card.buttons.count > 1 { FoodDivider() }
-                ForEach(card.buttons, id: \.viewID) { button in
+                ForEach(card.buttons, id: \.renderID) { button in
                     GroupActionContent(button: button, busy: busy, dispatch: dispatch)
                 }
             }
@@ -102,6 +108,9 @@ struct GroupProgress: View {
 
 extension GroupButton {
     var viewID: String { "\(action.name):\(value)" }
+    // Kotlin data objects are reference types in Swift. Include visible state in the
+    // diffing identity so SwiftUI does not retain an old title or enabled state.
+    var renderID: String { "\(viewID):\(title):\(primary):\(destructive):\(enabled)" }
     var symbol: String {
         if destructive { return "trash" }
         switch action {
@@ -114,10 +123,19 @@ extension GroupButton {
         case .shareRoom, .exportMenu, .shareRestaurantOrder: return "square.and.arrow.up"
         case .scan: return "qrcode.viewfinder"
         case .discover, .connect: return "wifi"
-        case .ready, .confirmQuote, .saveRestaurant, .acceptDuty: return "checkmark"
+        case .ready, .confirmQuote, .saveRestaurant, .acceptDuty, .selectTaxTreatment: return "checkmark"
+        case .editRestaurant, .editRoomRestaurant: return "pencil"
         case .openAccount, .shareAccount, .declareTransfer: return "creditcard"
         case .importMenu: return "square.and.arrow.down"
         default: return "arrow.right"
         }
+    }
+}
+
+extension GroupCard {
+    // Keep account and receipt details out of the identity while still invalidating
+    // a row whenever its rendered content or actions change.
+    var renderID: String {
+        "\(id):\(title):\(detail.hashValue):\(badge):\(buttons.map(\.renderID).joined(separator: "|"))"
     }
 }

@@ -7,11 +7,11 @@ internal object GroupLayout {
     val roomUtilities = setOf(
         GroupAction.SHARE_ROOM, GroupAction.OPEN_RECEIPTS, GroupAction.OPEN_HISTORY,
         GroupAction.SAVE_ROOM_RESTAURANT, GroupAction.SET_FEES, GroupAction.REOPEN,
-        GroupAction.CANCEL, GroupAction.ADJUST_BILL,
+        GroupAction.CANCEL, GroupAction.ADJUST_BILL, GroupAction.OPEN_ACCOUNT, GroupAction.OPEN_LIBRARY, GroupAction.EDIT_ROOM_RESTAURANT,
     )
     val roomExtraFields = setOf(
         GroupFieldKey.REASON, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
-        GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL,
+        GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL, GroupFieldKey.BILL_ADJUSTMENT,
     )
 
     fun sections(page: GroupPage, cards: List<GroupCard>): List<GroupSection> {

@@ -79,3 +79,24 @@ internal fun GroupController.prepareNextOrder() {
     draft[GroupFieldKey.PROPORTIONAL] = previous.fees.proportionalDelivery.toString()
     page = GroupPage.SETUP
 }
+
+internal fun GroupController.acceptFinancialDrafts(previous: Room?, room: Room, changedOrder: Boolean) {
+    fun amount(value: Long) = Money.format(value, room.restaurant.currency).substringAfter(' ')
+    val changedBill = previous?.billRevision != room.billRevision
+    if (changedOrder || changedBill) draft[GroupFieldKey.BILL_ADJUSTMENT] = amount(room.adjustment)
+    val changedPhase = previous?.phase != room.phase
+    if (changedOrder || changedPhase) draft.remove(GroupFieldKey.REFERENCE)
+    val payer = room.payerId == me()
+    val relevantTransfersChanged = if (payer) previous?.transfers != room.transfers
+        else previous?.transfers?.filter { it.memberId == me() } != room.transfers.filter { it.memberId == me() }
+    val restaurantPaymentChanged = previous == null || previous.restaurantPaid != room.restaurantPaid
+    if (changedOrder || changedPhase || changedBill || restaurantPaymentChanged || relevantTransfersChanged) {
+        val visibleReceipts = requireNotNull(reply).receipts
+        val due = when {
+            payer && !room.restaurantPaid -> visibleReceipts.sumOf { it.total }
+            payer -> visibleReceipts.firstOrNull { GroupSettlementPresentation.refundAvailable(room, it) }?.balance?.let { -it }
+            else -> visibleReceipts.firstOrNull { it.memberId == me() }?.balance?.coerceAtLeast(0)
+        }
+        draft[GroupFieldKey.AMOUNT] = due?.let(::amount).orEmpty()
+    }
+}

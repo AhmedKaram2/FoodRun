@@ -2,13 +2,17 @@ package com.karim.foodrun.shared.orders
 
 import com.karim.foodrun.orders.*
 
-internal fun GroupController.restaurantEditor(export: RestaurantExport?) {
+internal fun GroupController.restaurantEditor(export: RestaurantExport?, forRoom: Boolean = false) {
     formDrafts.beginRestaurant(draft)
+    editingRoomOrder = if(forRoom) room().let { it.id to it.orderNumber } else null
     editingRestaurant = export ?: RestaurantExport(exportId = platform.uuid(), restaurant = Restaurant(platform.uuid(), "", menu = Menu(categories = listOf(MenuCategory("main", "Menu")))))
     val r = editingRestaurant!!.restaurant
     draft[GroupFieldKey.RESTAURANT_NAME] = r.name; draft[GroupFieldKey.BRANCH] = r.branchName
     draft[GroupFieldKey.CURRENCY] = r.currency; draft[GroupFieldKey.PHONE] = r.contact.phoneE164 ?: ""
-    draft[GroupFieldKey.ADDRESS] = r.contact.address ?: ""; seedFees(r); page = GroupPage.RESTAURANT
+    draft[GroupFieldKey.ADDRESS] = r.contact.address ?: ""
+    draft[GroupFieldKey.TAX_RATE] = Money.format((r.pricing.taxRateBasisPoints ?: 0).toLong(), "AED").substringAfter(' ')
+    draft[GroupFieldKey.MINIMUM_ORDER] = Money.format(r.pricing.minimumOrderMinor, r.currency).substringAfter(' ')
+    seedFees(r); page = GroupPage.RESTAURANT
 }
 internal fun GroupController.seedFees(r: Restaurant) {
     fun amount(v: Long) = Money.format(v, r.currency).substringAfter(' ')
@@ -29,11 +33,17 @@ internal fun GroupController.addMenuItem() {
 }
 internal fun GroupController.saveEditor() {
     val export = requireNotNull(editingRestaurant); val currency = text(GroupFieldKey.CURRENCY).trim().uppercase()
+    editingRoomOrder?.let { require(it == room().let { r -> r.id to r.orderNumber }) { "A different order is open. Return to it before editing its restaurant." } }
+    val taxRate = if(export.restaurant.pricing.taxTreatment == TaxTreatment.ADDED) Money.parse(text(GroupFieldKey.TAX_RATE), "AED").also {
+        require(it <= 10000) { "Tax rate must be between 0 and 100 percent." }
+    }.toInt() else export.restaurant.pricing.taxRateBasisPoints
     val r = export.restaurant.copy(name = text(GroupFieldKey.RESTAURANT_NAME).trim(), branchName = text(GroupFieldKey.BRANCH).trim(), currency = currency,
         contact = export.restaurant.contact.copy(phoneE164 = text(GroupFieldKey.PHONE).trim().ifEmpty { null }, address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
-        pricing = export.restaurant.pricing.copy(defaultDeliveryFeeMinor = fees(currency).delivery, defaultServiceFeeMinor = fees(currency).service))
+        pricing = export.restaurant.pricing.copy(defaultDeliveryFeeMinor = fees(currency).delivery, defaultServiceFeeMinor = fees(currency).service,
+            taxRateBasisPoints = taxRate, minimumOrderMinor = Money.parse(text(GroupFieldKey.MINIMUM_ORDER).ifBlank { "0" }, currency)))
     MenuValidation.validate(r); saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
-    formDrafts.finishRestaurant(draft); page = GroupPage.LIBRARY
+    if(editingRoomOrder != null) command(CommandKind.UPDATE_RESTAURANT, restaurant = r, text = text(GroupFieldKey.REASON).ifBlank { "Restaurant details updated" })
+    else { formDrafts.finishRestaurant(draft); page = GroupPage.LIBRARY }
 }
 internal fun GroupController.saveRestaurant(export: RestaurantExport) {
     MenuValidation.validate(export.restaurant)
@@ -46,11 +56,16 @@ internal fun GroupController.addCartItem() {
     val quantity = text(GroupFieldKey.QUANTITY).toIntOrNull() ?: error("Enter a whole-number quantity.")
     val line = CartLine(platform.uuid(), item.id, quantity, variant, options, text(GroupFieldKey.NOTE))
     val next = cart.copy(lines = cart.lines + line); Billing.lines(room().restaurant, next)
-    command(CommandKind.CART, cart = next, revision = cart.revision); page = GroupPage.ROOM
+    command(CommandKind.CART, cart = next, revision = cart.revision)
 }
 internal fun GroupController.seedAccount(a: ReceivingAccount) {
     draft[GroupFieldKey.ACCOUNT_HOLDER] = a.holder; draft[GroupFieldKey.ACCOUNT_BANK] = a.bank; draft[GroupFieldKey.ACCOUNT_IDENTIFIER] = a.identifier
 }
+internal fun GroupController.accountMatchesDraft(a: ReceivingAccount): Boolean =
+    selectedAccount?.id == a.id && a.holder == text(GroupFieldKey.ACCOUNT_HOLDER).trim() &&
+        a.bank == text(GroupFieldKey.ACCOUNT_BANK).trim() && a.identifier == text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim() &&
+        a.currency == (reply?.room?.restaurant?.currency ?: "AED")
+
 internal fun GroupController.saveAccount() {
     val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), reply?.room?.restaurant?.currency ?: "AED")
     a.validate(); require(library.accounts.size < 20 || library.accounts.any { it.id == a.id }) { "Saved-account limit reached." }
@@ -86,7 +101,7 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.REJECT_TRANSFER -> command(CommandKind.REJECT_TRANSFER, transferId = value, text = reason)
         GroupAction.DECLARE_REFUND -> command(CommandKind.DECLARE_REFUND, memberId = value, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency), text = text(GroupFieldKey.REFERENCE))
         GroupAction.CONFIRM_REFUND -> command(CommandKind.CONFIRM_REFUND, transferId = value)
-        GroupAction.ADJUST_BILL -> { val amount = text(GroupFieldKey.AMOUNT); command(CommandKind.ADJUST_BILL, amount = Money.parse(amount.removePrefix("-"), r.restaurant.currency) * if(amount.startsWith('-')) -1 else 1, text = reason) }
+        GroupAction.ADJUST_BILL -> { val amount = text(GroupFieldKey.BILL_ADJUSTMENT).trim(); command(CommandKind.ADJUST_BILL, amount = Money.parse(amount.removePrefix("-"), r.restaurant.currency) * if(amount.startsWith('-')) -1 else 1, text = reason) }
         GroupAction.APPROVE_ADJUSTMENT -> command(CommandKind.APPROVE_ADJUSTMENT, revision = r.billRevision)
         GroupAction.HANDOVER -> command(CommandKind.HANDOVER, memberId = value, text = reason)
         GroupAction.ARCHIVE -> command(CommandKind.ARCHIVE, text = reason)

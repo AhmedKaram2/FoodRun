@@ -140,6 +140,6 @@ Off-network access, push notifications, cloud accounts, multiple restaurants wit
 
 ## Verification and media sources
 
-The [state consistency report](CONSISTENCY_TEST_REPORT.md) records the latest 190-test matrix and a fresh Android ↔ iOS order, payment, offline recovery and next-order run. Mutations now carry `expectedOrderNumber`, independently of room/cart/quote revisions, to prevent a delayed command from affecting another meal in a permanent room. [UI flows](../Tests/UI/README.md) and platform audits explain reproducible integration setup. Passing this matrix does not establish every physical device/router condition.
+The [full flow audit](FULL_FLOW_AUDIT.md) records the latest 223-test matrix and a fresh Android ↔ iOS run through order, payment, adjustment, refund, offline recovery, and permanent-room reuse. Mutations carry `expectedOrderNumber`, independently of room/cart/quote revisions, to prevent a delayed command from affecting another meal in a permanent room. [UI flows](../Tests/UI/README.md) and platform audits explain reproducible integration setup. Passing this matrix does not establish every physical device/router condition.
 
 Diagram source: [GenerateShowcase.swift](../Scripts/GenerateShowcase.swift). Video assembly: [build-showcase.py](../Scripts/build-showcase.py). [Media index and transcript](media/README.md) describe the captures and video chapters.

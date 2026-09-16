@@ -93,7 +93,7 @@ Live room, spin and payment updates require the local hub. Returning to the loca
 
 ## Verification
 
-The latest state-consistency and default-participation changes passed **190 tests**, native builds and a fresh Android ↔ iOS order/payment/recovery flow. See the [current verification report](CONSISTENCY_TEST_REPORT.md).
+The latest full-flow changes passed **223 tests**, native builds, and a fresh Android ↔ iOS order/payment/adjustment/refund/recovery flow. See the [current verification report](FULL_FLOW_AUDIT.md).
 
 The earlier UI/UX refresh passed **79 tests** and native builds, plus simulator/emulator walkthroughs. See the [UI/UX review](UIUX_REVIEW.md#verification).
 

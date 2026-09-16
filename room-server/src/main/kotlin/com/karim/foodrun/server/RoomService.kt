@@ -101,7 +101,19 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },
         )
-        return RoomReply(room = visible, memberId = actor, receipts = receipts, serverTime = clock())
+        return RoomReply(room = visible, memberId = actor, receipts = receipts, serverTime = clock(),
+            progress = if (authorized) progress(room, actor) else null)
+    }
+    private fun progress(room: Room, actor: String): OrderProgress {
+        val reviewStage = actor == room.ownerId && room.phase == RoomPhase.COLLECTING
+        val archiveStage = actor == room.ownerId && room.phase == RoomPhase.FULFILLED
+        fun blocker(validate: () -> Unit): String = try { validate(); "" }
+            catch (invalid: IllegalArgumentException) { invalid.message ?: "Review the order before continuing." }
+        val reviewBlocker = if (reviewStage) blocker { RoomRules.requireReview(room) } else ""
+        val archiveBlocker = if (archiveStage) blocker { RoomRules.requireArchive(room) } else ""
+        return OrderProgress(accountShared = room.account != null,
+            canReview = reviewStage && reviewBlocker.isEmpty(), reviewBlocker = reviewBlocker,
+            canArchive = archiveStage && archiveBlocker.isEmpty(), archiveBlocker = archiveBlocker)
     }
     private fun requireLoadable(room: Room) {
         // Reserve half the native 4 MB response budget for a page of archived receipts.

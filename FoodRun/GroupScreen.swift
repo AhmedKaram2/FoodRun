@@ -38,12 +38,12 @@ struct GroupScreen: View {
                         if let wheel = state.wheel { GroupWheelContent(wheel: wheel).id(wheel.round.id) }
                         ForEach(state.mainFields, id: \.key.name) { field in fieldContent(field) }
                         if state.page != .room { extraOptions }
-                        ForEach(state.inlineButtons, id: \.viewID) { button in
+                        ForEach(state.inlineButtons, id: \.renderID) { button in
                             GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch, prominent: false)
                         }
                         ForEach(Array(state.sections.enumerated()), id: \.offset) { _, section in
                             if !section.title.isEmpty { GroupSectionHeading(title: section.title, count: section.cards.count) }
-                            ForEach(section.cards, id: \.id) { card in
+                            ForEach(section.cards, id: \.renderID) { card in
                                 GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
                             }
                         }
@@ -80,6 +80,7 @@ struct GroupScreen: View {
                 UIAccessibility.post(notification: .announcement, argument: message)
             }
             .onChange(of: state.page) { _, _ in
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 optionsExpanded = false
                 scroll.scrollTo("groupHeader", anchor: .top)
             }
@@ -134,15 +135,25 @@ struct GroupScreen: View {
 
     @ViewBuilder private var extraOptions: some View {
         if !state.extraFields.isEmpty || !state.utilityButtons.isEmpty {
-            DisclosureGroup(isExpanded: $optionsExpanded) {
-                VStack(spacing: FoodSpacing.s16) {
+            VStack(spacing: FoodSpacing.s16) {
+                Button { optionsExpanded.toggle() } label: {
+                    HStack(spacing: FoodSpacing.s12) {
+                        Text(state.page == .connect ? GroupText.shared.manualConnection : state.page == .library ? GroupText.shared.pasteMenu : GroupText.shared.roomOptions)
+                            .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
+                        Spacer(minLength: FoodSpacing.s8)
+                        Image(systemName: optionsExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(FoodTheme.muted).accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: FoodSpacing.s44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(optionsExpanded ? "Expanded" : "Collapsed")
+                .accessibilityIdentifier("groupOptions")
+                if optionsExpanded {
                     ForEach(state.extraFields, id: \.key.name) { field in fieldContent(field) }
-                    ForEach(state.utilityButtons, id: \.viewID) { button in actionButton(button) }
-                }.padding(.top, FoodSpacing.s16)
-            } label: {
-                Text(state.page == .connect ? GroupText.shared.manualConnection : state.page == .library ? GroupText.shared.pasteMenu : GroupText.shared.roomOptions)
-                    .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink).frame(minHeight: FoodSpacing.s44)
-                    .accessibilityIdentifier("groupOptions")
+                    ForEach(state.utilityButtons, id: \.renderID) { button in actionButton(button) }
+                }
             }
             .padding(FoodSpacing.s16).foodCard(showsBorder: true)
         }

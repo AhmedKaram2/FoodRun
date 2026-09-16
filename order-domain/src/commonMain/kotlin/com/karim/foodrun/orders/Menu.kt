@@ -2,6 +2,7 @@ package com.karim.foodrun.orders
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
@@ -40,7 +41,10 @@ object MenuValidation {
     fun import(text: String): RestaurantExport {
         require(text.length <= MAX_BYTES && text.encodeToByteArray().size <= MAX_BYTES) { "Menu file exceeds 2 MB." }
         JsonInputValidation.validate(text)
-        val export = orderJson.decodeFromString<RestaurantExport>(text)
+        val export = try { orderJson.decodeFromString<RestaurantExport>(text) }
+        catch (_: SerializationException) {
+            throw IllegalArgumentException("Menu JSON does not match the Food Run format. Check its schema and field names.")
+        }
         require(export.schema == "foodrun.restaurant" && export.schemaVersion == 1) { "Unsupported menu format. Version 1 is required." }
         label(export.exportId)
         require(export.revision > 0) { "Missing export identity or revision." }
@@ -53,7 +57,9 @@ object MenuValidation {
         require(r.pricing.taxRateBasisPoints == null || r.pricing.taxRateBasisPoints in 0..10000) { "Invalid tax rate." }
         if (r.pricing.taxTreatment == TaxTreatment.ADDED) require(r.pricing.taxRateBasisPoints != null) { "Enter the restaurant's tax rate." }
         listOf(r.pricing.defaultDeliveryFeeMinor, r.pricing.defaultServiceFeeMinor, r.pricing.minimumOrderMinor).forEach(::price)
-        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach { require(it.matches(Regex("\\+?[0-9 ()-]{5,24}"))) { "Invalid restaurant phone." } }
+        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach {
+            require(it.matches(Regex("\\+?[0-9 ()-]{5,24}")) && it.count { digit -> digit in '0'..'9' } >= 5) { "Enter a restaurant phone number with at least 5 digits." }
+        }
         require((r.contact.address?.length ?: 0) <= 1000)
         val m = r.menu
         require(m.items.size in 1..500 && m.categories.size in 1..100 && m.optionGroups.size <= 100) { "Menu needs 1–500 items and 1–100 categories." }

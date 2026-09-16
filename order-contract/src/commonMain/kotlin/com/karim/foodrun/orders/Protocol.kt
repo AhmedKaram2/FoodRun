@@ -23,10 +23,18 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val expectedOrderNumber: Long = 0,
 )
+@Serializable data class OrderProgress(
+    val accountShared: Boolean = false,
+    val canReview: Boolean = false, val reviewBlocker: String = "",
+    val canArchive: Boolean = false, val archiveBlocker: String = "",
+)
 @Serializable data class RoomReply(
     val protocolVersion: Int = 1, val ok: Boolean = true, val error: String = "", val code: String = "",
     val room: Room? = null, val token: String = "", val memberId: String = "", val serverTime: Long = 0,
     val receipts: List<Receipt> = emptyList(), val history: List<PastOrder> = emptyList(), val historyNextOffset: Int = -1,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val progress: OrderProgress? = null,
 )
 @Serializable data class HubPairing(val url: String, val fingerprint: String)
 @Serializable data class StoredSession(val hub: HubPairing, val roomId: String, val token: String, val memberId: String, val roomName: String)

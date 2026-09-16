@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -67,6 +68,8 @@ fun GroupScreen(controller: GroupController) {
         onDispose { controller.removeObserver(observer) }
     }
     val state = screenState
+    val focus = LocalFocusManager.current
+    LaunchedEffect(state.page) { focus.clearFocus() }
     BackHandler(state.canGoBack) { controller.dispatch(GroupAction.BACK, "") }
     if (state.page == GroupPage.QUICK_SPIN) {
         Column {

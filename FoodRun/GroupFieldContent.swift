@@ -57,7 +57,10 @@ struct GroupFieldContent: View {
             borderWidth: FoodBorder.thin,
             errorColor: FoodTheme.orange,
             errorFont: FoodTypography.captionButton,
-            inputIdentifier: field.key.name
+            inputIdentifier: field.key.name,
+            onSubmit: {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
         )
         .privacySensitive(field.secret)
     }
@@ -66,9 +69,10 @@ struct GroupFieldContent: View {
         switch field.key {
         case .hubUrl, .pairingLink: .URL
         case .phone: .phonePad
+        case .jsonMenu, .fingerprint, .accountIdentifier: .asciiCapable
         // Bill adjustments accept a leading minus; decimalPad has no minus key.
-        case .amount: .numbersAndPunctuation
-        case .deliveryFee, .serviceFee, .discount, .menuItemPrice: .decimalPad
+        case .billAdjustment: .numbersAndPunctuation
+        case .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice, .taxRate, .minimumOrder: .decimalPad
         case .quantity, .roomCode: .numberPad
         default: .default
         }

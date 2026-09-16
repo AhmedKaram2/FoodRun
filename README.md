@@ -111,9 +111,9 @@ After changing project structure, regenerate the project with `xcodegen generate
 
 The UI/UX refresh passed **79 automated tests**: **55 shared JVM tests** and **24 iOS tests**. Both native apps build successfully. Simulator/emulator walkthroughs cover navigation, Quick Spin, forms, room creation and readiness, including Android text at 140% size. The [UI/UX report](Docs/UIUX_REVIEW.md#verification) records the checks and their limits.
 
-### State consistency verification
+### Current full-flow verification
 
-The latest fixes pass **190 automated tests**, Android/iOS builds and a fresh two-device order, receipt, reimbursement and offline/reconnect flow. Payer eligibility now defaults on and its switch is hidden. See the [state consistency report](Docs/CONSISTENCY_TEST_REPORT.md) for exact coverage, the other corrected defects and platform limits.
+The latest full-flow fixes pass **223 automated tests**, Android/iOS builds, and a fresh emulator ↔ simulator run through account sharing, ordering, payment, adjustment, refund, archive, offline receipts, hub restart, and permanent-room reuse. Payer eligibility defaults on and its switch is hidden. See the [full flow audit](Docs/FULL_FLOW_AUDIT.md) for exact coverage, corrected defects, and platform limits.
 
 ### Earlier release verification
 

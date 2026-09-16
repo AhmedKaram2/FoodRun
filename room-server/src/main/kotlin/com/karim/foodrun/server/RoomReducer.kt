@@ -38,7 +38,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 require(!target.approved)
                 require(r.activeMembers.count { it.guest == target.guest } < if (target.guest) 10 else 30) { "Room capacity reached." }
                 require(r.phase == RoomPhase.LOBBY || target.guest || actorId == r.payerId || target.latePayerApproved) { "The payer must approve this late join before the organizer admits them." }
-                r.copy(members = r.members.map { if (it.id == target.id) it.copy(approved = true) else it }, quoteRevision = r.quoteRevision + 1)
+                r.copy(members = r.members.map { if (it.id == target.id) it.copy(approved = true) else it }, quoteRevision = r.quoteRevision + if (target.guest) 0 else 1)
             }
             CommandKind.REMOVE -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); reason()
@@ -83,7 +83,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh()
                 require(r.transfers.isEmpty()) { "An account with recorded transfers cannot be replaced." }
                 val account = requireNotNull(c.account); account.validate(); require(account.currency == r.restaurant.currency) { "Account currency must match the room." }
-                r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1), quoteRevision = r.quoteRevision + 1)
+                if (r.account == account.copy(version = r.account?.version ?: account.version)) r
+                else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1), quoteRevision = r.quoteRevision + 1)
             }
             CommandKind.CART -> {
                 orderer(); phase(RoomPhase.COLLECTING)
@@ -104,10 +105,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.REVIEW -> {
                 owner(); phase(RoomPhase.COLLECTING); fresh()
-                require(r.orderingMembers.all { m -> r.carts.any { it.memberId == m.id && it.submitted } }) { "Wait for every member to submit a cart or choose no food." }
-                require(r.account != null) { "The payer must share an account first." }
-                require(Billing.receipts(r).any { it.lines.isNotEmpty() }) { "No food was ordered." }
-                require(r.fees.discount <= Billing.receipts(r).sumOf { it.food }) { "Discount cannot exceed food total." }
+                RoomRules.requireReview(r)
                 r.copy(phase = RoomPhase.REVIEW)
             }
             CommandKind.CONFIRM_QUOTE -> {
@@ -129,7 +127,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     catch (invalid: IllegalArgumentException) { throw IllegalArgumentException("Some cart selections are no longer valid. Reopen ordering and ask members to remove those items or extras before updating the menu.") }
                     catch (invalid: IllegalStateException) { throw IllegalArgumentException("A cart still contains a removed menu item. Reopen ordering and ask that member to remove it before updating the menu.") }
                 }
-                r.copy(restaurant = restaurant, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
+                if (restaurant.copy(contact = r.restaurant.contact) == r.restaurant) r.copy(restaurant = restaurant)
+                else r.copy(restaurant = restaurant, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
                     members = r.members.map { it.copy(ready = false) },
                     carts = r.carts.map { it.copy(revision = it.revision + 1, submitted = false, confirmedQuote = -1) },
                     quoteRevision = r.quoteRevision + 1, deadline = 0,
@@ -138,7 +137,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             CommandKind.SET_FEES -> {
                 require(actorId == r.ownerId || actorId == r.payerId); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); reason()
                 val fees = requireNotNull(c.fees); RoomRules.validateFees(fees)
-                r.copy(fees = fees, phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
+                if (fees == r.fees) r
+                else r.copy(fees = fees, phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PLACE -> {
                 payer(); phase(RoomPhase.REVIEW); fresh(); RoomRules.requireConfirmed(r)
@@ -176,7 +176,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             CommandKind.ADJUST_BILL -> {
                 payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh(); reason()
                 require(c.amount in -MenuValidation.MAX_MONEY..MenuValidation.MAX_MONEY) { "Invalid bill adjustment." }
-                r.copy(adjustment = c.amount, adjustmentApprovals = listOf(actorId), billRevision = r.billRevision + 1, restaurantPaid = false).also { Billing.receipts(it) }
+                if (c.amount == r.adjustment) r
+                else r.copy(adjustment = c.amount, adjustmentApprovals = listOf(actorId), billRevision = r.billRevision + 1, restaurantPaid = false).also { Billing.receipts(it) }
             }
             CommandKind.APPROVE_ADJUSTMENT -> {
                 orderer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); require(c.expectedRevision == r.billRevision) { "The bill changed again." }
@@ -189,8 +190,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.ARCHIVE -> {
                 owner(); phase(RoomPhase.FULFILLED); fresh()
-                require(r.restaurantPaid) { "Confirm the restaurant payment first." }
-                require(Billing.receipts(r).all { it.balance == 0L } && r.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
+                RoomRules.requireArchive(r)
                 r.copy(phase = RoomPhase.ARCHIVED)
             }
             CommandKind.CANCEL -> { owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.ACCEPTING); fresh(); reason(); r.copy(phase = RoomPhase.CANCELLED) }

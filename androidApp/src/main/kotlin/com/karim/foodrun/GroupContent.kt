@@ -85,10 +85,11 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             GroupFieldKey.HUB_URL, GroupFieldKey.PAIRING_LINK -> KeyboardType.Uri
             GroupFieldKey.PHONE -> KeyboardType.Phone
             GroupFieldKey.QUANTITY, GroupFieldKey.ROOM_CODE -> KeyboardType.Number
+            GroupFieldKey.JSON_MENU, GroupFieldKey.FINGERPRINT, GroupFieldKey.ACCOUNT_IDENTIFIER -> KeyboardType.Ascii
             // Decimal input does not request a signed number pad. Keep minus accessible for bill reductions.
-            GroupFieldKey.AMOUNT -> KeyboardType.Ascii
-            GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
-            GroupFieldKey.DISCOUNT -> KeyboardType.Decimal
+            GroupFieldKey.BILL_ADJUSTMENT -> KeyboardType.Ascii
+            GroupFieldKey.AMOUNT, GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
+            GroupFieldKey.DISCOUNT, GroupFieldKey.TAX_RATE, GroupFieldKey.MINIMUM_ORDER -> KeyboardType.Decimal
             else -> KeyboardType.Text
         }
         FoodTextField(
@@ -114,7 +115,11 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
 @Composable
 internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: GroupController, prominent: Boolean = button.primary) {
     val modifier = Modifier.testTag("action:${button.action.name}:${button.value}")
-    val click = { controller.dispatch(button.action, button.value) }
+    val focus = LocalFocusManager.current
+    val click = {
+        focus.clearFocus()
+        controller.dispatch(button.action, button.value)
+    }
     if (prominent) PrimaryButton(
         text = button.title,
         icon = groupActionIcon(button),

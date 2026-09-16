@@ -17,6 +17,17 @@ object RoomRules {
         require(room.expectedNames.all { name -> room.orderingMembers.any { it.name.equals(name.trim(), true) } }) { "Some expected people have not joined. Remove absent invitations explicitly." }
         require(room.orderingMembers.any { it.eligible }) { "At least one member must consent to ordering and paying." }
     }
+    fun requireReview(room: Room) {
+        require(room.orderingMembers.all { m -> room.carts.any { it.memberId == m.id && it.submitted } }) { "Wait for every member to submit a cart or choose no food." }
+        require(room.account != null) { "The payer must share an account first." }
+        val receipts = Billing.receipts(room)
+        require(receipts.any { it.lines.isNotEmpty() }) { "No food was ordered. Add food or cancel this order." }
+        require(room.fees.discount <= receipts.sumOf { it.food }) { "Discount cannot exceed food total." }
+    }
+    fun requireArchive(room: Room) {
+        require(room.restaurantPaid) { "Confirm the restaurant payment first." }
+        require(Billing.receipts(room).all { it.balance == 0L } && room.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
+    }
     fun requireConfirmed(room: Room) {
         require(room.orderingMembers.all { m -> room.carts.any { it.memberId == m.id && it.submitted && it.confirmedQuote == room.quoteRevision } }) { "Wait for everyone to confirm the current quote, including members ordering no food." }
         require(room.account != null) { "The payer must share a receiving account." }
@@ -25,6 +36,6 @@ object RoomRules {
         require(receipts.any { it.lines.isNotEmpty() }) { "Everyone chose no food. Cancel this order." }
         require(room.fees.discount <= receipts.sumOf { it.food }) { "Discount cannot exceed food total." }
         require(receipts.sumOf { it.food } >= room.restaurant.pricing.minimumOrderMinor) { "Restaurant minimum order has not been reached." }
-        require(!room.restaurant.contact.phoneE164.isNullOrBlank() || !room.restaurant.contact.whatsappE164.isNullOrBlank()) { "Add a restaurant contact before creating this room." }
+        require(!room.restaurant.contact.phoneE164.isNullOrBlank() || !room.restaurant.contact.whatsappE164.isNullOrBlank()) { "Add a restaurant phone or WhatsApp number in the restaurant details before placing this order." }
     }
 }

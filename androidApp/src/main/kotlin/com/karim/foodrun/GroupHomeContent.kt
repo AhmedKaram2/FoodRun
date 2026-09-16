@@ -108,8 +108,9 @@ internal fun groupActionIcon(button: GroupButton): ImageVector = when {
         GroupAction.OPEN_LIBRARY, GroupAction.OPEN_ITEM, GroupAction.OPEN_RECEIPTS -> Icons.Default.Menu
         GroupAction.OPEN_HISTORY -> Icons.Default.DateRange
         GroupAction.SHARE_ROOM, GroupAction.SHARE_RECEIPT, GroupAction.EXPORT_MENU -> Icons.Default.Share
-        GroupAction.READY, GroupAction.CONFIRM_QUOTE, GroupAction.SAVE_RESTAURANT, GroupAction.ACCEPT_DUTY -> Icons.Default.Check
-        GroupAction.EDIT_RESTAURANT -> Icons.Default.Edit
+        GroupAction.READY, GroupAction.CONFIRM_QUOTE, GroupAction.SAVE_RESTAURANT, GroupAction.ACCEPT_DUTY,
+        GroupAction.SELECT_TAX_TREATMENT -> Icons.Default.Check
+        GroupAction.EDIT_RESTAURANT, GroupAction.EDIT_ROOM_RESTAURANT -> Icons.Default.Edit
         else -> Icons.AutoMirrored.Filled.ArrowForward
     }
 }

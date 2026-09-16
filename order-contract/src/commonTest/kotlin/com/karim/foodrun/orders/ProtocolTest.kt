@@ -23,6 +23,13 @@ class ProtocolTest {
         val member = orderJson.decodeFromString<Member>("""{"id":"member","name":"Karim"}""")
         assertTrue(member.participating)
     }
+    @Test fun legacyRepliesOmitProgressAndNewRepliesKeepSafeAvailability() {
+        val legacy = orderJson.decodeFromString<RoomReply>("""{"memberId":"member"}""")
+        assertNull(legacy.progress)
+        assertFalse(orderJson.encodeToString(legacy).contains("progress"))
+        val current = legacy.copy(progress = OrderProgress(accountShared = true, canReview = true))
+        assertEquals(current, orderJson.decodeFromString<RoomReply>(orderJson.encodeToString(current)))
+    }
     @Test fun unknownCommandsAndUnexpectedFieldsFailClosed() {
         assertFailsWith<IllegalArgumentException> { orderJson.decodeFromString<RoomCommand>("""{"commandId":"1234567890123456","kind":"BECOME_OWNER"}""") }
         assertFailsWith<IllegalArgumentException> { orderJson.decodeFromString<RoomCommand>("""{"commandId":"1234567890123456","kind":"READY","isAdmin":true}""") }

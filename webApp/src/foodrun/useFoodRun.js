@@ -3,9 +3,11 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
 
+const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || '';
+
 export function useFoodRun() {
   const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
-  const [hub, setHub] = useState(() => localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || '');
+  const [hub, setHub] = useState(() => localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
@@ -33,7 +35,9 @@ export function useFoodRun() {
           setSessions(old => ({ ...old, ...Object.fromEntries(next.home.rooms.map(room => [room.roomId, room])) }));
           next.home.invitations.forEach(invite => alert(`invite:${invite.id}`, `You're invited to ${invite.roomName}.`, 'Join from your home screen.'));
         }, (connected, reason) => { setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
-      } catch (e) { if (!cancelled) setError(`Could not connect to the hub. ${e.message} Open its HTTPS address once to trust its certificate after checking the fingerprint, and allow local-network access.`); }
+      } catch (e) { if (!cancelled) setError(hub === publicHub
+        ? `Could not connect to the internet room. ${e.message} Retry when your internet connection is available.`
+        : `Could not connect to the nearby hub. ${e.message} Open its HTTPS address once to trust its certificate after checking the fingerprint, and allow local-network access.`); }
     };
     connect();
     const refresh = setInterval(() => { stop(); connect(); }, 50 * 60 * 1000);

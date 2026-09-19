@@ -122,6 +122,7 @@ extension GroupButton {
         case .openHistory: return "clock.arrow.circlepath"
         case .shareRoom, .exportMenu, .shareRestaurantOrder: return "square.and.arrow.up"
         case .scan: return "qrcode.viewfinder"
+        case .useInternet: return "globe"
         case .discover, .connect: return "wifi"
         case .ready, .confirmQuote, .saveRestaurant, .acceptDuty, .selectTaxTreatment: return "checkmark"
         case .editRestaurant, .editRoomRestaurant: return "pencil"

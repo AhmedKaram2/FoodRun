@@ -94,13 +94,14 @@ internal class GroupPresentation(private val c: GroupController) {
         if(c.library.home?.people.isNullOrEmpty()) card("empty", "Bring the crew", "Ask people to sign in on this hub. You can also share the room code.")
     }
     private fun connect() {
-        title = "Connect to your table"; subtitle = "Use the nearby hub for live rooms with very low cloud usage."
+        title = "Connect to your table"; subtitle = "Use the internet from anywhere, or keep live traffic on a nearby hub."
+        button("Use internet room", GroupAction.USE_INTERNET, primary = true)
         field(GroupFieldKey.PAIRING_LINK, "Paste the server pairing link", multiline = true)
         field(GroupFieldKey.HUB_URL, "Local API address · https://192.168.1.20:8443")
         field(GroupFieldKey.FINGERPRINT, "Private hub certificate SHA-256 · optional for public HTTPS", multiline = true)
         button("Scan server QR", GroupAction.SCAN); button("Find nearby hub", GroupAction.DISCOVER)
-        button("Use this hub", GroupAction.CONNECT, primary = true)
-        card("trust", "Smart local mode", "Phones and web exchange live room events directly with this hub. Firebase stores accounts and async backups; a public API remains available as an optional fallback deployment.")
+        button("Use nearby hub", GroupAction.CONNECT)
+        card("trust", "Smart hybrid mode", "Internet rooms work from any network. A nearby hub keeps live commands and updates on your local network to reduce server traffic.")
     }
     private fun setup() {
         title = if(c.joinMode && !c.nextOrder) "Join your people" else if(c.nextOrder) "A fresh order" else "Create your room"

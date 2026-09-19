@@ -94,6 +94,12 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.BACK -> back()
             GroupAction.QUICK_SPIN -> page = GroupPage.QUICK_SPIN
             GroupAction.CREATE, GroupAction.JOIN -> { joinMode = action == GroupAction.JOIN; nextOrder = false; page = GroupPage.CONNECT; seedHub() }
+            GroupAction.USE_INTERNET -> {
+                draft[GroupFieldKey.PAIRING_LINK] = ""
+                draft[GroupFieldKey.HUB_URL] = FOOD_RUN_INTERNET_API
+                draft[GroupFieldKey.FINGERPRINT] = ""
+                connect()
+            }
             GroupAction.CONNECT -> connect()
             GroupAction.DISCOVER -> platform.discover(callback { body -> draft[GroupFieldKey.HUB_URL] = body; error = "Hub found. Scan its setup QR or paste its fingerprint to verify its identity."; publish() })
             GroupAction.SCAN -> platform.scanPairing(callback { body -> draft[GroupFieldKey.PAIRING_LINK] = body; connect() })

@@ -105,6 +105,7 @@ internal fun groupActionIcon(button: GroupButton): ImageVector = when {
     else -> when (button.action) {
         GroupAction.CREATE, GroupAction.CREATE_ROOM, GroupAction.NEW_RESTAURANT, GroupAction.ADD_MENU_ITEM, GroupAction.ADD_CART_ITEM -> Icons.Default.Add
         GroupAction.JOIN, GroupAction.JOIN_ROOM, GroupAction.RESUME -> Icons.Default.Person
+        GroupAction.USE_INTERNET -> Icons.Default.Share
         GroupAction.QUICK_SPIN, GroupAction.PREPARE_SPIN, GroupAction.REFRESH, GroupAction.RETRY -> Icons.Default.Refresh
         GroupAction.OPEN_LIBRARY, GroupAction.OPEN_ITEM, GroupAction.OPEN_RECEIPTS -> Icons.Default.Menu
         GroupAction.OPEN_HISTORY -> Icons.Default.DateRange

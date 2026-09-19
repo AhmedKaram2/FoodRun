@@ -710,6 +710,15 @@ class GroupFlowIntegrationTest {
         c.dispatch(GroupAction.READY); bus.drain()
         assertEquals("https://192.168.1.99:8443", phone.requestedHubs.last().url)
     }
+    @Test fun internetRoomActionSelectsTheDeployedPublicApiWithoutCertificatePinning(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone()
+        c.dispatch(GroupAction.CREATE)
+        assertTrue(c.state.buttons.any { it.action == GroupAction.USE_INTERNET && it.primary })
+        c.dispatch(GroupAction.USE_INTERNET)
+        assertEquals(GroupPage.SETUP, c.state.page)
+        assertEquals(FOOD_RUN_INTERNET_API, c.library.selectedHub?.url)
+        assertEquals("", c.library.selectedHub?.fingerprint)
+    }
     @Test fun partialCurrencyInputNeverCrashesRestaurantRenderingAndContactEditKeepsWhatsApp(): Unit = Bus().use { bus ->
         val (c, _) = bus.phone(); c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.IMPORT_MENU); c.dispatch(GroupAction.CONFIRM_IMPORT)
         val export = c.library.restaurants.single()

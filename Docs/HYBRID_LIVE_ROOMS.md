@@ -23,7 +23,7 @@ npm ci
 npm run build
 cd ..
 ./gradlew :room-server:test :room-server:installDist
-docker build -f room-server/Dockerfile -t foodrun-api .
+docker build -t foodrun-api .
 ```
 
 The repository also includes `render.yaml`. In Render, create a Blueprint from this repository and enter the existing Intrvioo web API key for the prompted `FOODRUN_FIREBASE_API_KEY`. The blueprint provisions one Frankfurt web-service instance and a persistent 1 GB disk. A paid Render instance is required for the disk; do not remove it because the server stores the authoritative room and order state in SQLite.

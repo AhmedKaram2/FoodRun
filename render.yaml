@@ -4,12 +4,11 @@ services:
     runtime: docker
     plan: 0.5c-512mb
     region: frankfurt
-    dockerfilePath: ./room-server/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     autoDeployTrigger: commit
     numInstances: 1
-    maxShutdownDelaySeconds: 30
     disk:
       name: foodrun-data
       mountPath: /var/lib/foodrun

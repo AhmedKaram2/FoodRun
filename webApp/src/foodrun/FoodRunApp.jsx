@@ -17,6 +17,9 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.1/FoodRun-Android-1.1.apk';
+const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
+
 function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'FR';
 }
@@ -25,6 +28,31 @@ function Avatar({ profile, small = false }) {
   return profile?.photo
     ? <img className={`avatar ${small ? 'small' : ''}`} src={profile.photo} alt="" />
     : <span className={`avatar initials ${small ? 'small' : ''}`}>{initials(profile?.name)}</span>;
+}
+
+function AppDownloads({ compact = false }) {
+  const [iosHelp, setIosHelp] = useState(false);
+  return <section id="app-downloads" className={`app-downloads ${compact ? 'compact' : ''}`}>
+    <div className="download-heading">
+      <div><p className="eyebrow">FOOD RUN ON YOUR PHONE</p><h2>Take the table with you.</h2></div>
+      <p>Use the same account and join Internet Rooms from Android, iPhone, or the web.</p>
+    </div>
+    <div className="download-grid">
+      <article className="download-card">
+        <span className="platform-icon android" aria-hidden="true">◆</span>
+        <div><strong>Android app</strong><small>Version 1.1 · Android 8+</small></div>
+        <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>Download APK</a>
+      </article>
+      <article className="download-card">
+        <span className="platform-icon apple" aria-hidden="true">●</span>
+        <div><strong>iPhone app</strong><small>{IOS_STORE_URL ? 'Available for iPhone and iPad' : 'Install from Safari · iOS 17+'}</small></div>
+        {IOS_STORE_URL
+          ? <a className="secondary store-button" href={IOS_STORE_URL}>Open App Store</a>
+          : <button className="secondary store-button" onClick={() => setIosHelp(value => !value)}>Install on iPhone</button>}
+      </article>
+    </div>
+    {iosHelp && <div className="ios-install" role="status"><b>On iPhone or iPad:</b> open this page in Safari, tap the Share button, then choose <b>Add to Home Screen</b> and <b>Add</b>.</div>}
+  </section>;
 }
 
 function AuthScreen({ ready }) {
@@ -56,6 +84,7 @@ function AuthScreen({ ready }) {
       <h1>Good food.<br />Better together.</h1>
       <p>Pick who will order, collect everyone’s food live, and settle every share without the group-chat chaos.</p>
       <div className="story-steps"><span>01 Join</span><span>02 Select</span><span>03 Order</span><span>04 Settle</span></div>
+      <AppDownloads compact />
     </section>
     <section className="auth-card card">
       <p className="eyebrow">YOUR TABLE AWAITS</p>
@@ -164,6 +193,7 @@ function Home({ data, setPage, openRoom }) {
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] }));
   return <Page title={`Good food, ${home.profile.name?.split(' ')[0] || 'together'}.`} subtitle="Start a table or jump back into today’s order." actions={<><button className="icon-button" aria-label="Notifications" onClick={() => Notification.requestPermission()}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || 'Complete profile'}</button></>}>
     <section className="hero card"><div><p className="eyebrow">A TABLE FOR EVERYONE</p><h2>One room. The whole crew.</h2><p>Everyone joins live, the wheel picks who orders, and every item and amount stays together.</p><div className="hero-actions"><button className="primary light" onClick={() => setPage('create')}>Create a room</button><button className="secondary light" onClick={() => setPage('join')}>Join with code</button></div></div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+    <AppDownloads />
     {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">YOU’RE INVITED</p><h2>Join the table</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">Invitation</span><h3>{invite.roomName}</h3><p>{invite.invitedBy} invited you to order #{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>Join room</button></article>)}</div></section>}
     <section><div className="section-title"><div><p className="eyebrow">YOUR TABLES</p><h2>Live rooms</h2></div><span>{roomCards.length}</span></div>
       {roomCards.length ? <div className="grid two">{roomCards.map(({ session, reply }) => {
@@ -276,9 +306,10 @@ export default function FoodRunApp() {
   const home = data.home;
   const profileMissing = !home.profile.name || !home.profile.phone;
   let content;
-  if (page === 'profile' || profileMissing) content = <ProfileScreen profile={home.profile} busy={data.busy} send={data.send} onBack={() => setPage('home')} />;
+  if (page === 'downloads') content = <Page title="Get Food Run" subtitle="Install the mobile app and keep your table close." onBack={() => setPage('home')}><AppDownloads /></Page>;
+  else if (page === 'profile' || profileMissing) content = <ProfileScreen profile={home.profile} busy={data.busy} send={data.send} onBack={() => setPage('home')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={() => setPage('home')} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} />;
-  return <>{alerts}{content}<footer><span>Food Run</span><button onClick={() => setPage('profile')}>Profile</button><button onClick={() => data.connect('')}>Switch room server</button><button onClick={() => signOut(auth)}>Sign out</button></footer></>;
+  return <>{alerts}{content}<footer><span>Food Run</span><button onClick={() => setPage('downloads')}>Get the apps</button><button onClick={() => setPage('profile')}>Profile</button><button onClick={() => data.connect('')}>Switch room server</button><button onClick={() => signOut(auth)}>Sign out</button></footer></>;
 }

@@ -1,0 +1,16 @@
+{
+  "name": "Food Run",
+  "short_name": "Food Run",
+  "description": "Choose who orders, collect everyone's food live, and split the bill.",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#faf7ef",
+  "theme_color": "#183e35",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/foodrun-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/foodrun-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

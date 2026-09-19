@@ -216,7 +216,7 @@ function CreateRoom({ data, mode, onBack, openRoom }) {
       name: profile.name.trim(), text: form.room.trim(), restaurant: {
         id: crypto.randomUUID(), name: form.restaurant.trim(), branchName: '', currency: 'AED',
         contact: { phoneE164: form.phone.trim() || null, whatsappE164: null, address: null },
-        pricing: { taxTreatment: 'INCLUDED', taxRateBasisPoints: null, defaultDeliveryFeeMinor: 0, defaultServiceFeeMinor: 0, minimumOrderMinor: 0 },
+        pricing: { taxTreatment: 'included', taxRateBasisPoints: null, defaultDeliveryFeeMinor: 0, defaultServiceFeeMinor: 0, minimumOrderMinor: 0 },
         notes: '', menu: { categories: [], optionGroups: [], items: [] }, openOrdering: true,
       }, expectedNames: [], flag: false, destination: '', deadline: 0,
       fees: { delivery: 0, service: 0, discount: 0, proportionalDelivery: false },

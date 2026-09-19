@@ -127,6 +127,7 @@ private final class MemoryGroupPlatform: GroupPlatform {
     func request(hub: HubPairing, body: String, callback: GroupReplyCallback) {}
     func watch(hub: HubPairing, body: String, callback: GroupReplyCallback) -> GroupSubscription { NoSubscription() }
     func share(text: String, fileName: String) {}
+    func doCopyToClipboard(text: String) {}
     func importMenu(callback: GroupReplyCallback) {}
     func scanPairing(callback: GroupReplyCallback) {}
     func discover(callback: GroupReplyCallback) {}

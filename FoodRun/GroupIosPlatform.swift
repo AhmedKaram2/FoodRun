@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 import FoodRunShared
 
@@ -50,6 +51,7 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
     }
 
     func share(text: String, fileName: String) { documents.share(text: text, fileName: fileName) }
+    func doCopyToClipboard(text: String) { UIPasteboard.general.string = text }
     func importMenu(callback: GroupReplyCallback) { documents.importMenu(callback) }
     func scanPairing(callback: GroupReplyCallback) { documents.scanPairing(callback) }
     func discover(callback: GroupReplyCallback) { discovery.discover(callback) }

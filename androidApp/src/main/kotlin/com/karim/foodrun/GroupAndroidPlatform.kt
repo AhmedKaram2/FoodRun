@@ -105,6 +105,11 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
         current.startActivity(Intent.createChooser(intent, null))
     }
 
+    override fun copyToClipboard(text: String) {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Food Run restaurant order", text))
+    }
+
     override fun importMenu(callback: GroupReplyCallback) {
         check(importCallback == null) { context.getString(R.string.group_import_active) }
         val launcher = requireNotNull(documents) { context.getString(R.string.group_menu_open_failed) }

@@ -2,6 +2,24 @@ package com.karim.foodrun.shared.orders
 
 import com.karim.foodrun.orders.*
 
+internal fun restaurantReadyText(room: Room, receipts: List<Receipt>): String {
+    val combined = linkedMapOf<Pair<String, String>, Int>()
+    receipts.flatMap { it.lines }.forEach { line ->
+        val key = line.description to line.notes
+        combined[key] = (combined[key] ?: 0) + line.quantity
+    }
+    val lines = combined.map { (key, quantity) ->
+        val (description, notes) = key
+        val rawQuantity = quantity.toString()
+        val shownQuantity = if(description.any { it in '\u0600'..'\u06ff' }) {
+            val arabic = "٠١٢٣٤٥٦٧٨٩"
+            rawQuantity.map { if(it in '0'..'9') arabic[it - '0'] else it }.joinToString("")
+        } else rawQuantity
+        "$shownQuantity $description${if(notes.isNotBlank()) " — $notes" else ""}"
+    }
+    return (listOf(room.restaurant.name, if(room.deliveryMode) "Delivery: ${room.destination}" else "Pickup", "") + lines).joinToString("\n")
+}
+
 internal class GroupPresentation(private val c: GroupController) {
     private val fields = mutableListOf<GroupField>()
     private val cards = mutableListOf<GroupCard>()
@@ -257,7 +275,7 @@ internal class GroupPresentation(private val c: GroupController) {
             RoomPhase.ARCHIVED, RoomPhase.CANCELLED -> { card("complete", "Your room stays open", "This order is ${if(r.phase == RoomPhase.CANCELLED) "cancelled" else "complete"}. Everyone keeps their membership for the next meal."); if(owner) button("Start a new order", GroupAction.NEXT_ORDER, primary = true) }
         }
         val contact = r.restaurant.contact.phoneE164 ?: r.restaurant.contact.whatsappE164 ?: ""
-        if(payer) card("contact", r.restaurant.name, "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = listOf(GroupButton("Call restaurant", GroupAction.CALL_RESTAURANT), GroupButton("Share combined food order", GroupAction.SHARE_RESTAURANT_ORDER)))
+        if(payer) card("contact", r.restaurant.name, "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = listOf(GroupButton("Call restaurant", GroupAction.CALL_RESTAURANT), GroupButton("Finish ordering · copy list", GroupAction.SHARE_RESTAURANT_ORDER, primary = r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW))))
     }
     private fun cart() { val r = c.room(); c.myCart().lines.forEach { l -> val name = l.description.ifEmpty { r.restaurant.menu.items.single { it.id == l.itemId }.name }; card("cart:${l.id}", "${l.quantity} × $name", l.notes, if(l.description.isNotEmpty()) l.unitPrice?.let { Money.format(it * l.quantity, r.restaurant.currency) } ?: "Awaiting price" else "", actions = listOf(GroupButton("Remove", GroupAction.REMOVE_CART_ITEM, l.id))) }; c.reply?.receipts?.firstOrNull { it.memberId == c.me() }?.let { card("estimate", "Your estimated total", it.totalText) } }
     private fun item() {
@@ -323,8 +341,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }
-        return (listOf("Food Run · ${r.name} · order #${r.orderNumber}", r.restaurant.name, if(r.deliveryMode) "Delivery: ${r.destination}" else "Pickup") +
-            c.reply!!.receipts.flatMap { receipt -> listOf("\n${receipt.name}") + receipt.lines.map { "${it.quantity} × ${it.description}${if(it.notes.isNotBlank()) " — ${it.notes}" else ""}" } }).joinToString("\n")
+        return restaurantReadyText(r, c.reply!!.receipts)
     }
     private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
         account?.let { a -> card(id, "$label ${a.holder}", "${a.bank}\n${a.identifier}\n${a.currency} · account version ${a.version}") }

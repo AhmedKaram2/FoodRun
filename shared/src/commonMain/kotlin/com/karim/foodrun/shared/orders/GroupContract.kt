@@ -82,6 +82,7 @@ interface GroupPlatform {
     fun request(hub: HubPairing, body: String, callback: GroupReplyCallback)
     fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback): GroupSubscription
     fun share(text: String, fileName: String)
+    fun copyToClipboard(text: String) { share(text, "") }
     fun openLink(url: String)
     fun importMenu(callback: GroupReplyCallback)
     fun scanPairing(callback: GroupReplyCallback)

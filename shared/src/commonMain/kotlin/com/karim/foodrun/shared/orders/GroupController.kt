@@ -158,7 +158,10 @@ class GroupController(val platform: GroupPlatform) {
                 val contact = room().restaurant.contact.phoneE164 ?: room().restaurant.contact.whatsappE164 ?: error("Restaurant contact is missing.")
                 platform.openLink("tel:" + contact.filter { it.isDigit() || it == '+' })
             }
-            GroupAction.SHARE_RESTAURANT_ORDER -> platform.share(GroupPresentation(this).restaurantOrderText(), "")
+            GroupAction.SHARE_RESTAURANT_ORDER -> {
+                platform.copyToClipboard(GroupPresentation(this).restaurantOrderText())
+                platform.notify("Order list copied", "Paste it directly into the restaurant chat or ordering app.")
+            }
             GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share("Food Run · ${room().name}\nRoom code: ${room().code}\n${pairingLink(s.hub)}\nJoin once; this room stays in your app.", "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
             GroupAction.NEXT_ORDER -> prepareNextOrder()

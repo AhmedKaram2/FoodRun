@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
 
-const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || '';
+const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 
 export function useFoodRun() {
   const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
@@ -52,6 +52,10 @@ export function useFoodRun() {
       if (previous?.room.revision > r.revision) return;
       roomRef.current = { ...roomRef.current, [r.id]: reply }; setRooms(roomRef.current);
       if (r.phase === 'ACCEPTING' && r.spin.winnerId === session.memberId) alert(`spin:${r.spin.id}`, "You're selected!", `Join ${r.name} and accept to collect everyone's food.`);
+      if (r.phase === 'PLACED' && previous?.room.phase !== 'PLACED') alert(`placed:${r.id}:${r.orderNumber}`, 'The restaurant order was placed.', `${r.restaurant.name} · ${r.restaurantReference}`);
+      const currentReceipt = reply.receipts.find(receipt => receipt.memberId === session.memberId);
+      const previousReceipt = previous?.receipts?.find(receipt => receipt.memberId === session.memberId);
+      if (currentReceipt?.balance === 0 && previousReceipt?.balance > 0) alert(`paid:${r.id}:${r.orderNumber}:${currentReceipt.revision}`, 'Payment confirmed.', `Your ${currentReceipt.totalText} share is settled.`);
       if (r.phase === 'PREPARING_SPIN' && !r.preparedIds.includes(session.memberId) && r.members.some(m => m.id === session.memberId && m.approved && m.participating && !m.guest)) {
         request(hub, command('ACK_SPIN', { roomId: r.id, token: session.token, expectedOrderNumber: r.orderNumber, text: r.preparationId })).catch(e => setError(e.message));
       }

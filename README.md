@@ -39,6 +39,10 @@ Downloaded receipts and order history remain available offline. Live updates res
 
 Food Run can also run the same room server behind a public HTTPS address, allowing members to join from any network. Nearby and internet rooms coexist in the apps, and each saved room remembers its server. See the [hybrid live-room guide](Docs/HYBRID_LIVE_ROOMS.md) for deployment and configuration.
 
+[![Deploy the Food Run API to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AhmedKaram2/FoodRun)
+
+The deployment creates one API instance with a persistent disk for room and order state. Render prompts for the existing Intrvioo Firebase web API key; it is never committed to this repository.
+
 Restaurant menus can be saved locally, edited, shared as JSON, and imported with a preview. [Example menu](Docs/restaurant-menu.example.json). Saved receiving accounts and room sessions use encrypted native storage backed by Android Keystore or iOS Keychain.
 
 ## Convert a restaurant menu with AI

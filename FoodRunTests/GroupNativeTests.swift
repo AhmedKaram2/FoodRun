@@ -118,6 +118,8 @@ final class GroupNativeTests: XCTestCase {
 }
 
 private final class MemoryGroupPlatform: GroupPlatform {
+    func notify(title: String, body: String) {}
+    func enableNotifications() {}
     func read(key: String) -> String { "" }
     func write(key: String, value: String) -> Bool { true }
     func now() -> Int64 { 0 }

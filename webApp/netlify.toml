@@ -1,0 +1,24 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Redirect API calls to Netlify Functions
+[[redirects]]
+  from = "/api/zai"
+  to = "/.netlify/functions/zai"
+  status = 200
+
+[[redirects]]
+  from = "/api/ziina"
+  to = "/.netlify/functions/ziina"
+  status = 200
+
+# SPA fallback - all routes go to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -5,6 +5,16 @@ object Billing {
         require(cart.lines.size <= 100 && cart.lines.map { it.id }.distinct().size == cart.lines.size) { "Invalid cart lines." }
         return cart.lines.map { line ->
             MenuValidation.label(line.id)
+            if (line.description.isNotEmpty()) {
+                require(restaurant.openOrdering && line.itemId.isEmpty() && line.variantId == null && line.optionIds.isEmpty()) { "Custom items are only available for open orders." }
+                MenuValidation.label(line.description)
+                require(line.quantity in 1..99 && line.notes.length <= 500) { "Invalid quantity or note." }
+                line.unitPrice?.let(MenuValidation::price)
+                val amount = (line.unitPrice ?: 0) * line.quantity
+                MenuValidation.price(amount)
+                return@map ReceiptLine(line.description, line.quantity, amount, line.notes)
+            }
+            require(line.unitPrice == null) { "Menu prices are set by the restaurant." }
             val item = restaurant.menu.items.singleOrNull { it.id == line.itemId } ?: error("Menu item no longer exists.")
             require(item.available) { "${item.name} is unavailable." }
             require(line.quantity in 1..99 && line.notes.length <= 500) { "Invalid quantity or note." }

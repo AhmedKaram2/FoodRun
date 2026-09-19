@@ -48,6 +48,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
                 }
             }
         }
+        state.cards.filter { it.id.startsWith("invitation:") }.forEach { GroupCardContent(it, state.busy, controller) }
         val rooms = state.cards.filter { it.id.startsWith("session:") }
         if (rooms.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {

@@ -151,20 +151,22 @@ internal class GroupTransport(private val context: Context) {
     }.newBuilder().addPathSegment(path).build()
 
     private fun client(hub: HubPairing): OkHttpClient = clients.getOrPut(hub) {
-        val trust = HubCertificateTrust(hub.fingerprint)
-        val sslContext = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), SecureRandom()) }
-        OkHttpClient.Builder()
-            .sslSocketFactory(sslContext.socketFactory, trust)
-            .hostnameVerifier { host, session ->
-                host == hub.url.toHttpUrl().host && (session.peerCertificates.firstOrNull() as? X509Certificate)?.let(trust::matches) == true
-            }
+        val builder = OkHttpClient.Builder()
             .followRedirects(false)
             .followSslRedirects(false)
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
             .pingInterval(10, TimeUnit.SECONDS)
-            .build()
+        if (hub.fingerprint.isNotEmpty()) {
+            val trust = HubCertificateTrust(hub.fingerprint)
+            val sslContext = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), SecureRandom()) }
+            builder.sslSocketFactory(sslContext.socketFactory, trust)
+                .hostnameVerifier { host, session ->
+                    host == hub.url.toHttpUrl().host && (session.peerCertificates.firstOrNull() as? X509Certificate)?.let(trust::matches) == true
+                }
+        }
+        builder.build()
     }
 
     fun close() {

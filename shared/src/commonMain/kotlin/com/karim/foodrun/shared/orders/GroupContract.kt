@@ -3,9 +3,9 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
 
-enum class GroupPage { HOME, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY }
+enum class GroupPage { HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY }
 enum class GroupAction {
-    BACK, QUICK_SPIN, CREATE, JOIN, CONNECT, DISCOVER, SCAN, OPEN_LIBRARY, NEW_RESTAURANT, EDIT_RESTAURANT,
+    OPEN_PROFILE, SIGN_IN, REGISTER, SAVE_PROFILE, SIGN_OUT, RESET_PASSWORD, ENABLE_CLOUD, ENABLE_ALERTS, OPEN_PEOPLE, INVITE_PERSON, ACCEPT_INVITE, OPEN_CUSTOM_ITEM, ADD_CUSTOM_ITEM, OPEN_PRICE_ITEM, SAVE_ITEM_PRICE, USE_OPEN_ORDER, BACK, QUICK_SPIN, CREATE, JOIN, CONNECT, DISCOVER, SCAN, OPEN_LIBRARY, NEW_RESTAURANT, EDIT_RESTAURANT,
     IMPORT_MENU, PREVIEW_IMPORT, CONFIRM_IMPORT, EXPORT_MENU, SAVE_RESTAURANT, DELETE_RESTAURANT, SELECT_RESTAURANT, EDIT_ROOM_RESTAURANT, SELECT_TAX_TREATMENT,
     ADD_MENU_ITEM, REMOVE_MENU_ITEM, SAVE_ROOM_RESTAURANT, UPDATE_ROOM_MENU, RESUME, CREATE_ROOM, JOIN_ROOM, RETRY, REFRESH,
     PARTICIPATE, READY, APPROVE, APPROVE_LATE_JOIN, REMOVE, PREPARE_SPIN, ABORT_SPIN, ACCEPT_DUTY, DECLINE_DUTY, OPEN_ITEM,
@@ -15,7 +15,7 @@ enum class GroupAction {
     DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL, NEXT_ORDER, SHARE_ROOM, SHARE_RECEIPT,
 }
 enum class GroupFieldKey {
-    HUB_URL, FINGERPRINT, PAIRING_LINK, NAME, ROOM_NAME, ROOM_CODE, EXPECTED_NAMES, DELIVERY, DESTINATION,
+    EMAIL, PASSWORD, PROFILE_PHONE, PHOTO, AANI, DISCOVERABLE, CUSTOM_NAME, HUB_URL, FINGERPRINT, PAIRING_LINK, NAME, ROOM_NAME, ROOM_CODE, EXPECTED_NAMES, DELIVERY, DESTINATION,
     RESTAURANT_NAME, BRANCH, CURRENCY, PHONE, ADDRESS, MENU_ITEM_NAME, MENU_ITEM_PRICE, DELIVERY_FEE, SERVICE_FEE, DISCOUNT, TAX_RATE, MINIMUM_ORDER,
     PROPORTIONAL, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
 }
@@ -72,6 +72,8 @@ interface GroupReplyCallback { fun complete(body: String, error: String) }
 interface GroupSubscription { fun cancel() }
 /** Native services only. Implementations deliver callbacks on their UI thread. */
 interface GroupPlatform {
+    fun notify(title: String, body: String) {}
+    fun enableNotifications() {}
     fun read(key: String): String
     fun write(key: String, value: String): Boolean
     fun now(): Long
@@ -88,5 +90,6 @@ interface GroupPlatform {
     val restaurants: List<RestaurantExport> = emptyList(), val accounts: List<ReceivingAccount> = emptyList(),
     val sessions: List<StoredSession> = emptyList(), val snapshots: Map<String, RoomReply> = emptyMap(),
     val selectedHub: HubPairing? = null, val displayName: String = "",
+    val identityToken: String = "", val identityHub: HubPairing? = null, val home: HomePayload? = null, val seenAlerts: List<String> = emptyList(),
     val pending: RoomCommand? = null, val pendingHub: HubPairing? = null,
 )

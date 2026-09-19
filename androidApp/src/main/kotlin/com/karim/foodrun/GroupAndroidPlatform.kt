@@ -68,6 +68,19 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
         }
     }
 
+    override fun enableNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) activity?.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1204)
+    }
+    override fun notify(title: String, body: String) {
+        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+        manager.createNotificationChannel(android.app.NotificationChannel("foodrun-orders", "Food Run invitations and selections", android.app.NotificationManager.IMPORTANCE_HIGH))
+        if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val intent = android.content.Intent(context, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val tap = android.app.PendingIntent.getActivity(context, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        manager.notify(body.hashCode(), androidx.core.app.NotificationCompat.Builder(context, "foodrun-orders")
+            .setSmallIcon(R.drawable.ic_launcher_foreground).setContentTitle(title).setContentText(body)
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body)).setContentIntent(tap).setAutoCancel(true).build())
+    }
     override fun now() = System.currentTimeMillis()
     override fun uuid() = UUID.randomUUID().toString()
     override fun read(key: String): String = storage.read(key)

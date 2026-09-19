@@ -1,13 +1,35 @@
 import Foundation
+import UserNotifications
 import FoodRunShared
 
 /// The shared controller calls this adapter on the UI thread; callbacks return there too.
-final class GroupIosPlatform: NSObject, GroupPlatform {
+final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterDelegate {
     private let storage = GroupSecureStorage()
     private let documents = GroupDocuments()
     private let discovery = GroupDiscovery()
     private var requests: [UUID: PinnedHubSession] = [:]
 
+    override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func enableNotifications() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+    func notify(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title; content.body = body; content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
     func now() -> Int64 { Int64(Date().timeIntervalSince1970 * 1_000) }
     func uuid() -> String { UUID().uuidString }
     func read(key: String) -> String { storage.read(key) }

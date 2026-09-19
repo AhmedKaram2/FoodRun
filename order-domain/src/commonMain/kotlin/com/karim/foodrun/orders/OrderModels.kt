@@ -9,13 +9,17 @@ import kotlin.math.pow
     val id: String, val name: String, val approved: Boolean = false, val guest: Boolean = false,
     val eligible: Boolean = false, val ready: Boolean = false, val participating: Boolean = true, val lastSeen: Long = 0, val removed: Boolean = false, val latePayerApproved: Boolean = false,
 )
-@Serializable data class CartLine(val id: String, val itemId: String, val quantity: Int, val variantId: String? = null, val optionIds: List<String> = emptyList(), val notes: String = "")
+@Serializable data class CartLine(val id: String, val itemId: String, val quantity: Int, val variantId: String? = null, val optionIds: List<String> = emptyList(), val notes: String = "", val description: String = "", val unitPrice: Long? = null)
 @Serializable data class MemberCart(val memberId: String, val revision: Long = 0, val lines: List<CartLine> = emptyList(), val submitted: Boolean = false, val confirmedQuote: Long = -1)
 @Serializable data class FeePolicy(val delivery: Long = 0, val service: Long = 0, val discount: Long = 0, val proportionalDelivery: Boolean = false)
-@Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1) {
+@Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1, val method: PaymentMethod = PaymentMethod.BANK) {
     fun validate() {
         MenuValidation.label(id); MenuValidation.label(holder); MenuValidation.label(bank)
         require(version > 0) { "Invalid account version." }
+        if (method == PaymentMethod.AANI) {
+            require(currency == "AED" && identifier.matches(Regex("\\+?[0-9]{7,15}"))) { "Enter the phone number registered with Aani, including country code." }
+            return
+        }
         val v = identifier.replace(" ", "").uppercase()
         require(currency in Money.currencies && v.length in 5..50 && v.all { it in 'A'..'Z' || it in '0'..'9' || it == '-' }) { "Enter a valid receiving account." }
         if (v.take(2).all { it in 'A'..'Z' } && v.drop(2).take(2).all { it.isDigit() }) {

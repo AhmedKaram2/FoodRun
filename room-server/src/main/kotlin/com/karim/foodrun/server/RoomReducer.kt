@@ -92,9 +92,27 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 val old = r.carts.singleOrNull { it.memberId == actorId } ?: MemberCart(actorId)
                 val draft = requireNotNull(c.cart)
                 require(draft.memberId == actorId && c.expectedRevision == old.revision) { "Your cart changed. Review the latest cart." }
-                val cart = draft.copy(revision = old.revision + 1, submitted = false, confirmedQuote = -1)
+                // Members can edit their food, but only the payer can assign custom-item prices.
+                val sanitized = draft.copy(lines = draft.lines.map { line ->
+                    val previous = old.lines.singleOrNull { it.id == line.id }
+                    if (line.description.isNotEmpty()) line.copy(unitPrice = previous?.unitPrice.takeIf {
+                        previous?.description == line.description && previous.quantity == line.quantity && previous.notes == line.notes
+                    }) else line.copy(unitPrice = null)
+                })
+                val cart = sanitized.copy(revision = old.revision + 1, submitted = false, confirmedQuote = -1)
                 Billing.lines(r.restaurant, cart)
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
+            }
+            CommandKind.PRICE_ITEM -> {
+                payer(); phase(RoomPhase.COLLECTING); fresh()
+                MenuValidation.price(c.amount)
+                val target = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Order not found.")
+                val line = target.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")
+                require(line.description.isNotEmpty()) { "Only custom items need a price." }
+                val priced = target.copy(revision = target.revision + 1, confirmedQuote = -1,
+                    lines = target.lines.map { if (it.id == line.id) it.copy(unitPrice = c.amount) else it })
+                r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it }, quoteRevision = r.quoteRevision + 1)
+                    .also { Billing.receipts(it) }
             }
             CommandKind.SUBMIT_CART -> {
                 orderer(); phase(RoomPhase.COLLECTING)

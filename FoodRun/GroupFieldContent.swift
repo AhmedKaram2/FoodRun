@@ -22,7 +22,12 @@ struct GroupFieldContent: View {
         } else {
             VStack(alignment: .leading, spacing: FoodSpacing.s8) {
                 Text(field.label).font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
-                input
+                if field.secret {
+                    SecureField(field.label, text: Binding(get: { field.value }, set: onChange))
+                        .textContentType(.password).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .padding(FoodSpacing.s16).foodCard(showsBorder: true).disabled(!enabled)
+                        .accessibilityIdentifier(field.key.name)
+                } else { input }
             }
         }
     }

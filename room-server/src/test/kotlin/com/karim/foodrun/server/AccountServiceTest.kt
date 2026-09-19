@@ -1,0 +1,67 @@
+package com.karim.foodrun.server
+
+import com.karim.foodrun.orders.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class AccountServiceTest {
+    private class FakeIdentityProvider : IdentityProvider {
+        private val profiles = mutableMapOf<String, FoodProfile>()
+        override fun signIn(email: String, password: String, register: Boolean) = identity(email.substringBefore('@'))
+        override fun exchange(idToken: String) = identity(idToken.removePrefix("firebase-"))
+        override fun refresh(refreshToken: String) = identity(refreshToken.removePrefix("refresh-"))
+        override fun profile(identity: CloudIdentity) = profiles[identity.userId]
+        override fun saveProfile(identity: CloudIdentity, profile: FoodProfile) { profiles[identity.userId] = profile }
+        override fun resetPassword(email: String) = Unit
+        override fun saveHubRecord(identity: CloudIdentity, hubId: String, key: String, value: String) = Unit
+        private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid)
+    }
+
+    @Test fun registeredPeopleCanBeInvitedAndResumeTheirRoomFromHome() = RoomFixture(FakeIdentityProvider()).use { fixture ->
+        fun register(email: String, name: String): RoomReply = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(
+                action = IdentityAction.REGISTER, email = email, password = "secret12",
+                profile = FoodProfile(name = name, phone = "+971501234567"),
+            ),
+        ))
+
+        val organizer = register("organizer@example.com", "Organizer")
+        val invited = register("friend@example.com", "Friend")
+        val room = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.CREATE, identityToken = organizer.identityToken,
+            name = "Organizer", text = "Friday lunch", restaurant = fixture.restaurant,
+        ))
+
+        val invitationReply = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.IDENTITY,
+            roomId = room.room!!.id, token = room.token, identityToken = organizer.identityToken,
+            identity = IdentityRequest(action = IdentityAction.INVITE, userId = invited.home!!.profile.userId),
+        ))
+        assertEquals(1, invitationReply.home?.people?.size)
+
+        val invitedHome = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.HOME, identityToken = invited.identityToken,
+        ))
+        val invitation = assertNotNull(invitedHome.home?.invitations?.singleOrNull())
+        val joined = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.IDENTITY, identityToken = invited.identityToken,
+            identity = IdentityRequest(action = IdentityAction.ACCEPT_INVITE, invitationId = invitation.id),
+        ))
+        assertTrue(joined.token.isNotBlank())
+        assertEquals("Friend", joined.room?.members?.single { it.id == joined.memberId }?.name)
+
+        fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.APPROVE,
+            roomId = room.room!!.id, token = room.token, memberId = joined.memberId,
+            expectedRevision = joined.room!!.revision, expectedOrderNumber = joined.room!!.orderNumber,
+        ))
+        val resumed = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.HOME, identityToken = invited.identityToken,
+        ))
+        assertEquals(room.room!!.id, resumed.home?.rooms?.singleOrNull()?.roomId)
+        assertEquals(joined.token, resumed.home?.rooms?.singleOrNull()?.token)
+    }
+}

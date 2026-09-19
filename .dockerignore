@@ -1,0 +1,17 @@
+.git
+.gradle
+.kotlin
+.idea
+.local
+**/build
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+DerivedData
+Distributions
+local.properties
+*.xcresult
+*.p12
+*.jks
+*.keystore

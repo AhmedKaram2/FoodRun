@@ -7,6 +7,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("io.ktor:ktor-server-netty:3.5.2")
     implementation("io.ktor:ktor-server-websockets:3.5.2")
+    implementation("io.ktor:ktor-server-cors:3.5.2")
     implementation("io.ktor:ktor-network-tls-certificates:3.5.2")
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
     implementation("org.jmdns:jmdns:3.6.0")
@@ -21,3 +22,5 @@ dependencies {
 tasks.test { useJUnitPlatform() }
 
 distributions { main { contents { from("README.md"); from("AUDIT.md") } } }
+
+tasks.processResources { from(rootProject.file("webApp/dist")) { into("web") } }

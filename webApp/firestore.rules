@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Admin email
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == '1ahmedkaram1@gmail.com';
+    }
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the document
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own data, admin can read all
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Users can create their own document
+      allow create: if isOwner(userId);
+
+      // Users can update their own data, admin can update any user
+      allow update: if isOwner(userId) || isAdmin();
+
+      // Only admin can delete users
+      allow delete: if isAdmin();
+
+      // Subcollections under users
+      match /interviews/{interviewId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /traineeSessions/{sessionId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      // Food Run reuses the same account while keeping room backups isolated
+      // below the cloud owner's user document. Existing interview data and
+      // credit fields remain governed by the rules above.
+      match /foodrunHubs/{hubId} {
+        allow read, write: if isOwner(userId);
+
+        match /records/{recordId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+    }
+
+    // Transactions collection (for token/bonus history)
+    match /transactions/{transactionId} {
+      // Admin can read/write all transactions
+      allow read, write: if isAdmin();
+
+      // Users can read their own transactions
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // System can create transactions (for purchases)
+      allow create: if isAuthenticated();
+    }
+
+    // Question bank collection
+    match /questionBank/{questionId} {
+      // Anyone authenticated can read questions
+      allow read: if isAuthenticated();
+
+      // Only admin can write questions
+      allow write: if isAdmin();
+    }
+
+    // Email interviews collection
+    match /emailInterviews/{interviewId} {
+      // Owner and admin can read/write
+      allow read, write: if isAuthenticated() &&
+        (resource.data.createdBy == request.auth.uid || isAdmin());
+
+      // Anyone can create (for email interview links)
+      allow create: if isAuthenticated();
+    }
+
+    // Interview requests collection
+    match /interviewRequests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Blog posts collection
+    match /blogPosts/{postId} {
+      // Anyone can read published posts
+      allow read: if resource.data.status == 'published' || isAdmin();
+
+      // Only admin can write
+      allow write: if isAdmin();
+    }
+  }
+}

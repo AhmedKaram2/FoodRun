@@ -5,7 +5,7 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
+    IDENTITY, HOME, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
     ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
     REOPEN, SET_FEES, UPDATE_RESTAURANT, PLACE, PAY_RESTAURANT, FULFILL, DECLARE_TRANSFER, CONFIRM_TRANSFER,
     REJECT_TRANSFER, DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL,
@@ -22,6 +22,13 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val expectedOrderNumber: Long = 0,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val identity: IdentityRequest? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val identityToken: String = "",
+
 )
 @Serializable data class OrderProgress(
     val accountShared: Boolean = false,
@@ -35,6 +42,20 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val progress: OrderProgress? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val home: HomePayload? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val identityToken: String = "",
+
 )
-@Serializable data class HubPairing(val url: String, val fingerprint: String)
+/** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */
+@Serializable data class HubPairing(val url: String, val fingerprint: String = "")
 @Serializable data class StoredSession(val hub: HubPairing, val roomId: String, val token: String, val memberId: String, val roomName: String)
+
+@Serializable enum class IdentityAction { REGISTER, SIGN_IN, SAVE_PROFILE, SIGN_OUT, INVITE, ACCEPT_INVITE, RESET_PASSWORD, FIREBASE_SIGN_IN, ENABLE_CLOUD }
+@Serializable data class IdentityRequest(
+    val action: IdentityAction, val email: String = "", val password: String = "",
+    val profile: FoodProfile? = null, val userId: String = "", val invitationId: String = "", val firebaseToken: String = "",
+)

@@ -23,10 +23,10 @@ final class PinnedHubSession: NSObject, URLSessionDataDelegate {
     func endpoint(_ path: String, websocket: Bool = false) -> URL? {
         guard var components = URLComponents(string: hub.url), components.scheme == "https",
               let host = components.host, !host.isEmpty, components.user == nil, components.password == nil,
-              let port = components.port, (1...65_535).contains(port),
+              components.port == nil || (1...65_535).contains(components.port!),
               components.query == nil, components.fragment == nil,
               components.path.isEmpty || components.path == "/",
-              hub.fingerprint.count == 64,
+              hub.fingerprint.isEmpty || hub.fingerprint.count == 64,
               hub.fingerprint.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
         components.scheme = websocket ? "wss" : "https"
         components.path = path
@@ -79,9 +79,13 @@ final class PinnedHubSession: NSObject, URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if hub.fingerprint.isEmpty {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               Self.normalizedHost(challenge.protectionSpace.host) == Self.normalizedHost(URL(string: hub.url)?.host ?? ""),
-              challenge.protectionSpace.port == URL(string: hub.url)?.port,
+              challenge.protectionSpace.port == (URL(string: hub.url)?.port ?? 443),
               let trust = challenge.protectionSpace.serverTrust,
               let certificate = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first,
               Self.accepts(certificate: certificate, trust: trust, fingerprint: hub.fingerprint) else {

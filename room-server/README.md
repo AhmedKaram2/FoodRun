@@ -61,6 +61,20 @@ $env:FOODRUN_PORT = "8443"
 
 Use your computer's actual address. `127.0.0.1` is for that computer itself, not physical phones. A DHCP reservation for the hub computer makes its address stable. If its address changes, use its current pairing information. Do not replace the saved certificate/key merely to change an address.
 
+## Accounts and internet rooms
+
+Registration, profiles, registered-person invitations, and Firebase backup use the existing Intrvioo Firebase project. Configure the hub without putting credentials in source control:
+
+```sh
+export FOODRUN_FIREBASE_API_KEY="<Intrvioo web API key>"
+export FOODRUN_FIREBASE_PROJECT_ID="<Intrvioo project id>"
+./bin/room-server
+```
+
+The API key identifies the Firebase client project; Firebase user tokens and Firestore rules authorize profile and backup access. Deploy the `webApp/firestore.rules` update before enabling hub backup.
+
+For rooms reachable from any network, deploy the Docker image behind a public HTTPS reverse proxy and set `FOODRUN_TLS_MODE=proxy`, `FOODRUN_DATA`, and `FOODRUN_WEB_ORIGINS`. Set `FOODRUN_PUBLIC_URL` and `FOODRUN_PORT` on a generic host; Render supplies equivalent `RENDER_EXTERNAL_URL` and `PORT` values automatically. Keep `FOODRUN_DATA` on a persistent volume. The repository's `render.yaml` is ready to provision this layout. See the [hybrid live-room guide](../Docs/HYBRID_LIVE_ROOMS.md) for the full configuration.
+
 ## Permanent rooms and daily orders
 
 **Rooms, join codes and memberships have no daily expiry or automatic expiry timer.** A saved member session resumes the same room after an app or hub restart. Keep the hub data directory and the phone's app data to preserve that access.
@@ -75,7 +89,7 @@ Removing a member explicitly revokes that membership. Clearing a phone's app dat
 
 Open the current room and receipts while connected so they are saved to the phone. The payer should also open the combined food order and restaurant contact before leaving Wi-Fi.
 
-Downloaded receipts and cached order information remain available offline after restarting the app. Their last synchronization time and revision matter: they cannot show new payments or bill changes while disconnected. Live spin, ordering and payment updates resume when the phone can reach this hub again. The mobile apps do not provide off-network internet updates in this release.
+Downloaded receipts and cached order information remain available offline after restarting the app. Their last synchronization time and revision matter: they cannot show new payments or bill changes while disconnected. Live spin, ordering and payment updates resume when the phone can reach the room's nearby hub or public internet API.
 
 ## Data, backups and upgrades
 

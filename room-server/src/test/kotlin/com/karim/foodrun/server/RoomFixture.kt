@@ -6,12 +6,12 @@ import java.security.SecureRandom
 import java.util.UUID
 import kotlin.test.*
 
-internal class RoomFixture : AutoCloseable {
+internal class RoomFixture(private val identityProvider: IdentityProvider? = null) : AutoCloseable {
     val directory = Files.createTempDirectory("foodrun-test-").toFile()
     var now = 100_000L
     var db = RoomDatabase(directory)
     private val random = object : SecureRandom() { override fun nextInt(bound: Int): Int = if (bound == 900000) super.nextInt(bound) else 0 }
-    var service = RoomService(db, { now }, random)
+    var service = RoomService(db, { now }, random, identityProvider)
     val restaurant = Restaurant("restaurant", "Test Kitchen", contact = RestaurantContact("+971501234567"), menu = Menu(categories = listOf(MenuCategory("main", "Main")), items = listOf(MenuItem("meal", "main", "Meal", basePriceMinor = 100))))
     val account = ReceivingAccount("account", "Owner", "Test Bank", "12345678")
     val owner = execute(RoomCommand(commandId = id(), kind = CommandKind.CREATE, name = "Owner", text = "Daily lunch", restaurant = restaurant))
@@ -53,6 +53,6 @@ internal class RoomFixture : AutoCloseable {
         return member
     }
     fun pay() = send(owner, CommandKind.PAY_RESTAURANT) { it.copy(amount = state().receipts.sumOf { r -> r.total }) }
-    fun restart() { db.close(); db = RoomDatabase(directory); service = RoomService(db, { now }, random) }
+    fun restart() { db.close(); db = RoomDatabase(directory); service = RoomService(db, { now }, random, identityProvider) }
     override fun close() { db.close(); directory.deleteRecursively() }
 }

@@ -59,7 +59,7 @@ internal fun GroupController.addCartItem() {
     command(CommandKind.CART, cart = next, revision = cart.revision)
 }
 internal fun GroupController.seedAccount(a: ReceivingAccount) {
-    draft[GroupFieldKey.ACCOUNT_HOLDER] = a.holder; draft[GroupFieldKey.ACCOUNT_BANK] = a.bank; draft[GroupFieldKey.ACCOUNT_IDENTIFIER] = a.identifier
+    draft[GroupFieldKey.AANI] = (a.method == PaymentMethod.AANI).toString(); draft[GroupFieldKey.ACCOUNT_HOLDER] = a.holder; draft[GroupFieldKey.ACCOUNT_BANK] = a.bank; draft[GroupFieldKey.ACCOUNT_IDENTIFIER] = a.identifier
 }
 internal fun GroupController.accountMatchesDraft(a: ReceivingAccount): Boolean =
     selectedAccount?.id == a.id && a.holder == text(GroupFieldKey.ACCOUNT_HOLDER).trim() &&
@@ -67,7 +67,7 @@ internal fun GroupController.accountMatchesDraft(a: ReceivingAccount): Boolean =
         a.currency == (reply?.room?.restaurant?.currency ?: "AED")
 
 internal fun GroupController.saveAccount() {
-    val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), reply?.room?.restaurant?.currency ?: "AED")
+    val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), if(flag(GroupFieldKey.AANI)) "Aani" else text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), reply?.room?.restaurant?.currency ?: "AED", method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
     a.validate(); require(library.accounts.size < 20 || library.accounts.any { it.id == a.id }) { "Saved-account limit reached." }
     replaceLibrary(library.copy(accounts = library.accounts.filterNot { it.id == a.id } + a)); selectedAccount = a
 }

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: foodrun-api
+    runtime: docker
+    plan: 0.5c-512mb
+    region: frankfurt
+    dockerfilePath: ./room-server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    numInstances: 1
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: foodrun-data
+      mountPath: /var/lib/foodrun
+      sizeGB: 1
+    envVars:
+      - key: FOODRUN_TLS_MODE
+        value: proxy
+      - key: FOODRUN_DATA
+        value: /var/lib/foodrun
+      - key: FOODRUN_FIREBASE_PROJECT_ID
+        value: devassess-c8833
+      - key: FOODRUN_FIREBASE_API_KEY
+        sync: false
+      - key: FOODRUN_WEB_ORIGINS
+        value: https://intrvioo.com,https://www.intrvioo.com,https://intrvioo.netlify.app

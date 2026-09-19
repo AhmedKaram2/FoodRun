@@ -23,7 +23,7 @@ Screenshots are actual native simulator/emulator captures from the UI/UX refresh
 
 Build a signed APK using the [Android instructions](#build-android), then send the resulting APK to your friends. Open it on an Android phone, allow installation from that browser or file app when Android asks, and tap **Install**. Requires Android 8.0 or later. Generated installer files and private signing keys are excluded from Git; this repository contains the source and showcase media.
 
-The APK is signed for installation and future updates. Quick Spin works offline. Group rooms use your own Mac/PC hub on the same local network; no cloud account is needed.
+The APK is signed for installation and future updates. Quick Spin works offline. Nearby group rooms use your own Mac/PC hub on the local network. Shared profiles, invitations, and asynchronous room backups use the existing Firebase account when those features are enabled.
 
 ## Group meals on your local network
 
@@ -36,6 +36,8 @@ The APK is signed for installation and future updates. Quick Spin works offline.
 **Rooms and memberships do not expire automatically.** Join once, then open the saved room for future meals. Use **Join this order / Skip this order** for daily participation. The organizer can remove members explicitly. Preserve the hub's data and keys and the app's saved data; uninstalling/resetting storage removes that device's saved membership.
 
 Downloaded receipts and order history remain available offline. Live updates resume when the app reconnects to the hub. Payments are recorded manually; Food Run does not initiate bank transfers or contact restaurants automatically.
+
+Food Run can also run the same room server behind a public HTTPS address, allowing members to join from any network. Nearby and internet rooms coexist in the apps, and each saved room remembers its server. See the [hybrid live-room guide](Docs/HYBRID_LIVE_ROOMS.md) for deployment and configuration.
 
 Restaurant menus can be saved locally, edited, shared as JSON, and imported with a preview. [Example menu](Docs/restaurant-menu.example.json). Saved receiving accounts and room sessions use encrypted native storage backed by Android Keystore or iOS Keychain.
 

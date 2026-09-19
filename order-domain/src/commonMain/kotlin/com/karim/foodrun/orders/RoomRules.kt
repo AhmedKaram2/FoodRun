@@ -18,6 +18,7 @@ object RoomRules {
         require(room.orderingMembers.any { it.eligible }) { "At least one member must consent to ordering and paying." }
     }
     fun requireReview(room: Room) {
+        require(room.carts.all { cart -> cart.lines.all { it.description.isEmpty() || it.unitPrice != null } }) { "The selected person must price every custom item before totals can be confirmed." }
         require(room.orderingMembers.all { m -> room.carts.any { it.memberId == m.id && it.submitted } }) { "Wait for every member to submit a cart or choose no food." }
         require(room.account != null) { "The payer must share an account first." }
         val receipts = Billing.receipts(room)

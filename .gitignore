@@ -15,3 +15,8 @@ Distributions/*.aab
 .hub-test/
 FoodRunTests/HubIntegrationConfig.json
 Distributions/*.zip
+
+.local/
+webApp/node_modules/
+webApp/dist/
+webApp/.env.local

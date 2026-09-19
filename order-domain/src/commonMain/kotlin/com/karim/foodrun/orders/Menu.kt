@@ -14,7 +14,7 @@ val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
 @Serializable data class Restaurant(
     val id: String, val name: String, val branchName: String = "", val currency: String = "AED",
     val contact: RestaurantContact = RestaurantContact(), val pricing: RestaurantPricing = RestaurantPricing(),
-    val notes: String = "", val menu: Menu = Menu(),
+    val notes: String = "", val menu: Menu = Menu(), val openOrdering: Boolean = false,
 )
 @Serializable data class RestaurantContact(val phoneE164: String? = null, val whatsappE164: String? = null, val address: String? = null)
 @Serializable enum class TaxTreatment {
@@ -62,7 +62,7 @@ object MenuValidation {
         }
         require((r.contact.address?.length ?: 0) <= 1000)
         val m = r.menu
-        require(m.items.size in 1..500 && m.categories.size in 1..100 && m.optionGroups.size <= 100) { "Menu needs 1–500 items and 1–100 categories." }
+        require(m.items.size in (if (r.openOrdering) 0 else 1)..500 && m.categories.size in (if (r.openOrdering) 0 else 1)..100 && m.optionGroups.size <= 100) { "Menu needs 1–500 items and 1–100 categories." }
         unique(m.categories.map { it.id }); unique(m.items.map { it.id }); unique(m.optionGroups.map { it.id })
         m.categories.forEach { label(it.name) }
         unique(m.optionGroups.flatMap { it.options }.map { it.id })

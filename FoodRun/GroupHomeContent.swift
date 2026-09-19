@@ -35,6 +35,7 @@ struct GroupHomeContent: View {
             .padding(FoodSpacing.s24)
             .background(FoodTheme.hero, in: RoundedRectangle(cornerRadius: FoodRadius.group))
 
+            ForEach(state.cards.filter { $0.id.hasPrefix("invitation:") }, id: \.renderID) { card in GroupCardContent(card: card, busy: state.busy, dispatch: dispatch) }
             let rooms = state.cards.filter { $0.id.hasPrefix("session:") }
             if !rooms.isEmpty {
                 VStack(alignment: .leading, spacing: FoodSpacing.s12) {

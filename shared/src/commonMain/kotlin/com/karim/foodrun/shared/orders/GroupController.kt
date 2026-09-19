@@ -25,6 +25,11 @@ class GroupController(val platform: GroupPlatform) {
     internal var nextOrder = false
     private var observer: GroupObserver? = null
     private var watching: GroupSubscription? = null
+    internal var accountEditing = false
+    internal var pricingTarget: Pair<String, String>? = null
+    private var homeWatching: GroupSubscription? = null
+    private val roomWatches = mutableMapOf<String, GroupSubscription>()
+    private var homeGeneration = 0
     private var generation = 0
     private var offset: Long = 0
     private var libraryReturnPage = GroupPage.HOME
@@ -41,9 +46,9 @@ class GroupController(val platform: GroupPlatform) {
     }
     fun observe(observer: GroupObserver) { this.observer = observer; publish() }
     fun removeObserver(observer: GroupObserver) { if (this.observer === observer) this.observer = null }
-    fun close() { watching?.cancel(); watching = null; observer = null; generation++ }
-    fun foreground() { active = true; if (session != null) startWatching() }
-    fun background() { active = false; watching?.cancel(); watching = null; online = false; generation++; publish() }
+    fun close() { stopHomeWatching(); watching?.cancel(); watching = null; observer = null; generation++ }
+    fun foreground() { active = true; startHomeWatching(); if (session != null) startWatching() }
+    fun background() { active = false; stopHomeWatching(); watching?.cancel(); watching = null; online = false; generation++; publish() }
     fun update(key: GroupFieldKey, value: String) {
         if (busy) return
         try {
@@ -55,13 +60,37 @@ class GroupController(val platform: GroupPlatform) {
                 require(member.approved && !member.guest && member.participating) { "Join this order before choosing whether to pay." }
                 require(library.pending == null) { "Retry the saved request before changing payment consent." }
                 if (member.eligible != (value == "true")) command(CommandKind.READY, flag = member.ready, eligible = value == "true")
-            } else draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else 4000)
+            } else draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.PHOTO) 180_000 else 4000)
         } catch (e: Exception) { error = e.message ?: "This change could not be saved." }
         publish()
     }
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
+            GroupAction.OPEN_PROFILE -> { openProfile() }
+            GroupAction.SIGN_IN -> identity(IdentityAction.SIGN_IN)
+            GroupAction.REGISTER -> identity(IdentityAction.REGISTER)
+            GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE)
+            GroupAction.RESET_PASSWORD -> identity(IdentityAction.RESET_PASSWORD)
+            GroupAction.SIGN_OUT -> identity(IdentityAction.SIGN_OUT)
+            GroupAction.ENABLE_CLOUD -> identity(IdentityAction.ENABLE_CLOUD)
+            GroupAction.ENABLE_ALERTS -> platform.enableNotifications()
+            GroupAction.OPEN_PEOPLE -> { require(library.identityToken.isNotEmpty()) { "Sign in from your profile to invite registered people." }; page = GroupPage.PEOPLE }
+            GroupAction.INVITE_PERSON -> identity(IdentityAction.INVITE, value)
+            GroupAction.ACCEPT_INVITE -> identity(IdentityAction.ACCEPT_INVITE, value)
+            GroupAction.USE_OPEN_ORDER -> {
+                val restaurant = Restaurant(platform.uuid(), text(GroupFieldKey.RESTAURANT_NAME).trim().ifEmpty { "Group food order" }, openOrdering = true)
+                selectedRestaurant = RestaurantExport(exportId = restaurant.id, restaurant = restaurant)
+            }
+            GroupAction.OPEN_CUSTOM_ITEM -> { draft[GroupFieldKey.CUSTOM_NAME] = ""; draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.CUSTOM_ITEM }
+            GroupAction.ADD_CUSTOM_ITEM -> {
+                val cart = myCart()
+                val line = CartLine(platform.uuid(), "", text(GroupFieldKey.QUANTITY).toIntOrNull() ?: 0, notes = text(GroupFieldKey.NOTE), description = text(GroupFieldKey.CUSTOM_NAME).trim())
+                require(line.description.isNotEmpty()) { "Enter the food item." }; Billing.lines(room().restaurant, cart.copy(lines = cart.lines + line))
+                command(CommandKind.CART, cart = cart.copy(lines = cart.lines + line), revision = cart.revision)
+            }
+            GroupAction.OPEN_PRICE_ITEM -> { val parts = value.split(':'); require(parts.size == 2); pricingTarget = parts[0] to parts[1]; draft[GroupFieldKey.AMOUNT] = ""; page = GroupPage.PRICE_ITEM }
+            GroupAction.SAVE_ITEM_PRICE -> { val target = requireNotNull(pricingTarget); command(CommandKind.PRICE_ITEM, memberId = target.first, text = target.second, amount = Money.parse(text(GroupFieldKey.AMOUNT), room().restaurant.currency)) }
             GroupAction.BACK -> back()
             GroupAction.QUICK_SPIN -> page = GroupPage.QUICK_SPIN
             GroupAction.CREATE, GroupAction.JOIN -> { joinMode = action == GroupAction.JOIN; nextOrder = false; page = GroupPage.CONNECT; seedHub() }
@@ -103,6 +132,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.REMOVE_CART_ITEM -> { val cart = myCart(); command(CommandKind.CART, cart = cart.copy(lines = cart.lines.filterNot { it.id == value }), revision = cart.revision) }
             GroupAction.OPEN_ACCOUNT -> {
                 reply?.room?.account?.let { selectedAccount = it; seedAccount(it) }
+                if (reply?.room?.account == null) library.home?.profile?.payment?.let { selectedAccount = it; seedAccount(it) }
                 page = GroupPage.ACCOUNT
             }
             GroupAction.NEW_ACCOUNT -> newAccount()
@@ -156,18 +186,20 @@ class GroupController(val platform: GroupPlatform) {
         }
         val url = text(GroupFieldKey.HUB_URL).trim().trimEnd('/')
         val fingerprint = text(GroupFieldKey.FINGERPRINT).trim().replace(":", "").lowercase()
-        require(url.matches(Regex("https://[a-zA-Z0-9.-]+:[0-9]{1,5}"))) { "Enter the hub address, for example https://192.168.1.20:8443." }
-        require(url.substringAfterLast(':').toIntOrNull() in 1..65535) { "Hub port must be between 1 and 65535." }
-        require(fingerprint.matches(Regex("[a-f0-9]{64}"))) { "Paste the server's full SHA-256 fingerprint or scan its pairing QR." }
+        require(url.matches(Regex("https://[a-zA-Z0-9.-]+(:[0-9]{1,5})?"))) { "Enter an HTTPS Food Run API address, for example https://foodrun.example.com or https://192.168.1.20:8443." }
+        val explicitPort = url.substringAfter("https://").substringAfter(':', "").toIntOrNull()
+        require(explicitPort == null || explicitPort in 1..65535) { "API port must be between 1 and 65535." }
+        require(fingerprint.isEmpty() || fingerprint.matches(Regex("[a-f0-9]{64}"))) { "Use the full SHA-256 fingerprint for a private hub, or leave it empty for a public HTTPS API." }
         val hub = HubPairing(url, fingerprint)
         val previousSession = session
         replaceLibrary(library.copy(
             selectedHub = hub,
-            sessions = library.sessions.map { if (it.hub.fingerprint == fingerprint) it.copy(hub = hub) else it },
-            pendingHub = library.pendingHub?.let { if (it.fingerprint == fingerprint) hub else it },
+            sessions = library.sessions.map { if (sameHub(it.hub, hub)) it.copy(hub = hub) else it },
+            pendingHub = library.pendingHub?.let { if (sameHub(it, hub)) hub else it },
         ))
         session = previousSession?.let { old -> library.sessions.singleOrNull { it.roomId == old.roomId } ?: old }
-        page = GroupPage.SETUP
+        page = if (accountEditing) GroupPage.PROFILE else GroupPage.SETUP
+        accountEditing = false
     }
     private fun createRoom() {
         val r = requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant
@@ -184,7 +216,7 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
-            GroupPage.ITEM, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
+            GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
             GroupPage.LIBRARY -> libraryReturnPage
             else -> GroupPage.HOME
@@ -209,9 +241,10 @@ class GroupController(val platform: GroupPlatform) {
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN)) null else library.sessions.single { it.roomId == c.roomId }
         val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(library.selectedHub)
-        replaceLibrary(library.copy(pending = c, pendingHub = hub)); busy = true; publish()
+        val outgoing = if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN) && sameHub(library.identityHub, hub)) c.copy(identityToken = library.identityToken) else c
+        replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
-        try { platform.request(hub, orderJson.encodeToString(c), object : GroupReplyCallback {
+        try { platform.request(hub, orderJson.encodeToString(outgoing), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false
                 if (error.isNotBlank()) { online = false; this@GroupController.error = "$error Your request is saved. Retry to confirm its result."; publish(); return }
@@ -238,7 +271,7 @@ class GroupController(val platform: GroupPlatform) {
                         formDrafts.finishRestaurant(draft); editingRoomOrder = null
                     }
                     if (c.kind in listOf(CommandKind.PLACE, CommandKind.PAY_RESTAURANT, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND)) draft.remove(GroupFieldKey.REFERENCE)
-                    page = GroupPage.ROOM; startWatching()
+                    page = GroupPage.ROOM; startWatching(); startHomeWatching()
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Invalid hub response." }
                 publish()
             }
@@ -303,7 +336,131 @@ class GroupController(val platform: GroupPlatform) {
             }
         })
     }
-    internal fun pairingLink(hub: HubPairing): String = "foodrun://pair?host=${hub.url.substringAfter("https://").substringBefore(':')}&port=${hub.url.substringAfterLast(':')}&fingerprint=${hub.fingerprint}"
+    private fun openProfile() {
+        library.home?.profile?.let { profile ->
+            draft[GroupFieldKey.NAME] = profile.name; draft[GroupFieldKey.PROFILE_PHONE] = profile.phone
+            draft[GroupFieldKey.PHOTO] = profile.photo; draft[GroupFieldKey.DISCOVERABLE] = profile.discoverable.toString()
+            profile.payment?.let { seedAccount(it); draft[GroupFieldKey.AANI] = (it.method == PaymentMethod.AANI).toString() }
+        }
+        if (library.selectedHub == null) { accountEditing = true; page = GroupPage.CONNECT; seedHub() }
+        else page = GroupPage.PROFILE
+    }
+    private fun profileDraft(): FoodProfile {
+        val name = text(GroupFieldKey.NAME).trim()
+        val account = text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim().takeIf { it.isNotEmpty() }?.let {
+            ReceivingAccount(library.home?.profile?.payment?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim().ifEmpty { name },
+                if(flag(GroupFieldKey.AANI)) "Aani" else text(GroupFieldKey.ACCOUNT_BANK).trim(), it,
+                method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
+        }
+        return FoodProfile(name = name, phone = text(GroupFieldKey.PROFILE_PHONE).trim(), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
+            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false").also { it.validate() }
+    }
+    private fun identity(action: IdentityAction, value: String = "") {
+        val hub = if (action in listOf(IdentityAction.SIGN_IN, IdentityAction.REGISTER, IdentityAction.RESET_PASSWORD)) requireNotNull(library.selectedHub) else requireNotNull(library.identityHub ?: library.selectedHub)
+        if (action == IdentityAction.INVITE) require(sameHub(session?.hub, hub)) { "Sign in on this room's server before inviting registered people." }
+        val request = IdentityRequest(action, text(GroupFieldKey.EMAIL).trim(), text(GroupFieldKey.PASSWORD),
+            if(action in listOf(IdentityAction.REGISTER, IdentityAction.SAVE_PROFILE)) profileDraft() else null,
+            userId = if(action == IdentityAction.INVITE) value else "", invitationId = if(action == IdentityAction.ACCEPT_INVITE) value else "")
+        val c = RoomCommand(commandId = platform.uuid(), kind = CommandKind.IDENTITY, identity = request,
+            identityToken = library.identityToken, roomId = session?.roomId ?: "", token = session?.token ?: "")
+        busy = true; publish()
+        // Passwords are deliberately never written into pending commands or secure storage.
+        platform.request(hub, orderJson.encodeToString(c), object : GroupReplyCallback {
+            override fun complete(body: String, error: String) {
+                busy = false; draft.remove(GroupFieldKey.PASSWORD)
+                try {
+                    require(error.isEmpty()) { error }
+                    val result = decodeReply(body); require(result.ok) { result.error }
+                    if(action == IdentityAction.SIGN_OUT) {
+                        stopHomeWatching(); watching?.cancel(); watching = null; generation++
+                        session = null; reply = null
+                        replaceLibrary(library.copy(identityToken = "", identityHub = null, home = null, sessions = emptyList(), snapshots = emptyMap(), accounts = emptyList(), displayName = ""))
+                        draft.clear(); page = GroupPage.HOME
+                    } else if(action == IdentityAction.ACCEPT_INVITE) {
+                        val room = requireNotNull(result.room)
+                        val saved = StoredSession(hub, room.id, result.token, result.memberId, room.name)
+                        replaceLibrary(library.copy(sessions = library.sessions.filterNot { it.roomId == saved.roomId } + saved))
+                        resume(saved)
+                    } else if(result.home != null) {
+                        val home = requireNotNull(result.home)
+                        replaceLibrary(library.copy(identityToken = result.identityToken.ifEmpty { library.identityToken }, identityHub = hub))
+                        acceptHome(home, hub); page = if(action == IdentityAction.INVITE) GroupPage.PEOPLE else GroupPage.HOME
+                    } else this@GroupController.error = "If an account exists, a password reset email has been requested."
+                    startHomeWatching()
+                } catch(e: Exception) { this@GroupController.error = e.message ?: "Account update failed. Retry." }
+                publish()
+            }
+        })
+    }
+    private fun alert(id: String, title: String, body: String) {
+        if (id in library.seenAlerts) return
+        replaceLibrary(library.copy(seenAlerts = (library.seenAlerts + id).takeLast(100)))
+        platform.notify(title, body)
+    }
+    private fun acceptHome(home: HomePayload, hub: HubPairing) {
+        val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
+        val updated = library.copy(home = home, displayName = home.profile.name,
+            sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } } + sessions)
+        if (updated != library) replaceLibrary(updated)
+        home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Food Run and tap Join on your home screen.") }
+    }
+    private fun stopHomeWatching() {
+        homeGeneration++; homeWatching?.cancel(); homeWatching = null
+        roomWatches.values.forEach { it.cancel() }; roomWatches.clear()
+    }
+    private fun startHomeWatching() {
+        if (!active) return
+        stopHomeWatching(); val epoch = homeGeneration
+        val hub = library.identityHub
+        if (hub != null && library.identityToken.isNotEmpty()) {
+            val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.HOME, identityToken = library.identityToken)
+            homeWatching = platform.watch(hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+                override fun complete(body: String, error: String) {
+                    if(epoch != homeGeneration || error.isNotEmpty()) return
+                    try { val next = decodeReply(body); if (next.ok) next.home?.let { acceptHome(it, hub); watchSavedRooms(epoch); publish() } }
+                    catch (_: Exception) { /* Existing home stays available; the next update retries. */ }
+                }
+            })
+        }
+        watchSavedRooms(epoch)
+    }
+    private fun watchSavedRooms(epoch: Int) {
+        library.sessions.forEach { saved ->
+            // The room currently open on screen already has its authoritative subscription.
+            // A second subscription would duplicate writes and can race the visible state.
+            if (saved.roomId == session?.roomId) return@forEach
+            if (roomWatches.containsKey(saved.roomId)) return@forEach
+            val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = saved.roomId, token = saved.token)
+            roomWatches[saved.roomId] = platform.watch(saved.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+                override fun complete(body: String, error: String) {
+                    if(epoch != homeGeneration || error.isNotEmpty()) return
+                    try {
+                        val next = decodeReply(body); val room = next.room ?: return
+                        if (!next.ok || next.memberId != saved.memberId || room.id != saved.roomId) return
+                        if ((library.snapshots[room.id]?.room?.revision ?: 0) <= room.revision) {
+                            if (library.snapshots[room.id]?.room?.revision != room.revision)
+                                replaceLibrary(library.copy(snapshots = library.snapshots + (room.id to next.copy(token = ""))))
+                            val spin = room.spin
+                            if (room.phase == RoomPhase.ACCEPTING && spin?.winnerId == saved.memberId)
+                                alert("selected:${spin.id}", "You're selected!", "Join ${room.name} to accept and collect everyone's food order.")
+                            if (room.phase == RoomPhase.PREPARING_SPIN && saved.memberId !in room.preparedIds && room.orderingMembers.any { it.id == saved.memberId } && session?.roomId != saved.roomId) {
+                                platform.request(saved.hub, orderJson.encodeToString(request.copy(commandId = platform.uuid(), kind = CommandKind.ACK_SPIN, expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, text = room.preparationId)), object : GroupReplyCallback { override fun complete(body: String, error: String) {} })
+                            }
+                            publish()
+                        }
+                    } catch (_: Exception) { /* Reconnect keeps the last verified snapshot. */ }
+                }
+            })
+        }
+    }
+    internal fun pairingLink(hub: HubPairing): String = if (hub.fingerprint.isEmpty()) hub.url else
+        "foodrun://pair?host=${hub.url.substringAfter("https://").substringBefore(':')}&port=${hub.url.substringAfterLast(':')}&fingerprint=${hub.fingerprint}"
+    internal fun sameHub(first: HubPairing?, second: HubPairing?): Boolean {
+        if (first == null || second == null) return false
+        return if (first.fingerprint.isNotEmpty() || second.fingerprint.isNotEmpty())
+            first.fingerprint.isNotEmpty() && first.fingerprint == second.fingerprint
+        else first.url.trimEnd('/').equals(second.url.trimEnd('/'), ignoreCase = true)
+    }
     private fun loadOlderHistory() {
         val s = requireNotNull(session); val offset = reply?.historyNextOffset ?: -1
         require(offset >= 0) { "All available history is downloaded." }; busy = true

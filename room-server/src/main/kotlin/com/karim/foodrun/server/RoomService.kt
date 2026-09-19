@@ -5,17 +5,36 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 
-class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom()) {
+class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), identityProvider: IdentityProvider? = null) {
+    private val accounts = AccountService(db, identityProvider, this, clock)
+    @Synchronized fun syncCloud() = accounts.syncCloud()
     private val presence = mutableMapOf<String, Long>()
+    private val roomEvents = mutableMapOf<String, Long>()
+    private var homeEvents = 1L
+    private var eventSequence = 1L
     private val reducer = RoomReducer(::uuid, random::nextInt)
+    @Synchronized fun eventVersion(kind: CommandKind, roomId: String): Long =
+        if (kind == CommandKind.HOME) homeEvents else roomEvents[roomId] ?: 0L
+    @Synchronized fun touch(memberId: String) { if (memberId.isNotEmpty()) presence[memberId] = clock() }
+    private fun signalRoom(roomId: String) {
+        roomEvents[roomId] = ++eventSequence
+        homeEvents = eventSequence
+    }
+    private fun signalHome() { homeEvents = ++eventSequence }
     @Synchronized fun execute(c: RoomCommand): RoomReply = try {
         require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160) { "Invalid request identifier." }
         require(c.name.length <= 160 && c.text.length <= 500 && c.destination.length <= 1000 && c.expectedNames.size <= 30) { "Request fields exceed the supported length." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
-        if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
+        if (c.kind == CommandKind.IDENTITY) accounts.execute(c).also { reply ->
+            signalHome()
+            reply.room?.let { signalRoom(it.id) }
+        }
+        else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
+        else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
         else db.transaction {
+            if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN)) authenticate(c.roomId, c.token)
             val digest = hash(orderJson.encodeToString(c))
             db.previous(c.commandId, digest) ?: run {
@@ -30,9 +49,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        signalRoom(result.id)
                         projection(result, actor)
                     }
                 }
+                if (c.identityToken.isNotEmpty() && reply.token.isNotEmpty()) accounts.link(c.identityToken, reply)
                 db.record(c.commandId, digest, reply); reply
             }
         }
@@ -52,7 +73,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun withPresence(room: Room): Room = room.copy(members = room.members.map { member -> member.copy(lastSeen = presence[member.id] ?: member.lastSeen) })
     private fun finalizeSpin(room: Room): Room {
         if (room.phase != RoomPhase.SPINNING || clock() < (room.spin?.endAt ?: Long.MAX_VALUE)) return room
-        return room.copy(phase = RoomPhase.ACCEPTING, revision = room.revision + 1, updatedAt = clock()).also(db::save)
+        return room.copy(phase = RoomPhase.ACCEPTING, revision = room.revision + 1, updatedAt = clock()).also {
+            db.save(it)
+            signalRoom(it.id)
+        }
     }
     private fun create(c: RoomCommand): RoomReply {
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
@@ -62,6 +86,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
         val room = Room(uuid(), code, person.id, c.text.trim(), requireNotNull(c.restaurant), c.expectedNames, c.flag, c.destination, c.deadline, c.fees ?: FeePolicy(), members = listOf(person), createdAt = clock(), updatedAt = clock())
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
+        signalRoom(room.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(room, person.id).copy(token = token)
     }
@@ -69,10 +94,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         MenuValidation.label(c.name)
         require(c.code.matches(Regex("[0-9]{6}"))) { "Enter a six-digit room code." }
         val room = db.roomByCode(c.code) ?: error("Room code was not found.")
+        if (c.identityToken.isNotEmpty()) accounts.linked(c.identityToken, room.id)?.let { saved ->
+            if (room.members.any { it.id == saved.memberId && !it.removed })
+                return projection(room, saved.memberId).copy(token = saved.token)
+        }
         require(room.members.count { !it.removed } < 60) { "Too many pending participants. Ask the organizer to remove unused requests." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
         val person = Member(uuid(), c.name.trim(), guest = c.guest, eligible = !c.guest, lastSeen = clock())
         val next = room.copy(members = room.members + person, revision = room.revision + 1, updatedAt = clock()); requireLoadable(next); db.save(next)
+        signalRoom(next.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(next, person.id).copy(token = token)
     }

@@ -168,7 +168,7 @@ Account edits are versioned. Changes after publication create a visible notice a
 
 ## 9. Networking decision and platform constraints
 
-### Confirmed hosting: an independent local hub
+### Confirmed hosting: nearby hub with an internet-server option
 
 Run a small Kotlin/JVM server on a Mac/PC on the same reachable network. A creator's phone is a client with organizer permissions, so switching to the dialer/banking app does not terminate the room. The hub needs to remain awake and its firewall must permit the configured local port.
 
@@ -176,11 +176,11 @@ An iPhone is not a reliable always-running room server: iOS suspends ordinary ap
 
 | Deployment | Benefit | Constraint |
 | --- | --- | --- |
-| Local computer hub | Works without internet; both phones behave equally; reliable while phones switch apps | Requires an awake computer; same reachable network; no live off-network access |
+| Local computer hub | Works without internet; both phones behave equally; reliable while phones switch apps; minimizes public-server traffic | Requires an awake computer and the same reachable network |
 | Creator phone hosts | No separate computer | iOS background suspension, battery and disconnect risk; not the recommended production baseline |
 | Hosted internet server | Off-network updates and easier sharing | Hosting, connectivity, identity and operational scope expand |
 
-The confirmed local-only scope means the pickup person loses live updates after leaving Wi-Fi. Before departure, cache the complete locked restaurant order, contact, destination and available receipts on the payer's phone; cache each member's receipt and recipient details. Downloaded receipts remain readable offline after an app restart, with their revision and last-synced time visible so cached balances are not presented as current confirmations. Offline edits remain visibly pending and require server validation on return. Reconnect automatically resynchronizes with the local hub. Do not promise live updates or push notifications over an unreachable LAN. A future online mode can use the same command protocol with a different server endpoint, but is outside this release and requires a separate deployment and identity project.
+Nearby rooms lose live updates after a user leaves that LAN. Before departure, cache the complete locked restaurant order, contact, destination and available receipts on the payer's phone; cache each member's receipt and recipient details. Downloaded receipts remain readable offline after an app restart, with their revision and last-synced time visible so cached balances are not presented as current confirmations. Offline edits remain visibly pending and require server validation on return. Internet rooms use the same command protocol on a public HTTPS endpoint and remain live across networks. Both modes reuse the existing Firebase identity project.
 
 ### Finding and trusting the hub
 
@@ -305,12 +305,12 @@ All phases 0–5 form the local-network release. The server/domain/contract audi
 4. Per-person budget caps and explicit “approve increases up to…” limits.
 5. Shared platters split by consented shares, then multiple payers/multiple restaurants as separately designed extensions.
 6. Receipt-photo assistance/OCR with manual confirmation, not automatic final pricing or payment verification.
-7. Optional internet-backed rooms and notifications for off-network updates; lightweight browser joining would be a separate client with the same protocol.
+7. Remote push delivery while the mobile app is fully closed; the current mobile and browser clients notify from their active live subscriptions.
 
 ## 15. Final decisions
 
-- **Confirmed:** a local Mac/PC on the same Wi-Fi will run the Food Run server. Android and iOS phones connect as clients.
-- **Confirmed:** local-only live order and payment updates for now; downloaded receipts remain available offline. Internet-backed live updates are outside this release.
+- **Confirmed:** a local Mac/PC on the same Wi-Fi can run nearby rooms with minimal public-server use. Android, iOS, and web connect as clients.
+- **Confirmed:** the same room server can be deployed behind public HTTPS for internet rooms, while downloaded receipts remain available offline.
 
 - **Confirmed by the user:** rooms and memberships persist; join once and resume on subsequent days. No daily expiry or automatic deletion timer. Use emulator and simulator for current testing.
 - **Implemented business defaults:** spin before cart submission, explicit duty consent, equal delivery split with a proportional option, proportional order discount, manual reimbursements after restaurant payment, one payer/restaurant/currency per meal, organizer approval and actual payer consent for late orderers.

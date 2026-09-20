@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -10,6 +10,7 @@ import {
 import { auth, googleProvider } from '../firebase';
 import { amount, hubAddress, money, photoData } from './client';
 import { useFoodRun } from './useFoodRun';
+import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlicePath } from './wheel';
 
 const phaseLabel = {
   LOBBY: 'Gathering', PREPARING_SPIN: 'Getting ready', SPINNING: 'Selecting',
@@ -178,6 +179,91 @@ function Avatar({ profile, small = false }) {
   return profile?.photo
     ? <img className={`avatar ${small ? 'small' : ''}`} src={profile.photo} alt="" />
     : <span className={`avatar initials ${small ? 'small' : ''}`}>{initials(profile?.name)}</span>;
+}
+
+function LiveSelectionWheel({ spin, members, serverTime, active }) {
+  const candidates = spin.memberIds.map(id => members.find(member => member.id === id)).filter(Boolean);
+  const winnerIndex = spin.memberIds.indexOf(spin.winnerId);
+  const finalRotation = spinRotation(spin, spin.startAt + spin.duration);
+  const round = useRef(spin);
+  const clock = useRef({ serverTime: Number(serverTime) || Date.now(), monotonicTime: performance.now() });
+  const initialNow = clock.current.serverTime;
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [motion, setMotion] = useState(() => ({
+    rotation: active ? spinRotation(spin, Number(serverTime) || Date.now()) : finalRotation,
+    stage: !active || initialNow >= spin.startAt + spin.duration ? 'finished' : initialNow < spin.startAt ? 'waiting' : 'spinning',
+  }));
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const changed = () => setReduceMotion(media.matches);
+    changed(); media.addEventListener?.('change', changed);
+    return () => media.removeEventListener?.('change', changed);
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      setMotion({ rotation: finalRotation, stage: 'finished' });
+      return undefined;
+    }
+    if (reduceMotion) {
+      const now = clock.current.serverTime + performance.now() - clock.current.monotonicTime;
+      setMotion({ rotation: 0, stage: now < round.current.startAt ? 'waiting' : 'spinning' });
+      return undefined;
+    }
+    let frame = 0;
+    const draw = () => {
+      const now = clock.current.serverTime + performance.now() - clock.current.monotonicTime;
+      const spinning = now < round.current.startAt + round.current.duration;
+      const stage = !spinning ? 'finished' : now < round.current.startAt ? 'waiting' : 'spinning';
+      setMotion({ rotation: spinRotation(round.current, now), stage });
+      if (spinning) frame = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frame);
+  }, [active, finalRotation, reduceMotion]);
+
+  const count = candidates.length;
+  const slice = 360 / Math.max(count, 1);
+  const labelSize = count <= 4 ? 18 : count <= 7 ? 15 : 12;
+  return <div className={`live-wheel is-${motion.stage}`}>
+    <svg viewBox="0 0 400 410" role="img" aria-label={motion.stage === 'finished' ? `${candidates[winnerIndex]?.name || 'Someone'} was selected` : `Selecting one of ${count} people`}>
+      <circle className="wheel-aura" cx="200" cy="200" r="198" />
+      <circle className="wheel-shadow" cx="200" cy="209" r="188" />
+      <circle className="wheel-rim" cx="200" cy="200" r="188" />
+      {Array.from({ length: 36 }, (_, index) => {
+        const [x, y] = polarPoint(index * 10 - 90, 180);
+        return <circle className={index % 3 === 0 ? 'rim-dot strong' : 'rim-dot'} cx={x} cy={y} r="2.3" key={index} />;
+      })}
+      <g className="wheel-turntable" style={{ transform: `rotate(${motion.rotation}deg)` }}>
+        {count === 1
+          ? <circle className={`wheel-slice ${motion.stage === 'finished' ? 'selected' : ''}`} cx="200" cy="200" r="172" fill={WHEEL_PALETTE[0]} />
+          : candidates.map((candidate, index) => <path className={`wheel-slice ${motion.stage === 'finished' && index === winnerIndex ? 'selected' : ''}`} d={wheelSlicePath(index, count)} fill={WHEEL_PALETTE[index % WHEEL_PALETTE.length]} key={candidate.id} />)}
+        {candidates.map((candidate, index) => {
+          const angle = -90 + index * slice;
+          const [x, y] = polarPoint(angle, 113);
+          return <text className="wheel-person-name" x={x} y={y} fontSize={labelSize} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${angle + 180} ${x} ${y})`} key={candidate.id}>{wheelLabel(candidate.name)}</text>;
+        })}
+        <circle className="wheel-inner-outline" cx="200" cy="200" r="172" />
+      </g>
+      <circle className="wheel-hub-shadow" cx="200" cy="205" r="43" />
+      <circle className="wheel-hub" cx="200" cy="200" r="40" />
+      <text className="wheel-hub-icon" x="200" y="196" textAnchor="middle">🥡</text>
+      <text className="wheel-hub-label" x="200" y="219" textAnchor="middle">FOOD RUN</text>
+      <g className="wheel-pointer"><path d="M184 7 Q184 2 190 2 L200 36 Q202 42 205 36 L216 7 Q217 2 211 2 Z" /></g>
+    </svg>
+  </div>;
+}
+
+function WinnerReveal({ winner, selected, me, room, data }) {
+  return <div className="winner-reveal" aria-live="polite">
+    <div className="winner-confetti" aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i style={{ '--confetti-x': `${(index * 43) % 100}%`, '--confetti-delay': `${(index % 7) * -0.12}s`, '--confetti-color': WHEEL_PALETTE[index % WHEEL_PALETTE.length] }} key={index} />)}</div>
+    <div className="winner-food-icon" aria-hidden="true"><span>🥡</span><b>★</b></div>
+    <p className="eyebrow">TODAY’S PICK</p>
+    <h2>{winner.name} is ordering!</h2>
+    <p>Everyone sees the same selected person live.</p>
+    {selected && winner.id === me.id && <div className="hero-actions"><button className="primary" onClick={() => data.send('ACCEPT_DUTY', {}, room.id)}>I’ll take care of it</button><button className="secondary" onClick={() => data.send('DECLINE_DUTY', { text: 'Unavailable this time' }, room.id)}>I can’t this time</button></div>}
+  </div>;
 }
 
 function AppDownloads({ compact = false }) {
@@ -519,7 +605,6 @@ function RoomScreen({ data, roomId, onBack }) {
   const addMenuLine = line => saveCart([...myCart.lines, line]);
   const addItem = event => { event.preventDefault(); const line = { id: uid(), itemId: '', quantity: Number(item.quantity), variantId: null, optionIds: [], notes: item.notes.trim(), description: item.description.trim(), unitPrice: null }; saveCart([...myCart.lines, line]).then(result => result && setItem({ description: '', quantity: '1', notes: '' })); };
   const selected = winner && room.phase === 'ACCEPTING';
-  const ring = room.phase === 'SPINNING' ? { '--rotation': `${room.spin.turns * 360 + Math.max(0, room.spin.memberIds.indexOf(room.spin.winnerId)) * (360 / room.spin.memberIds.length)}deg`, '--duration': `${room.spin.duration}ms` } : {};
   const allConfirmed = orderingMembers.every(member => room.carts.find(cart => cart.memberId === member.id)?.confirmedQuote === room.quoteRevision);
   const saveCurrentRestaurant = () => {
     const saved = loadRestaurants(); storeRestaurants([...saved.filter(restaurant => restaurant.id !== room.restaurant.id), clone(room.restaurant)].sort((a, b) => a.name.localeCompare(b.name)));
@@ -532,8 +617,8 @@ function RoomScreen({ data, roomId, onBack }) {
       <section className="room-main stack">
         {['PREPARING_SPIN','SPINNING','ACCEPTING'].includes(room.phase) && <article className="card selection-card">
           {room.phase === 'PREPARING_SPIN' && <><div className="spinner" /><h2>Getting everyone in sync…</h2><p>Every participating device is joining the live selection.</p></>}
-          {room.phase === 'SPINNING' && <><div className="wheel" style={ring}>{room.spin.memberIds.map((id, index) => <span style={{ transform: `rotate(${index * 360 / room.spin.memberIds.length}deg) translateY(-92px)` }} key={id}>{initials(room.members.find(m => m.id === id)?.name)}</span>)}</div><h2>Who will order?</h2></>}
-          {room.phase === 'ACCEPTING' && <><div className="winner-burst">🎉</div><p className="eyebrow">TODAY’S PICK</p><h2>{winner.name} is ordering!</h2><p>Everyone sees the same selected person live.</p>{winner.id === me.id && <div className="hero-actions"><button className="primary" onClick={() => data.send('ACCEPT_DUTY', {}, room.id)}>I’ll take care of it</button><button className="secondary" onClick={() => data.send('DECLINE_DUTY', { text: 'Unavailable this time' }, room.id)}>I can’t this time</button></div>}</>}
+          {room.phase === 'SPINNING' && <><p className="eyebrow">LIVE SELECTION</p><h2>Who will order?</h2><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
+          {room.phase === 'ACCEPTING' && <><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active={false} /><WinnerReveal winner={winner} selected={selected} me={me} room={room} data={data} /></>}
         </article>}
         {!me.approved && <article className="card notice-card"><h2>Waiting for approval</h2><p>The organizer will approve your request before you can join this order.</p></article>}
         {me.approved && room.phase === 'LOBBY' && <article className="card"><div className="section-title compact"><div><p className="eyebrow">WHO’S IN?</p><h2>Ready for today?</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? 'Skip this order' : 'Join this order'}</button>{me.participating && <button className={me.ready ? 'secondary' : 'primary'} disabled={me.ready} onClick={() => data.send('READY', { flag: true, eligible: true }, room.id)}>{me.ready ? '✓ Ready' : 'I’m ready'}</button>}</div>}{owner && <button className="primary wide" disabled={!orderingMembers.length || !orderingMembers.every(member => member.ready)} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>Spin together</button>}</article>}

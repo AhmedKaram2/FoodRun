@@ -118,7 +118,7 @@ class OrderProgressTest {
         assertTrue(reviewable.receipts.isEmpty())
         assertNull(reviewable.room!!.account)
         assertTrue(reviewable.room!!.carts.all { it.lines.isEmpty() })
-        assertFalse(f.state(payer).progress!!.canReview)
+        assertTrue(f.state(payer).progress!!.canReview)
         f.send(f.owner, CommandKind.REVIEW)
         listOf(payer, member).forEach { actor ->
             f.send(actor, CommandKind.CONFIRM_QUOTE) { it.copy(expectedRevision = f.state(actor).room!!.quoteRevision) }
@@ -133,7 +133,7 @@ class OrderProgressTest {
         assertTrue(f.state().room!!.transfers.isEmpty())
         f.send(payer, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = transfer.id) }
         assertTrue(f.state().progress!!.canArchive)
-        assertFalse(f.state(payer).progress!!.canArchive)
+        assertTrue(f.state(payer).progress!!.canArchive)
         assertTrue(f.state().receipts.isEmpty())
         f.send(f.owner, CommandKind.ARCHIVE)
         f.restart()

@@ -21,7 +21,7 @@ interface IdentityProvider {
     fun resetPassword(email: String)
     fun saveHubRecord(identity: CloudIdentity, hubId: String, key: String, value: String)
 }
-data class CloudIdentity(val userId: String, val idToken: String, val refreshToken: String = "", val name: String = "")
+data class CloudIdentity(val userId: String, val idToken: String, val refreshToken: String = "", val name: String = "", val email: String = "", val emailVerified: Boolean = false)
 
 class FirebaseIdentity(private val apiKey: String, private val project: String) : IdentityProvider {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build()
@@ -60,7 +60,7 @@ class FirebaseIdentity(private val apiKey: String, private val project: String) 
         require(idToken.length in 100..16000) { "Sign in with Firebase first." }
         val user = auth("lookup", buildJsonObject { put("idToken", idToken) })["users"]?.jsonArray?.singleOrNull()?.jsonObject
             ?: error("Firebase account not found.")
-        return CloudIdentity(user.string("localId"), idToken, name = user.string("displayName"))
+        return CloudIdentity(user.string("localId"), idToken, name = user.string("displayName"), email = user.string("email"), emailVerified = user["emailVerified"]?.jsonPrimitive?.booleanOrNull == true)
     }
     override fun refresh(refreshToken: String): CloudIdentity {
         val request = HttpRequest.newBuilder(URI("https://securetoken.googleapis.com/v1/token?key=$apiKey"))

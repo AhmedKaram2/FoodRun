@@ -28,7 +28,7 @@ docker build -t foodrun-api .
 
 The repository also includes `render.yaml`. In Render, create a Blueprint from this repository and enter the existing Intrvioo web API key for the prompted `FOODRUN_FIREBASE_API_KEY`. The blueprint provisions one Frankfurt web-service instance and a persistent 1 GB disk. A paid Render instance is required for the disk; do not remove it because the server stores the authoritative room and order state in SQLite.
 
-The same Blueprint asks for `FOODRUN_ADMIN_PASSWORD`. Store the admin password as a Render secret and set `FOODRUN_ADMIN_USERNAME` to the intended administrator. The password is read only by the API process; the browser sends it to `/admin/login` over HTTPS and receives an expiring server-side session token.
+Administration uses the normal Firebase sign-in. Only the verified `1ahmedkaram1@gmail.com` account sees **Admin panel** on the web home screen. The API verifies that identity with Firebase for every admin request and denies disabled accounts. Shared admin passwords and `/admin/login` are no longer supported; old `FOODRUN_ADMIN_USERNAME` and `FOODRUN_ADMIN_PASSWORD` environment variables can be removed. The administrator must have verified their email (Google sign-in provides a verified Google identity).
 
 Run the container behind a managed HTTPS reverse proxy or container platform. Persist `FOODRUN_DATA`; it contains room state, memberships, and encrypted account data.
 

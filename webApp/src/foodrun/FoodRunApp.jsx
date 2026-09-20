@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { canAccessAdmin } from './adminAccess';
+import { addMenuLine, changeQuantity, menuLineTotal } from './cartEditing';
+import { t, setLanguage as setTranslationLanguage } from './i18n.js';
+import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from './orderHistory';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -13,6 +17,11 @@ import { amount, hubAddress, money, photoData } from './client';
 import { useFoodRun } from './useFoodRun';
 import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlicePath } from './wheel';
 import builtInRestaurants from './builtInRestaurants.json';
+import { validateMenu } from './menuValidation';
+
+const AdminApp = lazy(() => import('./AdminApp'));
+const RestaurantLibraryScreen = lazy(() => import('./RestaurantLibraryScreen'));
+const OfflineReceipts = lazy(() => import('./ReceiptArchiveScreen.jsx'));
 
 const phaseLabel = {
   LOBBY: 'Gathering', PREPARING_SPIN: 'Getting ready', SPINNING: 'Selecting',
@@ -34,7 +43,14 @@ function tx(english, arabic) { return uiLanguage === 'ar' ? arabic : english; }
 function localizedName(value) { return uiLanguage === 'ar' && value?.nameAr ? value.nameAr : value?.name || ''; }
 function localizedDescription(value) { return uiLanguage === 'ar' && value?.descriptionAr ? value.descriptionAr : value?.description || ''; }
 function LanguageToggle() {
-  return <div className="language-toggle"><button type="button" className={uiLanguage === 'en' ? 'active' : ''} onClick={() => updateLanguage('en')}>English</button><button type="button" className={uiLanguage === 'ar' ? 'active' : ''} onClick={() => updateLanguage('ar')}>العربية</button></div>;
+  return <label className="language-picker" title={tx('Choose language', 'اختر اللغة')}>
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5h14M5 17.5h14" /></svg>
+    <span className="sr-only">Language / اللغة</span>
+    <select aria-label="Language / اللغة" value={uiLanguage} onChange={event => updateLanguage(event.target.value)} dir="ltr">
+      <option value="en" lang="en">English</option><option value="ar" lang="ar">العربية</option>
+    </select>
+    <svg className="language-chevron" aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="m4 6 4 4 4-4" /></svg>
+  </label>;
 }
 
 function uid() { return crypto.randomUUID(); }
@@ -59,25 +75,25 @@ function blankRestaurant() {
   };
 }
 function normalizeRestaurant(value) {
-  if (!value || typeof value !== 'object' || !String(value.id || '').trim() || !String(value.name || '').trim()) throw Error('Restaurant ID and name are required.');
+  if (!value || typeof value !== 'object' || !String(value.id || '').trim() || !String(value.name || '').trim()) throw Error(t("Restaurant ID and name are required."));
   const currency = String(value.currency || 'AED').toUpperCase();
-  if (currency !== 'AED') throw Error('Restaurant menus and rooms use AED (Dirham).');
+  if (currency !== 'AED') throw Error(t("Restaurant menus and rooms use AED (Dirham)."));
   const menu = value.menu || {};
   const categories = Array.isArray(menu.categories) ? menu.categories : [];
   const optionGroups = Array.isArray(menu.optionGroups) ? menu.optionGroups : [];
   const items = Array.isArray(menu.items) ? menu.items : [];
   const categoryIds = new Set(categories.map(category => category.id));
-  if (items.some(item => !categoryIds.has(item.categoryId))) throw Error('Every menu item must reference an existing category.');
+  if (items.some(item => !categoryIds.has(item.categoryId))) throw Error(t("Every menu item must reference an existing category."));
   const defaults = blankRestaurant();
-  return {
+  return validateMenu({
     ...defaults, ...value, id: String(value.id).trim(), name: String(value.name).trim(), currency,
     contact: { address: null, ...(value.contact || {}),
       phoneE164: value.contact?.phoneE164 ? uaePhone(value.contact.phoneE164) : null,
       whatsappE164: value.contact?.whatsappE164 ? uaePhone(value.contact.whatsappE164, true) : null },
     pricing: { ...defaults.pricing, ...(value.pricing || {}) },
-    menu: { categories, optionGroups, items },
+    menu: { categories, optionGroups: optionGroups.map(group => ({ minSelections: 0, maxSelections: 1, ...group })), items: items.map(item => ({ variants: [], optionGroupIds: [], available: true, ...item })) },
     openOrdering: Boolean(value.openOrdering || items.length === 0),
-  };
+  });
 }
 function loadRestaurants() {
   let saved = [];
@@ -138,74 +154,6 @@ function downloadText(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function RestaurantLibraryScreen({ onBack }) {
-  const [restaurants, setRestaurants] = useState(loadRestaurants);
-  const [draft, setDraft] = useState(blankRestaurant);
-  const [categoryName, setCategoryName] = useState('');
-  const [newItem, setNewItem] = useState({ categoryId: '', name: '', price: '' });
-  const [message, setMessage] = useState('');
-  const saveList = next => { setRestaurants(next); storeRestaurants(next); };
-  const set = (key, value) => setDraft(old => ({ ...old, [key]: value }));
-  const setContact = (key, value) => setDraft(old => ({ ...old, contact: { ...old.contact, [key]: value || null } }));
-  const setPricing = (key, value) => setDraft(old => ({ ...old, pricing: { ...old.pricing, [key]: value } }));
-  const save = event => {
-    event.preventDefault(); setMessage('');
-    try {
-      const normalized = normalizeRestaurant(draft);
-      const next = [...restaurants.filter(item => item.id !== normalized.id), normalized].sort((a, b) => a.name.localeCompare(b.name));
-      saveList(next); setDraft(clone(normalized)); setMessage('Restaurant and menu saved on this device.');
-    } catch (error) { setMessage(error.message); }
-  };
-  const addCategory = () => {
-    const name = categoryName.trim(); if (!name) return;
-    const category = { id: uid(), name, sortOrder: draft.menu.categories.length };
-    setDraft(old => ({ ...old, menu: { ...old.menu, categories: [...old.menu.categories, category] } }));
-    setNewItem(old => ({ ...old, categoryId: old.categoryId || category.id })); setCategoryName('');
-  };
-  const addMenuItem = () => {
-    if (!newItem.categoryId || !newItem.name.trim() || !newItem.price) return setMessage('Choose a category, item name, and price.');
-    try {
-      const item = { id: uid(), categoryId: newItem.categoryId, name: newItem.name.trim(), description: '', basePriceMinor: amount(newItem.price, draft.currency), available: true, variants: [], optionGroupIds: [] };
-      setDraft(old => ({ ...old, menu: { ...old.menu, items: [...old.menu.items, item] }, openOrdering: false }));
-      setNewItem(old => ({ ...old, name: '', price: '' })); setMessage('');
-    } catch (error) { setMessage(error.message); }
-  };
-  const removeCategory = id => setDraft(old => ({ ...old, menu: { ...old.menu, categories: old.menu.categories.filter(category => category.id !== id), items: old.menu.items.filter(item => item.categoryId !== id) } }));
-  const importFile = async file => {
-    if (!file) return;
-    try { const imported = parseRestaurantExport(await file.text()); setDraft(imported); setMessage('Menu imported. Review it, then save.'); }
-    catch (error) { setMessage(error.message); }
-  };
-  return <Page title="Restaurants & menus" subtitle="Save restaurant details and prices once, or import the same Food Run schema used by the mobile apps." onBack={onBack}>
-    <div className="library-layout">
-      <aside className="card library-list">
-        <div className="section-title compact"><div><p className="eyebrow">SAVED ON THIS DEVICE</p><h3>{restaurants.length} restaurant{restaurants.length === 1 ? '' : 's'}</h3></div><button className="icon-button" type="button" onClick={() => { setDraft(blankRestaurant()); setMessage(''); }}>＋</button></div>
-        {restaurants.length === 0 && <p className="muted">Add your first restaurant or import a menu from Food Run mobile.</p>}
-        {restaurants.map(restaurant => <button type="button" className={`restaurant-row ${draft.id === restaurant.id ? 'active' : ''}`} key={restaurant.id} onClick={() => { setDraft(clone(restaurant)); setMessage(''); }}><span><b>{restaurant.name}</b><small>{restaurant.menu.items.length} menu items · {restaurant.currency}</small></span><strong>›</strong></button>)}
-        <label className="upload wide">Import Food Run JSON<input type="file" accept="application/json,.json" onChange={event => importFile(event.target.files?.[0])} /></label>
-      </aside>
-      <form className="stack" onSubmit={save}>
-        <section className="card editor-card stack">
-          <div className="section-title compact"><div><p className="eyebrow">RESTAURANT</p><h2>{draft.name || 'New restaurant'}</h2></div>{restaurants.some(item => item.id === draft.id) && <button type="button" className="link danger" onClick={() => { saveList(restaurants.filter(item => item.id !== draft.id)); setDraft(blankRestaurant()); }}>Delete</button>}</div>
-          <div className="form-grid three"><label>Restaurant name<input value={draft.name} onChange={e => set('name', e.target.value)} required /></label><label>Branch<input value={draft.branchName} onChange={e => set('branchName', e.target.value)} /></label><label>Currency<input value="AED · UAE Dirham" readOnly /></label></div>
-          <div className="form-grid three"><label>UAE phone<input value={draft.contact.phoneE164 || ''} onChange={e => setContact('phoneE164', e.target.value)} placeholder="050 123 4567" /></label><label>UAE WhatsApp<input value={draft.contact.whatsappE164 || ''} onChange={e => setContact('whatsappE164', e.target.value)} placeholder="050 123 4567" /></label><label>Address<input value={draft.contact.address || ''} onChange={e => setContact('address', e.target.value)} /></label></div>
-          <div className="form-grid three"><label>Tax treatment<select value={draft.pricing.taxTreatment} onChange={e => setPricing('taxTreatment', e.target.value)}><option value="included">Included</option><option value="added">Added to bill</option><option value="unspecified">Confirm later</option></select></label>{draft.pricing.taxTreatment === 'added' && <label>Tax rate %<input type="number" min="0" max="100" step="0.01" value={(draft.pricing.taxRateBasisPoints || 0) / 100} onChange={e => setPricing('taxRateBasisPoints', Math.round(Number(e.target.value) * 100))} /></label>}<label>Minimum order<input inputMode="decimal" value={minorInput(draft.pricing.minimumOrderMinor, draft.currency)} onChange={e => { try { setPricing('minimumOrderMinor', amount(e.target.value || '0', draft.currency)); } catch { /* validate when saved */ } }} /></label></div>
-          <div className="form-grid three"><label>Default delivery fee<input inputMode="decimal" value={minorInput(draft.pricing.defaultDeliveryFeeMinor, draft.currency)} onChange={e => { try { setPricing('defaultDeliveryFeeMinor', amount(e.target.value || '0', draft.currency)); } catch { /* validate when saved */ } }} /></label><label>Default service fee<input inputMode="decimal" value={minorInput(draft.pricing.defaultServiceFeeMinor, draft.currency)} onChange={e => { try { setPricing('defaultServiceFeeMinor', amount(e.target.value || '0', draft.currency)); } catch { /* validate when saved */ } }} /></label><label className="check field-check"><input type="checkbox" checked={draft.openOrdering} onChange={e => set('openOrdering', e.target.checked)} /> Allow custom items</label></div>
-        </section>
-        <section className="card editor-card stack">
-          <div><p className="eyebrow">MENU & SAVED PRICES</p><h2>Items people can choose</h2><p className="muted">Imported sizes and extras are preserved. You can also build a simple priced menu here.</p></div>
-          <div className="inline-add"><input value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="New category, e.g. Mains" /><button type="button" className="secondary" onClick={addCategory}>Add category</button></div>
-          {draft.menu.categories.map(category => <div className="menu-category-editor" key={category.id}><div><h3>{category.name}</h3><button type="button" className="link danger" onClick={() => removeCategory(category.id)}>Remove category</button></div>{draft.menu.items.filter(item => item.categoryId === category.id).map(menuItem => <div className="saved-menu-item" key={menuItem.id}><span><b>{menuItem.name}</b><small>{menuItem.variants.length ? `${menuItem.variants.length} sizes` : money(menuItem.basePriceMinor, draft.currency)}{menuItem.optionGroupIds.length ? ` · ${menuItem.optionGroupIds.length} extra groups` : ''}</small></span><button type="button" className="link danger" onClick={() => setDraft(old => ({ ...old, menu: { ...old.menu, items: old.menu.items.filter(item => item.id !== menuItem.id) } }))}>Remove</button></div>)}</div>)}
-          {draft.menu.categories.length > 0 && <div className="form-grid item-adder"><label>Category<select value={newItem.categoryId} onChange={e => setNewItem({ ...newItem, categoryId: e.target.value })}><option value="">Choose</option>{draft.menu.categories.map(category => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>Item name<input value={newItem.name} onChange={e => setNewItem({ ...newItem, name: e.target.value })} /></label><label>Base price<input inputMode="decimal" value={newItem.price} onChange={e => setNewItem({ ...newItem, price: e.target.value })} placeholder="0.00" /></label><button type="button" className="secondary" onClick={addMenuItem}>Add menu item</button></div>}
-          {draft.menu.categories.length === 0 && <div className="empty small-empty"><span>🍽️</span><p>Add a category, or keep custom items enabled for an open order.</p></div>}
-        </section>
-        {message && <p className={message.includes('saved') || message.includes('imported') ? 'success-message' : 'form-message'} role="status">{message}</p>}
-        <div className="editor-actions"><button type="button" className="secondary" onClick={() => downloadText(`${(draft.name || 'restaurant').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.foodrun.json`, restaurantExport(draft))}>Export JSON</button><button type="button" className="secondary" onClick={() => copyText(restaurantExport(draft)).then(() => setMessage('Restaurant JSON copied.'))}>Copy JSON</button><button className="primary">Save restaurant</button></div>
-      </form>
-    </div>
-  </Page>;
 }
 
 function initials(name = '') {
@@ -296,10 +244,10 @@ function WinnerReveal({ winner, selected, me, room, data }) {
   return <div className="winner-reveal" aria-live="polite">
     <div className="winner-confetti" aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i style={{ '--confetti-x': `${(index * 43) % 100}%`, '--confetti-delay': `${(index % 7) * -0.12}s`, '--confetti-color': WHEEL_PALETTE[index % WHEEL_PALETTE.length] }} key={index} />)}</div>
     <div className="winner-food-icon" aria-hidden="true"><span>🥡</span><b>★</b></div>
-    <p className="eyebrow">TODAY’S PICK</p>
-    <h2>{winner.name} is ordering!</h2>
-    <p>Everyone sees the same selected person live.</p>
-    {selected && winner.id === me.id && <div className="hero-actions"><button className="primary" onClick={() => data.send('ACCEPT_DUTY', {}, room.id)}>I’ll take care of it</button><button className="secondary" onClick={() => data.send('DECLINE_DUTY', { text: 'Unavailable this time' }, room.id)}>I can’t this time</button></div>}
+    <p className="eyebrow">{t("TODAY’S PICK")}</p>
+    <h2>{winner.name}{t("is ordering!")}</h2>
+    <p>{t("Everyone sees the same selected person live.")}</p>
+    {selected && winner.id === me.id && <div className="hero-actions"><button className="primary" onClick={() => data.send('ACCEPT_DUTY', {}, room.id)}>{t("I’ll take care of it")}</button><button className="secondary" onClick={() => data.send('DECLINE_DUTY', { text: 'Unavailable this time' }, room.id)}>{t("I can’t this time")}</button></div>}
   </div>;
 }
 
@@ -307,24 +255,24 @@ function AppDownloads({ compact = false }) {
   const [iosHelp, setIosHelp] = useState(false);
   return <section id="app-downloads" className={`app-downloads ${compact ? 'compact' : ''}`}>
     <div className="download-heading">
-      <div><p className="eyebrow">FOOD RUN ON YOUR PHONE</p><h2>Take the table with you.</h2></div>
-      <p>Use the same account and join Internet Rooms from Android, iPhone, or the web.</p>
+      <div><p className="eyebrow">{t("FOOD RUN ON YOUR PHONE")}</p><h2>{t("Take the table with you.")}</h2></div>
+      <p>{t("Use the same account and join Internet Rooms from Android, iPhone, or the web.")}</p>
     </div>
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>Android app</strong><small>Version 1.3 · Android 8+</small></div>
-        <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>Download APK</a>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.3 · Android 8+")}</small></div>
+        <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
         <span className="platform-icon apple" aria-hidden="true">●</span>
-        <div><strong>iPhone app</strong><small>{IOS_STORE_URL ? 'Available for iPhone and iPad' : 'Install from Safari · iOS 17+'}</small></div>
+        <div><strong>{t("iPhone app")}</strong><small>{IOS_STORE_URL ? 'Available for iPhone and iPad' : 'Install from Safari · iOS 17+'}</small></div>
         {IOS_STORE_URL
-          ? <a className="secondary store-button" href={IOS_STORE_URL}>Open App Store</a>
-          : <button className="secondary store-button" onClick={() => setIosHelp(value => !value)}>Install on iPhone</button>}
+          ? <a className="secondary store-button" href={IOS_STORE_URL}>{t("Open App Store")}</a>
+          : <button className="secondary store-button" onClick={() => setIosHelp(value => !value)}>{t("Install on iPhone")}</button>}
       </article>
     </div>
-    {iosHelp && <div className="ios-install" role="status"><b>On iPhone or iPad:</b> open this page in Safari, tap the Share button, then choose <b>Add to Home Screen</b> and <b>Add</b>.</div>}
+    {iosHelp && <div className="ios-install" role="status"><b>{t("On iPhone or iPad:")}</b>{t("open this page in Safari, tap the Share button, then choose")}<b>{t("Add to Home Screen")}</b>{t("and")}<b>{t("Add")}</b>.</div>}
   </section>;
 }
 
@@ -354,28 +302,28 @@ function AuthScreen({ ready, allowRegistration = true }) {
     <section className="auth-story">
       <LanguageToggle />
       <div className="brand-mark">FR</div>
-      <p className="eyebrow">FOOD RUN / TOGETHER</p>
-      <h1>Good food.<br />Better together.</h1>
-      <p>Pick who will order, collect everyone’s food live, and settle every share without the group-chat chaos.</p>
-      <div className="story-steps"><span>01 Join</span><span>02 Select</span><span>03 Order</span><span>04 Settle</span></div>
+      <p className="eyebrow">{t("FOOD RUN / TOGETHER")}</p>
+      <h1>{t("Good food.")}<br />{t("Better together.")}</h1>
+      <p>{t("Pick who will order, collect everyone’s food live, and settle every share without the group-chat chaos.")}</p>
+      <div className="story-steps"><span>{t("01 Join")}</span><span>{t("02 Select")}</span><span>{t("03 Order")}</span><span>{t("04 Settle")}</span></div>
       <AppDownloads compact />
     </section>
     <section className="auth-card card">
-      <p className="eyebrow">YOUR TABLE AWAITS</p>
+      <p className="eyebrow">{t("YOUR TABLE AWAITS")}</p>
       <h2>{register ? 'Create your profile' : 'Welcome back'}</h2>
-      <p className="muted">Use the same account you already use in Intrvioo.</p>
-      <button className="google" disabled={!ready || busy} onClick={() => signInWithPopup(auth, googleProvider).catch(e => setMessage(e.message))}>Continue with Google</button>
-      <div className="or"><span />or<span /></div>
+      <p className="muted">{t("Use the same account you already use in Intrvioo.")}</p>
+      <button className="google" disabled={!ready || busy} onClick={() => signInWithPopup(auth, googleProvider).catch(e => setMessage(e.message))}>{t("Continue with Google")}</button>
+      <div className="or"><span />{t("or")}<span /></div>
       <form onSubmit={submit} className="stack">
-        {register && <label>Name<input value={name} onChange={e => setName(e.target.value)} required /></label>}
-        <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-        <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+        {register && <label>{t("Name")}<input value={name} onChange={e => setName(e.target.value)} required /></label>}
+        <label>{t("Email")}<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+        <label>{t("Password")}<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
         {message && <p className="form-message" role="alert">{message}</p>}
-        <button className="primary" disabled={!ready || busy}>{busy ? 'One moment…' : register ? 'Create account' : 'Sign in'}</button>
+        <button className="primary" disabled={!ready || busy}>{busy ? 'One moment…' : register ? t("Create account") : t("Sign in")}</button>
       </form>
-      {!register && <button className="link" onClick={reset}>Forgot password?</button>}
+      {!register && <button className="link" onClick={reset}>{t("Forgot password?")}</button>}
       {(allowRegistration || register) && <button className="link switch" onClick={() => { setRegister(!register); setMessage(''); }}>{register ? 'Already registered? Sign in' : 'New to Food Run? Create account'}</button>}
-      {!allowRegistration && <p className="form-message">New registration is temporarily disabled by the administrator.</p>}
+      {!allowRegistration && <p className="form-message">{t("New registration is temporarily disabled by the administrator.")}</p>}
     </section>
   </main>;
 }
@@ -390,27 +338,64 @@ function HubScreen({ current, connect, error }) {
     catch (e) { setMessage(e.message); }
   };
   return <main className="center-shell"><section className="card setup-card">
-    <div className="brand-mark">FR</div><p className="eyebrow">CONNECT YOUR TABLE</p>
-    <h1>Where should this room live?</h1>
-    <p className="muted">Use a nearby hub to keep live traffic on your local network, or use the internet API so everyone can join from anywhere.</p>
+    <div className="brand-mark">FR</div><p className="eyebrow">{t("CONNECT YOUR TABLE")}</p>
+    <h1>{t("Where should this room live?")}</h1>
+    <p className="muted">{t("Use a nearby hub to keep live traffic on your local network, or use the internet API so everyone can join from anywhere.")}</p>
     <div className="mode-cards">
       <button type="button" className="mode-card" onClick={() => setAddress('https://192.168.1.20:8443')}>
-        <strong>Nearby hub</strong><span>Lowest cloud use</span>
+        <strong>{t("Nearby hub")}</strong><span>{t("Lowest cloud use")}</span>
       </button>
       <button type="button" className="mode-card" disabled={!publicApi} onClick={() => publicApi && connect(publicApi)}>
-        <strong>Internet room</strong><span>{publicApi ? 'Join from any network' : 'Set VITE_FOODRUN_API_URL'}</span>
+        <strong>{t("Internet room")}</strong><span>{publicApi ? t("Join from any network") : 'Set VITE_FOODRUN_API_URL'}</span>
       </button>
     </div>
     <form className="stack" onSubmit={submit}>
-      <label>Nearby hub address<input value={address} onChange={e => setAddress(e.target.value)} placeholder="https://192.168.1.20:8443" /></label>
+      <label>{t("Nearby hub address")}<input value={address} onChange={e => setAddress(e.target.value)} placeholder="https://192.168.1.20:8443" /></label>
       {(message || error) && <p className="form-message" role="alert">{message || error}</p>}
-      <button className="primary">Connect to nearby hub</button>
+      <button className="primary">{t("Connect to nearby hub")}</button>
     </form>
-    <p className="fine">Food Run remembers the API used to create each room. Android, iOS, and web use the same command API and event-driven WebSocket. Firebase holds the shared account and asynchronous backup.</p>
+    <p className="fine">{t("Food Run remembers the API used to create each room. Android, iOS, and web use the same command API and event-driven WebSocket. Firebase holds the shared account and asynchronous backup.")}</p>
   </section></main>;
 }
 
-function ProfileScreen({ profile, busy, send, onBack }) {
+function profileWithFavorites(profile, favoriteOrders) {
+  return { ...profile, userId: '', favoriteOrders };
+}
+
+function favoriteKey(favorite) {
+  return selectionKey(favorite.restaurantId, favorite.lines.map(line => ({ ...line, description: line.description || '' })));
+}
+
+function orderSummary(lines, max = 3) {
+  const text = lines.slice(0, max).map(line => `${line.quantity} × ${line.label || line.description}`).join(' · ');
+  return text + (lines.length > max ? ` · +${lines.length - max} more` : '');
+}
+
+function favoriteFromPrevious(choice) {
+  const lines = choice.receipt.lines.map(line => ({
+    itemId: line.itemId || '', quantity: line.quantity, variantId: line.variantId || null,
+    optionIds: line.optionIds || [], notes: line.notes || '', description: line.itemId ? '' : line.description,
+    label: line.description,
+  }));
+  return {
+    id: uid(), restaurantId: choice.restaurantId, restaurantName: choice.order.restaurantName,
+    title: orderSummary(lines, 2).slice(0, 160), lines, savedAt: Date.now(),
+  };
+}
+
+function UserDashboard({ data, openRoom, compact = false }) {
+  const dashboard = userDashboard(data);
+  return <section className={`user-dashboard ${compact ? 'compact' : ''}`}>
+    <div className="section-title"><div><p className="eyebrow">{t("MY MONEY & ORDERS")}</p><h2>{t("Wallet dashboard")}</h2></div><span>{dashboard.entries.length}</span></div>
+    <div className="dashboard-metrics"><article><small>{t("I need to pay")}</small><b>{money(dashboard.toPay, 'AED')}</b></article><article><small>{t("I need to receive")}</small><b>{money(dashboard.toReceive, 'AED')}</b></article><article><small>{t("Current rooms")}</small><b>{dashboard.currentOrders.length}</b></article></div>
+    {dashboard.entries.length > 0 && <div className="grid two dashboard-actions">{dashboard.entries.map((entry, index) => <article className="card money-action" key={`${entry.roomId}:${entry.person}:${index}`}><span className={`status ${entry.kind === 'receive' ? 'live' : ''}`}>{entry.kind === 'refund' ? tx('Refund to send', 'مبلغ مرتجع للإرسال') : entry.kind === 'pay' ? tx('Payment due', 'دفعة مستحقة') : tx('Money to receive', 'مبلغ للاستلام')}</span><h3>{entry.person}</h3><strong>{money(entry.amount, entry.currency)}</strong><small>{entry.roomName}</small>{entry.pending && <p className="muted">{money(entry.pending.amount, entry.currency)} · {tx("Sent · awaiting recipient approval", "تم الإرسال · بانتظار موافقة المستلم")}</p>}<button className="primary" onClick={() => { openRoom(entry.roomId); setTimeout(() => document.getElementById('room-payment')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }}>{entry.pending ? entry.kind === 'receive' ? tx("Review & approve receipt", "مراجعة وتأكيد الاستلام") : tx("View pending payment", "عرض الدفعة المعلقة") : entry.kind === 'pay' ? tx("Pay now / mark paid", "ادفع الآن / سجل الدفع") : t("Open payment")}</button></article>)}</div>}
+    {!compact && <div className="card order-dashboard"><h3>{t("Current orders")}</h3>{dashboard.currentOrders.map(({ room }) => <button className="order-dashboard-row" onClick={() => openRoom(room.id)} key={room.id}><span><b>{room.name} · #{room.orderNumber}</b><small>{t(phaseLabel[room.phase])} · {localizedName(room.restaurant)}</small></span><strong>{t("Open →")}</strong></button>)}</div>}
+  </section>;
+}
+
+function ProfileScreen({ data, onBack, openRoom }) {
+  const { profile } = data.home;
+  const busy = data.busy, send = data.send;
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({
     name: profile?.name || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
@@ -423,46 +408,66 @@ function ProfileScreen({ profile, busy, send, onBack }) {
     try {
       const payment = form.identifier.trim() ? {
       id: profile?.payment?.id || crypto.randomUUID(), holder: form.holder.trim() || form.name.trim(),
-      bank: form.method === 'AANI' ? 'Aani' : form.bank.trim(), identifier: form.method === 'AANI' ? uaePhone(form.identifier, true) : form.identifier.trim(),
+      bank: form.method === 'AANI' ? t("Aani") : form.bank.trim(), identifier: form.method === 'AANI' ? uaePhone(form.identifier, true) : form.identifier.trim(),
       currency: 'AED', version: profile?.payment?.version || 1, method: form.method,
     } : null;
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
         userId: '', name: form.name.trim(), phone: uaePhone(form.phone, true), photo: form.photo,
-        payment, discoverable: form.discoverable, language: uiLanguage,
+        payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
       if (reply) onBack();
     } catch (error) { setMessage(error.message); }
   };
-  return <Page title="Your profile" subtitle="The details your people need when you’re selected." onBack={onBack}>
-    <form className="profile-grid" onSubmit={save}>
+  const [previousLimit, setPreviousLimit] = useState(10);
+  const favorites = profile?.favoriteOrders || [];
+  const previous = uniquePreviousOrders(data);
+  const favoriteKeys = new Set(favorites.map(favoriteKey));
+  const saveFavorite = async choice => {
+    if (!choice.restaurantId) return setMessage('Open a current room for this older restaurant before saving it as a favorite.');
+    const favorite = favoriteFromPrevious(choice);
+    if (favoriteKeys.has(favoriteKey(favorite))) return setMessage(t("This order is already in your favorites."));
+    if (favorites.length >= 30) return setMessage(t("Your 30 favorites are full. Remove one before saving another."));
+    const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(profile, [favorite, ...favorites].slice(0, 30)) } });
+    if (reply) setMessage(t("Favorite order saved."));
+  };
+  const removeFavorite = async id => {
+    const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(profile, favorites.filter(value => value.id !== id)) } });
+    if (reply) setMessage(t("Favorite removed."));
+  };
+  return <Page title={t("Your profile")} subtitle={t("Your wallet, orders, favorites, and payment details in one place.")} onBack={onBack}>
+    <UserDashboard data={data} openRoom={openRoom} />
+    {message && <p className="form-message" role="status">{message}</p>}
+    <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a><a className="secondary" href="#previous-orders">{tx('Previous orders', 'الطلبات السابقة')}</a><a className="secondary" href="#profile-details" onClick={() => { document.getElementById('profile-details').open = true; }}>{tx('Edit profile', 'تعديل الملف')}</a></nav>
+    <details id="profile-details" open={!profile?.name || !profile?.phone} className="profile-details"><summary>{tx('Profile and receiving details', 'الملف الشخصي وبيانات استلام الأموال')}</summary><form className="profile-grid" onSubmit={save}>
       <section className="card profile-photo">
         <Avatar profile={{ name: form.name, photo: form.photo }} />
-        <label className="upload">Choose photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => e.target.files[0] && set('photo', await photoData(e.target.files[0]))} /></label>
-        {form.photo && <button type="button" className="link" onClick={() => set('photo', '')}>Remove photo</button>}
+        <label className="upload">{t("Choose photo")}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); setMessage(''); } catch (error) { setMessage(error.message); } }} /></label>
+        {form.photo && <button type="button" className="link" onClick={() => set('photo', '')}>{t("Remove photo")}</button>}
       </section>
       <section className="card stack">
-        <h3>About you</h3>
-        <label>Profile name<input value={form.name} onChange={e => set('name', e.target.value)} required maxLength="160" /></label>
-        <label>UAE mobile number<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="050 123 4567" /></label>
-        <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} /> Let people on this hub invite me</label>
+        <h3>{t("About you")}</h3>
+        <label>{t("Profile name")}<input value={form.name} onChange={e => set('name', e.target.value)} required maxLength="160" /></label>
+        <label>{t("UAE mobile number")}<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="050 123 4567" /></label>
+        <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
       <section className="card stack payment-card">
-        <div><p className="eyebrow">GET PAID BACK</p><h3>Receiving details</h3><p className="muted">Shared with room members only after you are selected and choose to share it.</p></div>
-        <div className="segmented"><button type="button" className={form.method === 'AANI' ? 'active' : ''} onClick={() => set('method', 'AANI')}>Aani</button><button type="button" className={form.method === 'BANK' ? 'active' : ''} onClick={() => set('method', 'BANK')}>Bank account</button></div>
-        <label>Account holder<input value={form.holder} onChange={e => set('holder', e.target.value)} placeholder={form.name || 'Your name'} /></label>
-        {form.method === 'BANK' && <label>Bank name<input value={form.bank} onChange={e => set('bank', e.target.value)} /></label>}
-        <label>{form.method === 'AANI' ? 'UAE mobile registered with Aani' : 'IBAN / account number'}<input value={form.identifier} onChange={e => set('identifier', e.target.value)} placeholder={form.method === 'AANI' ? '050 123 4567' : 'AE…'} /></label>
+        <div><p className="eyebrow">{t("GET PAID BACK")}</p><h3>{t("Receiving details")}</h3><p className="muted">{t("Shared with room members only after you are selected and choose to share it.")}</p></div>
+        <div className="segmented"><button type="button" className={form.method === 'AANI' ? 'active' : ''} onClick={() => set('method', 'AANI')}>{t("Aani")}</button><button type="button" className={form.method === 'BANK' ? 'active' : ''} onClick={() => set('method', 'BANK')}>{t("Bank account")}</button></div>
+        <label>{t("Account holder")}<input value={form.holder} onChange={e => set('holder', e.target.value)} placeholder={form.name || t("Your name")} /></label>
+        {form.method === 'BANK' && <label>{t("Bank name")}<input value={form.bank} onChange={e => set('bank', e.target.value)} /></label>}
+        <label>{form.method === 'AANI' ? t("UAE mobile registered with Aani") : t("IBAN / account number")}<input value={form.identifier} onChange={e => set('identifier', e.target.value)} placeholder={form.method === 'AANI' ? '050 123 4567' : 'AE…'} /></label>
       </section>
-      {message && <p className="form-message" role="alert">{message}</p>}
-      <div className="form-actions"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button></div>
-    </form>
+      <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
+    </form></details>
+    <section id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><span>☆</span><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
+    <section id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? `Repeated ${choice.repeatCount} times` : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><span>🥡</span><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <button className="secondary wide" onClick={() => setPreviousLimit(value => value + 10)}>{t("Show more unique orders")}</button>}</section>
   </Page>;
 }
 
 function Page({ title, subtitle, onBack, actions, children }) {
   return <main className="app-shell">
     <header className="topbar"><button className="wordmark" onClick={onBack}><span>FR</span> FOOD RUN</button><div className="top-actions"><LanguageToggle />{actions}</div></header>
-    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : '← Back'}</button>}<p className="eyebrow">FOOD RUN / TOGETHER</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
+    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : '← Back'}</button>}<p className="eyebrow">{t("FOOD RUN / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     {children}
   </main>;
 }
@@ -470,16 +475,17 @@ function Page({ title, subtitle, onBack, actions, children }) {
 function Home({ data, setPage, openRoom, allowRoomCreation = true }) {
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] }));
-  return <Page title={`Good food, ${home.profile.name?.split(' ')[0] || 'together'}.`} subtitle="Start a table or jump back into today’s order." actions={<><button className="icon-button" aria-label="Notifications" onClick={() => Notification.requestPermission()}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || 'Complete profile'}</button></>}>
-    <section className="hero card"><div><p className="eyebrow">A TABLE FOR EVERYONE</p><h2>One room. The whole crew.</h2><p>Everyone joins live, the wheel picks who orders, and every item and amount stays together.</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>Create a room</button><button className="secondary light" onClick={() => setPage('join')}>Join with code</button><button className="secondary light" onClick={() => setPage('restaurants')}>Restaurants & menus</button></div>{!allowRoomCreation && <p className="form-message">New room creation is temporarily disabled by the administrator.</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+  return <Page title={`Good food, ${home.profile.name?.split(' ')[0] || 'together'}.`} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={async () => { try { if (!('Notification' in window)) return data.setNotice(tx('Notifications are unavailable in this browser. Room updates still appear here.', 'الإشعارات غير متاحة في هذا المتصفح. ستظهر تحديثات الغرفة هنا.')); const permission = await Notification.requestPermission(); data.setNotice(permission === 'granted' ? tx('Notifications enabled.', 'تم تفعيل الإشعارات.') : tx('Enable notifications in browser settings.', 'فعّل الإشعارات من إعدادات المتصفح.')); } catch { data.setNotice('Notifications are unavailable. Room updates still appear here.'); } }}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || 'Complete profile'}</button></>}>
+    <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={() => setPage('restaurants')}>{t("Restaurants & menus")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+    <UserDashboard data={data} openRoom={openRoom} compact />
     <AppDownloads />
-    {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">YOU’RE INVITED</p><h2>Join the table</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">Invitation</span><h3>{invite.roomName}</h3><p>{invite.invitedBy} invited you to order #{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>Join room</button></article>)}</div></section>}
-    <section><div className="section-title"><div><p className="eyebrow">YOUR TABLES</p><h2>Live rooms</h2></div><span>{roomCards.length}</span></div>
+    {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">{t("YOU’RE INVITED")}</p><h2>{t("Join the table")}</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">{t("Invitation")}</span><h3>{invite.roomName}</h3><p>{invite.invitedBy}{t("invited you to order #")}{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>{t("Join room")}</button></article>)}</div></section>}
+    <section><div className="section-title"><div><p className="eyebrow">{t("YOUR TABLES")}</p><h2>{t("Live rooms")}</h2></div><span>{roomCards.length}</span></div>
       {roomCards.length ? <div className="grid two">{roomCards.map(({ session, reply }) => {
         const room = reply?.room, member = room?.members.find(m => m.id === session.memberId), winner = room?.members.find(m => m.id === (room.payerId || room.spin?.winnerId));
         const receipt = reply?.receipts.find(r => r.memberId === session.memberId);
-        return <article className="card room-card" key={session.roomId} onClick={() => openRoom(session.roomId)}><div className="room-card-top"><span className={`status ${online[session.roomId] ? 'live' : ''}`}>{online[session.roomId] ? '● Live' : 'Offline'}</span><span>#{room?.orderNumber || 1}</span></div><h3>{session.roomName}</h3><p>{room ? phaseLabel[room.phase] : 'Connecting…'}</p>{winner && <div className="winner-row"><span className="avatar initials small">{initials(winner.name)}</span><span><b>{winner.name}</b><small>{room.payerId ? ' is ordering' : ' was selected'}</small></span></div>}{receipt && ['REVIEW','PLACED','FULFILLED'].includes(room.phase) && <div className="amount-row"><span>Your total</span><b>{receipt.totalText}</b></div>}<button className="secondary">{room?.phase === 'LOBBY' && !member?.participating ? 'Join this order' : 'Open room'} →</button></article>;
-      })}</div> : <div className="card empty"><span>🥢</span><h3>No saved rooms yet</h3><p>Create a room and invite your people, or join with a six-digit code.</p></div>}
+        return <article className="card room-card" key={session.roomId} onClick={() => openRoom(session.roomId)}><div className="room-card-top"><span className={`status ${online[session.roomId] ? 'live' : ''}`}>{online[session.roomId] ? '● Live' : 'Offline'}</span><span>#{room?.orderNumber || 1}</span></div><h3>{session.roomName}</h3><p>{room ? t(phaseLabel[room.phase]) : 'Connecting…'}</p>{winner && <div className="winner-row"><span className="avatar initials small">{initials(winner.name)}</span><span><b>{winner.name}</b><small>{room.payerId ? ' is ordering' : ' was selected'}</small></span></div>}{receipt && ['REVIEW','PLACED','FULFILLED'].includes(room.phase) && <div className="amount-row"><span>{t("Your total")}</span><b>{receipt.totalText}</b></div>}<button className="secondary">{room?.phase === 'LOBBY' && !member?.participating ? t("Join this order") : 'Open room'} →</button></article>;
+      })}</div> : <div className="card empty"><span>🥢</span><h3>{t("No saved rooms yet")}</h3><p>{t("Create a room and invite your people, or join with a six-digit code.")}</p></div>}
     </section>
   </Page>;
 }
@@ -509,29 +515,30 @@ function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         reply = await data.send('CREATE', {
           name: profile.name.trim(), text: form.room.trim(), restaurant, restaurants: pollRestaurants, expectedNames: [], flag: form.deliveryMode,
           destination: form.deliveryMode ? form.destination.trim() : '', deadline: 0,
-          fees: { delivery: amount(form.delivery || '0', currency), service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
+          fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
       }
       if (reply?.room) openRoom(reply.room.id);
     } catch (error) { setMessage(error.message); }
   };
-  return <Page title={mode === 'join' ? 'Join your people' : 'Create a room'} subtitle={mode === 'join' ? 'Open an invitation link, scan its QR, or enter the six-digit code.' : 'Choose the restaurant now, or let everyone vote after joining the room.'} onBack={onBack}>
+  return <Page title={mode === 'join' ? 'Join your people' : t("Create a room")} subtitle={mode === 'join' ? 'Open an invitation link, scan its QR, or enter the six-digit code.' : 'Choose the restaurant now, or let everyone vote after joining the room.'} onBack={onBack}>
     <form className="card create-form stack" onSubmit={submit}>
-      {mode === 'join' ? <label>Six-digit room code<input inputMode="numeric" pattern="[0-9]{6}" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, '').slice(0, 6) })} required autoFocus /></label> : <>
-        <label>Room name<input value={form.room} onChange={e => setForm({ ...form, room: e.target.value })} placeholder="Friday lunch club" required autoFocus /></label>
+      {mode === 'join' ? <label>{t("Six-digit room code")}<input inputMode="numeric" pattern="[0-9]{6}" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, '').slice(0, 6) })} required autoFocus /></label> : <>
+        <label>{t("Room name")}<input value={form.room} onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required autoFocus /></label>
         {restaurants.length > 0 && <label>{tx('Saved restaurant', 'المطعم المحفوظ')}<select value={form.restaurantId} onChange={e => chooseRestaurant(e.target.value)}><option value="">{tx('Quick open order', 'طلب مفتوح سريع')}</option>{restaurants.map(restaurant => <option value={restaurant.id} key={restaurant.id}>{localizedName(restaurant)}{restaurant.branchName ? ` · ${restaurant.branchName}` : ''} · {restaurant.menu.items.length} {tx('items', 'صنفاً')}</option>)}</select></label>}
-        {!chosen && <div className="form-grid two"><label>Restaurant / order name<input value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} placeholder="Today’s food order" required /></label><label>Restaurant phone<input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+971…" required /></label></div>}
+        {!chosen && <div className="form-grid two"><label>{t("Restaurant / order name")}<input value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} placeholder={t("Today’s food order")} required /></label><label>{t("Restaurant phone")}<input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+971…" required /></label></div>}
         {chosen && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
-        <div className="segmented restaurant-choice"><button type="button" className={!form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: false })}>Use this restaurant</button><button type="button" className={form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: true })}>Start a room poll</button></div>
+        <div className="segmented restaurant-choice"><button type="button" className={!form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: false })}>{t("Use this restaurant")}</button><button type="button" className={form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: true })}>{t("Start a room poll")}</button></div>
         <p className="field-help">{form.restaurantPoll ? 'Members vote live in the room. You finish the poll before sandwich ordering starts.' : 'The selected restaurant menu opens immediately for everyone in the room.'}</p>
-        <div className="segmented delivery-choice"><button type="button" className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>Pickup</button><button type="button" className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>Delivery</button></div>
-        {form.deliveryMode && <label>Delivery address and contact<input value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} required /></label>}
-        <div className="form-grid three"><label>Delivery fee · {currency}<input inputMode="decimal" value={form.delivery} onChange={e => setForm({ ...form, delivery: e.target.value })} /></label><label>Service fee · {currency}<input inputMode="decimal" value={form.service} onChange={e => setForm({ ...form, service: e.target.value })} /></label><label>Shared discount · {currency}<input inputMode="decimal" value={form.discount} onChange={e => setForm({ ...form, discount: e.target.value })} /></label></div>
-        <label className="check"><input type="checkbox" checked={form.proportionalDelivery} onChange={e => setForm({ ...form, proportionalDelivery: e.target.checked })} /> Split delivery by each person’s food total <span>Leave off to split the delivery fee equally between people who ordered food.</span></label>
+        <div className="segmented delivery-choice"><button type="button" className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>{t("Pickup")}</button><button type="button" className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>{t("Delivery")}</button></div>
+        {form.deliveryMode && <DeliveryRule />}
+        {form.deliveryMode && <label>{t("Delivery address and contact")}<input value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} required /></label>}
+        <div className="form-grid three">{!form.deliveryMode && <label>{t("Delivery fee ·")}{currency}<input inputMode="decimal" value={form.delivery} onChange={e => setForm({ ...form, delivery: e.target.value })} /></label>}<label>{t("Service fee ·")}{currency}<input inputMode="decimal" value={form.service} onChange={e => setForm({ ...form, service: e.target.value })} /></label><label>{t("Shared discount ·")}{currency}<input inputMode="decimal" value={form.discount} onChange={e => setForm({ ...form, discount: e.target.value })} /></label></div>
+        {!form.deliveryMode && <label className="check"><input type="checkbox" checked={form.proportionalDelivery} onChange={e => setForm({ ...form, proportionalDelivery: e.target.checked })} />{t("Split delivery by each person’s food total")}<span>{t("Leave off to split the delivery fee equally between people who ordered food.")}</span></label>}
       </>}
       {message && <p className="form-message" role="alert">{message}</p>}
       <button className="primary" disabled={data.busy || !profile.name || !profile.phone}>{data.busy ? 'Connecting…' : mode === 'join' ? 'Request to join' : 'Create room'}</button>
-      {(!profile.name || !profile.phone) && <p className="form-message">Complete your name and phone in your profile first.</p>}
+      {(!profile.name || !profile.phone) && <p className="form-message">{t("Complete your name and phone in your profile first.")}</p>}
     </form>
   </Page>;
 }
@@ -545,26 +552,42 @@ function cartLineDescription(room, line) {
   return [localizedName(menuItem), variant && localizedName(variant), ...optionNames].filter(Boolean).join(' · ');
 }
 
-function OrderLine({ line, label, currency, canPrice, onPrice, onEdit, onRemove }) {
-  const lineTotal = line.amount ?? (line.unitPrice == null ? null : line.unitPrice * line.quantity);
-  return <div className="order-line"><div><b>{line.quantity} × {label || line.description}</b>{line.notes && <small>{line.notes}</small>}</div><div>{lineTotal == null ? <span className="status">Awaiting price</span> : <b>{money(lineTotal, currency)}</b>}{canPrice && <button type="button" className="link" onClick={onPrice}>{line.unitPrice == null ? 'Add price' : 'Change'}</button>}{onEdit && <button type="button" className="link" onClick={onEdit}>Edit</button>}{onRemove && <button type="button" className="link danger" onClick={onRemove}>Remove</button>}</div></div>;
+function OrderLine({ line, label, currency, canPrice, onPrice, onEdit, onRemove, onQuantity, restaurant }) {
+  const lineTotal = line.amount ?? (restaurant ? menuLineTotal(restaurant, line) : line.unitPrice == null ? null : line.unitPrice * line.quantity);
+  return <div className="order-line"><div><b>{line.quantity} × {label || line.description}</b>{line.notes && <small>{line.notes}</small>}</div><div>{lineTotal == null ? <span className="status">{t("Awaiting price")}</span> : <b>{money(lineTotal, currency)}</b>}{canPrice && <button type="button" className="link" onClick={onPrice}>{line.unitPrice == null ? 'Add price' : 'Change'}</button>}{onQuantity && <QuantityControl value={line.quantity} min={0} onChange={value => onQuantity(value - line.quantity)} />}{onEdit && <button type="button" className="link" onClick={onEdit}>{t("Edit")}</button>}{onRemove && <button type="button" className="link danger" onClick={onRemove}>{t("Remove")}</button>}</div></div>;
 }
 
-function OrderProgress({ room, receipts }) {
+function OrderProgress({ room, receipts, payer }) {
   const total = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
   const paid = receipts.reduce((sum, receipt) => sum + receipt.paid, 0);
   const index = room.phase === 'LOBBY' ? (room.restaurantPollOpen ? 1 : 2) : ['PREPARING_SPIN', 'SPINNING', 'ACCEPTING'].includes(room.phase) ? 3 : ['COLLECTING', 'REVIEW'].includes(room.phase) ? 4 : 5;
-  return <section className="card order-progress"><div className="progress-steps">{['Join', 'Restaurant', 'Sandwiches', 'Pick payer', 'Confirm', 'Settle'].map((title, step) => <div className={`${step < index ? 'done' : ''} ${step === index ? 'current' : ''}`} key={title}><span>{step < index ? '✓' : step + 1}</span><b>{title}</b></div>)}</div>{receipts.length > 0 && <div className="progress-money"><span><small>Total food order</small><b>{money(total, room.restaurant.currency)}</b></span><span><small>Member payments confirmed</small><b>{money(paid, room.restaurant.currency)}</b></span><span><small>Still to settle</small><b>{money(receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), room.restaurant.currency)}</b></span></div>}</section>;
+  return <section className="card order-progress"><div className="progress-steps">{[t("Join"), t("Restaurant"), t("Sandwiches"), t("Pick payer"), t("Confirm"), t("Settle")].map((title, step) => <div className={`${step < index ? 'done' : ''} ${step === index ? 'current' : ''}`} key={title}><span>{step < index ? '✓' : step + 1}</span><b>{title}</b></div>)}</div>{receipts.length > 0 && <div className="progress-money"><span><small>{payer ? 'Total food order' : 'Your order total'}</small><b>{money(total, room.restaurant.currency)}</b></span><span><small>{payer ? 'Member payments confirmed' : 'Your confirmed payments'}</small><b>{money(paid, room.restaurant.currency)}</b></span><span><small>{t("Still to settle")}</small><b>{money(receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), room.restaurant.currency)}</b></span></div>}</section>;
 }
 
-function MenuItemForm({ room, editing, onSave, onCancel }) {
-  const available = room.restaurant.menu.items.filter(item => item.available);
+function QuantityControl({ value, onChange, min = 1 }) {
+  const count = Number(value) || min;
+  return <div className="quantity-control" role="group" aria-label={tx('Quantity', 'الكمية')}>
+    <button type="button" className="secondary" disabled={count <= min} aria-label={tx('Decrease quantity', 'تقليل الكمية')} onClick={() => onChange(Math.max(min, count - 1))}>−</button>
+    <output aria-live="polite">{count}</output>
+    <button type="button" className="secondary" disabled={count >= 99} aria-label={tx('Increase quantity', 'زيادة الكمية')} onClick={() => onChange(Math.min(99, count + 1))}>+</button>
+  </div>;
+}
+
+function MenuItemForm({ room, editing, onSave, onCancel, lines = [] }) {
+  const sandwichCategories = new Set(room.restaurant.menu.categories.filter(category => /sandwich|سند/i.test(category.name + ' ' + (category.nameAr || ''))).map(category => category.id));
+  const available = room.restaurant.menu.items.filter(item => item.available).sort((a, b) => Number(sandwichCategories.has(b.categoryId)) - Number(sandwichCategories.has(a.categoryId)));
+  const [search, setSearch] = useState('');
+  const [menuLimit, setMenuLimit] = useState(12);
+  const [configured, setConfigured] = useState(!!editing);
+  const selectionRef = useRef(null);
+  const query = search.trim().toLowerCase();
+  const visibleItems = available.filter(item => !query || [item.name, item.nameAr, item.description, item.descriptionAr].some(value => value?.toLowerCase().includes(query)));
   const initialItem = editing ? available.find(item => item.id === editing.itemId) : available[0];
   const [choice, setChoice] = useState({ itemId: initialItem?.id || '', variantId: editing?.variantId || initialItem?.variants[0]?.id || '', optionIds: editing?.optionIds || [], quantity: String(editing?.quantity || 1), notes: editing?.notes || '' });
   const [message, setMessage] = useState('');
   const menuItem = available.find(item => item.id === choice.itemId);
   const groups = menuItem ? room.restaurant.menu.optionGroups.filter(group => menuItem.optionGroupIds.includes(group.id)) : [];
-  const selectItem = itemId => { const next = available.find(item => item.id === itemId); setChoice({ itemId, variantId: next?.variants[0]?.id || '', optionIds: [], quantity: '1', notes: '' }); setMessage(''); };
+  const selectItem = itemId => { setConfigured(true); setTimeout(() => selectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0); const next = available.find(item => item.id === itemId); setChoice({ itemId, variantId: next?.variants[0]?.id || '', optionIds: [], quantity: '1', notes: '' }); setMessage(''); };
   const toggleOption = (group, optionId) => {
     const selected = choice.optionIds.includes(optionId);
     let optionIds = selected ? choice.optionIds.filter(id => id !== optionId) : [...choice.optionIds, optionId];
@@ -577,27 +600,41 @@ function MenuItemForm({ room, editing, onSave, onCancel }) {
     const invalid = groups.find(group => choice.optionIds.filter(id => group.options.some(option => option.id === id)).length < group.minSelections);
     if (invalid) return setMessage(`Choose at least ${invalid.minSelections} from ${invalid.name}.`);
     const saved = await onSave({ id: editing?.id || uid(), itemId: menuItem.id, quantity: Number(choice.quantity), variantId: choice.variantId || null, optionIds: choice.optionIds, notes: choice.notes.trim(), description: '', unitPrice: null });
-    if (saved) { setChoice(old => ({ ...old, quantity: '1', notes: '', optionIds: [] })); setMessage(''); }
+    if (saved) { setConfigured(false); setChoice(old => ({ ...old, quantity: '1', notes: '', optionIds: [] })); setMessage(''); }
   };
   if (!available.length) return null;
   return <article className="card">
     <p className="eyebrow">{editing ? tx('EDIT SANDWICH', 'تعديل السندويش') : tx('SANDWICH MENU', 'قائمة السندويشات')}</p>
     <h2>{editing ? tx('Update your item', 'عدّل الصنف') : `${tx('Choose from', 'اختر من')} ${localizedName(room.restaurant)}`}</h2>
     <form className="stack" onSubmit={submit}>
-      <label>{tx('Menu item', 'الصنف')}<select value={choice.itemId} onChange={event => selectItem(event.target.value)}>{room.restaurant.menu.categories.map(category => <optgroup label={localizedName(category)} key={category.id}>{available.filter(item => item.categoryId === category.id).map(item => <option value={item.id} key={item.id}>{localizedName(item)} · {money(item.basePriceMinor, room.restaurant.currency)}</option>)}</optgroup>)}</select></label>
+      <label>{tx('Find a sandwich or item', 'ابحث عن سندويش أو صنف')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={tx('Search in Arabic or English', 'ابحث بالعربية أو الإنجليزية')} /></label>
+      {query && <p className="muted" role="status">{visibleItems.length} {tx('matching items', 'أصناف مطابقة')}</p>}
+      {!editing && <div className="menu-order-grid">{visibleItems.slice(0, menuLimit).map(item => {
+        const simple = !item.variants.length && !item.optionGroupIds.length;
+        const count = lines.filter(line => line.itemId === item.id).reduce((sum, line) => sum + line.quantity, 0);
+        return <div className="menu-order-item" key={item.id}><b>{localizedName(item)}</b><small>{money(item.variants[0]?.priceMinor ?? item.basePriceMinor, room.restaurant.currency)}</small>{count > 0 && <span className="status">{count} {tx('in your order', 'في طلبك')}</span>}
+          <button type="button" className="primary" onClick={async () => { if (!simple) return selectItem(item.id); const saved = await onSave({ id: uid(), itemId: item.id, quantity: 1, variantId: null, optionIds: [], notes: '', description: '', unitPrice: null }); if (saved) setMessage(tx('Added to your order.', 'تمت الإضافة إلى طلبك.')); }}>{simple ? tx('+ Add', '+ إضافة') : tx('Choose size / extras', 'اختيار الحجم والإضافات')}</button>
+          {simple && <button type="button" className="link" onClick={() => selectItem(item.id)}>{tx('Quantity / notes', 'الكمية والملاحظات')}</button>}
+        </div>;
+      })}</div>}
+      {!editing && visibleItems.length > menuLimit && <button type="button" className="secondary" onClick={() => setMenuLimit(value => value + 12)}>{tx('Show more items', 'عرض أصناف أخرى')}</button>}
+      {message && <p role="status" className="form-message">{message}</p>}
+      {configured && <section ref={selectionRef} className="stack menu-selection"><h3>{localizedName(menuItem)}</h3>
       {localizedDescription(menuItem) && <p className="muted">{localizedDescription(menuItem)}</p>}
       {menuItem?.variants.length > 0 && <div><b className="field-label">{tx('Bread / size', 'الخبز أو الحجم')}</b><div className="choice-grid">{menuItem.variants.map(variant => <button type="button" className={choice.variantId === variant.id ? 'selected' : ''} key={variant.id} onClick={() => setChoice({ ...choice, variantId: variant.id })}>{localizedName(variant)}<small>{money(variant.priceMinor, room.restaurant.currency)}</small></button>)}</div></div>}
       {groups.map(group => <div key={group.id}><b className="field-label">{localizedName(group)} <small>{tx('Choose', 'اختر')} {group.minSelections}–{group.maxSelections}</small></b><div className="choice-grid">{group.options.map(option => <button type="button" className={choice.optionIds.includes(option.id) ? 'selected' : ''} key={option.id} onClick={() => toggleOption(group, option.id)}>{localizedName(option)}<small>{option.priceDeltaMinor ? `+ ${money(option.priceDeltaMinor, room.restaurant.currency)}` : tx('Included', 'مشمول')}</small></button>)}</div></div>)}
-      <div className="form-grid two"><label>{tx('Quantity', 'الكمية')}<input type="number" min="1" max="99" value={choice.quantity} onChange={e => setChoice({ ...choice, quantity: e.target.value })} /></label><label>{tx('Notes', 'ملاحظات')}<input value={choice.notes} onChange={e => setChoice({ ...choice, notes: e.target.value })} placeholder={tx('No onions, extra sauce', 'بدون بصل، صوص إضافي')} /></label></div>
-      {message && <p className="form-message">{message}</p>}
+      {menuItem && <p className="price-preview" aria-live="polite">{money(menuLineTotal(room.restaurant, { ...choice, quantity: 1 }) || 0, room.restaurant.currency)} × {choice.quantity} = <strong>{money(menuLineTotal(room.restaurant, { ...choice, quantity: Number(choice.quantity) }) || 0, room.restaurant.currency)}</strong><small>{tx('Food subtotal · delivery and fees appear in your receipt', 'إجمالي الطعام · التوصيل والرسوم تظهر في إيصالك')}</small></p>}
+      <div className="form-grid two"><label>{tx('Quantity', 'الكمية')}<QuantityControl value={choice.quantity} onChange={quantity => setChoice({ ...choice, quantity: String(quantity) })} /></label><label>{tx('Notes', 'ملاحظات')}<input value={choice.notes} onChange={e => setChoice({ ...choice, notes: e.target.value })} placeholder={tx('No onions, extra sauce', 'بدون بصل، صوص إضافي')} /></label></div>
       <div className="hero-actions"><button className="primary">{editing ? tx('Update my order', 'تحديث طلبي') : tx('Add sandwich', 'إضافة سندويش')}</button>{editing && <button type="button" className="secondary" onClick={onCancel}>{tx('Cancel edit', 'إلغاء التعديل')}</button>}</div>
+      </section>}
     </form>
   </article>;
 }
 
-function MemberOrderPanel({ room, cart, receipt, onSave, onSubmit }) {
+function MemberOrderPanel({ room, cart, receipt, previousOrders = [], favorites = [], onFavorite, onSave, onSubmit }) {
   const [editingId, setEditingId] = useState('');
   const [custom, setCustom] = useState({ description: '', quantity: '1', notes: '' });
+  const [reuseMessage, setReuseMessage] = useState('');
   const editing = cart.lines.find(line => line.id === editingId);
   const edit = line => {
     setEditingId(line.id);
@@ -605,7 +642,9 @@ function MemberOrderPanel({ room, cart, receipt, onSave, onSubmit }) {
   };
   const cancel = () => { setEditingId(''); setCustom({ description: '', quantity: '1', notes: '' }); };
   const saveLine = async line => {
-    const lines = editingId ? cart.lines.map(current => current.id === editingId ? line : current) : [...cart.lines, line];
+    let lines;
+    try { lines = editingId ? cart.lines.map(current => current.id === editingId ? line : current) : addMenuLine(cart.lines, line); }
+    catch (error) { setReuseMessage(error.message); return null; }
     const result = await onSave(lines);
     if (result) cancel();
     return result;
@@ -614,12 +653,45 @@ function MemberOrderPanel({ room, cart, receipt, onSave, onSubmit }) {
     event.preventDefault();
     return saveLine({ id: editingId || uid(), itemId: '', quantity: Number(custom.quantity), variantId: null, optionIds: [], notes: custom.notes.trim(), description: custom.description.trim(), unitPrice: null });
   };
+  const matchingFavorites = favorites.filter(favorite => favorite.restaurantId === room.restaurant.id);
+  const favoriteKeys = new Set(matchingFavorites.map(favoriteKey));
+  const previous = previousOrders.filter(choice => !favoriteKeys.has(choice.key)).slice(0, 4);
+  const reusableLines = source => source.map(line => {
+    if (!line.itemId) return room.restaurant.openOrdering ? { id: uid(), itemId: '', quantity: line.quantity, variantId: null, optionIds: [], notes: line.notes || '', description: line.description, unitPrice: null } : null;
+    const item = room.restaurant.menu.items.find(value => value.id === line.itemId && value.available);
+    if (!item) return null;
+    const variantValid = (!item.variants.length && !line.variantId) || item.variants.some(value => value.id === line.variantId);
+    const options = room.restaurant.menu.optionGroups.filter(group => item.optionGroupIds.includes(group.id)).flatMap(group => group.options);
+    if (!variantValid || (line.optionIds || []).some(id => !options.some(option => option.id === id))) return null;
+    return { id: uid(), itemId: line.itemId, quantity: line.quantity, variantId: line.variantId || null, optionIds: line.optionIds || [], notes: line.notes || '', description: '', unitPrice: null };
+  }).filter(Boolean);
+  const addSavedOrder = async source => {
+    setReuseMessage('');
+    const incoming = reusableLines(source);
+    if (!incoming.length) return setReuseMessage('These saved items are no longer available on this menu.');
+    const merged = cart.lines.map(line => ({ ...line }));
+    for (const line of incoming) {
+      const old = merged.find(value => value.itemId === line.itemId && value.variantId === line.variantId && JSON.stringify([...(value.optionIds || [])].sort()) === JSON.stringify([...(line.optionIds || [])].sort()) && value.notes === line.notes && value.description === line.description);
+      if (old) {
+        if (old.quantity + line.quantity > 99) return setReuseMessage('A reused item would exceed the maximum quantity of 99.');
+        old.quantity += line.quantity; old.unitPrice = null;
+      } else merged.push(line);
+    }
+    const saved = await onSave(merged);
+    if (saved) setReuseMessage(incoming.length < source.length ? `Added ${incoming.length} available items. Some old menu items were skipped.` : 'Saved order added. You can still edit every item.');
+  };
   return <section className="stack order-editor">
-    <article className="card early-order"><p className="eyebrow">YOUR SANDWICHES</p><h2>Add now. Change any time before totals.</h2><p className="muted">Your order stays editable before, during, and after the spin. Saving an edit keeps it in this room after refresh.</p></article>
-    {room.restaurant.menu.items.length > 0 && (!editing || !editing.description) && <MenuItemForm key={editing?.id || 'new-menu'} room={room} editing={editing} onSave={saveLine} onCancel={cancel} />}
-    {room.restaurant.openOrdering && (!editing || editing.description) && <article className="card"><p className="eyebrow">{editing ? 'EDIT CUSTOM ITEM' : 'CUSTOM SANDWICH'}</p><h2>{editing ? 'Update your item' : 'Add an item one by one'}</h2><form className="item-form" onSubmit={saveCustom}><label>Food item<input value={custom.description} onChange={e => setCustom({ ...custom, description: e.target.value })} placeholder="Falafel sandwich" required /></label><label>Qty<input inputMode="numeric" min="1" max="99" type="number" value={custom.quantity} onChange={e => setCustom({ ...custom, quantity: e.target.value })} required /></label><label className="notes">Notes / extras<input value={custom.notes} onChange={e => setCustom({ ...custom, notes: e.target.value })} placeholder="No onions, extra sauce" /></label><div className="hero-actions"><button className="primary">{editing ? 'Update my order' : 'Add custom item'}</button>{editing && <button className="secondary" type="button" onClick={cancel}>Cancel edit</button>}</div></form></article>}
-    <article className="card"><div className="section-title compact"><div><p className="eyebrow">MY ORDER</p><h2>{cart.lines.length ? `${cart.lines.length} item${cart.lines.length === 1 ? '' : 's'}` : 'Nothing added yet'}</h2></div>{receipt && <b>{receipt.totalText}</b>}</div>{cart.lines.map(line => <OrderLine key={line.id} label={cartLineDescription(room, line)} line={line} currency={room.restaurant.currency} onEdit={() => edit(line)} onRemove={() => onSave(cart.lines.filter(value => value.id !== line.id))} />)}<button className="primary wide" onClick={onSubmit}>{cart.submitted ? 'Save my updated order' : cart.lines.length ? 'Submit my food order' : 'No food this time'}</button>{cart.submitted && <p className="success-message">✓ Saved. You can still edit and submit changes before totals are reviewed.</p>}</article>
+    {reuseMessage && <p role="status" className="form-message">{t(reuseMessage)}</p>}
+    <article className="card early-order"><p className="eyebrow">{t("YOUR SANDWICHES")}</p><h2>{t("Add now. Change any time before totals.")}</h2><p className="muted">{t("Your order stays editable before, during, and after the spin. Saving an edit keeps it in this room after refresh.")}</p></article>
+    {(matchingFavorites.length > 0 || previous.length > 0) && <article className="card smart-reorder"><p className="eyebrow">{t("FAST ADD")}</p><h2>{t("Favorites & unique previous orders")}</h2><p className="muted">{t("Exact repeats appear once. Any change to quantity, size, extras, or notes remains a separate choice.")}</p><div className="saved-order-list">{matchingFavorites.map(favorite => <div className="saved-order-row" key={favorite.id}><span><b>★ {favorite.title}</b><small>{orderSummary(favorite.lines)}</small></span><button className="primary" onClick={() => addSavedOrder(favorite.lines)}>{t("Add all")}</button></div>)}{previous.map(choice => <div className="saved-order-row" key={choice.key}><span><b>{choice.repeatCount > 1 ? `Repeated ${choice.repeatCount} times` : new Date(choice.order.completedAt).toLocaleDateString()}</b><small>{orderSummary(choice.receipt.lines)}</small></span><span className="saved-order-buttons"><button className="primary" onClick={() => addSavedOrder(choice.receipt.lines.map(line => ({ ...line, description: line.itemId ? '' : line.description })))}>{t("Add all")}</button><button className="secondary" onClick={() => onFavorite(choice)}>{t("☆ Favorite")}</button></span></div>)}</div>{reuseMessage && <p className={reuseMessage.includes('added') || reuseMessage.includes('Added') ? 'success-message' : 'form-message'}>{reuseMessage}</p>}</article>}
+    {room.restaurant.menu.items.length > 0 && (!editing || !editing.description) && <MenuItemForm key={editing?.id || 'new-menu'} room={room} lines={cart.lines} editing={editing} onSave={saveLine} onCancel={cancel} />}
+    {room.restaurant.openOrdering && (!editing || editing.description) && <article className="card"><p className="eyebrow">{editing ? 'EDIT CUSTOM ITEM' : 'CUSTOM SANDWICH'}</p><h2>{editing ? 'Update your item' : 'Add an item one by one'}</h2><form className="item-form" onSubmit={saveCustom}><label>{t("Food item")}<input value={custom.description} onChange={e => setCustom({ ...custom, description: e.target.value })} placeholder={t("Falafel sandwich")} required /></label><label>{t("Qty")}<input inputMode="numeric" min="1" max="99" type="number" value={custom.quantity} onChange={e => setCustom({ ...custom, quantity: e.target.value })} required /></label><label className="notes">{t("Notes / extras")}<input value={custom.notes} onChange={e => setCustom({ ...custom, notes: e.target.value })} placeholder={t("No onions, extra sauce")} /></label><div className="hero-actions"><button className="primary">{editing ? 'Update my order' : 'Add custom item'}</button>{editing && <button className="secondary" type="button" onClick={cancel}>{t("Cancel edit")}</button>}</div></form></article>}
+    <article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("MY ORDER")}</p><h2>{cart.lines.length ? `${cart.lines.length} item${cart.lines.length === 1 ? '' : 's'}` : 'Nothing added yet'}</h2></div>{receipt && <b>{receipt.totalText}</b>}</div>{cart.lines.map(line => <OrderLine key={line.id} label={cartLineDescription(room, line)} line={line} restaurant={room.restaurant} currency={room.restaurant.currency} onQuantity={delta => onSave(changeQuantity(cart.lines, line.id, delta))} onEdit={() => edit(line)} onRemove={() => onSave(cart.lines.filter(value => value.id !== line.id))} />)}<button className="primary wide" onClick={onSubmit}>{cart.submitted ? 'Save my updated order' : cart.lines.length ? 'Submit my food order' : 'No food this time'}</button>{cart.submitted && <p className="success-message">{t("✓ Saved. You can still edit and submit changes before totals are reviewed.")}</p>}</article>
   </section>;
+}
+
+function DeliveryRule() {
+  return <p className="delivery-rule">{tx('Delivery is automatic: AED 5 shared equally by 1–4 people ordering food, or AED 1 each for 5 or more. The selected person’s food also counts.', 'يُحسب التوصيل تلقائياً: ٥ دراهم بالتساوي بين ١–٤ أشخاص يطلبون طعاماً، أو درهم لكل شخص عند ٥ فأكثر. يُحسب طلب الشخص المختار أيضاً.')}</p>;
 }
 
 function FeeEditor({ room, data }) {
@@ -629,10 +701,10 @@ function FeeEditor({ room, data }) {
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      await data.send('SET_FEES', { fees: { delivery: amount(fees.delivery || '0', currency), service: amount(fees.service || '0', currency), discount: amount(fees.discount || '0', currency), proportionalDelivery: fees.proportionalDelivery }, text: 'Updated delivery, service, and discount allocation' }, room.id);
+      await data.send('SET_FEES', { fees: { delivery: room.deliveryMode ? 0 : amount(fees.delivery || '0', currency), automaticDelivery: room.deliveryMode, service: amount(fees.service || '0', currency), discount: amount(fees.discount || '0', currency), proportionalDelivery: fees.proportionalDelivery }, text: 'Updated delivery, service, and discount allocation' }, room.id);
     } catch (error) { setMessage(error.message); }
   };
-  return <article className="card"><p className="eyebrow">FEES & EXACT SPLIT</p><h2>Cover the complete restaurant bill</h2><p className="muted">Food Run allocates every minor unit so all member receipts equal the final food, delivery, service, tax, and discount total.</p><form className="stack" onSubmit={save}><div className="form-grid three"><label>Delivery fee<input inputMode="decimal" value={fees.delivery} onChange={e => setFees({ ...fees, delivery: e.target.value })} /></label><label>Service fee<input inputMode="decimal" value={fees.service} onChange={e => setFees({ ...fees, service: e.target.value })} /></label><label>Discount<input inputMode="decimal" value={fees.discount} onChange={e => setFees({ ...fees, discount: e.target.value })} /></label></div><label className="check"><input type="checkbox" checked={fees.proportionalDelivery} onChange={e => setFees({ ...fees, proportionalDelivery: e.target.checked })} /> Split delivery by food total <span>Turn off for an equal split between everyone with food.</span></label>{message && <p className="form-message">{message}</p>}<button className="secondary">Update fees and reopen totals</button></form></article>;
+  return <article className="card"><p className="eyebrow">{t("FEES & EXACT SPLIT")}</p><h2>{t("Cover the complete restaurant bill")}</h2><p className="muted">{t("Food Run allocates every minor unit so all member receipts equal the final food, delivery, service, tax, and discount total.")}</p><form className="stack" onSubmit={save}>{room.deliveryMode && <><DeliveryRule />{!room.fees.automaticDelivery && <p className="form-message">{tx("This room uses saved delivery fees. Update fees below to apply automatic delivery and request new total confirmations.", "تستخدم الغرفة رسوم التوصيل المحفوظة. حدّث الرسوم لتطبيق التوصيل التلقائي وإعادة تأكيد الإجمالي.")}</p>}</>}<div className="form-grid three">{!room.deliveryMode && <label>{t("Delivery fee")}<input inputMode="decimal" value={fees.delivery} onChange={e => setFees({ ...fees, delivery: e.target.value })} /></label>}<label>{t("Service fee")}<input inputMode="decimal" value={fees.service} onChange={e => setFees({ ...fees, service: e.target.value })} /></label><label>{t("Discount")}<input inputMode="decimal" value={fees.discount} onChange={e => setFees({ ...fees, discount: e.target.value })} /></label></div>{!room.deliveryMode && <label className="check"><input type="checkbox" checked={fees.proportionalDelivery} onChange={e => setFees({ ...fees, proportionalDelivery: e.target.checked })} />{t("Split delivery by food total")}<span>{t("Turn off for an equal split between everyone with food.")}</span></label>}{message && <p className="form-message">{message}</p>}<button className="secondary">{t("Update fees and reopen totals")}</button></form></article>;
 }
 
 function RestaurantOrderCard({ room, receipts, data, finish = false }) {
@@ -641,11 +713,11 @@ function RestaurantOrderCard({ room, receipts, data, finish = false }) {
   const copy = async () => { await copyText(orderText); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const contact = room.restaurant.contact.phoneE164 || room.restaurant.contact.whatsappE164;
   const whatsApp = `https://wa.me/?text=${encodeURIComponent(orderText)}`;
-  return <article className="card restaurant-order-card"><p className="eyebrow">SELECTED TO ORDER</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>Collects the final list, places the order, and confirms payments.</p></div></div><pre>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? '✓ Copied — paste to restaurant' : finish ? 'Finish ordering & copy list' : 'Copy restaurant-ready list'}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">Share via WhatsApp</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>Call restaurant</a>}</div><p className="fine">WhatsApp opens the prepared order; choose the restaurant chat, a group, or another contact.</p></article>;
+  return <article className="card restaurant-order-card"><p className="eyebrow">{t("SELECTED TO ORDER")}</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>{t("Collects the final list, places the order, and confirms payments.")}</p></div></div><pre>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? '✓ Copied — paste to restaurant' : finish ? tx('Copy list for restaurant', 'نسخ الطلب للمطعم') : tx('Copy restaurant-ready list', 'نسخ الطلب للمطعم')}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">{t("Share via WhatsApp")}</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>{t("Call restaurant")}</a>}</div><p className="fine">{t("WhatsApp opens the prepared order; choose the restaurant chat, a group, or another contact.")}</p></article>;
 }
 
 function ReceiptCard({ room, receipt, own = false }) {
-  return <article className={`receipt-card ${own ? 'own' : ''}`}><div className="receipt-heading"><span><b>{receipt.name}{own ? ' · You' : ''}</b><small>{receipt.lines.length} line{receipt.lines.length === 1 ? '' : 's'}</small></span><strong>{receipt.totalText}</strong></div>{receipt.lines.map((line, index) => <OrderLine key={`${line.description}:${index}`} line={line} currency={receipt.currency} />)}<div className="fee-breakdown"><span>Food <b>{money(receipt.food, receipt.currency)}</b></span><span>Delivery <b>{money(receipt.delivery, receipt.currency)}</b></span><span>Service / adjustment <b>{money(receipt.service, receipt.currency)}</b></span><span>Discount <b>− {money(receipt.discount, receipt.currency)}</b></span><span>Tax <b>{money(receipt.tax, receipt.currency)}</b></span></div><div className="receipt-balance"><span>Paid <b>{money(receipt.paid, receipt.currency)}</b></span><span>{receipt.balance < 0 ? 'Refund due' : 'To pay'} <strong>{money(Math.abs(receipt.balance), receipt.currency)}</strong></span></div></article>;
+  return <article className={`receipt-card ${own ? 'own' : ''}`}><div className="receipt-heading"><span><b>{receipt.name}{own ? ' · You' : ''}</b><small>{receipt.lines.length} line{receipt.lines.length === 1 ? '' : 's'}</small></span><strong>{receipt.totalText}</strong></div>{receipt.lines.map((line, index) => <OrderLine key={`${line.description}:${index}`} line={line} currency={receipt.currency} />)}<div className="fee-breakdown"><span>{t("Food")}<b>{money(receipt.food, receipt.currency)}</b></span><span>{t("Delivery")}<b>{money(receipt.delivery, receipt.currency)}</b></span><span>{t("Service / adjustment")}<b>{money(receipt.service, receipt.currency)}</b></span><span>{t("Discount")}<b>− {money(receipt.discount, receipt.currency)}</b></span><span>{t("Tax")}<b>{money(receipt.tax, receipt.currency)}</b></span></div><div className="receipt-balance"><span>{t("Paid")}<b>{money(receipt.paid, receipt.currency)}</b></span><span>{receipt.balance < 0 ? 'Refund due' : 'To pay'} <strong>{money(Math.abs(receipt.balance), receipt.currency)}</strong></span></div></article>;
 }
 
 function WalletPanel({ room, receipts, me, payer }) {
@@ -657,9 +729,9 @@ function WalletPanel({ room, receipts, me, payer }) {
   const confirmed = receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + receipt.paid, 0);
   const remaining = receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0);
   const refunds = receipts.reduce((sum, receipt) => sum + Math.max(0, -receipt.balance), 0);
-  return <article className="card wallet-card"><p className="eyebrow">{payer ? 'ROOM WALLET' : 'MY WALLET'}</p><h2>{payer ? 'Every share in one place' : 'Your order and payment'}</h2><div className="progress-money wallet-summary">{payer ? <><span><small>Restaurant total</small><b>{money(restaurantTotal, currency)}</b></span><span><small>Your own share</small><b>{money(receipts.find(receipt => receipt.memberId === room.payerId)?.total || 0, currency)}</b></span><span><small>Confirmed from others</small><b>{money(confirmed, currency)}</b></span><span><small>Members still owe</small><b>{money(remaining, currency)}</b></span>{refunds > 0 && <span><small>Refunds you owe</small><b>{money(refunds, currency)}</b></span>}</> : <><span><small>My order</small><b>{money(own.total, currency)}</b></span><span><small>Confirmed paid</small><b>{money(own.paid, currency)}</b></span><span><small>{own.balance < 0 ? 'Owed back to me' : 'I need to pay'}</small><b>{money(Math.abs(own.balance), currency)}</b></span></>}</div>
-    {payer && <div className="wallet-people">{receipts.map(receipt => { const claim = pending.find(transfer => transfer.memberId === receipt.memberId); return <div className="transfer-row" key={receipt.memberId}><span><b>{receipt.name}{receipt.memberId === me.id ? ' · You' : ''}</b><small>Order {money(receipt.total, currency)} · confirmed {money(receipt.paid, currency)}{claim ? ` · ${money(claim.amount, currency)} awaiting confirmation` : ''}</small></span><strong>{receipt.memberId === room.payerId ? 'Own share' : receipt.balance < 0 ? `Refund ${money(-receipt.balance, currency)}` : receipt.balance === 0 ? 'Settled' : `Owes ${money(receipt.balance, currency)}`}</strong></div>; })}</div>}
-    {!payer && pending.some(transfer => transfer.memberId === me.id) && <p className="success-message">Your payment is marked sent and awaits confirmation from the selected payer.</p>}
+  return <article id="room-payment" className="card wallet-card"><p className="eyebrow">{payer ? 'ROOM WALLET' : 'MY WALLET'}</p><h2>{payer ? 'Every share in one place' : 'Your order and payment'}</h2><div className="progress-money wallet-summary">{payer ? <><span><small>{t("Restaurant total")}</small><b>{money(restaurantTotal, currency)}</b></span><span><small>{t("Your own share")}</small><b>{money(receipts.find(receipt => receipt.memberId === room.payerId)?.total || 0, currency)}</b></span><span><small>{t("Confirmed from others")}</small><b>{money(confirmed, currency)}</b></span><span><small>{t("Members still owe")}</small><b>{money(remaining, currency)}</b></span>{refunds > 0 && <span><small>{t("Refunds you owe")}</small><b>{money(refunds, currency)}</b></span>}</> : <><span><small>{t("My order")}</small><b>{money(own.total, currency)}</b></span><span><small>{t("Confirmed paid")}</small><b>{money(own.paid, currency)}</b></span><span><small>{own.balance < 0 ? 'Owed back to me' : t("I need to pay")}</small><b>{money(Math.abs(own.balance), currency)}</b></span></>}</div>
+    {payer && <div className="wallet-people">{receipts.map(receipt => { const claim = pending.find(transfer => transfer.memberId === receipt.memberId); return <div className="transfer-row" key={receipt.memberId}><span><b>{receipt.name}{receipt.memberId === me.id ? ' · You' : ''}</b><small>{t("Order")}{' '}{money(receipt.total, currency)}{t("· confirmed")}{' '}{money(receipt.paid, currency)}{claim ? ` · ${money(claim.amount, currency)} awaiting confirmation` : ''}</small></span><strong>{receipt.memberId === room.payerId ? 'Own share' : receipt.balance < 0 ? `Refund ${money(-receipt.balance, currency)}` : receipt.balance === 0 ? t("Settled") : `Owes ${money(receipt.balance, currency)}`}</strong></div>; })}</div>}
+    {!payer && pending.some(transfer => transfer.memberId === me.id) && <p className="success-message">{t("Your payment is marked sent and awaits confirmation from the selected payer.")}</p>}
   </article>;
 }
 
@@ -671,26 +743,30 @@ function SettlementPanel({ room, reply, me, owner, payer, data }) {
   const ownPending = pending.find(transfer => transfer.memberId === me.id);
   const [payment, setPayment] = useState({ value: myReceipt && myReceipt.balance > 0 ? minorInput(myReceipt.balance, currency) : '', reference: '' });
   const [adjustment, setAdjustment] = useState({ value: '', reason: '' });
-  const declarePayment = event => { event.preventDefault(); data.send('DECLARE_TRANSFER', { amount: amount(payment.value, currency), text: payment.reference.trim() }, room.id); };
+  const [message, setMessage] = useState('');
+  const guarded = action => { try { setMessage(''); action(); } catch (error) { setMessage(error.message); } };
+  const awaitingApproval = room.billRevision > 1 && room.members.some(member => member.approved && !member.removed && !member.guest && member.participating && !room.adjustmentApprovals.includes(member.id));
+  const declarePayment = event => { event.preventDefault(); guarded(() => data.send('DECLARE_TRANSFER', { amount: amount(payment.value, currency), text: payment.reference.trim() }, room.id)); };
   const reject = transfer => data.send('REJECT_TRANSFER', { transferId: transfer.id, text: 'Payment was not received or the details do not match.' }, room.id);
   const refund = receipt => {
     const value = window.prompt(`Refund amount for ${receipt.name}`, minorInput(-receipt.balance, currency));
     if (!value) return;
     const reference = window.prompt('Refund reference or cash note');
-    if (reference) data.send('DECLARE_REFUND', { memberId: receipt.memberId, amount: amount(value, currency), text: reference }, room.id);
+    if (reference) guarded(() => data.send('DECLARE_REFUND', { memberId: receipt.memberId, amount: amount(value, currency), text: reference }, room.id));
   };
   return <>
+    {message && <p className="form-message" role="alert">{message}</p>}
     <WalletPanel room={room} receipts={reply.receipts} me={me} payer={payer} />
-    <article className="card placed-banner"><p className="eyebrow">RESTAURANT STATUS</p><h2>{room.restaurantPaid ? 'Restaurant payment recorded' : 'Order announced as placed'}</h2><p>{room.restaurantReference}</p></article>
-    <article className="card"><div className="section-title compact"><div><p className="eyebrow">RECEIPT</p><h2>{payer ? 'Complete order breakdown' : 'Your total, paid, and remaining'}</h2></div>{myReceipt && <button type="button" className="secondary" onClick={() => copyText(receiptText(room, myReceipt))}>Copy my receipt</button>}</div>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}{room.account && <div className="pay-to"><span>Pay to</span><b>{room.account.holder} · {room.account.bank}</b><code>{room.account.identifier}</code></div>}</article>
+    <article className="card placed-banner"><p className="eyebrow">{t("RESTAURANT STATUS")}</p><h2>{room.restaurantPaid ? 'Restaurant payment recorded' : 'Order announced as placed'}</h2><p>{room.restaurantReference}</p></article>
+    <article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("RECEIPT")}</p><h2>{payer ? 'Complete order breakdown' : 'Your total, paid, and remaining'}</h2></div>{myReceipt && <button type="button" className="secondary" onClick={() => copyText(receiptText(room, myReceipt))}>{t("Copy my receipt")}</button>}</div>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}{room.account && <div className="pay-to"><span>{t("Pay to")}</span><b>{room.account.holder} · {room.account.bank}</b><code>{room.account.identifier}</code><button type="button" className="secondary" onClick={() => copyText(room.account.identifier).then(() => data.setNotice('Payment details copied.')).catch(error => data.setError(error.message))}>{t("Copy payment details")}</button></div>}</article>
     {payer && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} />}
-    {payer && <article className="card stack"><p className="eyebrow">RESTAURANT & FINAL BILL</p><h2>{money(total, currency)}</h2><p className="muted">Recording a payment tracks it in Food Run; it does not move money.</p>{!room.restaurantPaid && <button className="primary wide" onClick={() => data.send('PAY_RESTAURANT', { amount: total }, room.id)}>Confirm restaurant paid · {money(total, currency)}</button>}<form className="form-grid adjustment-form" onSubmit={event => { event.preventDefault(); const raw = adjustment.value.trim(); const minor = amount(raw.replace(/^-/, ''), currency) * (raw.startsWith('-') ? -1 : 1); data.send('ADJUST_BILL', { amount: minor, text: adjustment.reason.trim() }, room.id); }}><label>Final bill adjustment<input value={adjustment.value} onChange={e => setAdjustment({ ...adjustment, value: e.target.value })} placeholder="-5.00 or 5.00" /></label><label>Reason<input value={adjustment.reason} onChange={e => setAdjustment({ ...adjustment, reason: e.target.value })} placeholder="Restaurant discount" /></label><button className="secondary">Update final bill</button></form>{room.phase === 'PLACED' && <button className="secondary wide" onClick={() => data.send('FULFILL', {}, room.id)}>Food collected / delivered</button>}</article>}
-    {!payer && myReceipt && room.restaurantPaid && myReceipt.balance > 0 && !ownPending && <article className="card notice-card"><p className="eyebrow">PAY YOUR SHARE</p><h2>{myReceipt.balanceText} remaining</h2><form className="stack" onSubmit={declarePayment}><label>Amount sent<input inputMode="decimal" value={payment.value} onChange={e => setPayment({ ...payment, value: e.target.value })} required /></label><label>Transfer reference / cash note<input value={payment.reference} onChange={e => setPayment({ ...payment, reference: e.target.value })} required /></label><button className="primary">I sent my payment</button></form></article>}
-    {!payer && myReceipt?.balance === 0 && <article className="card settled-card"><span>✓</span><div><h2>Paid and settled</h2><p>Your selected orderer confirmed your payment.</p></div></article>}
-    {room.billRevision > 1 && !room.adjustmentApprovals.includes(me.id) && <button className="primary wide" onClick={() => data.send('APPROVE_ADJUSTMENT', { expectedRevision: room.billRevision }, room.id)}>Approve revised final bill</button>}
-    {room.transfers.length > 0 && <article className="card"><p className="eyebrow">PAYMENT ACTIVITY</p><h2>Sent and confirmed</h2>{room.transfers.map(transfer => { const member = room.members.find(value => value.id === transfer.memberId); const declared = String(transfer.status).toLowerCase() === 'declared'; return <div className="transfer-row" key={transfer.id}><span><b>{transfer.refund ? 'Refund' : 'Payment'} · {member?.name}</b><small>{transfer.reference} · {String(transfer.status).toLowerCase()}</small></span><strong>{money(transfer.amount, currency)}</strong>{declared && payer && !transfer.refund && <span className="transfer-actions"><button className="primary" onClick={() => data.send('CONFIRM_TRANSFER', { transferId: transfer.id }, room.id)}>Confirm received</button><button className="secondary" onClick={() => reject(transfer)}>Reject</button></span>}{declared && transfer.refund && transfer.memberId === me.id && <span className="transfer-actions"><button className="primary" onClick={() => data.send('CONFIRM_REFUND', { transferId: transfer.id }, room.id)}>Confirm refund</button><button className="secondary" onClick={() => reject(transfer)}>Reject</button></span>}</div>; })}</article>}
-    {payer && room.restaurantPaid && reply.receipts.filter(receipt => receipt.balance < 0 && !pending.some(transfer => transfer.memberId === receipt.memberId)).map(receipt => <button className="secondary wide" key={receipt.memberId} onClick={() => refund(receipt)}>Record refund to {receipt.name} · {money(-receipt.balance, currency)}</button>)}
-    {owner && room.phase === 'FULFILLED' && <article className="card complete-card"><h2>Finish this order</h2><p>{reply.progress?.canArchive ? 'Every payment and refund is settled.' : reply.progress?.archiveBlocker || 'Waiting for all payments to settle.'}</p><button className="primary wide" disabled={!reply.progress?.canArchive} onClick={() => data.send('ARCHIVE', { text: 'Order completed and settled' }, room.id)}>Complete and archive order</button></article>}
+    {payer && <article className="card stack"><p className="eyebrow">{t("RESTAURANT & FINAL BILL")}</p><h2>{money(total, currency)}</h2><p className="muted">{t("Recording a payment tracks it in Food Run; it does not move money.")}</p>{awaitingApproval && <p className="form-message">{t("Waiting for everyone to approve the revised bill.")}</p>}{!room.restaurantPaid && <button disabled={awaitingApproval || data.busy} className="primary wide" onClick={() => data.send('PAY_RESTAURANT', { amount: total }, room.id)}>{t("Confirm restaurant paid ·")}{' '}{money(total, currency)}</button>}<form className="form-grid adjustment-form" onSubmit={event => { event.preventDefault(); guarded(() => { const raw = adjustment.value.trim(); const minor = amount(raw.replace(/^-/, ''), currency) * (raw.startsWith('-') ? -1 : 1); data.send('ADJUST_BILL', { amount: minor, text: adjustment.reason.trim() }, room.id); }); }}><label>{t("Final bill adjustment")}<input value={adjustment.value} onChange={e => setAdjustment({ ...adjustment, value: e.target.value })} placeholder="-5.00 or 5.00" /></label><label>{t("Reason")}<input value={adjustment.reason} onChange={e => setAdjustment({ ...adjustment, reason: e.target.value })} placeholder={t("Restaurant discount")} /></label><button className="secondary">{t("Update final bill")}</button></form>{room.phase === 'PLACED' && <button className="secondary wide" onClick={() => data.send('FULFILL', {}, room.id)}>{t("Food collected / delivered")}</button>}</article>}
+    {!payer && myReceipt && room.restaurantPaid && myReceipt.balance > 0 && !ownPending && <article className="card notice-card"><p className="eyebrow">{t("PAY YOUR SHARE")}</p><h2>{myReceipt.balanceText}{t("remaining")}</h2><form className="stack" onSubmit={declarePayment}><label>{t("Amount sent")}<input inputMode="decimal" value={payment.value} onChange={e => setPayment({ ...payment, value: e.target.value })} required /></label><button className="secondary" type="button" onClick={() => setPayment(old => ({ ...old, value: minorInput(myReceipt.balance, currency) }))}>{t("Use full remaining amount ·")}{' '}{money(myReceipt.balance, currency)}</button><label>{t("Transfer reference / cash note")}<input value={payment.reference} onChange={e => setPayment({ ...payment, reference: e.target.value })} required /></label><button className="primary">{tx("I paid · notify recipient", "دفعت · إشعار المستلم")}</button></form></article>}
+    {!payer && myReceipt?.balance === 0 && <article className="card settled-card"><span>✓</span><div><h2>{t("Paid and settled")}</h2><p>{t("Your selected orderer confirmed your payment.")}</p></div></article>}
+    {room.billRevision > 1 && me.approved && !me.guest && me.participating && !room.adjustmentApprovals.includes(me.id) && <button className="primary wide" onClick={() => data.send('APPROVE_ADJUSTMENT', { expectedRevision: room.billRevision }, room.id)}>{t("Approve revised final bill")}</button>}
+    {room.transfers.length > 0 && <article className="card"><p className="eyebrow">{t("PAYMENT ACTIVITY")}</p><h2>{t("Sent and confirmed")}</h2>{room.transfers.map(transfer => { const member = room.members.find(value => value.id === transfer.memberId); const declared = String(transfer.status).toLowerCase() === 'declared'; return <div className="transfer-row" key={transfer.id}><span><b>{transfer.refund ? 'Refund' : 'Payment'} · {member?.name}</b><small>{transfer.reference} · {String(transfer.status).toLowerCase()}</small></span><strong>{money(transfer.amount, currency)}</strong>{declared && payer && !transfer.refund && <span className="transfer-actions"><button className="primary" onClick={() => data.send('CONFIRM_TRANSFER', { transferId: transfer.id }, room.id)}>{tx("Approve · money received", "موافقة · استلمت المبلغ")}</button><button className="secondary" onClick={() => reject(transfer)}>{t("Reject")}</button></span>}{declared && transfer.refund && transfer.memberId === me.id && <span className="transfer-actions"><button className="primary" onClick={() => data.send('CONFIRM_REFUND', { transferId: transfer.id }, room.id)}>{t("Confirm refund")}</button><button className="secondary" onClick={() => reject(transfer)}>{t("Reject")}</button></span>}</div>; })}</article>}
+    {payer && room.restaurantPaid && reply.receipts.filter(receipt => receipt.balance < 0 && !pending.some(transfer => transfer.memberId === receipt.memberId)).map(receipt => <button className="secondary wide" key={receipt.memberId} onClick={() => refund(receipt)}>{t("Record refund to")}{' '}{receipt.name} · {money(-receipt.balance, currency)}</button>)}
+    {(owner || payer) && room.phase === 'FULFILLED' && <article className="card complete-card"><h2>{t("Finish this order")}</h2><p>{reply.progress?.canArchive ? 'Every payment and refund is settled.' : reply.progress?.archiveBlocker || 'Waiting for all payments to settle.'}</p><button className="primary wide" disabled={!reply.progress?.canArchive} onClick={() => data.send('ARCHIVE', { text: 'Order completed and settled' }, room.id)}>{t("Complete and archive order")}</button></article>}
   </>;
 }
 
@@ -703,7 +779,46 @@ function RoomInviteCard({ room, hub }) {
   const link = roomInviteLink(room, hub);
   const [copied, setCopied] = useState('');
   const copy = async (value, kind) => { await copyText(value); setCopied(kind); setTimeout(() => setCopied(''), 2200); };
-  return <section className="card room-invite"><div className="invite-qr"><QRCodeSVG value={link} size={164} level="M" marginSize={2} title={`Join ${room.name}`} /></div><div className="invite-details"><p className="eyebrow">INVITE TO THIS ROOM</p><h3>Scan, tap, or enter the code</h3><strong className="invite-code">{room.code}</strong><p className="muted">The link remembers this room’s internet or local server and opens the join screen with the code filled in.</p><div className="hero-actions"><button className="primary" onClick={() => copy(link, 'link')}>{copied === 'link' ? '✓ Link copied' : 'Copy invitation link'}</button><button className="secondary" onClick={() => copy(room.code, 'code')}>{copied === 'code' ? '✓ Code copied' : 'Copy code'}</button>{navigator.share && <button className="secondary" onClick={() => navigator.share({ title: `Join ${room.name} on Food Run`, text: `Room code: ${room.code}`, url: link })}>Share</button>}</div></div></section>;
+  return <section className="card room-invite"><div className="invite-qr"><QRCodeSVG value={link} size={164} level="M" marginSize={2} title={`Join ${room.name}`} /></div><div className="invite-details"><p className="eyebrow">{t("INVITE TO THIS ROOM")}</p><h3>{t("Scan, tap, or enter the code")}</h3><strong className="invite-code">{room.code}</strong><p className="muted">{t("The link remembers this room’s internet or local server and opens the join screen with the code filled in.")}</p><div className="hero-actions"><button className="primary" onClick={() => copy(link, 'link')}>{copied === 'link' ? '✓ Link copied' : 'Copy invitation link'}</button><button className="secondary" onClick={() => copy(room.code, 'code')}>{copied === 'code' ? '✓ Code copied' : 'Copy code'}</button>{navigator.share && <button className="secondary" onClick={() => navigator.share({ title: `Join ${room.name} on Food Run`, text: `Room code: ${room.code}`, url: link })}>{t("Share")}</button>}</div></div></section>;
+}
+
+function RoomManagement({ room, data, owner, payer }) {
+  const [reason, setReason] = useState('');
+  const [contact, setContact] = useState(room.restaurant.contact.phoneE164 || '');
+  const [tax, setTax] = useState(room.restaurant.pricing.taxTreatment);
+  const [rate, setRate] = useState(String((room.restaurant.pricing.taxRateBasisPoints || 0) / 100));
+  const [minimum, setMinimum] = useState(minorInput(room.restaurant.pricing.minimumOrderMinor, room.restaurant.currency));
+  const [message, setMessage] = useState('');
+  const run = (kind, fields = {}) => {
+    if (!reason.trim()) return setMessage(tx('Enter a short reason for this change.', 'اكتب سبباً مختصراً لهذا التغيير.'));
+    setMessage(''); return data.send(kind, { text: reason.trim(), ...fields }, room.id);
+  };
+  const saveRestaurant = () => {
+    try {
+      const taxRateBasisPoints = tax === 'added' ? amount(rate, 'AED') : null;
+      if (taxRateBasisPoints > 10000) throw Error(tx('Tax must be between 0 and 100%.', 'يجب أن تكون الضريبة بين ٠ و١٠٠٪.'));
+      return run('UPDATE_RESTAURANT', { restaurant: { ...room.restaurant,
+        contact: { ...room.restaurant.contact, phoneE164: uaePhone(contact) },
+        pricing: { ...room.restaurant.pricing, taxTreatment: tax, taxRateBasisPoints, minimumOrderMinor: amount(minimum, room.restaurant.currency) },
+      } });
+    } catch (error) { setMessage(error.message); }
+  };
+  return <details className="card room-tools"><summary>{tx('Manage this order', 'إدارة هذا الطلب')}</summary>
+    <div className="stack">
+      <label>{tx('Reason for change', 'سبب التغيير')}<input value={reason} maxLength="500" onChange={event => setReason(event.target.value)} /></label>
+      {message && <p className="form-message" role="alert">{message}</p>}
+      {owner && room.phase === 'PREPARING_SPIN' && <button className="secondary" onClick={() => run('ABORT_PREPARE')}>{tx('Cancel preparation and return to room', 'إلغاء التحضير والعودة إلى الغرفة')}</button>}
+      {(owner || payer) && ['REVIEW', 'COLLECTING'].includes(room.phase) && <button className="secondary" onClick={() => run('REOPEN')}>{tx('Reopen food editing', 'فتح تعديل الطلبات مجدداً')}</button>}
+      {(owner || payer) && ['LOBBY', 'COLLECTING', 'REVIEW'].includes(room.phase) && <>
+        <label>{tx('Restaurant phone', 'رقم المطعم')}<input type="tel" value={contact} onChange={event => setContact(event.target.value)} /></label>
+        <label>{tx('Tax treatment', 'الضريبة')}<select value={tax} onChange={event => setTax(event.target.value)}><option value="included">{tx('Included in prices', 'مشمولة في الأسعار')}</option><option value="added">{tx('Added to bill', 'تضاف إلى الفاتورة')}</option><option value="unspecified">{tx('Confirm later', 'التأكيد لاحقاً')}</option></select></label>
+        {tax === 'added' && <label>{tx('Tax rate %', 'نسبة الضريبة ٪')}<input inputMode="decimal" value={rate} onChange={event => setRate(event.target.value)} /></label>}
+        <label>{tx('Minimum order (AED)', 'الحد الأدنى للطلب (درهم)')}<input inputMode="decimal" value={minimum} onChange={event => setMinimum(event.target.value)} /></label>
+        <button className="secondary" onClick={saveRestaurant}>{tx('Update restaurant details', 'تحديث بيانات المطعم')}</button>
+      </>}
+      {owner && room.phase === 'LOBBY' && room.members.filter(member => member.approved && !member.removed && !member.guest && member.id !== room.ownerId).map(member => <div className="saved-order-row" key={member.id}><b>{member.name}</b><span className="saved-order-buttons"><button className="secondary" onClick={() => run('HANDOVER', { memberId: member.id })}>{tx('Make organizer', 'تعيين منظماً')}</button><button className="link danger" onClick={() => run('REMOVE', { memberId: member.id })}>{tx('Remove', 'إزالة')}</button></span></div>)}
+    </div>
+  </details>;
 }
 
 function RoomScreen({ data, roomId, onBack }) {
@@ -711,7 +826,7 @@ function RoomScreen({ data, roomId, onBack }) {
   const [price, setPrice] = useState({ memberId: '', lineId: '', value: '' });
   const [reference, setReference] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
-  if (!room || !session) return <Page title="Connecting to room…" onBack={onBack}><div className="card empty"><div className="spinner" /><p>Waiting for the latest room state.</p></div></Page>;
+  if (!room || !session) return <Page title={t("Connecting to room…")} onBack={onBack}><div className="card empty"><div className="spinner" /><p>{t("Waiting for the latest room state.")}</p></div></Page>;
   const me = room.members.find(member => member.id === session.memberId);
   const owner = room.ownerId === me.id, payer = room.payerId === me.id;
   const orderingMembers = room.members.filter(member => member.approved && !member.removed && !member.guest && member.participating);
@@ -726,143 +841,65 @@ function RoomScreen({ data, roomId, onBack }) {
     const saved = loadRestaurants(); storeRestaurants([...saved.filter(restaurant => restaurant.id !== room.restaurant.id), clone(room.restaurant)].sort((a, b) => a.name.localeCompare(b.name)));
     data.setNotice(`${room.restaurant.name} and its current prices are saved on this device.`);
   };
+  const favorites = data.home.profile.favoriteOrders || [];
+  const previousOrders = uniquePreviousOrders(data, room.restaurant);
+  const roomHistoryChoices = uniqueRoomPreviousOrders(reply.history, me.id, room.restaurant);
+  const saveFavorite = async choice => {
+    const favorite = favoriteFromPrevious(choice);
+    const existing = data.home.profile.favoriteOrders || [];
+    if (existing.some(value => favoriteKey(value) === favoriteKey(favorite))) return data.setNotice(t("This order is already in your favorites."));
+    if (existing.length >= 30) return data.setNotice(t("Your 30 favorites are full. Remove one before saving another."));
+    const saved = await data.send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(data.home.profile, [favorite, ...existing]) } });
+    if (saved) data.setNotice(t("Favorite order saved."));
+  };
   const startNextOrder = () => data.send('NEXT_ORDER', { restaurant: room.restaurant, restaurants: room.restaurantOptions || [room.restaurant], expectedNames: [], flag: room.deliveryMode, destination: room.destination, deadline: 0, fees: room.fees }, room.id);
-  return <Page title={room.name} subtitle={`Order #${room.orderNumber} · ${phaseLabel[room.phase]} · code ${room.code}`} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? '● Live' : 'Offline'}</span>}>
-    <OrderProgress room={room} receipts={reply.receipts} />
-    <div className="room-layout">
+  return <Page title={room.name} subtitle={`Order #${room.orderNumber} · ${t(phaseLabel[room.phase])} · code ${room.code}`} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? '● Live' : 'Offline'}</span>}>
+    <OrderProgress room={room} receipts={reply.receipts} payer={payer} />
+    <fieldset disabled={data.busy} className="room-fieldset" aria-busy={data.busy}><div className="room-layout">
       <section className="room-main stack">
         {['PREPARING_SPIN','SPINNING','ACCEPTING'].includes(room.phase) && <article className="card selection-card">
-          {room.phase === 'PREPARING_SPIN' && <><div className="spinner" /><h2>Getting everyone in sync…</h2><p>Every participating device is joining the live selection.</p></>}
-          {room.phase === 'SPINNING' && <><p className="eyebrow">LIVE SELECTION</p><h2>Who will order?</h2><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
+          {room.phase === 'PREPARING_SPIN' && <><div className="spinner" /><h2>{t("Getting everyone in sync…")}</h2><p>{t("Every participating device is joining the live selection.")}</p></>}
+          {room.phase === 'SPINNING' && <><p className="eyebrow">{t("LIVE SELECTION")}</p><h2>{t("Who will order?")}</h2><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
           {room.phase === 'ACCEPTING' && <><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active={false} /><WinnerReveal winner={winner} selected={selected} me={me} room={room} data={data} /></>}
         </article>}
-        {!me.approved && <article className="card notice-card"><h2>Waiting for approval</h2><p>The organizer will approve your request before you can join this order.</p></article>}
-        {me.approved && room.phase === 'LOBBY' && <><article className="card"><div className="section-title compact"><div><p className="eyebrow">WHO’S IN?</p><h2>Join today’s order</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? 'Skip this order' : 'Join this order'}</button></div>}<p className="muted">Once approved and joined, you are ready automatically. Add sandwiches now; no extra ready step is needed.</p>{owner && !room.restaurantPollOpen && <button className="primary wide" disabled={!orderingMembers.length} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>Spin to choose the payer</button>}</article>{room.restaurantPollOpen && <RestaurantPoll room={room} me={me} owner={owner} data={data} />}</>}
-        {me.approved && !me.guest && me.participating && orderingOpen && <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} receipt={myReceipt} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />}
+        {!me.approved && <article className="card notice-card"><h2>{t("Waiting for approval")}</h2><p>{t("The organizer will approve your request before you can join this order.")}</p></article>}
+        {me.approved && room.phase === 'LOBBY' && <><article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("WHO’S IN?")}</p><h2>{t("Join today’s order")}</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? t("Skip this order") : t("Join this order")}</button></div>}<p className="muted">{t("Once approved and joined, you are ready automatically. Add sandwiches now; no extra ready step is needed.")}</p>{owner && !room.restaurantPollOpen && <button className="primary wide" disabled={!orderingMembers.length} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>{t("Spin to choose the payer")}</button>}</article>{room.restaurantPollOpen && <RestaurantPoll room={room} me={me} owner={owner} data={data} />}</>}
+        {me.approved && !me.guest && me.participating && orderingOpen && <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} receipt={myReceipt} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />}
         {me.approved && room.phase === 'COLLECTING' && <>
-          {payer && <article className="card"><p className="eyebrow">PRICE CUSTOM ITEMS</p><h2>Menu prices are already saved</h2><p className="muted">Only open-order items need a unit price.</p>{room.carts.flatMap(cart => cart.lines.filter(line => line.description).map(line => ({ cart, line }))).map(({ cart, line }) => <OrderLine key={line.id} label={`${room.members.find(member => member.id === cart.memberId)?.name} · ${line.description}`} line={line} currency={room.restaurant.currency} canPrice onPrice={() => setPrice({ memberId: cart.memberId, lineId: line.id, value: line.unitPrice == null ? '' : minorInput(line.unitPrice, room.restaurant.currency) })} />)}{price.lineId && <form className="price-form" onSubmit={async e => { e.preventDefault(); const result = await data.send('PRICE_ITEM', { memberId: price.memberId, text: price.lineId, amount: amount(price.value, room.restaurant.currency) }, room.id); if (result) setPrice({ memberId: '', lineId: '', value: '' }); }}><label>Unit price<input autoFocus inputMode="decimal" value={price.value} onChange={e => setPrice({ ...price, value: e.target.value })} /></label><button className="primary">Save price</button></form>}</article>}
-          {payer && !room.account && <article className="card notice-card"><h2>Share your receiving details</h2><p>Use the Aani or bank details saved in your profile so people know where to pay.</p><button className="primary" disabled={!data.home.profile.payment} onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{data.home.profile.payment ? 'Share saved payment method' : 'Add payment details in profile'}</button></article>}
+          {payer && <article className="card"><p className="eyebrow">{t("PRICE CUSTOM ITEMS")}</p><h2>{t("Menu prices are already saved")}</h2><p className="muted">{t("Only open-order items need a unit price.")}</p>{room.carts.flatMap(cart => cart.lines.filter(line => line.description).map(line => ({ cart, line }))).map(({ cart, line }) => <OrderLine key={line.id} label={`${room.members.find(member => member.id === cart.memberId)?.name} · ${line.description}`} line={line} restaurant={room.restaurant} currency={room.restaurant.currency} canPrice onPrice={() => setPrice({ memberId: cart.memberId, lineId: line.id, value: line.unitPrice == null ? '' : minorInput(line.unitPrice, room.restaurant.currency) })} />)}{price.lineId && <form className="price-form" onSubmit={async e => { e.preventDefault(); const result = await data.send('PRICE_ITEM', { memberId: price.memberId, text: price.lineId, amount: amount(price.value, room.restaurant.currency) }, room.id); if (result) setPrice({ memberId: '', lineId: '', value: '' }); }}><label>{t("Unit price")}<input autoFocus inputMode="decimal" value={price.value} onChange={e => setPrice({ ...price, value: e.target.value })} /></label><button className="primary">{t("Save price")}</button></form>}</article>}
+          {payer && <article className="card collected-orders"><p className="eyebrow">{tx("EVERYONE'S ORDERS", "طلبات الجميع")}</p><h2>{tx('Your restaurant order', 'الطلب الذي سترسله للمطعم')}</h2><p>{tx('You were selected to order and pay the full bill. Each person reimburses their share to you.', 'تم اختيارك للطلب ودفع الفاتورة كاملة. يسدد كل شخص حصته لك.')}</p>{reply.receipts.map(receipt => <ReceiptCard key={receipt.memberId} room={room} receipt={receipt} own={receipt.memberId === me.id} />)}</article>}
+          {payer && !room.account && <article className="card notice-card"><h2>{t("Share your receiving details")}</h2><p>{t("Use the Aani or bank details saved in your profile so people know where to pay.")}</p><button className="primary" disabled={!data.home.profile.payment} onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{data.home.profile.payment ? 'Share saved payment method' : 'Add payment details in profile'}</button></article>}
           {(owner || payer) && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
           {payer && reply.receipts.some(receipt => receipt.lines.length) && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} finish />}
-          {owner && <article className="card next-step"><h2>Finish collecting</h2><p>{reply.progress?.canReview ? 'Every person submitted, every custom item is priced, and payment details are ready.' : reply.progress?.reviewBlocker || 'Waiting for everyone to submit.'}</p><button className="primary wide" disabled={!reply.progress?.canReview} onClick={() => data.send('REVIEW', {}, room.id)}>Review everyone’s totals</button></article>}
+          {(owner || payer) && <article className="card next-step"><h2>{t("Finish collecting")}</h2><p>{reply.progress?.canReview ? 'Every person submitted, every custom item is priced, and payment details are ready.' : reply.progress?.reviewBlocker || 'Waiting for everyone to submit.'}</p><button className="primary wide" disabled={!reply.progress?.canReview} onClick={() => data.send('REVIEW', {}, room.id)}>{t("Review everyone’s totals")}</button></article>}
         </>}
         {room.phase === 'REVIEW' && <>
           <WalletPanel room={room} receipts={reply.receipts} me={me} payer={payer} />
-          <article className="card"><p className="eyebrow">CHECK YOUR SHARE</p><h2>Confirm totals</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}{myCart.confirmedQuote !== room.quoteRevision ? <button className="primary wide" onClick={() => data.send('CONFIRM_QUOTE', { expectedRevision: room.quoteRevision }, room.id)}>Confirm my total and recipient</button> : <p className="success-message">✓ Your total and payment recipient are confirmed.</p>}{payer && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} finish />}{payer && <form className="place-form" onSubmit={e => { e.preventDefault(); data.send('PLACE', { text: reference }, room.id); }}><label>Restaurant confirmation / ETA<input value={reference} onChange={e => setReference(e.target.value)} placeholder="Confirmed · ready in 30 minutes" required /></label><button className="primary" disabled={!allConfirmed}>Announce order placed</button></form>}{!allConfirmed && <p className="muted">Waiting for {orderingMembers.filter(member => room.carts.find(cart => cart.memberId === member.id)?.confirmedQuote !== room.quoteRevision).map(member => member.name).join(', ')} to confirm.</p>}</article>
+          <article className="card"><p className="eyebrow">{t("CHECK YOUR SHARE")}</p><h2>{t("Confirm totals")}</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}{myCart.confirmedQuote !== room.quoteRevision ? <button className="primary wide" onClick={() => data.send('CONFIRM_QUOTE', { expectedRevision: room.quoteRevision }, room.id)}>{t("Confirm my total and recipient")}</button> : <p className="success-message">{t("✓ Your total and payment recipient are confirmed.")}</p>}{payer && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} finish />}{payer && <form className="place-form" onSubmit={e => { e.preventDefault(); data.send('PLACE', { text: reference }, room.id); }}><label>{t("Restaurant confirmation / ETA")}<input value={reference} onChange={e => setReference(e.target.value)} placeholder={t("Confirmed · ready in 30 minutes")} required /></label><button className="primary" disabled={!allConfirmed}>{t("Announce order placed")}</button></form>}{!allConfirmed && <p className="muted">{t("Waiting for")}{orderingMembers.filter(member => room.carts.find(cart => cart.memberId === member.id)?.confirmedQuote !== room.quoteRevision).map(member => member.name).join(', ')}{t("to confirm.")}</p>}</article>
           {(owner || payer) && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
         </>}
         {['PLACED','FULFILLED'].includes(room.phase) && <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} />}
-        {['ARCHIVED','CANCELLED'].includes(room.phase) && <article className="card empty"><span>✓</span><h2>{room.phase === 'ARCHIVED' ? 'Order complete' : 'Order cancelled'}</h2><p>The room, final receipts, restaurant, and prices stay saved for the next meal.</p>{owner && <button className="primary" onClick={startNextOrder}>Start next order</button>}</article>}
-        {reply.history?.length > 0 && <details className="card history-card"><summary>Past orders and receipts</summary>{reply.history.map(order => <div className="past-order" key={order.number}><div><b>Order #{order.number} · {order.restaurantName}</b><small>{new Date(order.completedAt).toLocaleString()}</small></div>{order.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={`${order.number}:${receipt.memberId}`} />)}</div>)}</details>}
+        {['ARCHIVED','CANCELLED'].includes(room.phase) && <article className="card empty"><span>✓</span><h2>{room.phase === 'ARCHIVED' ? 'Order complete' : 'Order cancelled'}</h2><p>{t("The room, final receipts, restaurant, and prices stay saved for the next meal.")}</p>{owner && <button className="primary" onClick={startNextOrder}>{t("Start next order")}</button>}</article>}
+        {(roomHistoryChoices.length > 0 || reply.historyNextOffset >= 0) && <details className="card history-card"><summary>{t("My unique previous orders ·")}{roomHistoryChoices.length}</summary>{roomHistoryChoices.map(choice => <div className="past-order" key={choice.key}><div><b>{choice.order.restaurantName} · {orderSummary(choice.receipt.lines)}</b><small>{choice.repeatCount > 1 ? `Repeated ${choice.repeatCount} times · ` : ''}{new Date(choice.order.completedAt).toLocaleString()}</small></div><ReceiptCard room={{ ...room, payerId: null, account: choice.order.account, orderNumber: choice.order.number, restaurant: { ...room.restaurant, name: choice.order.restaurantName } }} receipt={choice.receipt} own /><button className="link" onClick={() => copyText(receiptText({ ...room, orderNumber: choice.order.number, account: choice.order.account, restaurant: { ...room.restaurant, name: choice.order.restaurantName } }, choice.receipt))}>{t("Copy receipt")}</button><div className="hero-actions"><button className="secondary" disabled={!choice.restaurantId || favorites.some(value => favoriteKey(value) === choice.key)} onClick={() => saveFavorite(choice)}>{favorites.some(value => favoriteKey(value) === choice.key) ? t("★ Favorite") : t("☆ Save as favorite")}</button></div></div>)}{reply.historyNextOffset >= 0 && <button className="secondary wide" disabled={data.busy} onClick={() => data.loadOlderHistory(room.id)}>{t("Load older orders")}</button>}</details>}
       </section>
       <aside className="room-side stack">
         <RoomInviteCard room={room} hub={data.hub} />
-        {room.payerId && <section className="card payer-side"><p className="eyebrow">ORDERING PERSON</p><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><h3>{room.members.find(member => member.id === room.payerId)?.name}</h3><p>{payer ? 'You are placing the restaurant order and collecting payments.' : 'Selected to place the order and collect payments.'}</p></section>}
-        <section className="card"><div className="section-title compact"><div><p className="eyebrow">AT THE TABLE</p><h3>{room.members.filter(member => !member.removed).length} people</h3></div>{owner && <button className="icon-button" onClick={() => setInviteOpen(!inviteOpen)}>＋</button>}</div>{room.members.filter(member => !member.removed).map(member => <div className="member" key={member.id}><span className="avatar initials small">{initials(member.name)}</span><span><b>{member.name}{member.id === me.id ? ' · You' : ''}</b><small>{member.id === room.payerId ? 'Selected to order' : member.id === room.ownerId ? 'Organizer' : !member.approved ? 'Waiting for approval' : room.carts.find(cart => cart.memberId === member.id)?.submitted ? 'Food submitted' : member.participating ? 'Joined automatically' : 'Skipping'}</small></span>{owner && !member.approved && <button className="link" onClick={() => data.send('APPROVE', { memberId: member.id }, room.id)}>Approve</button>}</div>)}{inviteOpen && <div className="invite-list"><p>Invite registered people</p>{data.home.people.map(person => <button className="person-button" key={person.userId} onClick={() => data.send('IDENTITY', { identity: { action: 'INVITE', userId: person.userId } }, room.id)}><span className="avatar initials small">{initials(person.name)}</span>{person.name}<b>Invite</b></button>)}</div>}</section>
-        <section className="card room-tools"><p className="eyebrow">ROOM TOOLS</p><button className="secondary wide" onClick={saveCurrentRestaurant}>Save restaurant & prices</button>{payer && ['COLLECTING','REVIEW'].includes(room.phase) && data.home.profile.payment && <button className="secondary wide" onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>Use saved payment details</button>}{owner && ['LOBBY','COLLECTING','REVIEW','ACCEPTING'].includes(room.phase) && <button className="link danger wide" onClick={() => { const reason = window.prompt('Why are you cancelling this order?'); if (reason) data.send('CANCEL', { text: reason }, room.id); }}>Cancel today’s order</button>}</section>
-        {selected && <section className="card winner-mini"><p className="eyebrow">SELECTED</p><h3>{winner.name}</h3><p>Sandwich entry remains open while the payer confirms.</p></section>}
+        {room.payerId && <section className="card payer-side"><p className="eyebrow">{t("ORDERING PERSON")}</p><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><h3>{room.members.find(member => member.id === room.payerId)?.name}</h3><p>{payer ? tx('You order, pay the full restaurant bill, and receive everyone’s share.', 'تطلب وتدفع فاتورة المطعم كاملة وتستلم حصص الآخرين.') : tx('Add your food, confirm your total, then pay this selected person.', 'أضف طعامك وأكد الإجمالي ثم ادفع حصتك لهذا الشخص المختار.')}</p></section>}
+        <section className="card"><div className="section-title compact"><div><p className="eyebrow">{t("AT THE TABLE")}</p><h3>{room.members.filter(member => !member.removed).length}{t("people")}</h3></div>{owner && room.phase === 'LOBBY' && <button className="icon-button" aria-label={t("Invite registered people")} onClick={() => setInviteOpen(!inviteOpen)}>＋</button>}</div>{room.members.filter(member => !member.removed).map(member => <div className="member" key={member.id}><span className="avatar initials small">{initials(member.name)}</span><span><b>{member.name}{member.id === me.id ? ' · You' : ''}</b><small>{member.id === room.payerId ? t("Selected to order") : member.id === room.ownerId ? t("Organizer") : !member.approved ? t("Waiting for approval") : room.carts.find(cart => cart.memberId === member.id)?.submitted ? 'Food submitted' : member.participating ? 'Joined automatically' : 'Skipping'}</small></span>{payer && room.phase === 'COLLECTING' && !member.approved && !member.guest && !member.latePayerApproved && <button className="link" onClick={() => data.send('APPROVE_LATE_JOIN', { memberId: member.id }, room.id)}>{t("Accept late order")}</button>}{owner && !member.approved && ['LOBBY', 'COLLECTING'].includes(room.phase) && (room.phase === 'LOBBY' || member.guest || payer || member.latePayerApproved) && <button className="link" onClick={() => data.send('APPROVE', { memberId: member.id }, room.id)}>{t("Approve")}</button>}</div>)}{inviteOpen && <div className="invite-list"><p>{t("Invite registered people")}</p>{data.home.people.map(person => <button className="person-button" key={person.userId} onClick={() => data.send('IDENTITY', { identity: { action: 'INVITE', userId: person.userId } }, room.id)}><span className="avatar initials small">{initials(person.name)}</span>{person.name}<b>{t("Invite")}</b></button>)}</div>}</section>
+        <section className="card room-tools"><p className="eyebrow">{t("ROOM TOOLS")}</p><button className="secondary wide" onClick={saveCurrentRestaurant}>{t("Save restaurant & prices")}</button>{payer && ['COLLECTING','REVIEW'].includes(room.phase) && data.home.profile.payment && <button className="secondary wide" onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{t("Use saved payment details")}</button>}{owner && ['LOBBY','COLLECTING','REVIEW','ACCEPTING'].includes(room.phase) && <button className="link danger wide" onClick={() => { const reason = window.prompt('Why are you cancelling this order?'); if (reason) data.send('CANCEL', { text: reason }, room.id); }}>{t("Cancel today’s order")}</button>}</section>
+        {(owner || payer) && <RoomManagement key={`${room.id}:${room.orderNumber}:${room.restaurant.id}`} room={room} data={data} owner={owner} payer={payer} />}
+        {selected && <section className="card winner-mini"><p className="eyebrow">{t("SELECTED")}</p><h3>{winner.name}</h3><p>{t("Sandwich entry remains open while the payer confirms.")}</p></section>}
       </aside>
-    </div>
+    </div></fieldset>
   </Page>;
-}
-
-async function adminRequest(path, token = '', body) {
-  const response = await fetch(`${PUBLIC_API_URL}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const value = await response.json().catch(() => ({}));
-  if (!response.ok) throw Error(value.error || 'Admin request failed.');
-  return value;
-}
-
-function AdminApp() {
-  const [token, setToken] = useState(() => sessionStorage.getItem('foodrun-admin-token') || '');
-  const [credentials, setCredentials] = useState({ username: 'Karam', password: '' });
-  const [dashboard, setDashboard] = useState(null);
-  const [tab, setTab] = useState('overview');
-  const [message, setMessage] = useState('');
-  const refresh = async activeToken => {
-    try { setDashboard(await adminRequest('/admin/dashboard', activeToken || token)); setMessage(''); }
-    catch (error) { setMessage(error.message); if (/expired|sign in/i.test(error.message)) { sessionStorage.removeItem('foodrun-admin-token'); setToken(''); } }
-  };
-  useEffect(() => { if (token) refresh(token); }, [token]);
-  const login = async event => {
-    event.preventDefault(); setMessage('');
-    try { const result = await adminRequest('/admin/login', '', credentials); sessionStorage.setItem('foodrun-admin-token', result.token); setToken(result.token); setCredentials(old => ({ ...old, password: '' })); }
-    catch (error) { setMessage(error.message); }
-  };
-  const mutate = async (path, body) => { try { await adminRequest(path, token, body); await refresh(); } catch (error) { setMessage(error.message); } };
-  const saveRestaurant = restaurant => mutate('/admin/restaurant', { action: 'save', restaurant });
-  if (!token) return <main className="center-shell admin-login"><section className="card setup-card"><div className="brand-mark">FR</div><p className="eyebrow">FOOD RUN ADMIN</p><h1>Administration</h1><p className="muted">Server-protected access for users, rooms, wallets, orders, and restaurant menus.</p><form className="stack" onSubmit={login}><label>Admin user<input value={credentials.username} onChange={event => setCredentials({ ...credentials, username: event.target.value })} autoComplete="username" required /></label><label>Password<input type="password" value={credentials.password} onChange={event => setCredentials({ ...credentials, password: event.target.value })} autoComplete="current-password" required /></label>{message && <p className="form-message">{message}</p>}<button className="primary">Sign in</button></form></section></main>;
-  if (!dashboard) return <div className="splash"><div className="brand-mark">FR</div><div className="spinner" /><p>{message || 'Loading admin data…'}</p></div>;
-  const totals = dashboard.rooms.reduce((sum, room) => sum + room.totalMinor, 0);
-  return <main className="admin-shell">
-    <header className="admin-topbar"><div><span className="brand-mark">FR</span><b>Food Run Admin</b></div><div><button className="secondary" onClick={() => refresh()}>Refresh</button><button className="link" onClick={() => { sessionStorage.removeItem('foodrun-admin-token'); setToken(''); }}>Sign out</button></div></header>
-    <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{value[0].toUpperCase() + value.slice(1)}</button>)}</nav>
-    {message && <div className="banner error">{message}</div>}
-    <section className="admin-content">
-      {tab === 'overview' && <><div className="admin-metrics"><article><small>Registered users</small><b>{dashboard.users.length}</b></article><article><small>Rooms</small><b>{dashboard.rooms.length}</b></article><article><small>Saved orders</small><b>{dashboard.archivedOrders.length}</b></article><article><small>Current order value</small><b>{money(totals, 'AED')}</b></article></div><div className="card"><h2>Current activity</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
-      {tab === 'users' && <div className="card admin-table"><h2>Users</h2>{dashboard.users.map(user => <div className="admin-row admin-user-row" key={user.id}><span><b>{user.name || 'Incomplete profile'}</b><small>{user.phone || user.id} · {user.language === 'ar' ? 'Arabic' : 'English'} · {user.discoverable ? 'Discoverable' : 'Private'}</small>{user.paymentIdentifier && <small>{user.paymentMethod === 'AANI' ? 'Aani' : user.paymentBank || 'Bank'} · {user.paymentHolder} · {user.paymentIdentifier}</small>}</span><span className={`status ${user.disabled ? '' : 'live'}`}>{user.disabled ? 'Disabled' : 'Active'}</span><button className={user.disabled ? 'secondary' : 'link danger'} onClick={() => mutate('/admin/user', { userId: user.id, disabled: !user.disabled })}>{user.disabled ? 'Enable' : 'Disable'}</button></div>)}</div>}
-      {tab === 'rooms' && <div className="card"><h2>Live and saved rooms</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div>}
-      {tab === 'orders' && <div className="card"><h2>Order history</h2>{dashboard.archivedOrders.length ? dashboard.archivedOrders.map((room, index) => <AdminRoomRow room={room} key={`${room.id}-${room.orderNumber}-${index}`} />) : <p className="muted">No archived orders yet.</p>}</div>}
-      {tab === 'wallets' && <div className="card"><h2>Wallet and settlement totals</h2>{dashboard.rooms.map(room => <section className="admin-wallet-room" key={room.id}><div className="admin-row wallet-admin"><span><b>{room.name} · #{room.orderNumber}</b><small>{room.payer ? `Payer: ${room.payer}` : 'Payer not selected'}</small></span><span><small>Total</small><b>{money(room.totalMinor, room.currency)}</b></span><span><small>Confirmed</small><b>{money(room.confirmedPaidMinor, room.currency)}</b></span><span><small>Outstanding</small><b>{money(room.outstandingMinor, room.currency)}</b></span></div>{room.wallets.map(wallet => <div className="admin-wallet-person" key={wallet.memberId}><b>{wallet.name}</b><span>Order {money(wallet.totalMinor, room.currency)}</span><span>Paid {money(wallet.paidMinor, room.currency)}</span><span>{wallet.balanceMinor < 0 ? 'Refund' : 'Due'} {money(Math.abs(wallet.balanceMinor), room.currency)}</span></div>)}</section>)}</div>}
-      {tab === 'restaurants' && <AdminRestaurants restaurants={dashboard.restaurants} save={saveRestaurant} remove={restaurantId => mutate('/admin/restaurant', { action: 'delete', restaurantId })} />}
-      {tab === 'settings' && <AdminSettingsPanel settings={dashboard.settings} save={settings => mutate('/admin/settings', settings)} />}
-    </section>
-  </main>;
-}
-
-function AdminRoomRow({ room, onCancel }) {
-  const active = !['ARCHIVED','CANCELLED'].includes(room.phase);
-  return <div className="admin-row"><span><b>{room.name} · {room.code}</b><small>{room.restaurant} · Order #{room.orderNumber} · {room.members} members</small></span><span className={`status ${active ? 'live' : ''}`}>{room.phase}</span><b>{money(room.totalMinor, room.currency)}</b>{onCancel && active && <button className="link danger" onClick={onCancel}>Cancel room</button>}</div>;
-}
-
-function AdminMoneyInput({ value, onCommit, label }) {
-  const [text, setText] = useState(() => minorInput(value));
-  useEffect(() => setText(minorInput(value)), [value]);
-  const commit = () => {
-    try { const next = amount(text || '0', 'AED'); onCommit(next); setText(minorInput(next)); }
-    catch { setText(minorInput(value)); }
-  };
-  return <input inputMode="decimal" value={text} onChange={event => setText(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} aria-label={label} />;
-}
-
-function AdminRestaurants({ restaurants, save, remove }) {
-  const [editing, setEditing] = useState(restaurants[0] ? clone(restaurants[0]) : blankRestaurant());
-  useEffect(() => { const latest = restaurants.find(value => value.id === editing.id); if (latest) setEditing(clone(latest)); }, [restaurants]);
-  const changeItem = (id, key, value) => setEditing(old => ({ ...old, menu: { ...old.menu, items: old.menu.items.map(item => item.id === id ? { ...item, [key]: value } : item) } }));
-  const changeVariant = (itemId, variantId, key, value) => setEditing(old => ({ ...old, menu: { ...old.menu, items: old.menu.items.map(item => item.id === itemId ? { ...item, variants: item.variants.map(variant => variant.id === variantId ? { ...variant, [key]: value } : variant) } : item) } }));
-  const changeOption = (groupId, optionId, key, value) => setEditing(old => ({ ...old, menu: { ...old.menu, optionGroups: old.menu.optionGroups.map(group => group.id === groupId ? { ...group, options: group.options.map(option => option.id === optionId ? { ...option, [key]: value } : option) } : group) } }));
-  const addItem = () => {
-    let categories = editing.menu.categories;
-    if (!categories.length) categories = [{ id: uid(), name: 'Sandwiches', nameAr: 'السندويشات', sortOrder: 0 }];
-    setEditing(old => ({ ...old, openOrdering: false, menu: { ...old.menu, categories, items: [...old.menu.items, { id: uid(), categoryId: categories[0].id, name: 'New item', nameAr: 'صنف جديد', description: '', descriptionAr: '', basePriceMinor: 0, available: true, variants: [], optionGroupIds: [] }] } }));
-  };
-  return <div className="admin-restaurant-layout">
-    <aside className="card admin-restaurant-list"><button type="button" className="primary wide" onClick={() => setEditing(blankRestaurant())}>Add restaurant</button>{restaurants.map(restaurant => <button type="button" className={editing.id === restaurant.id ? 'active' : ''} onClick={() => setEditing(clone(restaurant))} key={restaurant.id}><b>{restaurant.name}</b><small>{restaurant.menu.items.length} items</small></button>)}</aside>
-    <section className="card stack">
-      <div className="section-title compact"><h2>Restaurant and menu</h2>{restaurants.some(value => value.id === editing.id) && <button type="button" className="link danger" onClick={() => remove(editing.id)}>Delete restaurant</button>}</div>
-      <div className="form-grid two"><label>English name<input value={editing.name} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label><label>Arabic name<input dir="rtl" value={editing.nameAr || ''} onChange={event => setEditing({ ...editing, nameAr: event.target.value })} /></label><label>UAE phone<input value={editing.contact.phoneE164 || ''} onChange={event => setEditing({ ...editing, contact: { ...editing.contact, phoneE164: event.target.value || null } })} /></label><label>Default delivery fee · AED<AdminMoneyInput value={editing.pricing.defaultDeliveryFeeMinor} onCommit={value => setEditing({ ...editing, pricing: { ...editing.pricing, defaultDeliveryFeeMinor: value } })} label="Default delivery fee in AED" /></label></div>
-      <div className="section-title compact"><h3>Menu prices</h3><button type="button" className="secondary" onClick={addItem}>Add menu item</button></div>
-      {editing.menu.items.map(item => <section className="admin-menu-block" key={item.id}><div className="admin-menu-item"><input value={item.name} onChange={event => changeItem(item.id, 'name', event.target.value)} aria-label="English item name" /><input dir="rtl" value={item.nameAr || ''} onChange={event => changeItem(item.id, 'nameAr', event.target.value)} aria-label="Arabic item name" /><AdminMoneyInput value={item.basePriceMinor} onCommit={value => changeItem(item.id, 'basePriceMinor', value)} label={`${item.name} base price in AED`} /><button type="button" className="link danger" onClick={() => setEditing(old => ({ ...old, menu: { ...old.menu, items: old.menu.items.filter(value => value.id !== item.id) } }))}>Remove</button></div>{item.variants.map(variant => <div className="admin-price-row" key={variant.id}><small>Variant</small><input value={variant.name} onChange={event => changeVariant(item.id, variant.id, 'name', event.target.value)} /><input dir="rtl" value={variant.nameAr || ''} onChange={event => changeVariant(item.id, variant.id, 'nameAr', event.target.value)} /><AdminMoneyInput value={variant.priceMinor} onCommit={value => changeVariant(item.id, variant.id, 'priceMinor', value)} label={`${variant.name} price in AED`} /></div>)}</section>)}
-      {editing.menu.optionGroups.flatMap(group => group.options.map(option => <div className="admin-price-row" key={option.id}><small>{group.name}</small><input value={option.name} onChange={event => changeOption(group.id, option.id, 'name', event.target.value)} /><input dir="rtl" value={option.nameAr || ''} onChange={event => changeOption(group.id, option.id, 'nameAr', event.target.value)} /><AdminMoneyInput value={option.priceDeltaMinor} onCommit={value => changeOption(group.id, option.id, 'priceDeltaMinor', value)} label={`${option.name} price in AED`} /></div>))}
-      <button type="button" className="primary wide" onClick={() => save(normalizeRestaurant(editing))}>Save restaurant and all prices</button>
-    </section>
-  </div>;
-}
-
-function AdminSettingsPanel({ settings, save }) {
-  const [form, setForm] = useState(settings);
-  return <section className="card stack admin-settings"><h2>Website options</h2><label className="check"><input type="checkbox" checked={form.registrationsEnabled} onChange={event => setForm({ ...form, registrationsEnabled: event.target.checked })} /> Allow new user registration</label><label className="check"><input type="checkbox" checked={form.roomCreationEnabled} onChange={event => setForm({ ...form, roomCreationEnabled: event.target.checked })} /> Allow new room creation</label><label>Maintenance message<textarea value={form.maintenanceMessage} onChange={event => setForm({ ...form, maintenanceMessage: event.target.value })} maxLength="500" /></label><button className="primary" onClick={() => save(form)}>Save website options</button></section>;
 }
 
 function FoodRunClient() {
   const data = useFoodRun();
   const [siteConfig, setSiteConfig] = useState({ registrationsEnabled: true, roomCreationEnabled: true, maintenanceMessage: '' });
   const inviteCode = useMemo(() => new URLSearchParams(window.location.search).get('room')?.replace(/\D/g, '').slice(0, 6) || '', []);
-  const [page, setPage] = useState(inviteCode ? 'join' : 'home');
+  const [page, setPage] = useState(window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : inviteCode ? 'join' : 'home');
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [page]);
   const [roomId, setRoomId] = useState('');
   const restoredRoom = useRef(false);
   useEffect(() => { fetch(`${PUBLIC_API_URL}/config`).then(response => response.ok ? response.json() : Promise.reject()).then(setSiteConfig).catch(() => {}); }, []);
@@ -884,36 +921,42 @@ function FoodRunClient() {
   };
   const closeRoom = () => { localStorage.removeItem(ACTIVE_ROOM_KEY); setRoomId(''); setPage('home'); };
   useEffect(() => {
-    if (restoredRoom.current || inviteCode || !data.user || !data.hub) return;
+    if (page === 'admin' || restoredRoom.current || inviteCode || !data.user || !data.hub) return;
     let saved;
     try { saved = JSON.parse(localStorage.getItem(ACTIVE_ROOM_KEY) || 'null'); } catch { saved = null; }
     if (saved?.userId === data.user.uid && saved?.hub === data.hub && data.sessions[saved.roomId]) {
       setRoomId(saved.roomId); setPage('room'); restoredRoom.current = true;
     } else if (Object.keys(data.sessions).length > 0) restoredRoom.current = true;
   }, [data.user, data.hub, data.sessions, inviteCode]);
-  const alerts = useMemo(() => <>{siteConfig.maintenanceMessage && <div className="banner notice">{siteConfig.maintenanceMessage}</div>}{data.error && <div className="banner error" role="alert">{data.error}{data.hasPending && <button onClick={data.retry}>Retry saved request</button>}</div>}{data.notice && <div className="banner notice">{data.notice}<button aria-label="Close" onClick={() => data.setNotice('')}>×</button></div>}</>, [siteConfig.maintenanceMessage, data.error, data.hasPending, data.notice]);
-  if (!data.authReady || (data.user && data.hub && !data.home && !data.error)) return <><div className="splash"><div className="brand-mark">FR</div><div className="spinner" /><p>Setting the table…</p></div>{alerts}</>;
+  const alerts = useMemo(() => <>{siteConfig.maintenanceMessage && <div className="banner notice">{siteConfig.maintenanceMessage}</div>}{data.error && <div className="banner error" role="alert">{data.error}{data.hasPending && <button onClick={data.retry}>{t("Retry saved request")}</button>}</div>}{data.notice && <div className="banner notice">{data.notice}<button aria-label={t("Close")} onClick={() => data.setNotice('')}>×</button></div>}</>, [siteConfig.maintenanceMessage, data.error, data.hasPending, data.notice]);
+  if (data.user && page === 'offline') return <>{alerts}<OfflineReceipts receipts={data.offlineReceipts} language={uiLanguage} onBack={() => setPage('home')} onClear={data.clearOfflineReceipts} /></>;
+  const offlineAction = data.user && <button className="secondary" onClick={() => setPage('offline')}>{tx('Downloaded receipts', 'الإيصالات المحفوظة')}</button>;
+  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && !data.error)) return <><div className="splash"><div className="brand-mark">FR</div><div className="spinner" /><p>{t("Setting the table…")}</p>{offlineAction}</div>{alerts}</>;
   if (!data.user) return <AuthScreen ready={data.authReady} allowRegistration={siteConfig.registrationsEnabled} />;
-  if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} />{alerts}</>;
+  if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
+  if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
   const home = data.home;
   const profileMissing = !home.profile.name || !home.profile.phone;
   let content;
-  if (page === 'downloads') content = <Page title="Get Food Run" subtitle="Install the mobile app and keep your table close." onBack={() => setPage('home')}><AppDownloads /></Page>;
-  else if (page === 'profile' || profileMissing) content = <ProfileScreen profile={home.profile} busy={data.busy} send={data.send} onBack={() => setPage('home')} />;
-  else if (page === 'restaurants') content = <RestaurantLibraryScreen onBack={() => setPage('home')} />;
+  if (page === 'downloads') content = <Page title={t("Get Food Run")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
+  else if (page === 'profile' || profileMissing) content = <ProfileScreen data={data} openRoom={openRoom} onBack={() => setPage('home')} />;
+  else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} onBack={() => setPage('home')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <>{alerts}{content}<footer><span>Food Run</span><button onClick={() => setPage('restaurants')}>Restaurants & menus</button><button onClick={() => setPage('downloads')}>Get the apps</button><button onClick={() => setPage('profile')}>Profile</button><button onClick={() => data.connect('')}>Switch room server</button><button onClick={() => signOut(auth)}>Sign out</button></footer></>;
+  return <>{alerts}{content}<footer><span>Food Run</span>{offlineAction}<button onClick={() => setPage('restaurants')}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={() => signOut(auth)}>{t("Sign out")}</button></footer></>;
 }
 
 export default function FoodRunApp() {
   const [language, setLanguage] = useState(uiLanguage);
   uiLanguage = language;
+  setTranslationLanguage(language);
   updateLanguage = value => { localStorage.setItem(LANGUAGE_KEY, value); setLanguage(value); };
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
-  return window.location.pathname.replace(/\/+$/, '') === '/admin' ? <AdminApp /> : <FoodRunClient />;
+  return <Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>{<FoodRunClient />}</Suspense>;
 }
+
+export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };

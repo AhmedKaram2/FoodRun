@@ -50,6 +50,10 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
         HubWatch(hub: hub, body: body, callback: callback)
     }
 
+    func copyToClipboard(text: String) {
+        UIPasteboard.general.string = text
+    }
+
     func share(text: String, fileName: String) { documents.share(text: text, fileName: fileName) }
     func doCopyToClipboard(text: String) { UIPasteboard.general.string = text }
     func importMenu(callback: GroupReplyCallback) { documents.importMenu(callback) }

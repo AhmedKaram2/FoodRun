@@ -7,6 +7,7 @@ struct GroupFieldContent: View {
     let field: GroupField
     let enabled: Bool
     let onChange: (String) -> Void
+    @State private var photoError = ""
     @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
@@ -23,6 +24,7 @@ struct GroupFieldContent: View {
                         .font(FoodTypography.button).frame(maxWidth: .infinity, minHeight: FoodSpacing.s48)
                         .foregroundStyle(.white).background(FoodTheme.orange, in: RoundedRectangle(cornerRadius: FoodRadius.input))
                 }.disabled(!enabled)
+                if !photoError.isEmpty { Text(photoError).foregroundStyle(FoodTheme.orange).accessibilityAddTraits(.isStaticText) }
                 if !field.value.isEmpty {
                     Button(role: .destructive) { onChange("") } label: { Text("Remove photo").frame(maxWidth: .infinity) }
                         .disabled(!enabled)
@@ -33,10 +35,15 @@ struct GroupFieldContent: View {
                 guard let photo else { return }
                 Task {
                     guard let data = try? await photo.loadTransferable(type: Data.self), data.count <= 10 * 1_024 * 1_024,
-                          let source = UIImage(data: data), let encoded = resizedPhoto(source) else { return }
-                    await MainActor.run { onChange("data:image/jpeg;base64," + encoded.base64EncodedString()) }
+                          let source = UIImage(data: data), let encoded = resizedPhoto(source) else { await MainActor.run { photoError = "Choose a readable photo under 10 MB." }; return }
+                    await MainActor.run { photoError = ""; onChange("data:image/jpeg;base64," + encoded.base64EncodedString()) }
                 }
             }
+        } else if field.key == .quantity {
+            Stepper(value: Binding(get: { min(99, max(1, Int(field.value) ?? 1)) }, set: { onChange(String($0)) }), in: 1...99) {
+                Text("\(field.label): \(field.value)").font(FoodTypography.setting)
+            }.padding(FoodSpacing.s16).foodCard(showsBorder: true).disabled(!enabled)
+                .accessibilityIdentifier(field.key.name)
         } else if field.toggle {
             Toggle(field.label, isOn: Binding(
                 get: { field.value == "true" },
@@ -117,7 +124,8 @@ struct GroupFieldContent: View {
     private var keyboard: UIKeyboardType {
         switch field.key {
         case .hubUrl, .pairingLink: .URL
-        case .phone: .phonePad
+        case .phone, .profilePhone: .phonePad
+        case .email: .emailAddress
         case .jsonMenu, .fingerprint, .accountIdentifier: .asciiCapable
         // Bill adjustments accept a leading minus; decimalPad has no minus key.
         case .billAdjustment: .numbersAndPunctuation

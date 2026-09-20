@@ -13,7 +13,7 @@ struct GroupScreen: View {
             if state.page == .quickSpin {
                 VStack(spacing: FoodSpacing.s0) {
                     Button { store.dispatch(.back) } label: {
-                        Label(GroupText.shared.backToRooms, systemImage: "chevron.left")
+                        Label(GroupText.shared.localized(value: GroupText.shared.backToRooms, rtl: state.rtl), systemImage: "chevron.left")
                             .font(FoodTypography.setting).frame(minHeight: FoodSpacing.s44)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, FoodSpacing.s24)
                     ContentView(store: wheelStore)
@@ -36,11 +36,11 @@ struct GroupScreen: View {
                         GroupHomeContent(state: state, dispatch: store.dispatch).id("groupHeader")
                     } else {
                         header.id("groupHeader")
-                        if state.progressStep >= 0 { GroupProgress(step: Int(state.progressStep)) }
+                        if state.progressStep >= 0 { GroupProgress(step: Int(state.progressStep), rtl: state.rtl) }
                         if let wheel = state.wheel { GroupWheelContent(wheel: wheel).id(wheel.round.id) }
                         ForEach(state.mainFields, id: \.key.name) { field in fieldContent(field) }
                         if state.page != .room { extraOptions }
-                        ForEach(state.inlineButtons, id: \.renderID) { button in
+                        ForEach(state.inlineButtons.filter { $0.action != .setLanguage }, id: \.renderID) { button in
                             GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch, prominent: false)
                         }
                         ForEach(Array(state.sections.enumerated()), id: \.offset) { _, section in
@@ -63,7 +63,7 @@ struct GroupScreen: View {
                 VStack(spacing: FoodSpacing.s0) {
                     if !state.error.isEmpty { GroupErrorBanner(message: state.error) }
                     if state.busy {
-                        ProgressView(GroupText.shared.working).font(FoodTypography.status)
+                        ProgressView(GroupText.shared.localized(value: GroupText.shared.working, rtl: state.rtl)).font(FoodTypography.status)
                             .padding(FoodSpacing.s8).frame(maxWidth: .infinity).background(FoodTheme.cream)
                     }
                 }
@@ -101,12 +101,12 @@ struct GroupScreen: View {
             HStack {
                 if state.canGoBack {
                     Button { store.dispatch(.back) } label: {
-                        Label(GroupText.shared.back, systemImage: "chevron.left").font(FoodTypography.setting)
+                        Label(GroupText.shared.localized(value: GroupText.shared.back, rtl: state.rtl), systemImage: "chevron.left").font(FoodTypography.setting)
                             .frame(minHeight: FoodSpacing.s44)
                     }
                 }
                 Spacer()
-                Text(FoodStrings.text.brand).font(FoodTypography.eyebrow).tracking(FoodSpacing.s2).foregroundStyle(FoodTheme.muted)
+                GroupLanguagePicker(state: state, dispatch: store.dispatch)
             }
             Text(state.title).font(FoodTypography.hero).foregroundStyle(FoodTheme.ink)
                 .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
@@ -146,7 +146,7 @@ struct GroupScreen: View {
             VStack(spacing: FoodSpacing.s16) {
                 Button { optionsExpanded.toggle() } label: {
                     HStack(spacing: FoodSpacing.s12) {
-                        Text(state.page == .connect ? GroupText.shared.manualConnection : state.page == .library ? GroupText.shared.pasteMenu : GroupText.shared.roomOptions)
+                        Text(state.page == .connect ? GroupText.shared.localized(value: GroupText.shared.manualConnection, rtl: state.rtl) : state.page == .library ? GroupText.shared.localized(value: GroupText.shared.pasteMenu, rtl: state.rtl) : GroupText.shared.localized(value: GroupText.shared.roomOptions, rtl: state.rtl))
                             .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
                         Spacer(minLength: FoodSpacing.s8)
                         Image(systemName: optionsExpanded ? "chevron.up" : "chevron.down")

@@ -24,10 +24,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -82,9 +86,12 @@ internal fun GroupErrorBanner(message: String) {
 internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: GroupController) {
     if (field.key == GroupFieldKey.PHOTO) {
         val context = LocalContext.current
+        var photoError by remember { mutableStateOf("") }
         val scope = rememberCoroutineScope()
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri != null) scope.launch {
+                try {
+                photoError = ""
                 val value = withContext(Dispatchers.IO) {
                     val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readNBytes(10 * 1024 * 1024 + 1) }
                     require(bytes.size <= 10 * 1024 * 1024) { "Choose a photo under 10 MB." }
@@ -97,6 +104,8 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
                     "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
                 }
                 controller.update(GroupFieldKey.PHOTO, value)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: Exception) { photoError = failure.message ?: "This photo could not be opened. Choose another image." }
             }
         }
         val preview = remember(field.value) {
@@ -106,11 +115,20 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
         }
         FoodCard(bordered = true) {
             Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (photoError.isNotEmpty()) Text(photoError, color = FoodColors.Orange, modifier = Modifier.semantics { error(photoError) })
                 if (preview != null) Image(preview.asImageBitmap(), "Selected profile photo", Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = ContentScale.Crop)
                 Text(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected", style = FoodType.Input, color = FoodColors.Ink)
                 PrimaryButton(if (field.value.isBlank()) "Choose from gallery" else "Change photo", null, enabled = !busy) { launcher.launch("image/*") }
                 if (field.value.isNotBlank()) SecondaryButton("Remove photo", null, enabled = !busy, destructive = true) { controller.update(GroupFieldKey.PHOTO, "") }
             }
+        }
+    } else if (field.key == GroupFieldKey.QUANTITY) {
+        val quantity = (field.value.toIntOrNull() ?: 1).coerceIn(1, 99)
+        Row(Modifier.fillMaxWidth().testTag(field.key.name), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {
+            Text(field.label, modifier = Modifier.weight(1f), style = FoodType.Input)
+            TextButton(enabled = !busy && quantity > 1, onClick = { controller.update(field.key, (quantity - 1).toString()) }) { Text("−") }
+            Text(quantity.toString(), style = FoodType.Input)
+            TextButton(enabled = !busy && quantity < 99, onClick = { controller.update(field.key, (quantity + 1).toString()) }) { Text("+") }
         }
     } else if (field.toggle) {
         Row(

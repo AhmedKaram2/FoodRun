@@ -14,12 +14,14 @@ enum class GroupAction {
     OPEN_ACCOUNT, NEW_ACCOUNT, SELECT_ACCOUNT, SAVE_ACCOUNT, SHARE_ACCOUNT, DELETE_ACCOUNT, SET_FEES, PLACE, PAY_RESTAURANT,
     FULFILL, CALL_RESTAURANT, SHARE_RESTAURANT_ORDER, SHARE_ORDER_WHATSAPP, OPEN_RECEIPTS, OPEN_HISTORY, LOAD_OLDER_HISTORY, DECLARE_TRANSFER, CONFIRM_TRANSFER, REJECT_TRANSFER,
     DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL, NEXT_ORDER, SHARE_ROOM, SHARE_RECEIPT,
+    REUSE_ORDER, FAVORITE_ORDER, REMOVE_FAVORITE_ORDER, COPY_PAYMENT_DETAILS, USE_REMAINING_AMOUNT, MORE_PREVIOUS_ORDERS,
+    QUICK_ADD_ITEM, INCREASE_CART_QUANTITY, DECREASE_CART_QUANTITY,
 }
 internal const val FOOD_RUN_INTERNET_API = "https://foodrun-api-q6b9.onrender.com"
 enum class GroupFieldKey {
     EMAIL, PASSWORD, PROFILE_PHONE, PHOTO, AANI, DISCOVERABLE, CUSTOM_NAME, HUB_URL, FINGERPRINT, PAIRING_LINK, NAME, ROOM_NAME, ROOM_CODE, EXPECTED_NAMES, RESTAURANT_POLL, DELIVERY, DESTINATION,
     RESTAURANT_NAME, BRANCH, CURRENCY, PHONE, ADDRESS, MENU_ITEM_NAME, MENU_ITEM_PRICE, DELIVERY_FEE, SERVICE_FEE, DISCOUNT, TAX_RATE, MINIMUM_ORDER,
-    PROPORTIONAL, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
+    MENU_SEARCH, PROPORTIONAL, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
 }
 data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false)
 data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
@@ -52,6 +54,31 @@ data class GroupState(
 }
 interface GroupObserver { fun changed(state: GroupState) }
 object GroupText {
+    fun localized(value: String, rtl: Boolean): String = if(!rtl) value else when(value) {
+        homeTitle -> "أكل طيب.\nأحلى مع بعض."
+        homeSubtitle -> "شارك أصحابك الوجبة القادمة."
+        groupEyebrow -> "مكان للجميع"
+        groupTitle -> "غرفة واحدة لكل المجموعة."
+        groupDescription -> "اختاروا الطعام ومسؤول الطلب واجمعوا طلباتكم معاً."
+        quickDescription -> "اختاروا من يجلب الطعام دون إعداد مسبق."
+        libraryDescription -> "احتفظ بقوائم مطاعمك المفضلة."
+        savedRooms -> "مجموعاتك"
+        explore -> "خيارات فود رن"
+        back, backToRooms -> "رجوع"
+        working -> "جارٍ تحديث مجموعتك…"
+        roomCode -> "رمز الغرفة"
+        roomOptions -> "خيارات الغرفة والتعديلات"
+        manualConnection -> "إدخال بيانات الاتصال يدوياً"
+        pasteMenu -> "لصق قائمة المطعم"
+        details -> "بياناتك"
+        "Join" -> "انضمام"
+        "Restaurant" -> "المطعم"
+        "Sandwiches" -> "السندويشات"
+        "Pick payer" -> "مسؤول الطلب"
+        "Confirm" -> "تأكيد"
+        "Settle" -> "تسوية"
+        else -> value
+    }
     val brand = "FOOD RUN / TOGETHER"
     val back = "Back"
     val backToRooms = "Back to rooms"

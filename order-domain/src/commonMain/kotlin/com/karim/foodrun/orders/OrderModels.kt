@@ -11,7 +11,7 @@ import kotlin.math.pow
 )
 @Serializable data class CartLine(val id: String, val itemId: String, val quantity: Int, val variantId: String? = null, val optionIds: List<String> = emptyList(), val notes: String = "", val description: String = "", val unitPrice: Long? = null)
 @Serializable data class MemberCart(val memberId: String, val revision: Long = 0, val lines: List<CartLine> = emptyList(), val submitted: Boolean = false, val confirmedQuote: Long = -1)
-@Serializable data class FeePolicy(val delivery: Long = 0, val service: Long = 0, val discount: Long = 0, val proportionalDelivery: Boolean = false)
+@Serializable data class FeePolicy(val delivery: Long = 0, val service: Long = 0, val discount: Long = 0, val proportionalDelivery: Boolean = false, val automaticDelivery: Boolean = false)
 @Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1, val method: PaymentMethod = PaymentMethod.BANK) {
     fun validate() {
         MenuValidation.label(id); MenuValidation.label(holder); MenuValidation.label(bank)
@@ -77,4 +77,8 @@ import kotlin.math.pow
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }
 }
-@Serializable data class PastOrder(val number: Long, val restaurantName: String, val completedAt: Long, val receipts: List<Receipt>, val account: ReceivingAccount? = null)
+@Serializable data class PastOrder(
+    val number: Long, val restaurantName: String, val completedAt: Long,
+    val receipts: List<Receipt>, val account: ReceivingAccount? = null,
+    val restaurantId: String = "",
+)

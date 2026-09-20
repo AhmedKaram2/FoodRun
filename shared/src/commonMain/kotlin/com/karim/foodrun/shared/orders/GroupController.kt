@@ -9,6 +9,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
     internal var error = ""
+    internal var previousOrderLimit = 10
     internal var busy = false
     internal var online = false
     internal var reply: RoomReply? = null
@@ -154,6 +155,9 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.SELECT_VARIANT -> variant = value
             GroupAction.TOGGLE_OPTION -> options = if (value in options) options - value else options + value
             GroupAction.ADD_CART_ITEM -> addCartItem()
+            GroupAction.QUICK_ADD_ITEM -> quickAddMenuItem(value)
+            GroupAction.INCREASE_CART_QUANTITY -> changeCartQuantity(value, 1)
+            GroupAction.DECREASE_CART_QUANTITY -> changeCartQuantity(value, -1)
             GroupAction.REMOVE_CART_ITEM -> { val cart = myCart(); command(CommandKind.CART, cart = cart.copy(lines = cart.lines.filterNot { it.id == value }), revision = cart.revision) }
             GroupAction.OPEN_ACCOUNT -> {
                 reply?.room?.account?.let { selectedAccount = it; seedAccount(it) }
@@ -184,6 +188,16 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.SHARE_ORDER_WHATSAPP -> platform.openLink("https://wa.me/?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
             GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share("Food Run · ${room().name}\nJoin link: ${roomInviteLink(s.hub, room().code)}\nRoom code: ${room().code}\nJoin once; this room stays in your app.", "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
+            GroupAction.COPY_PAYMENT_DETAILS -> platform.copyToClipboard(requireNotNull(room().account) { "Payment details are not shared yet." }.identifier)
+            GroupAction.USE_REMAINING_AMOUNT -> {
+                val receipt = requireNotNull(reply?.receipts?.firstOrNull { it.memberId == me() })
+                require(receipt.balance > 0 && room().payerId != me()) { "No payment is due." }
+                draft[GroupFieldKey.AMOUNT] = Money.format(receipt.balance, receipt.currency).substringAfter(' ')
+            }
+            GroupAction.MORE_PREVIOUS_ORDERS -> previousOrderLimit += 10
+            GroupAction.REUSE_ORDER -> reuseOrder(value)
+            GroupAction.FAVORITE_ORDER -> favoriteOrder(value)
+            GroupAction.REMOVE_FAVORITE_ORDER -> removeFavoriteOrder(value)
             GroupAction.NEXT_ORDER -> prepareNextOrder()
             else -> dispatchRoom(action, value)
         } } catch (e: Exception) { error = e.message ?: "This action could not be completed." }
@@ -392,13 +406,15 @@ class GroupController(val platform: GroupPlatform) {
                 method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
         }
         return FoodProfile(name = name, phone = text(GroupFieldKey.PROFILE_PHONE).trim(), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
-            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language).normalized().also { it.validate() }
+            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language,
+            favoriteOrders = library.home?.profile?.favoriteOrders.orEmpty()).normalized().also { it.validate() }
     }
-    private fun identity(action: IdentityAction, value: String = "") {
+    internal fun saveProfileUpdate(profile: FoodProfile) = identity(IdentityAction.SAVE_PROFILE, profileOverride = profile, returnPage = page)
+    private fun identity(action: IdentityAction, value: String = "", profileOverride: FoodProfile? = null, returnPage: GroupPage? = null) {
         val hub = if (action in listOf(IdentityAction.SIGN_IN, IdentityAction.REGISTER, IdentityAction.RESET_PASSWORD)) requireNotNull(library.selectedHub) else requireNotNull(library.identityHub ?: library.selectedHub)
         if (action == IdentityAction.INVITE) require(sameHub(session?.hub, hub)) { "Sign in on this room's server before inviting registered people." }
         val request = IdentityRequest(action, text(GroupFieldKey.EMAIL).trim(), text(GroupFieldKey.PASSWORD),
-            if(action in listOf(IdentityAction.REGISTER, IdentityAction.SAVE_PROFILE)) profileDraft() else null,
+            if(action in listOf(IdentityAction.REGISTER, IdentityAction.SAVE_PROFILE)) profileOverride ?: profileDraft() else null,
             userId = if(action == IdentityAction.INVITE) value else "", invitationId = if(action == IdentityAction.ACCEPT_INVITE) value else "")
         val c = RoomCommand(commandId = platform.uuid(), kind = CommandKind.IDENTITY, identity = request,
             identityToken = library.identityToken, roomId = session?.roomId ?: "", token = session?.token ?: "")
@@ -423,7 +439,7 @@ class GroupController(val platform: GroupPlatform) {
                     } else if(result.home != null) {
                         val home = requireNotNull(result.home)
                         replaceLibrary(library.copy(identityToken = result.identityToken.ifEmpty { library.identityToken }, identityHub = hub))
-                        acceptHome(home, hub); page = if(action == IdentityAction.INVITE) GroupPage.PEOPLE else GroupPage.HOME
+                        acceptHome(home, hub); page = returnPage ?: if(action == IdentityAction.INVITE) GroupPage.PEOPLE else GroupPage.HOME
                     } else this@GroupController.error = "If an account exists, a password reset email has been requested."
                     startHomeWatching()
                 } catch(e: Exception) { this@GroupController.error = e.message ?: "Account update failed. Retry." }

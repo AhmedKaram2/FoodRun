@@ -138,8 +138,8 @@ class GroupFlowIntegrationTest {
         }
         assertEquals(GroupAction.REVIEW, host.state.primaryAction?.action)
         assertTrue(host.state.primaryAction!!.enabled)
-        assertTrue(payer.state.cards.single { it.id == "order-next-step" }.detail.contains("Waiting for Karim"))
-        host.dispatch(GroupAction.REVIEW); bus.drain(); bus.sync()
+        assertTrue(payer.state.buttons.single { it.action == GroupAction.REVIEW }.enabled)
+        payer.dispatch(GroupAction.REVIEW); bus.drain(); bus.sync()
         assertEquals(RoomPhase.REVIEW, payer.room().phase)
         payer.dispatch(GroupAction.CONFIRM_QUOTE); bus.drain(); bus.sync()
         val quote = payer.room().quoteRevision
@@ -688,6 +688,59 @@ class GroupFlowIntegrationTest {
         bus.db.save(raw.copy(fees = raw.fees.copy(delivery = 1500), revision = raw.revision + 1))
         bus.sync(); assertEquals("15.00", restored.text(GroupFieldKey.DELIVERY_FEE))
     }
+    @Test fun predefinedMenuQuantityActionsNeedNoTypedNamesAndPreserveOneCartLine(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        repeat(2) { c.dispatch(GroupAction.QUICK_ADD_ITEM, "burger"); bus.drain(); bus.sync() }
+        assertEquals("", c.state.error)
+        val line = c.myCart().lines.single()
+        assertEquals("burger", line.itemId)
+        assertEquals("", line.description)
+        assertEquals(2, line.quantity)
+        assertEquals("AED 70.00", c.state.cards.single { it.id == "cart:${line.id}" }.badge)
+        c.dispatch(GroupAction.DECREASE_CART_QUANTITY, line.id); bus.drain(); bus.sync()
+        assertEquals(1, c.myCart().lines.single().quantity)
+        c.dispatch(GroupAction.INCREASE_CART_QUANTITY, line.id); bus.drain(); bus.sync()
+        assertEquals(2, c.myCart().lines.single().quantity)
+        c.dispatch(GroupAction.DECREASE_CART_QUANTITY, line.id); bus.drain()
+        c.dispatch(GroupAction.DECREASE_CART_QUANTITY, line.id); bus.drain(); bus.sync()
+        assertTrue(c.myCart().lines.isEmpty())
+        c.dispatch(GroupAction.SET_LANGUAGE, "ar")
+        assertEquals("الكمية والملاحظات", c.state.cards.single { it.id == "menu:burger" }.buttons.last().title)
+    }
+
+    @Test fun configuredItemsCannotBypassSizeOrExtrasWithQuickAdd(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        val room = c.room()
+        val restaurant = room.restaurant.copy(menu = room.restaurant.menu.copy(items = room.restaurant.menu.items.map {
+            if(it.id == "burger") it.copy(variants = listOf(MenuVariant("large", "Large", 4000))) else it
+        }))
+        bus.db.save(room.copy(restaurant = restaurant)); bus.sync()
+        val actions = c.state.cards.single { it.id == "menu:burger" }.buttons
+        assertEquals(listOf(GroupAction.OPEN_ITEM), actions.map { it.action })
+        c.dispatch(GroupAction.QUICK_ADD_ITEM, "burger"); bus.drain()
+        assertTrue(c.state.error.contains("size and extras"))
+        assertTrue(c.myCart().lines.isEmpty())
+        c.dispatch(GroupAction.OPEN_ITEM, "burger")
+        c.update(GroupFieldKey.QUANTITY, "3")
+        c.dispatch(GroupAction.ADD_CART_ITEM); bus.drain(); bus.sync()
+        assertEquals(3, c.myCart().lines.single().quantity)
+        assertEquals("large", c.myCart().lines.single().variantId)
+    }
+
+    @Test fun walletExcludesCancelledFoodAndSearchSupportsArabic(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        val receipt = Receipt(c.me(), "Karim", emptyList(), 1000, 0, 0, 0, 0, 1000, 0, 1000, 1, "AED")
+        val snapshot = c.reply!!.copy(room = c.room().copy(phase = RoomPhase.CANCELLED, payerId = "other"), receipts = listOf(receipt))
+        c.library = c.library.copy(snapshots = c.library.snapshots + (c.room().id to snapshot))
+        c.page = GroupPage.HOME
+        assertTrue(c.state.cards.single { it.id == "dashboard:wallet-summary" }.detail.contains("pay AED 0.00"))
+        c.page = GroupPage.ROOM
+        val restaurant = c.room().restaurant.copy(menu = c.room().restaurant.menu.copy(items = c.room().restaurant.menu.items.map { if(it.id == "burger") it.copy(nameAr = "برجر") else it }))
+        c.reply = c.reply!!.copy(room = c.room().copy(restaurant = restaurant))
+        c.update(GroupFieldKey.MENU_SEARCH, "برجر")
+        assertEquals(listOf("menu:burger"), c.state.cards.filter { it.id.startsWith("menu:") }.map { it.id })
+    }
+
     @Test fun historicalReceiptExportsKeepTheirOwnRestaurantAndRecipient(): Unit = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)
         val account = ReceivingAccount("old-account", "Previous payer", "Old Bank", "987654321")
@@ -699,6 +752,30 @@ class GroupFlowIntegrationTest {
         c.dispatch(GroupAction.SHARE_RECEIPT, "past:1:${c.me()}")
         assertTrue(phone.shared.contains("order #1")); assertTrue(phone.shared.contains("Old restaurant"))
         assertTrue(phone.shared.contains("Previous payer")); assertTrue(phone.shared.contains("987654321"))
+    }
+    @Test fun repeatedPreviousOrdersCollapseAndChangedQuantityRemainsReusable(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        fun receipt(quantity: Int, amount: Long) = Receipt(
+            c.me(), "Karim", listOf(ReceiptLine("Burger", quantity, amount, itemId = "burger")),
+            amount, 0, 0, 0, 0, amount, 0, amount, 1, "AED",
+        )
+        val history = listOf(
+            PastOrder(1, "Test Kitchen", bus.time - 3_000, listOf(receipt(1, 3_500)), restaurantId = "kitchen"),
+            PastOrder(2, "Test Kitchen", bus.time - 2_000, listOf(receipt(1, 3_700)), restaurantId = "kitchen"),
+            PastOrder(3, "Test Kitchen", bus.time - 1_000, listOf(receipt(2, 7_000)), restaurantId = "kitchen"),
+        )
+        c.reply = c.reply!!.copy(history = history)
+        c.library = c.library.copy(snapshots = c.library.snapshots + (c.room().id to c.reply!!))
+
+        val choices = c.previousOrderChoices(c.room().restaurant)
+        assertEquals(2, choices.size)
+        assertEquals(2, choices.single { it.receipt.lines.single().quantity == 1 }.repeatCount)
+        assertEquals(1, choices.single { it.receipt.lines.single().quantity == 2 }.repeatCount)
+
+        c.dispatch(GroupAction.REUSE_ORDER, choices.single { it.receipt.lines.single().quantity == 2 }.value)
+        bus.drain(); bus.sync()
+        assertEquals(2, c.myCart().lines.single().quantity)
+        assertEquals("burger", c.myCart().lines.single().itemId)
     }
     @Test fun pairingSameHubAtNewAddressUpdatesSavedSessionsWithoutRejoining(): Unit = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)

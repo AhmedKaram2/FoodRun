@@ -2,13 +2,6 @@ package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
-
-@Serializable data class AdminLogin(val username: String, val password: String)
-@Serializable data class AdminSessionReply(val token: String, val expiresAt: Long)
 @Serializable data class AdminSettings(val registrationsEnabled: Boolean = true, val roomCreationEnabled: Boolean = true, val maintenanceMessage: String = "")
 @Serializable data class AdminUserView(
     val id: String, val name: String, val phone: String, val discoverable: Boolean, val disabled: Boolean,
@@ -32,30 +25,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 class AdminService(
     private val db: RoomDatabase, private val rooms: RoomService, private val clock: () -> Long = System::currentTimeMillis,
-    private val username: String = System.getenv("FOODRUN_ADMIN_USERNAME")?.trim().orEmpty(),
-    private val password: String = System.getenv("FOODRUN_ADMIN_PASSWORD").orEmpty(),
+    private val identityProvider: IdentityProvider? = FirebaseIdentity.configured(),
 ) {
-    private val random = SecureRandom()
-    private val sessions = ConcurrentHashMap<String, Long>()
-    val configured get() = username.isNotBlank() && password.length >= 12
-
-    fun login(request: AdminLogin): AdminSessionReply {
-        require(configured) { "Admin access has not been configured on this server." }
-        require(request.username.length <= 160 && request.password.length <= 512) { "Invalid admin credentials." }
-        val validUser = MessageDigest.isEqual(request.username.encodeToByteArray(), username.encodeToByteArray())
-        val validPassword = MessageDigest.isEqual(request.password.encodeToByteArray(), password.encodeToByteArray())
-        require(validUser && validPassword) { "Invalid admin credentials." }
-        sessions.entries.removeIf { it.value <= clock() }
-        val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(random::nextBytes))
-        val expires = clock() + 8 * 60 * 60_000L
-        sessions[token] = expires
-        return AdminSessionReply(token, expires)
-    }
-
     fun authorize(header: String?) {
-        val token = header?.removePrefix("Bearer ").orEmpty()
-        val expires = sessions[token] ?: error("Admin session expired. Sign in again.")
-        require(expires > clock()) { sessions.remove(token); "Admin session expired. Sign in again." }
+        require(header?.startsWith("Bearer ") == true) { "Sign in with the administrator account." }
+        val identity = requireNotNull(identityProvider) { "Firebase identity is not configured." }.exchange(header.removePrefix("Bearer "))
+        require(identity.emailVerified && identity.email.equals(ADMIN_EMAIL, ignoreCase = true)) { "This account cannot access administration." }
+        require(db.record("admin:disabled:${identity.userId}") == null) { "This account is disabled." }
     }
 
     fun settings(): AdminSettings = synchronized(rooms) { db.record(SETTINGS)?.let { orderJson.decodeFromString(it) } ?: AdminSettings() }
@@ -100,5 +76,5 @@ class AdminService(
             receipts.sumOf { it.paid }, receipts.filterNot { it.memberId == room.payerId }.sumOf { maxOf(0, it.balance) }, room.restaurant.currency, room.updatedAt,
             receipts.map { AdminWalletView(it.memberId, it.name, it.total, it.paid, it.balance) })
     }
-    companion object { const val SETTINGS = "admin:settings"; const val RESTAURANTS = "admin:restaurants" }
+    companion object { const val ADMIN_EMAIL = "1ahmedkaram1@gmail.com"; const val SETTINGS = "admin:settings"; const val RESTAURANTS = "admin:restaurants" }
 }

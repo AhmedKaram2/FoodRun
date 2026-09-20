@@ -127,5 +127,7 @@ object BuiltInRestaurants {
         ),
     )
 
-    val all: List<RestaurantExport> = listOf(sultan, alKalha, alMahla)
+    val baitAlWaleema: RestaurantExport = BaitAlWaleemaRestaurant.export
+
+    val all: List<RestaurantExport> = listOf(sultan, alKalha, alMahla, baitAlWaleema)
 }

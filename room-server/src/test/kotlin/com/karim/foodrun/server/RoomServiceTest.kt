@@ -5,6 +5,57 @@ import java.util.concurrent.Executors
 import kotlin.test.*
 
 class RoomServiceTest {
+    @Test fun selectedMemberOrdersPaysAndSettlesIncludingTheirOwnFoodWithoutOwnerControl(): Unit = RoomFixture().use { f ->
+        val selected = f.join("Selected person"); f.approve(selected)
+        f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = false) }
+        val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
+        f.send(f.owner, CommandKind.ACK_SPIN) { it.copy(text = preparation) }
+        val spinning = f.send(selected, CommandKind.ACK_SPIN) { it.copy(text = preparation) }.room!!
+        assertEquals(selected.memberId, spinning.spin!!.winnerId)
+        f.now = spinning.spin!!.endAt; f.service.tick()
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.ACCEPT_DUTY)).ok)
+        f.send(selected, CommandKind.ACCEPT_DUTY)
+        assertEquals(selected.memberId, f.state().room!!.payerId)
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.SHARE_ACCOUNT).copy(account = f.account)).ok)
+        f.send(selected, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account.copy(holder = "Selected person")) }
+        f.cart(f.owner, 2); f.cart(selected, 3)
+        f.send(selected, CommandKind.SET_FEES) { it.copy(fees = FeePolicy(delivery = 100), text = "Split delivery equally") }
+        val receipts = f.state(selected).receipts
+        assertEquals(600, receipts.sumOf { it.total })
+        assertEquals(350, receipts.single { it.memberId == selected.memberId }.total)
+        assertEquals(250, receipts.single { it.memberId == f.owner.memberId }.total)
+        assertEquals(0, receipts.single { it.memberId == selected.memberId }.balance)
+        f.send(selected, CommandKind.REVIEW)
+        listOf(f.owner, selected).forEach { actor -> f.send(actor, CommandKind.CONFIRM_QUOTE) { it.copy(expectedRevision = f.state(actor).room!!.quoteRevision) } }
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PLACE).copy(text = "Owner cannot place")).ok)
+        f.send(selected, CommandKind.PLACE) { it.copy(text = "Selected person placed order; 30 minutes") }
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 600)).ok)
+        f.send(selected, CommandKind.PAY_RESTAURANT) { it.copy(amount = 600) }
+        assertFalse(f.service.execute(f.command(selected, CommandKind.DECLARE_TRANSFER).copy(amount = 350, text = "No self transfer")).ok)
+        val transfer = f.send(f.owner, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 250, text = "Paid selected person") }.room!!.transfers.single()
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.CONFIRM_TRANSFER).copy(transferId = transfer.id)).ok)
+        f.send(selected, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = transfer.id) }
+        f.send(selected, CommandKind.FULFILL)
+        f.send(selected, CommandKind.ARCHIVE)
+        assertEquals(RoomPhase.ARCHIVED, f.state().room!!.phase)
+        assertTrue(f.state(selected).receipts.all { it.balance == 0L })
+    }
+
+    @Test fun adminCannotCancelPlacedOrdersAndHideOutstandingBalances(): Unit = RoomFixture().use { f ->
+        val member = f.placed(); f.pay()
+        val before = f.state(member).receipts.single().balance
+        assertTrue(before > 0)
+        assertFailsWith<IllegalArgumentException> { f.service.adminCancel(f.owner.room!!.id) }
+        assertEquals(RoomPhase.PLACED, f.state().room!!.phase)
+        assertEquals(before, f.state(member).receipts.single().balance)
+        f.send(f.owner, CommandKind.FULFILL)
+        assertFailsWith<IllegalArgumentException> { f.service.adminCancel(f.owner.room!!.id) }
+    }
+
+    @Test fun adminCanCancelAnUnplacedRoom(): Unit = RoomFixture().use { f ->
+        f.service.adminCancel(f.owner.room!!.id)
+        assertEquals(RoomPhase.CANCELLED, f.state().room!!.phase)
+    }
     @Test fun restaurantVotesStayLiveAndTheWinnerUnlocksSandwichOrdering(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member)
         val current = f.db.room(f.owner.room!!.id)!!
@@ -348,6 +399,14 @@ class RoomServiceTest {
             assertFailsWith<IllegalArgumentException> { RoomDatabase(f.directory) }
             assertFalse(key.exists())
         } finally { key.writeBytes(bytes) }
+    }
+
+    @Test fun lobbyMenuUpdatePreservesAutomaticReadinessAndCanSpin(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member)
+        val updated = f.restaurant.copy(menu = f.restaurant.menu.copy(items = f.restaurant.menu.items.map { it.copy(basePriceMinor = 150) }))
+        f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = updated, text = "Updated menu price") }
+        assertTrue(f.state().room!!.orderingMembers.all { it.ready })
+        assertEquals(RoomPhase.PREPARING_SPIN, f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.phase)
     }
 
     @Test fun menuChangesResetQuotesSubmissionsAndStaleCartsWithoutLosingSelections(): Unit = RoomFixture().use { f ->

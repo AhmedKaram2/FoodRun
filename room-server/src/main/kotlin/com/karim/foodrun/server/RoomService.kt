@@ -11,6 +11,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     @Synchronized fun adminCancel(roomId: String) {
         val room = requireNotNull(db.room(roomId)) { "Room was not found." }
         require(room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) { "Room is already complete." }
+        require(room.phase !in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED)) { "Placed orders must be settled and archived. Cancellation would hide outstanding payments." }
         db.save(room.copy(phase = RoomPhase.CANCELLED, revision = room.revision + 1, updatedAt = clock()))
         signalRoom(roomId)
     }
@@ -98,7 +99,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(options.size <= 12 && options.any { it.id == selected.id }) { "Choose up to 12 restaurants, including the current choice." }
         require(options.all { it.currency == selected.currency }) { "Restaurant poll choices must use the same currency." }
         options.forEach(MenuValidation::validate)
-        val room = Room(uuid(), code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, c.fees ?: FeePolicy(),
+        val room = Room(uuid(), code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, (c.fees ?: FeePolicy()).copy(automaticDelivery = c.flag),
             members = listOf(person), createdAt = clock(), updatedAt = clock(), restaurantOptions = options,
             restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1)
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
@@ -152,8 +153,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             progress = if (authorized) progress(room, actor) else null)
     }
     private fun progress(room: Room, actor: String): OrderProgress {
-        val reviewStage = actor == room.ownerId && room.phase == RoomPhase.COLLECTING
-        val archiveStage = actor == room.ownerId && room.phase == RoomPhase.FULFILLED
+        val reviewStage = (actor == room.ownerId || actor == room.payerId) && room.phase == RoomPhase.COLLECTING
+        val archiveStage = (actor == room.ownerId || actor == room.payerId) && room.phase == RoomPhase.FULFILLED
         fun blocker(validate: () -> Unit): String = try { validate(); "" }
             catch (invalid: IllegalArgumentException) { invalid.message ?: "Review the order before continuing." }
         val reviewBlocker = if (reviewStage) blocker { RoomRules.requireReview(room) } else ""
@@ -185,6 +186,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 val past = PastOrder(old.orderNumber, old.restaurant.name, old.updatedAt,
                     if (old.phase == RoomPhase.CANCELLED) emptyList() else Billing.receipts(old).filter { it.memberId == actor || old.payerId == actor },
                     old.account.takeIf { old.phase != RoomPhase.CANCELLED },
+                    old.restaurant.id,
                 )
                 val candidate = reply.copy(history = history + past, historyNextOffset = offset + consumed + 1)
                 if (orderJson.encodeToString(candidate).toByteArray().size > MAX_REPLY_BYTES) break

@@ -26,7 +26,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 options.forEach(MenuValidation::validate)
                 Room(r.id, r.code, r.ownerId, r.name, restaurant,
                     expectedNames = c.expectedNames, deliveryMode = c.flag, destination = c.destination,
-                    deadline = c.deadline, fees = c.fees ?: FeePolicy(restaurant.pricing.defaultDeliveryFeeMinor, restaurant.pricing.defaultServiceFeeMinor),
+                    deadline = c.deadline, fees = (c.fees ?: FeePolicy(restaurant.pricing.defaultDeliveryFeeMinor, restaurant.pricing.defaultServiceFeeMinor)).copy(automaticDelivery = c.flag),
                     members = r.members.filterNot { it.removed }.map { it.copy(ready = it.id == r.ownerId && !it.guest, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
                     revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
                     restaurantOptions = options, restaurantVotes = listOf(RestaurantVote(r.ownerId, restaurant.id)),
@@ -80,7 +80,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     restaurant = winner,
                     restaurantPollOpen = false,
                     carts = emptyList(),
-                    fees = FeePolicy(winner.pricing.defaultDeliveryFeeMinor, winner.pricing.defaultServiceFeeMinor),
+                    fees = FeePolicy(winner.pricing.defaultDeliveryFeeMinor, winner.pricing.defaultServiceFeeMinor, automaticDelivery = r.deliveryMode),
                     quoteRevision = r.quoteRevision + 1,
                 )
             }
@@ -155,7 +155,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart.copy(submitted = true))
             }
             CommandKind.REVIEW -> {
-                owner(); phase(RoomPhase.COLLECTING); fresh()
+                require(actorId == r.ownerId || actorId == r.payerId) { "Only the organizer or selected payer can review totals." }; phase(RoomPhase.COLLECTING); fresh()
                 RoomRules.requireReview(r)
                 r.copy(phase = RoomPhase.REVIEW)
             }
@@ -180,14 +180,14 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 }
                 if (restaurant.copy(contact = r.restaurant.contact) == r.restaurant) r.copy(restaurant = restaurant)
                 else r.copy(restaurant = restaurant, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
-                    members = r.members.map { it.copy(ready = false) },
+                    members = r.members.map { it.copy(ready = it.approved && !it.removed && !it.guest && it.participating) },
                     carts = r.carts.map { it.copy(revision = it.revision + 1, submitted = false, confirmedQuote = -1) },
                     quoteRevision = r.quoteRevision + 1, deadline = 0,
                 ).also { Billing.receipts(it) }
             }
             CommandKind.SET_FEES -> {
                 require(actorId == r.ownerId || actorId == r.payerId); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); reason()
-                val fees = requireNotNull(c.fees); RoomRules.validateFees(fees)
+                val fees = requireNotNull(c.fees).copy(automaticDelivery = r.deliveryMode); RoomRules.validateFees(fees)
                 if (fees == r.fees) r
                 else r.copy(fees = fees, phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
@@ -240,7 +240,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(ownerId = target.id)
             }
             CommandKind.ARCHIVE -> {
-                owner(); phase(RoomPhase.FULFILLED); fresh()
+                require(actorId == r.ownerId || actorId == r.payerId) { "Only the organizer or selected payer can complete the order." }; phase(RoomPhase.FULFILLED); fresh()
                 RoomRules.requireArchive(r)
                 r.copy(phase = RoomPhase.ARCHIVED)
             }

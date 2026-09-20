@@ -20,9 +20,15 @@ internal fun GroupController.seedFees(r: Restaurant) {
     draft[GroupFieldKey.SERVICE_FEE] = amount(r.pricing.defaultServiceFeeMinor)
     draft[GroupFieldKey.DISCOUNT] = "0"
 }
-internal fun GroupController.fees(currency: String): FeePolicy = FeePolicy(
-    Money.parse(text(GroupFieldKey.DELIVERY_FEE).ifBlank { "0" }, currency), Money.parse(text(GroupFieldKey.SERVICE_FEE).ifBlank { "0" }, currency), Money.parse(text(GroupFieldKey.DISCOUNT).ifBlank { "0" }, currency), flag(GroupFieldKey.PROPORTIONAL),
-)
+internal fun GroupController.fees(currency: String): FeePolicy {
+    val automatic = if(page == GroupPage.SETUP) flag(GroupFieldKey.DELIVERY) else reply?.room?.deliveryMode == true
+    return FeePolicy(
+        if(automatic) 0 else Money.parse(text(GroupFieldKey.DELIVERY_FEE).ifBlank { "0" }, currency),
+        Money.parse(text(GroupFieldKey.SERVICE_FEE).ifBlank { "0" }, currency),
+        Money.parse(text(GroupFieldKey.DISCOUNT).ifBlank { "0" }, currency),
+        if(automatic) false else flag(GroupFieldKey.PROPORTIONAL), automaticDelivery = automatic,
+    )
+}
 internal fun GroupController.addMenuItem() {
     val export = requireNotNull(editingRestaurant)
     val name = text(GroupFieldKey.MENU_ITEM_NAME).trim(); MenuValidation.label(name)
@@ -111,4 +117,27 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.CANCEL -> command(CommandKind.CANCEL, text = reason)
         else -> error("Action unavailable.")
     }
+}
+
+internal fun GroupController.quickAddMenuItem(itemId: String) {
+    val item = room().restaurant.menu.items.single { it.id == itemId }
+    require(item.available && item.variants.isEmpty() && item.optionGroupIds.isEmpty()) { "Choose this item's size and extras first." }
+    val cart = myCart()
+    val existing = cart.lines.firstOrNull { it.itemId == itemId && it.variantId == null && it.optionIds.isEmpty() && it.notes.isEmpty() && it.description.isEmpty() }
+    if (existing != null) { changeCartQuantity(existing.id, 1); return }
+    val next = cart.copy(lines = cart.lines + CartLine(id = platform.uuid(), itemId = itemId, quantity = 1))
+    Billing.lines(room().restaurant, next)
+    command(CommandKind.CART, cart = next, revision = cart.revision)
+}
+
+internal fun GroupController.changeCartQuantity(lineId: String, delta: Int) {
+    val cart = myCart()
+    val line = cart.lines.single { it.id == lineId }
+    val quantity = line.quantity + delta
+    require(quantity in 0..99) { "Choose a quantity between 1 and 99." }
+    val lines = if (quantity == 0) cart.lines.filterNot { it.id == lineId }
+        else cart.lines.map { if (it.id == lineId) it.copy(quantity = quantity) else it }
+    val next = cart.copy(lines = lines)
+    Billing.lines(room().restaurant, next)
+    command(CommandKind.CART, cart = next, revision = cart.revision)
 }

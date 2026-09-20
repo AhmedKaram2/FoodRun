@@ -87,7 +87,7 @@ fun GroupScreen(controller: GroupController) {
                 modifier = Modifier.statusBarsPadding(),
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
-                Text(GroupText.backToRooms, modifier = Modifier.padding(start = FoodSpacing.XSmall))
+                Text(GroupText.localized(GroupText.backToRooms, state.rtl), modifier = Modifier.padding(start = FoodSpacing.XSmall))
             }
             Box(Modifier.weight(1f)) { FoodRunScreen() }
         }
@@ -108,7 +108,7 @@ fun GroupScreen(controller: GroupController) {
             if (state.error.isNotEmpty()) GroupErrorBanner(state.error)
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = FoodColors.Orange)
-                Text(GroupText.working, style = FoodType.Status, color = FoodColors.Muted, modifier = Modifier.padding(FoodSpacing.XSmall))
+                Text(GroupText.localized(GroupText.working, state.rtl), style = FoodType.Status, color = FoodColors.Muted, modifier = Modifier.padding(FoodSpacing.XSmall))
             }
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f).testTag("groupScreen"),
@@ -120,13 +120,13 @@ fun GroupScreen(controller: GroupController) {
                     item(key = "home") { GroupHomeContent(state, controller) }
                 } else {
                     item(key = "header") { GroupHeader(state, controller) }
-                    if (state.progressStep >= 0) item(key = "steps") { GroupProgress(state.progressStep) }
+                    if (state.progressStep >= 0) item(key = "steps") { GroupProgress(state.progressStep, state.rtl) }
                     state.wheel?.let { wheel -> item(key = "wheel:${wheel.round.id}") { GroupWheelContent(wheel) } }
                     items(state.mainFields, key = { "field:${it.key.name}" }) { GroupFieldContent(it, state.busy, controller) }
                     if (state.page != GroupPage.ROOM && state.extraFields.isNotEmpty()) item(key = "extras") {
                         GroupOptions(state, controller, optionsExpanded) { optionsExpanded = !optionsExpanded }
                     }
-                    items(state.inlineButtons, key = { "action:${it.action.name}:${it.value}" }) { GroupActionButton(it, state.busy, controller, prominent = false) }
+                    items(state.inlineButtons.filter { it.action != GroupAction.SET_LANGUAGE }, key = { "action:${it.action.name}:${it.value}" }) { GroupActionButton(it, state.busy, controller, prominent = false) }
                     state.sections.forEachIndexed { index, section ->
                         if (section.title.isNotEmpty()) item(key = "section:$index") { GroupSectionHeading(section.title, section.cards.size) }
                         items(section.cards, key = { "card:${it.id}" }) { GroupCardContent(it, state.busy, controller) }
@@ -153,10 +153,10 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (state.canGoBack) TextButton(onClick = { controller.dispatch(GroupAction.BACK, "") }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, modifier = Modifier.size(FoodSize.IconSmall))
-                Text(text = GroupText.back, modifier = Modifier.padding(start = FoodSpacing.XSmall), color = FoodColors.Orange)
+                Text(text = GroupText.localized(GroupText.back, state.rtl), modifier = Modifier.padding(start = FoodSpacing.XSmall), color = FoodColors.Orange)
             }
             Spacer(Modifier.weight(1f))
-            Text(com.karim.foodrun.shared.FoodRunText.brand, style = FoodType.RoundedCaption, color = FoodColors.Muted)
+            GroupLanguagePicker(state, controller)
         }
         Text(text = state.title, style = FoodType.Hero, color = FoodColors.Ink, modifier = Modifier.semantics { heading() })
         if (state.subtitle.isNotEmpty()) Text(text = state.subtitle, style = FoodType.Body, color = FoodColors.Muted)
@@ -185,15 +185,15 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
 }
 
 @Composable
-private fun GroupProgress(step: Int) {
+private fun GroupProgress(step: Int, rtl: Boolean) {
     Row(Modifier.fillMaxWidth().padding(vertical = FoodSpacing.Medium).clearAndSetSemantics {
-        contentDescription = "Step ${step + 1} of ${GroupText.progressSteps.size}: ${GroupText.progressSteps[step]}"
+        contentDescription = if(rtl) "الخطوة ${step + 1} من ${GroupText.progressSteps.size}: ${GroupText.localized(GroupText.progressSteps[step], true)}" else "Step ${step + 1} of ${GroupText.progressSteps.size}: ${GroupText.progressSteps[step]}"
     }, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
         GroupText.progressSteps.forEachIndexed { index, title ->
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
                 Box(Modifier.fillMaxWidth().height(FoodSpacing.XXSmall).background(
                     if (index <= step) FoodColors.Success else FoodColors.Line, RoundedCornerShape(FoodRadius.Card)))
-                Text(title, style = FoodType.Status, color = if (index == step) FoodColors.Ink else FoodColors.Muted)
+                Text(GroupText.localized(title, rtl), style = FoodType.Status, color = if (index == step) FoodColors.Ink else FoodColors.Muted)
             }
         }
     }
@@ -205,9 +205,9 @@ private fun GroupOptions(state: GroupState, controller: GroupController, expande
         Column(Modifier.padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Large)) {
             TextButton(onClick = toggle, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget).testTag("groupOptions")) {
                 Text(when (state.page) {
-                    GroupPage.CONNECT -> GroupText.manualConnection
-                    GroupPage.LIBRARY -> GroupText.pasteMenu
-                    else -> GroupText.roomOptions
+                    GroupPage.CONNECT -> GroupText.localized(GroupText.manualConnection, state.rtl)
+                    GroupPage.LIBRARY -> GroupText.localized(GroupText.pasteMenu, state.rtl)
+                    else -> GroupText.localized(GroupText.roomOptions, state.rtl)
                 }, style = FoodType.Input, color = FoodColors.Ink, modifier = Modifier.weight(1f))
                 Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = FoodColors.Muted)
             }

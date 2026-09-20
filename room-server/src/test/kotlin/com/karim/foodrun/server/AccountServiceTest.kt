@@ -64,4 +64,31 @@ class AccountServiceTest {
         assertEquals(room.room!!.id, resumed.home?.rooms?.singleOrNull()?.roomId)
         assertEquals(joined.token, resumed.home?.rooms?.singleOrNull()?.token)
     }
+
+    @Test fun favoriteOrdersPersistThroughTheProfileApi() = RoomFixture(FakeIdentityProvider()).use { fixture ->
+        val registered = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(
+                action = IdentityAction.REGISTER, email = "favorite@example.com", password = "secret12",
+                profile = FoodProfile(name = "Favorite User", phone = "+971501234567"),
+            ),
+        ))
+        val favorite = FavoriteOrder(
+            id = "favorite-1", restaurantId = "restaurant-1", restaurantName = "Kitchen", title = "My usual",
+            lines = listOf(FavoriteOrderLine(itemId = "burger", quantity = 2, label = "Burger")), savedAt = 100,
+        )
+        val saved = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.IDENTITY, identityToken = registered.identityToken,
+            identity = IdentityRequest(
+                action = IdentityAction.SAVE_PROFILE,
+                profile = FoodProfile(name = "Favorite User", phone = "+971501234567", favoriteOrders = listOf(favorite)),
+            ),
+        ))
+        assertEquals(favorite, saved.home?.profile?.favoriteOrders?.single())
+
+        val restored = fixture.execute(RoomCommand(
+            commandId = fixture.id(), kind = CommandKind.HOME, identityToken = registered.identityToken,
+        ))
+        assertEquals(favorite, restored.home?.profile?.favoriteOrders?.single())
+    }
 }

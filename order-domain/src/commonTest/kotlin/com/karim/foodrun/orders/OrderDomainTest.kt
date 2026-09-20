@@ -11,6 +11,26 @@ class OrderDomainTest {
         members = listOf(Member("a", "Karim", approved = true), Member("b", "Karam", approved = true), Member("c", "Hassan", approved = true)),
         carts = listOf(MemberCart("a", lines = listOf(CartLine("a", "i", 45))), MemberCart("b", lines = listOf(CartLine("b", "i", 30))), MemberCart("c", lines = listOf(CartLine("c", "i", 25)))), payerId = "a")
 
+    @Test fun automaticDeliveryCountsPeopleWithFoodIncludingPayerAndSplitsEveryFil() {
+        for(count in 1..8) {
+            val members = (1..count).map { Member("m$it", "Person $it", approved = true) } + Member("no-food", "No food", approved = true)
+            val carts = (1..count).map { MemberCart("m$it", lines = listOf(CartLine("l$it", "i", it))) } + MemberCart("no-food")
+            val r = Room("auto", "123456", "m1", "Delivery", restaurant(), deliveryMode = true,
+                fees = FeePolicy(delivery = 9999, proportionalDelivery = true, automaticDelivery = true), members = members, carts = carts, payerId = "m1")
+            val receipts = Billing.receipts(r)
+            val deliveryTotal = if(count < 5) 500L else count * 100L
+            assertEquals(deliveryTotal, receipts.sumOf { it.delivery })
+            assertEquals(0, receipts.single { it.memberId == "no-food" }.delivery)
+            assertEquals(0, receipts.single { it.memberId == "m1" }.balance)
+            assertEquals(receipts.sumOf { it.food } + deliveryTotal, receipts.sumOf { it.total })
+            assertTrue(receipts.filter { it.memberId != "no-food" }.all { it.delivery in deliveryTotal / count..(deliveryTotal + count - 1) / count })
+            if(count >= 5) assertTrue(receipts.filter { it.memberId != "no-food" }.all { it.delivery == 100L })
+            assertEquals(receipts.associate { it.memberId to it.delivery }, Billing.receipts(r.copy(carts = carts.reversed())).associate { it.memberId to it.delivery })
+        }
+        val empty = room().copy(deliveryMode = true, fees = FeePolicy(automaticDelivery = true), carts = emptyList())
+        assertTrue(Billing.receipts(empty).isEmpty())
+    }
+
     @Test fun documentedReceiptAddsUpExactly() {
         val receipts = Billing.receipts(room())
         assertEquals(listOf(4609L, 3183L, 2708L), receipts.map { it.total })
@@ -141,5 +161,27 @@ class OrderDomainTest {
     }
     @Test fun expectedNamesMustBeUniqueIgnoringCaseAndWhitespace() {
         assertFailsWith<IllegalArgumentException> { RoomRules.validateRoom(room().copy(expectedNames = listOf(" Karim", "karim"))) }
+    }
+    @Test fun favoriteIdentityUsesTheSameUnambiguousWireKeyAsWeb() {
+        val favorite = FavoriteOrder("f", "r", "R", "Usual", listOf(FavoriteOrderLine("meal", 2, optionIds = listOf("a", "b"), notes = "بدون بصل", label = "Meal")), 0)
+        assertEquals("""["r","[\"meal\",\"\",\"[\\\"a\\\",\\\"b\\\"]\",\"\",\"2\",\"بدون بصل\"]"]""", favorite.selectionKey())
+    }
+
+    @Test fun previousOrderIdentityCollapsesExactRepeatsButKeepsMeaningfulChanges() {
+        fun receipt(lines: List<ReceiptLine>) = Receipt("a", "Karim", lines, 0, 0, 0, 0, 0, 0, 0, 0, 1, "AED")
+        val meal = ReceiptLine("Meal", 2, 200, "No onion", "i", optionIds = listOf("sauce", "cheese"))
+        val drink = ReceiptLine("Tea", 1, 100, itemId = "tea")
+        val key = receipt(listOf(meal, drink)).orderSelectionKey("RESTAURANT")
+
+        assertEquals(key, receipt(listOf(drink, meal.copy(optionIds = meal.optionIds.reversed()))).orderSelectionKey("restaurant"))
+        assertNotEquals(key, receipt(listOf(meal.copy(quantity = 3), drink)).orderSelectionKey("restaurant"))
+        assertNotEquals(key, receipt(listOf(meal.copy(notes = "Extra sauce"), drink)).orderSelectionKey("restaurant"))
+
+        val favorite = FavoriteOrder("favorite", "restaurant", "Kitchen", "Usual", listOf(
+            FavoriteOrderLine("i", 2, optionIds = meal.optionIds, notes = meal.notes, label = meal.description),
+            FavoriteOrderLine("tea", 1, label = drink.description),
+        ), 1)
+        assertEquals(key, favorite.selectionKey())
+        favorite.validate()
     }
 }

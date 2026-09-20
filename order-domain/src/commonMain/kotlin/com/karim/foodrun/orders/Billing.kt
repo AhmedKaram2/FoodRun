@@ -57,7 +57,9 @@ object Billing {
         val foods = lines.filterValues { it.isNotEmpty() }.mapValues { it.value.sumOf { line -> line.amount } }
         val totalFood = foods.values.sum()
         MenuValidation.price(totalFood)
-        val delivery = if (foods.isEmpty()) emptyMap() else allocate(room.fees.delivery, if (room.fees.proportionalDelivery) foods else foods.mapValues { 1L })
+        val automaticDelivery = room.deliveryMode && room.fees.automaticDelivery
+        val deliveryTotal = if (automaticDelivery) maxOf(500L, foods.size * 100L) else room.fees.delivery
+        val delivery = if (foods.isEmpty()) emptyMap() else allocate(deliveryTotal, if (room.fees.proportionalDelivery && !automaticDelivery) foods else foods.mapValues { 1L })
         val service = if (foods.isEmpty()) emptyMap() else allocate(room.fees.service, foods.mapValues { 1L })
         // During collection a configured discount can exceed the food entered so far. Final confirmation validates it.
         val discounts = allocate(minOf(room.fees.discount, totalFood), foods)

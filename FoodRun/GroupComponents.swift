@@ -91,18 +91,19 @@ struct GroupCardContent: View {
 
 struct GroupProgress: View {
     let step: Int
+    var rtl = false
     var body: some View {
         HStack(alignment: .top, spacing: FoodSpacing.s8) {
             ForEach(Array(GroupText.shared.progressSteps.enumerated()), id: \.offset) { index, title in
                 VStack(alignment: .leading, spacing: FoodSpacing.s8) {
                     Capsule().fill(index <= step ? FoodTheme.available : FoodTheme.line).frame(height: FoodSpacing.s4)
-                    Text(title).font(FoodTypography.status).foregroundStyle(index == step ? FoodTheme.ink : FoodTheme.muted)
+                    Text(GroupText.shared.localized(value: title, rtl: rtl)).font(FoodTypography.status).foregroundStyle(index == step ? FoodTheme.ink : FoodTheme.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.vertical, FoodSpacing.s12)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Step \(step + 1) of \(GroupText.shared.progressSteps.count): \(GroupText.shared.progressSteps[step])")
+        .accessibilityLabel(rtl ? "الخطوة \(step + 1) من \(GroupText.shared.progressSteps.count): \(GroupText.shared.localized(value: GroupText.shared.progressSteps[step], rtl: true))" : "Step \(step + 1) of \(GroupText.shared.progressSteps.count): \(GroupText.shared.progressSteps[step])")
     }
 }
 
@@ -120,6 +121,8 @@ extension GroupButton {
         case .openLibrary, .openItem, .selectRestaurant: return "fork.knife"
         case .openReceipts, .shareReceipt: return "doc.text"
         case .openHistory: return "clock.arrow.circlepath"
+        case .favoriteOrder, .removeFavoriteOrder: return "star.fill"
+        case .reuseOrder: return "cart.badge.plus"
         case .shareRoom, .exportMenu, .shareRestaurantOrder, .shareOrderWhatsapp: return "square.and.arrow.up"
         case .scan: return "qrcode.viewfinder"
         case .useInternet: return "globe"

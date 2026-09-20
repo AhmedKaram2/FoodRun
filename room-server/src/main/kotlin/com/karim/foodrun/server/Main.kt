@@ -122,14 +122,6 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         get("/config") {
             call.respondText(orderJson.encodeToString(admin?.settings() ?: AdminSettings()), ContentType.Application.Json)
         }
-        post("/admin/login") {
-            if (!allow("admin-login:${call.request.local.remoteHost}", 10)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
-            try {
-                val body = call.receiveText(); require(body.encodeToByteArray().size <= 4096) { "Request too large." }; JsonInputValidation.validate(body)
-                val result = requireNotNull(admin).login(orderJson.decodeFromString<AdminLogin>(body))
-                call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
-            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin sign-in failed.")}}", ContentType.Application.Json, HttpStatusCode.Unauthorized) }
-        }
         get("/admin/dashboard") {
             try {
                 requireNotNull(admin).authorize(call.request.headers[HttpHeaders.Authorization])

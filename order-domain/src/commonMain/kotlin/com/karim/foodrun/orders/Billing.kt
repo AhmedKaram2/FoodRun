@@ -30,7 +30,7 @@ object Billing {
             val amount = unit * line.quantity
             MenuValidation.price(amount)
             val description = (listOf(item.name) + listOfNotNull(variant?.name) + selected.map { it.name }).joinToString(" · ")
-            ReceiptLine(description, line.quantity, amount, line.notes)
+            ReceiptLine(description, line.quantity, amount, line.notes, line.itemId, line.variantId, line.optionIds)
         }.also { MenuValidation.price(it.sumOf { line -> line.amount }) }
     }
 

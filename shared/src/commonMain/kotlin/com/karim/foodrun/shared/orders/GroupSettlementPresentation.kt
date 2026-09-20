@@ -21,12 +21,46 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
     private fun money(amount: Long) = Money.format(amount, currency)
     private fun field(key: GroupFieldKey, label: String) = GroupField(key, label, c.text(key))
 
+    private fun walletCards(): List<GroupCard> {
+        val pending = r.transfers.filter { it.status == TransferStatus.DECLARED }
+        if (payer) {
+            val restaurantTotal = receipts.sumOf { it.total }
+            val own = receipts.firstOrNull { it.memberId == me }?.total ?: 0
+            val confirmed = receipts.filterNot { it.memberId == me }.sumOf { it.paid }
+            val remaining = receipts.filterNot { it.memberId == me }.sumOf { maxOf(0, it.balance) }
+            val refunds = receipts.sumOf { maxOf(0, -it.balance) }
+            return listOf(GroupCard("wallet-summary", "Room wallet",
+                "Restaurant total ${money(restaurantTotal)}\nYour own order ${money(own)}\nConfirmed from others ${money(confirmed)}\nMembers still owe ${money(remaining)}${if(refunds > 0) "\nRefunds you owe ${money(refunds)}" else ""}")) +
+                receipts.map { receipt ->
+                    val claim = pending.firstOrNull { it.memberId == receipt.memberId }
+                    val status = when {
+                        receipt.memberId == me -> "Your own contribution"
+                        receipt.balance < 0 -> "Refund due ${money(-receipt.balance)}"
+                        receipt.balance == 0L -> "Settled"
+                        else -> "Still owes ${money(receipt.balance)}"
+                    }
+                    GroupCard("wallet:${receipt.memberId}", receipt.name,
+                        "Order ${money(receipt.total)} · confirmed ${money(receipt.paid)}${claim?.let { "\n${money(it.amount)} awaiting confirmation" } ?: ""}", status)
+                }
+        }
+        val own = receipts.firstOrNull { it.memberId == me } ?: return emptyList()
+        val status = when {
+            own.balance < 0 -> "Owed back to you ${money(-own.balance)}"
+            own.balance == 0L -> "Settled"
+            else -> "You need to pay ${money(own.balance)}"
+        }
+        val claim = pending.firstOrNull { it.memberId == me }
+        return listOf(GroupCard("wallet:$me", "My wallet",
+            "My order ${money(own.total)}\nConfirmed paid ${money(own.paid)}${claim?.let { "\n${money(it.amount)} marked sent · awaiting confirmation" } ?: ""}", status))
+    }
+
     fun review(): GroupFlowContent {
         val fields = mutableListOf<GroupField>()
         val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>()
         val waiting = r.orderingMembers.filterNot { quoteConfirmed(r, it.id) }
         val ownConfirmed = quoteConfirmed(r, me)
+        cards += walletCards()
         r.orderingMembers.forEach { member ->
             cards += GroupCard("quote:${member.id}", member.name,
                 if (quoteConfirmed(r, member.id)) "Total and recipient confirmed" else "Awaiting total and recipient confirmation")
@@ -74,6 +108,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val pending = r.transfers.filter { it.status == TransferStatus.DECLARED }
         val ownPending = pending.firstOrNull { it.memberId == me }
         val ownReceipt = receipts.firstOrNull { it.memberId == me }
+        cards += walletCards()
         cards += GroupCard("placed", if (r.restaurantPaid) "Restaurant payment confirmed" else "Restaurant payment pending", r.restaurantReference)
         if (r.billRevision > 1) {
             val detail = buildString {
@@ -128,7 +163,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             if (r.restaurantPaid && ownPending == null && ownReceipt != null && ownReceipt.balance > 0) {
                 fields += field(GroupFieldKey.AMOUNT, "Amount sent · remaining ${money(ownReceipt.balance)}")
                 fields += field(GroupFieldKey.REFERENCE, "Transfer reference / cash note")
-                buttons += GroupButton("I sent my payment", GroupAction.DECLARE_TRANSFER, primary = true)
+                buttons += GroupButton("Mark payment sent", GroupAction.DECLARE_TRANSFER, primary = true)
             }
         } else cards += GroupCard("settlement-observer", "Order progress", "${name(r.payerId)} is handling the restaurant order and payments. You have no food or payment due for this order.")
         if (owner && r.phase == RoomPhase.FULFILLED) {

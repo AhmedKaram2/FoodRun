@@ -32,12 +32,13 @@ internal object GroupLayout {
             card.id.startsWith("cart:") || card.id == "estimate" -> "Your order"
             card.id.startsWith("receipt:") || card.id == "account" -> "Totals & recipient"
             card.id.startsWith("transfer:") -> "Payment activity"
+            card.id.startsWith("wallet") -> "Wallet"
             card.id.startsWith("member:") || card.id.startsWith("invite:") -> "At the table"
             card.id.startsWith("quote:") -> "Quote confirmations"
             else -> "Order updates"
         }
         val grouped = cards.groupBy(::category)
-        return listOf("Order updates", "Choose your food", "Your order", "Totals & recipient", "Quote confirmations", "Payment activity", "At the table")
+        return listOf("Order updates", "Choose your food", "Your order", "Wallet", "Totals & recipient", "Quote confirmations", "Payment activity", "At the table")
             .mapNotNull { title -> grouped[title]?.let { GroupSection(title, it) } }
     }
 }

@@ -116,9 +116,10 @@ class OrderDomainTest {
         assertFailsWith<IllegalArgumentException> { Money.parse("1e5", "AED") }
     }
     @Test fun ibanChecksumAndAccountBoundsAreValidated() {
-        ReceivingAccount("a", "Person", "Bank", "GB82 WEST 1234 5698 7654 32", "GBP").validate()
-        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "GB83 WEST 1234 5698 7654 32", "GBP").validate() }
-        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "１２３４５６７８", "GBP").validate() }
+        ReceivingAccount("a", "Person", "Bank", "AE07 0331 2345 6789 0123 456", "AED").validate()
+        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "AE08 0331 2345 6789 0123 456", "AED").validate() }
+        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "１２３４５６７８", "AED").validate() }
+        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "GB82 WEST 1234 5698 7654 32", "GBP").validate() }
     }
     @Test fun spinIsStableAcrossClocksAndReconnections() {
         val spin = SpinRound("spin", listOf("a", "b", "c"), "b", 1000)
@@ -134,9 +135,9 @@ class OrderDomainTest {
         val r = room().copy(expectedNames = listOf("Karim"), members = room().members.map { it.copy(ready = true, eligible = true, lastSeen = 1000, participating = it.id == "a") })
         assertEquals(3, r.activeMembers.size)
         assertEquals(1, r.orderingMembers.size)
-        RoomRules.spinReady(r, 2000)
-        assertFailsWith<IllegalArgumentException> { RoomRules.spinReady(r.copy(expectedNames = listOf("Hassan")), 2000) }
-        assertFailsWith<IllegalArgumentException> { RoomRules.spinReady(r, 16000) }
+        RoomRules.spinReady(r)
+        assertFailsWith<IllegalArgumentException> { RoomRules.spinReady(r.copy(expectedNames = listOf("Hassan"))) }
+        assertFailsWith<IllegalArgumentException> { RoomRules.spinReady(r.copy(restaurantPollOpen = true)) }
     }
     @Test fun expectedNamesMustBeUniqueIgnoringCaseAndWhitespace() {
         assertFailsWith<IllegalArgumentException> { RoomRules.validateRoom(room().copy(expectedNames = listOf(" Karim", "karim"))) }

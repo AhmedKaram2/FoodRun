@@ -1,5 +1,11 @@
 package com.karim.foodrun
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,7 +27,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -38,6 +49,11 @@ import com.karim.foodrun.shared.orders.GroupCard
 import com.karim.foodrun.shared.orders.GroupController
 import com.karim.foodrun.shared.orders.GroupField
 import com.karim.foodrun.shared.orders.GroupFieldKey
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 
 /** Kept outside the form's LazyColumn so a failed submit is visible at every scroll position. */
 @Composable
@@ -64,7 +80,39 @@ internal fun GroupErrorBanner(message: String) {
 
 @Composable
 internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: GroupController) {
-    if (field.toggle) {
+    if (field.key == GroupFieldKey.PHOTO) {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) scope.launch {
+                val value = withContext(Dispatchers.IO) {
+                    val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readNBytes(10 * 1024 * 1024 + 1) }
+                    require(bytes.size <= 10 * 1024 * 1024) { "Choose a photo under 10 MB." }
+                    val source = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size)) { "This photo could not be opened." }
+                    val side = minOf(source.width, source.height)
+                    val square = Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
+                    val scaled = Bitmap.createScaledBitmap(square, 256, 256, true)
+                    val output = ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 78, output)
+                    "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                }
+                controller.update(GroupFieldKey.PHOTO, value)
+            }
+        }
+        val preview = remember(field.value) {
+            field.value.takeIf { it.startsWith("data:image/") }?.substringAfter("base64,")?.let { encoded ->
+                runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            }
+        }
+        FoodCard(bordered = true) {
+            Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (preview != null) Image(preview.asImageBitmap(), "Selected profile photo", Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = ContentScale.Crop)
+                Text(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected", style = FoodType.Input, color = FoodColors.Ink)
+                PrimaryButton(if (field.value.isBlank()) "Choose from gallery" else "Change photo", null, enabled = !busy) { launcher.launch("image/*") }
+                if (field.value.isNotBlank()) SecondaryButton("Remove photo", null, enabled = !busy, destructive = true) { controller.update(GroupFieldKey.PHOTO, "") }
+            }
+        }
+    } else if (field.toggle) {
         Row(
             modifier = Modifier.fillMaxWidth().background(FoodColors.Card, RoundedCornerShape(FoodRadius.Card))
                 .border(FoodSize.Border, FoodColors.Line, RoundedCornerShape(FoodRadius.Card)).toggleable(

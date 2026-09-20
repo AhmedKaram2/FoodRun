@@ -75,6 +75,8 @@ The API key identifies the Firebase client project; Firebase user tokens and Fir
 
 For rooms reachable from any network, deploy the Docker image behind a public HTTPS reverse proxy and set `FOODRUN_TLS_MODE=proxy`, `FOODRUN_DATA`, and `FOODRUN_WEB_ORIGINS`. Set `FOODRUN_PUBLIC_URL` and `FOODRUN_PORT` on a generic host; Render supplies equivalent `RENDER_EXTERNAL_URL` and `PORT` values automatically. Keep `FOODRUN_DATA` on a persistent volume. The repository's `render.yaml` is ready to provision this layout. See the [hybrid live-room guide](../Docs/HYBRID_LIVE_ROOMS.md) for the full configuration.
 
+The web administration panel is available at `/admin`. Configure `FOODRUN_ADMIN_USERNAME` and a password of at least 12 characters in the server environment. Keep the password in the hosting provider's secret store; never put it in the repository or the web application's environment. Admin sessions expire after eight hours and are held only in server memory.
+
 ## Permanent rooms and daily orders
 
 **Rooms, join codes and memberships have no daily expiry or automatic expiry timer.** A saved member session resumes the same room after an app or hub restart. Keep the hub data directory and the phone's app data to preserve that access.

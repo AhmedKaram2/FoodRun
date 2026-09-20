@@ -19,11 +19,18 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 owner(); phase(RoomPhase.ARCHIVED, RoomPhase.CANCELLED); fresh()
                 val restaurant = c.restaurant ?: r.restaurant
                 MenuValidation.validate(restaurant)
+                val options = (if (c.restaurants.isEmpty()) r.restaurantOptions else c.restaurants)
+                    .ifEmpty { listOf(restaurant) }.distinctBy { it.id }
+                require(options.size <= 12 && options.any { it.id == restaurant.id }) { "Choose up to 12 restaurants, including the current choice." }
+                require(options.all { it.currency == restaurant.currency }) { "Restaurant poll choices must use the same currency." }
+                options.forEach(MenuValidation::validate)
                 Room(r.id, r.code, r.ownerId, r.name, restaurant,
                     expectedNames = c.expectedNames, deliveryMode = c.flag, destination = c.destination,
                     deadline = c.deadline, fees = c.fees ?: FeePolicy(restaurant.pricing.defaultDeliveryFeeMinor, restaurant.pricing.defaultServiceFeeMinor),
-                    members = r.members.filterNot { it.removed }.map { it.copy(ready = false, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
+                    members = r.members.filterNot { it.removed }.map { it.copy(ready = it.id == r.ownerId && !it.guest, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
                     revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
+                    restaurantOptions = options, restaurantVotes = listOf(RestaurantVote(r.ownerId, restaurant.id)),
+                    restaurantPollOpen = options.size > 1,
                 ).also(RoomRules::validateRoom)
             }
             CommandKind.APPROVE_LATE_JOIN -> {
@@ -38,7 +45,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 require(!target.approved)
                 require(r.activeMembers.count { it.guest == target.guest } < if (target.guest) 10 else 30) { "Room capacity reached." }
                 require(r.phase == RoomPhase.LOBBY || target.guest || actorId == r.payerId || target.latePayerApproved) { "The payer must approve this late join before the organizer admits them." }
-                r.copy(members = r.members.map { if (it.id == target.id) it.copy(approved = true) else it }, quoteRevision = r.quoteRevision + if (target.guest) 0 else 1)
+                r.copy(members = r.members.map { if (it.id == target.id) it.copy(approved = true, ready = !it.guest && it.participating, lastSeen = now) else it }, quoteRevision = r.quoteRevision + if (target.guest) 0 else 1)
             }
             CommandKind.REMOVE -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); reason()
@@ -48,14 +55,37 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PARTICIPATE -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)
-                r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = false, eligible = c.flag && (!it.participating || it.eligible)) else it })
+                r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = c.flag, eligible = c.flag && (!it.participating || it.eligible), lastSeen = if(c.flag) now else it.lastSeen) else it })
             }
             CommandKind.READY -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)
                 r.copy(members = r.members.map { if (it.id == actorId) it.copy(ready = c.flag, eligible = c.eligible, participating = true, lastSeen = now) else it })
             }
+            CommandKind.VOTE_RESTAURANT -> {
+                orderer(); phase(RoomPhase.LOBBY)
+                require(r.restaurantPollOpen) { "The restaurant poll is already finished." }
+                require(r.restaurantOptions.any { it.id == c.text }) { "Choose a restaurant from this poll." }
+                r.copy(restaurantVotes = r.restaurantVotes.filterNot { it.memberId == actorId } + RestaurantVote(actorId, c.text))
+            }
+            CommandKind.FINALIZE_RESTAURANT -> {
+                owner(); phase(RoomPhase.LOBBY); fresh()
+                require(r.restaurantPollOpen) { "The restaurant poll is already finished." }
+                val totals = r.restaurantVotes.groupingBy { it.restaurantId }.eachCount()
+                val winner = if (c.text.isNotBlank()) r.restaurantOptions.singleOrNull { it.id == c.text }
+                    ?: error("Choose a restaurant from this poll.")
+                else r.restaurantOptions.withIndex().sortedWith(
+                    compareByDescending<IndexedValue<Restaurant>> { totals[it.value.id] ?: 0 }.thenBy { it.index }
+                ).firstOrNull()?.value ?: error("Add a restaurant to the poll.")
+                r.copy(
+                    restaurant = winner,
+                    restaurantPollOpen = false,
+                    carts = emptyList(),
+                    fees = FeePolicy(winner.pricing.defaultDeliveryFeeMinor, winner.pricing.defaultServiceFeeMinor),
+                    quoteRevision = r.quoteRevision + 1,
+                )
+            }
             CommandKind.PREPARE_SPIN -> {
-                owner(); phase(RoomPhase.LOBBY); fresh(); RoomRules.spinReady(r, now)
+                owner(); phase(RoomPhase.LOBBY); fresh(); RoomRules.spinReady(r)
                 r.copy(phase = RoomPhase.PREPARING_SPIN, preparationId = id(), preparedIds = emptyList())
             }
             CommandKind.ABORT_PREPARE -> { owner(); phase(RoomPhase.PREPARING_SPIN); fresh(); reason(); r.copy(phase = RoomPhase.LOBBY, preparationId = "", preparedIds = emptyList()) }
@@ -63,13 +93,14 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 orderer(); phase(RoomPhase.PREPARING_SPIN)
                 require(c.text == r.preparationId) { "Spin preparation has changed." }
                 val prepared = (r.preparedIds + actorId).distinct()
+                val members = r.members.map { if(it.id == actorId) it.copy(lastSeen = now) else it }
                 if (r.orderingMembers.all { it.id in prepared }) {
-                    require(r.orderingMembers.all { now - it.lastSeen in 0 until 15_000 }) { "A required member disconnected before the spin. Wait for reconnection or restart preparation." }
+                    require(members.filter { member -> r.orderingMembers.any { it.id == member.id } }.all { now - it.lastSeen in 0 until 15_000 }) { "A required member disconnected before the spin. Wait for reconnection or restart preparation." }
                     val candidates = r.orderingMembers.filter { it.eligible }.map { it.id }
                     require(candidates.isNotEmpty())
                     val spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000)
-                    r.copy(phase = RoomPhase.SPINNING, spin = spin, preparedIds = prepared)
-                } else r.copy(preparedIds = prepared)
+                    r.copy(phase = RoomPhase.SPINNING, spin = spin, preparedIds = prepared, members = members)
+                } else r.copy(preparedIds = prepared, members = members)
             }
             CommandKind.ACCEPT_DUTY -> {
                 phase(RoomPhase.ACCEPTING); require(r.spin?.winnerId == actorId) { "The selected person must accept." }
@@ -77,7 +108,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.DECLINE_DUTY -> {
                 phase(RoomPhase.ACCEPTING); require(r.spin?.winnerId == actorId); reason()
-                r.copy(phase = RoomPhase.LOBBY, pastSpins = r.pastSpins + listOfNotNull(r.spin), spin = null, members = r.members.map { if (it.id == actorId) it.copy(eligible = false, ready = false) else it })
+                r.copy(phase = RoomPhase.LOBBY, pastSpins = r.pastSpins + listOfNotNull(r.spin), spin = null, members = r.members.map { if (it.id == actorId) it.copy(eligible = false, ready = true) else it })
             }
             CommandKind.SHARE_ACCOUNT -> {
                 payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh()
@@ -87,7 +118,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1), quoteRevision = r.quoteRevision + 1)
             }
             CommandKind.CART -> {
-                orderer(); phase(RoomPhase.COLLECTING)
+                orderer(); phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
+                require(!r.restaurantPollOpen) { "Finish the restaurant poll before adding food." }
                 require(r.deadline == 0L || now <= r.deadline) { "The ordering deadline has passed. Ask the organizer to reopen." }
                 val old = r.carts.singleOrNull { it.memberId == actorId } ?: MemberCart(actorId)
                 val draft = requireNotNull(c.cart)
@@ -115,7 +147,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     .also { Billing.receipts(it) }
             }
             CommandKind.SUBMIT_CART -> {
-                orderer(); phase(RoomPhase.COLLECTING)
+                orderer(); phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
+                require(!r.restaurantPollOpen) { "Finish the restaurant poll before submitting food." }
                 require(r.deadline == 0L || now <= r.deadline) { "The ordering deadline has passed. Ask the organizer to reopen." }
                 val cart = r.carts.singleOrNull { it.memberId == actorId } ?: MemberCart(actorId)
                 require(c.expectedRevision == cart.revision) { "Your cart changed. Review it before submitting." }

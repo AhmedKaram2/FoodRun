@@ -1,5 +1,6 @@
 import SwiftUI
 import FoodRunShared
+import CoreImage.CIFilterBuiltins
 
 struct GroupScreen: View {
     @ObservedObject var store: GroupStore
@@ -20,6 +21,7 @@ struct GroupScreen: View {
             } else { content }
         }
         .background(FoodTheme.cream.ignoresSafeArea())
+        .environment(\.layoutDirection, state.rtl ? .rightToLeft : .leftToRight)
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.controller.foreground() }
             else if phase == .background { store.controller.background() }
@@ -117,17 +119,23 @@ struct GroupScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !state.roomCode.isEmpty {
-                HStack {
-                    VStack(alignment: .leading, spacing: FoodSpacing.s4) {
-                        Text(GroupText.shared.roomCode).font(FoodTypography.eyebrow).tracking(FoodSpacing.s1).foregroundStyle(FoodTheme.muted)
-                        Text(state.roomCode).font(FoodTypography.formTitle).tracking(FoodSpacing.s3)
-                            .foregroundStyle(FoodTheme.ink).textSelection(.enabled).accessibilityIdentifier("roomCode")
+                VStack(spacing: FoodSpacing.s16) {
+                    if let image = inviteQRCode {
+                        Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
+                            .frame(width: 164, height: 164).accessibilityLabel("Scan to join \(state.title)")
                     }
-                    Spacer()
-                    Button { store.dispatch(.shareRoom) } label: {
-                        Image(systemName: "square.and.arrow.up").font(FoodTypography.brandIcon)
-                            .frame(width: FoodSpacing.s48, height: FoodSpacing.s48)
-                    }.disabled(state.busy).accessibilityLabel("Invite people")
+                    HStack {
+                        VStack(alignment: .leading, spacing: FoodSpacing.s4) {
+                            Text("SCAN, TAP, OR ENTER").font(FoodTypography.eyebrow).tracking(FoodSpacing.s1).foregroundStyle(FoodTheme.muted)
+                            Text(state.roomCode).font(FoodTypography.formTitle).tracking(FoodSpacing.s3)
+                                .foregroundStyle(FoodTheme.ink).textSelection(.enabled).accessibilityIdentifier("roomCode")
+                        }
+                        Spacer()
+                        Button { store.dispatch(.shareRoom) } label: {
+                            Image(systemName: "square.and.arrow.up").font(FoodTypography.brandIcon)
+                                .frame(width: FoodSpacing.s48, height: FoodSpacing.s48)
+                        }.disabled(state.busy).accessibilityLabel("Share invitation link")
+                    }
                 }.padding(FoodSpacing.s16).foodCard(showsBorder: true)
             }
         }
@@ -163,5 +171,12 @@ struct GroupScreen: View {
     }
     private func actionButton(_ button: GroupButton) -> some View {
         GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch)
+    }
+    private var inviteQRCode: UIImage? {
+        guard !state.inviteLink.isEmpty, let data = state.inviteLink.data(using: .utf8) else { return nil }
+        let filter = CIFilter.qrCodeGenerator(); filter.message = data; filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
+              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 }

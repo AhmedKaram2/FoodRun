@@ -5,6 +5,32 @@ import java.util.concurrent.Executors
 import kotlin.test.*
 
 class RoomServiceTest {
+    @Test fun restaurantVotesStayLiveAndTheWinnerUnlocksSandwichOrdering(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member)
+        val current = f.db.room(f.owner.room!!.id)!!
+        val second = current.restaurant.copy(id = "second-restaurant", name = "Second Sandwich Shop")
+        f.db.save(current.copy(
+            restaurantOptions = listOf(current.restaurant, second),
+            restaurantVotes = listOf(RestaurantVote(f.owner.memberId, current.restaurant.id)),
+            restaurantPollOpen = true,
+        ))
+
+        f.send(member, CommandKind.VOTE_RESTAURANT) { it.copy(text = second.id) }
+        f.send(f.owner, CommandKind.VOTE_RESTAURANT) { it.copy(text = second.id) }
+        assertFalse(f.service.execute(f.command(member, CommandKind.CART).copy(expectedRevision = 0, cart = MemberCart(member.memberId))).ok)
+
+        val chosen = f.send(f.owner, CommandKind.FINALIZE_RESTAURANT).room!!
+        assertEquals(second.id, chosen.restaurant.id)
+        assertFalse(chosen.restaurantPollOpen)
+        assertEquals(2, chosen.restaurantVotes.count { it.restaurantId == second.id })
+        assertTrue(f.service.execute(f.command(member, CommandKind.CART).copy(expectedRevision = 0, cart = MemberCart(member.memberId))).ok)
+
+        f.restart()
+        val restored = f.state(member).room!!
+        assertEquals(second.id, restored.restaurant.id)
+        assertTrue(restored.members.single { it.id == member.memberId }.ready)
+        assertTrue(restored.members.single { it.id == member.memberId }.participating)
+    }
     @Test fun completeMealFlowSettlesAndReusesPermanentRoomAndMembership(): Unit = RoomFixture().use { f ->
         val member = f.placed(); f.pay()
         val declared = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 3000, text = "Bank transfer") }
@@ -104,6 +130,39 @@ class RoomServiceTest {
         val memberCommand = f.command(member, CommandKind.CART).copy(expectedRevision = 0, cart = MemberCart(member.memberId))
         f.execute(ownerCommand); f.execute(memberCommand)
         assertEquals(2, f.state().room!!.carts.size)
+    }
+    @Test fun personalOrdersCanBeEditedBeforeAndDuringTheSpinAndRemainAfterSelection(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member)
+        fun save(actor: RoomReply, revision: Long, quantity: Int) = f.send(actor, CommandKind.CART) {
+            it.copy(expectedRevision = revision, cart = MemberCart(actor.memberId, lines = listOf(CartLine("line-${actor.memberId}", "meal", quantity))))
+        }
+
+        save(f.owner, 0, 1)
+        f.send(f.owner, CommandKind.SUBMIT_CART) { it.copy(expectedRevision = 1) }
+        val revised = save(f.owner, 1, 2).room!!.carts.single { it.memberId == f.owner.memberId }
+        assertEquals(2, revised.lines.single().quantity)
+        assertFalse(revised.submitted, "Editing a saved order must require submission again")
+        f.send(f.owner, CommandKind.SUBMIT_CART) { it.copy(expectedRevision = 2) }
+
+        f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }
+        f.send(member, CommandKind.READY) { it.copy(flag = true) }
+        val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
+        save(member, 0, 1)
+        f.send(f.owner, CommandKind.ACK_SPIN) { it.copy(text = preparation) }
+        val spinning = f.send(member, CommandKind.ACK_SPIN) { it.copy(text = preparation) }
+        assertEquals(RoomPhase.SPINNING, spinning.room!!.phase)
+        save(member, 1, 2)
+
+        f.now = spinning.room!!.spin!!.endAt
+        f.service.tick()
+        assertEquals(RoomPhase.ACCEPTING, f.state().room!!.phase)
+        save(member, 2, 3)
+        f.send(f.owner, CommandKind.ACCEPT_DUTY)
+
+        val room = f.state().room!!
+        assertEquals(RoomPhase.COLLECTING, room.phase)
+        assertEquals(2, room.carts.single { it.memberId == f.owner.memberId }.lines.single().quantity)
+        assertEquals(3, room.carts.single { it.memberId == member.memberId }.lines.single().quantity)
     }
     @Test fun pendingGuestsAndInactiveMembersCannotSeePrivateDataOrAct(): Unit = RoomFixture().use { f ->
         val member = f.placed(); val pending = f.join("Pending"); val guest = f.join("Guest", guest = true)

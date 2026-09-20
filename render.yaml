@@ -22,5 +22,9 @@ services:
         value: devassess-c8833
       - key: FOODRUN_FIREBASE_API_KEY
         sync: false
+      - key: FOODRUN_ADMIN_USERNAME
+        value: Karam
+      - key: FOODRUN_ADMIN_PASSWORD
+        sync: false
       - key: FOODRUN_WEB_ORIGINS
         value: https://intrvioo.com,https://www.intrvioo.com,https://intrvioo.netlify.app

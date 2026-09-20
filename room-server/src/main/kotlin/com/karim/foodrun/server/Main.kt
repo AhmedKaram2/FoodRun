@@ -66,18 +66,19 @@ fun main() {
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
     val db = RoomDatabase(directory)
     val service = RoomService(db, identityProvider = FirebaseIdentity.configured())
+    val admin = AdminService(db, service)
     Runtime.getRuntime().addShutdownHook(Thread { discoveries.forEach { it.close() }; db.close() })
     embeddedServer(Netty, configure = {
         if (proxyMode) connector { this.port = port; this.host = "0.0.0.0" }
         else sslConnector(keyStore, "foodrun", { password.toCharArray() }, { password.toCharArray() }) { this.port = port; this.host = "0.0.0.0" }
-    }) { hubRoutes(service) }.start(wait = true)
+    }) { hubRoutes(service, admin) }.start(wait = true)
 }
 
-fun Application.hubRoutes(service: RoomService) {
+fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
     val origins = (System.getenv("FOODRUN_WEB_ORIGINS") ?: "http://localhost:5173,http://127.0.0.1:5173").split(',').filter { it.isNotBlank() }
     install(CORS) {
         origins.forEach { value -> val uri = java.net.URI(value.trim()); allowHost(uri.authority, schemes = listOf(uri.scheme)) }
-        allowMethod(HttpMethod.Post); allowHeader(HttpHeaders.ContentType)
+        allowMethod(HttpMethod.Post); allowHeader(HttpHeaders.ContentType); allowHeader(HttpHeaders.Authorization)
     }
     install(WebSockets) { pingPeriod = 15.seconds; timeout = 20.seconds; maxFrameSize = 2 * 1024 * 1024 }
     intercept(ApplicationCallPipeline.Plugins) {
@@ -86,11 +87,11 @@ fun Application.hubRoutes(service: RoomService) {
         }
     }
     val attempts = ConcurrentHashMap<String, Pair<Long, Int>>()
-    fun allow(key: String): Boolean {
+    fun allow(key: String, limit: Int = 240): Boolean {
         val now = System.currentTimeMillis()
         if (attempts.size > 10000) attempts.entries.removeIf { now - it.value.first > 60000 }
         val value = attempts.compute(key) { _, old -> if (old == null || now - old.first > 60000) now to 1 else old.first to old.second + 1 }!!
-        return value.second <= 240
+        return value.second <= limit
     }
     launch(Dispatchers.IO) {
         while (isActive) {
@@ -108,8 +109,59 @@ fun Application.hubRoutes(service: RoomService) {
         }
     }
     routing {
+        get("/admin") {
+            val bytes = Thread.currentThread().contextClassLoader.getResourceAsStream("web/index.html")?.use { it.readBytes() }
+            if(bytes == null) call.respond(HttpStatusCode.NotFound) else call.respondBytes(bytes, ContentType.Text.Html)
+        }
         staticResources("/", "web")
         get("/health") { call.respondText("Food Run hub · protocol 1") }
+        get("/catalog") {
+            val restaurants = admin?.catalog() ?: BuiltInRestaurants.all.map { it.restaurant }
+            call.respondText(orderJson.encodeToString(restaurants), ContentType.Application.Json)
+        }
+        get("/config") {
+            call.respondText(orderJson.encodeToString(admin?.settings() ?: AdminSettings()), ContentType.Application.Json)
+        }
+        post("/admin/login") {
+            if (!allow("admin-login:${call.request.local.remoteHost}", 10)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            try {
+                val body = call.receiveText(); require(body.encodeToByteArray().size <= 4096) { "Request too large." }; JsonInputValidation.validate(body)
+                val result = requireNotNull(admin).login(orderJson.decodeFromString<AdminLogin>(body))
+                call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin sign-in failed.")}}", ContentType.Application.Json, HttpStatusCode.Unauthorized) }
+        }
+        get("/admin/dashboard") {
+            try {
+                requireNotNull(admin).authorize(call.request.headers[HttpHeaders.Authorization])
+                call.respondText(orderJson.encodeToString(admin.dashboard()), ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.Unauthorized) }
+        }
+        post("/admin/settings") {
+            try {
+                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                val result = serviceAdmin.saveSettings(orderJson.decodeFromString(call.receiveText()))
+                call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/admin/restaurant") {
+            try {
+                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                val result = serviceAdmin.mutateRestaurant(orderJson.decodeFromString(call.receiveText()))
+                call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/admin/user") {
+            try {
+                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                serviceAdmin.mutateUser(orderJson.decodeFromString(call.receiveText())); call.respondText("{\"ok\":true}", ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/admin/room") {
+            try {
+                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                serviceAdmin.mutateRoom(orderJson.decodeFromString(call.receiveText())); call.respondText("{\"ok\":true}", ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
         post("/command") {
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
             val reply = try {

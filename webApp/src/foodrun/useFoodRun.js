@@ -4,10 +4,18 @@ import { auth } from '../firebase';
 import { command, request, watch } from './client';
 
 const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
+function invitedHub() {
+  try {
+    const value = new URLSearchParams(window.location.search).get('hub');
+    const url = value ? new URL(value) : null;
+    return url?.protocol === 'https:' ? url.origin : '';
+  } catch { return ''; }
+}
+function sessionStorageKey(userId, hub) { return `foodrun-sessions-v1:${userId}:${hub}`; }
 
 export function useFoodRun() {
   const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
-  const [hub, setHub] = useState(() => localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
+  const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
@@ -20,8 +28,9 @@ export function useFoodRun() {
   }, []);
   useEffect(() => onAuthStateChanged(auth, next => { setUser(next); setAuthReady(true); }), []);
   useEffect(() => {
-    const epoch = ++alive.current; setHome(null); setRooms({}); setOnline({}); setSessions({}); setIdentityToken(''); seen.current.clear(); pending.current = null;
+    const epoch = ++alive.current; setHome(null); setRooms({}); setOnline({}); setIdentityToken(''); seen.current.clear(); pending.current = null;
     if (!user || !hub) return;
+    try { setSessions(JSON.parse(localStorage.getItem(sessionStorageKey(user.uid, hub)) || '{}')); } catch { setSessions({}); }
     let stop = () => {}, cancelled = false;
     const connect = async () => {
       try {
@@ -43,6 +52,10 @@ export function useFoodRun() {
     const refresh = setInterval(() => { stop(); connect(); }, 50 * 60 * 1000);
     return () => { cancelled = true; stop(); clearInterval(refresh); };
   }, [user, hub, hubRevision, alert]);
+  useEffect(() => {
+    if (!user || !hub || Object.keys(sessions).length === 0) return;
+    localStorage.setItem(sessionStorageKey(user.uid, hub), JSON.stringify(sessions));
+  }, [user, hub, sessions]);
   const sessionKey = Object.values(sessions).map(s => `${s.roomId}:${s.token}`).sort().join('|');
   useEffect(() => {
     if (!hub) return;

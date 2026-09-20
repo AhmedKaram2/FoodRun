@@ -26,19 +26,19 @@ internal fun GroupController.fees(currency: String): FeePolicy = FeePolicy(
 internal fun GroupController.addMenuItem() {
     val export = requireNotNull(editingRestaurant)
     val name = text(GroupFieldKey.MENU_ITEM_NAME).trim(); MenuValidation.label(name)
-    val currency = text(GroupFieldKey.CURRENCY).uppercase()
+    val currency = "AED"
     val item = MenuItem(platform.uuid(), export.restaurant.menu.categories.first().id, name, basePriceMinor = Money.parse(text(GroupFieldKey.MENU_ITEM_PRICE), currency))
     editingRestaurant = export.copy(restaurant = export.restaurant.copy(menu = export.restaurant.menu.copy(items = export.restaurant.menu.items + item)))
     draft[GroupFieldKey.MENU_ITEM_NAME] = ""; draft[GroupFieldKey.MENU_ITEM_PRICE] = ""
 }
 internal fun GroupController.saveEditor() {
-    val export = requireNotNull(editingRestaurant); val currency = text(GroupFieldKey.CURRENCY).trim().uppercase()
+    val export = requireNotNull(editingRestaurant); val currency = "AED"
     editingRoomOrder?.let { require(it == room().let { r -> r.id to r.orderNumber }) { "A different order is open. Return to it before editing its restaurant." } }
     val taxRate = if(export.restaurant.pricing.taxTreatment == TaxTreatment.ADDED) Money.parse(text(GroupFieldKey.TAX_RATE), "AED").also {
         require(it <= 10000) { "Tax rate must be between 0 and 100 percent." }
     }.toInt() else export.restaurant.pricing.taxRateBasisPoints
     val r = export.restaurant.copy(name = text(GroupFieldKey.RESTAURANT_NAME).trim(), branchName = text(GroupFieldKey.BRANCH).trim(), currency = currency,
-        contact = export.restaurant.contact.copy(phoneE164 = text(GroupFieldKey.PHONE).trim().ifEmpty { null }, address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
+        contact = export.restaurant.contact.copy(phoneE164 = text(GroupFieldKey.PHONE).trim().takeIf { it.isNotEmpty() }?.let(UaePhone::normalize), address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
         pricing = export.restaurant.pricing.copy(defaultDeliveryFeeMinor = fees(currency).delivery, defaultServiceFeeMinor = fees(currency).service,
             taxRateBasisPoints = taxRate, minimumOrderMinor = Money.parse(text(GroupFieldKey.MINIMUM_ORDER).ifBlank { "0" }, currency)))
     MenuValidation.validate(r); saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
@@ -54,8 +54,9 @@ internal fun GroupController.saveRestaurant(export: RestaurantExport) {
 internal fun GroupController.addCartItem() {
     val item = requireNotNull(selectedItem); val cart = myCart()
     val quantity = text(GroupFieldKey.QUANTITY).toIntOrNull() ?: error("Enter a whole-number quantity.")
-    val line = CartLine(platform.uuid(), item.id, quantity, variant, options, text(GroupFieldKey.NOTE))
-    val next = cart.copy(lines = cart.lines + line); Billing.lines(room().restaurant, next)
+    val line = CartLine(editingCartLineId ?: platform.uuid(), item.id, quantity, variant, options, text(GroupFieldKey.NOTE))
+    val lines = if(editingCartLineId == null) cart.lines + line else cart.lines.map { if(it.id == editingCartLineId) line else it }
+    val next = cart.copy(lines = lines); Billing.lines(room().restaurant, next)
     command(CommandKind.CART, cart = next, revision = cart.revision)
 }
 internal fun GroupController.seedAccount(a: ReceivingAccount) {
@@ -67,7 +68,7 @@ internal fun GroupController.accountMatchesDraft(a: ReceivingAccount): Boolean =
         a.currency == (reply?.room?.restaurant?.currency ?: "AED")
 
 internal fun GroupController.saveAccount() {
-    val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), if(flag(GroupFieldKey.AANI)) "Aani" else text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), reply?.room?.restaurant?.currency ?: "AED", method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
+    val a = ReceivingAccount(selectedAccount?.id ?: platform.uuid(), text(GroupFieldKey.ACCOUNT_HOLDER).trim(), if(flag(GroupFieldKey.AANI)) "Aani" else text(GroupFieldKey.ACCOUNT_BANK).trim(), text(GroupFieldKey.ACCOUNT_IDENTIFIER).trim(), "AED", method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK).normalized()
     a.validate(); require(library.accounts.size < 20 || library.accounts.any { it.id == a.id }) { "Saved-account limit reached." }
     replaceLibrary(library.copy(accounts = library.accounts.filterNot { it.id == a.id } + a)); selectedAccount = a
 }
@@ -84,6 +85,8 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.APPROVE -> command(CommandKind.APPROVE, memberId = value, flag = flag(GroupFieldKey.ELIGIBLE))
         GroupAction.APPROVE_LATE_JOIN -> command(CommandKind.APPROVE_LATE_JOIN, memberId = value)
         GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = reason)
+        GroupAction.VOTE_RESTAURANT -> command(CommandKind.VOTE_RESTAURANT, text = value)
+        GroupAction.FINALIZE_RESTAURANT -> command(CommandKind.FINALIZE_RESTAURANT, text = value)
         GroupAction.PREPARE_SPIN -> command(CommandKind.PREPARE_SPIN)
         GroupAction.ABORT_SPIN -> command(CommandKind.ABORT_PREPARE, text = reason)
         GroupAction.ACCEPT_DUTY -> command(CommandKind.ACCEPT_DUTY)

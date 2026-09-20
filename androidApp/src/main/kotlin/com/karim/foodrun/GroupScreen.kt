@@ -2,6 +2,7 @@ package com.karim.foodrun
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
@@ -37,6 +38,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,7 +48,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.BarcodeEncoder
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.karim.foodrun.shared.orders.GroupAction
@@ -71,6 +79,7 @@ fun GroupScreen(controller: GroupController) {
     val focus = LocalFocusManager.current
     LaunchedEffect(state.page) { focus.clearFocus() }
     BackHandler(state.canGoBack) { controller.dispatch(GroupAction.BACK, "") }
+    CompositionLocalProvider(LocalLayoutDirection provides if(state.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
     if (state.page == GroupPage.QUICK_SPIN) {
         Column {
             TextButton(
@@ -82,8 +91,7 @@ fun GroupScreen(controller: GroupController) {
             }
             Box(Modifier.weight(1f)) { FoodRunScreen() }
         }
-        return
-    }
+    } else {
     var optionsExpanded by remember(state.page) { mutableStateOf(false) }
     LaunchedEffect(state.error) {
         if (state.error.isNotEmpty() && state.extraFields.isNotEmpty()) optionsExpanded = true
@@ -135,6 +143,8 @@ fun GroupScreen(controller: GroupController) {
             }
         }
     }
+    }
+    }
 }
 
 @Composable
@@ -152,15 +162,22 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
         if (state.subtitle.isNotEmpty()) Text(text = state.subtitle, style = FoodType.Body, color = FoodColors.Muted)
         if (state.status.isNotEmpty()) Text(text = state.status, style = FoodType.Status, color = FoodColors.Muted)
         if (state.roomCode.isNotEmpty()) FoodCard(bordered = true) {
-            Row(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XXSmall)) {
-                    Text(GroupText.roomCode, style = FoodType.RoundedCaption, color = FoodColors.Muted)
-                    SelectionContainer {
-                        Text(state.roomCode, style = FoodType.DialogTitle, color = FoodColors.Ink, modifier = Modifier.testTag("roomCode"))
-                    }
+            Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (state.inviteLink.isNotEmpty()) remember(state.inviteLink) {
+                    runCatching { BarcodeEncoder().encodeBitmap(state.inviteLink, BarcodeFormat.QR_CODE, 480, 480) }.getOrNull()
+                }?.let { bitmap ->
+                    Image(bitmap.asImageBitmap(), "Scan to join ${state.title}", modifier = Modifier.size(144.dp))
                 }
-                IconButton(onClick = { controller.dispatch(GroupAction.SHARE_ROOM, "") }, enabled = !state.busy) {
-                    Icon(Icons.Default.Share, "Invite people", tint = FoodColors.Orange)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XXSmall)) {
+                        Text("SCAN, TAP, OR ENTER", style = FoodType.RoundedCaption, color = FoodColors.Muted)
+                        SelectionContainer {
+                            Text(state.roomCode, style = FoodType.DialogTitle, color = FoodColors.Ink, modifier = Modifier.testTag("roomCode"))
+                        }
+                    }
+                    IconButton(onClick = { controller.dispatch(GroupAction.SHARE_ROOM, "") }, enabled = !state.busy) {
+                        Icon(Icons.Default.Share, "Share invitation link", tint = FoodColors.Orange)
+                    }
                 }
             }
         }
@@ -170,7 +187,7 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
 @Composable
 private fun GroupProgress(step: Int) {
     Row(Modifier.fillMaxWidth().padding(vertical = FoodSpacing.Medium).clearAndSetSemantics {
-        contentDescription = "Step ${step + 1} of 4: ${GroupText.progressSteps[step]}"
+        contentDescription = "Step ${step + 1} of ${GroupText.progressSteps.size}: ${GroupText.progressSteps[step]}"
     }, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
         GroupText.progressSteps.forEachIndexed { index, title ->
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {

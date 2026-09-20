@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import IosComponents
 import FoodRunShared
 
@@ -6,9 +7,37 @@ struct GroupFieldContent: View {
     let field: GroupField
     let enabled: Bool
     let onChange: (String) -> Void
+    @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
-        if field.toggle {
+        if field.key == .photo {
+            VStack(spacing: FoodSpacing.s14) {
+                if let image = profileImage {
+                    Image(uiImage: image).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle())
+                        .accessibilityLabel("Selected profile photo")
+                }
+                Text(field.value.isEmpty ? "Add a profile photo" : "Profile photo selected")
+                    .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label(field.value.isEmpty ? "Choose from Photos" : "Change photo", systemImage: "photo.on.rectangle")
+                        .font(FoodTypography.button).frame(maxWidth: .infinity, minHeight: FoodSpacing.s48)
+                        .foregroundStyle(.white).background(FoodTheme.orange, in: RoundedRectangle(cornerRadius: FoodRadius.input))
+                }.disabled(!enabled)
+                if !field.value.isEmpty {
+                    Button(role: .destructive) { onChange("") } label: { Text("Remove photo").frame(maxWidth: .infinity) }
+                        .disabled(!enabled)
+                }
+            }
+            .padding(FoodSpacing.s16).foodCard(showsBorder: true)
+            .onChange(of: selectedPhoto) { _, photo in
+                guard let photo else { return }
+                Task {
+                    guard let data = try? await photo.loadTransferable(type: Data.self), data.count <= 10 * 1_024 * 1_024,
+                          let source = UIImage(data: data), let encoded = resizedPhoto(source) else { return }
+                    await MainActor.run { onChange("data:image/jpeg;base64," + encoded.base64EncodedString()) }
+                }
+            }
+        } else if field.toggle {
             Toggle(field.label, isOn: Binding(
                 get: { field.value == "true" },
                 set: { onChange($0 ? "true" : "false") }
@@ -30,6 +59,21 @@ struct GroupFieldContent: View {
                 } else { input }
             }
         }
+    }
+
+    private var profileImage: UIImage? {
+        guard field.value.hasPrefix("data:image/"), let marker = field.value.range(of: "base64,"),
+              let data = Data(base64Encoded: String(field.value[marker.upperBound...])) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private func resizedPhoto(_ source: UIImage) -> Data? {
+        let side = min(source.size.width, source.size.height)
+        guard side > 0 else { return nil }
+        let crop = CGRect(x: (source.size.width - side) / 2, y: (source.size.height - side) / 2, width: side, height: side)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256))
+        let image = renderer.image { _ in source.draw(in: CGRect(x: -crop.minX * 256 / side, y: -crop.minY * 256 / side, width: source.size.width * 256 / side, height: source.size.height * 256 / side)) }
+        return image.jpegData(compressionQuality: 0.78)
     }
 
     private var input: some View {

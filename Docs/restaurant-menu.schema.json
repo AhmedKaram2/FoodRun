@@ -43,12 +43,15 @@
       "properties": {
         "id": { "$ref": "#/$defs/label", "description": "Stable restaurant/branch identity. A matching ID replaces the saved library entry on confirmed import." },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "", "description": "Arabic restaurant name. Leave empty only when no Arabic label is available." },
         "branchName": { "type": "string", "maxLength": 160, "default": "" },
-        "currency": { "type": "string", "enum": ["AED", "USD", "EUR", "GBP", "SAR", "EGP", "KWD", "BHD", "OMR", "JPY"], "default": "AED" },
+        "branchNameAr": { "type": "string", "maxLength": 160, "default": "" },
+        "currency": { "type": "string", "enum": ["AED"], "default": "AED" },
         "contact": { "$ref": "#/$defs/contact", "default": {} },
         "pricing": { "$ref": "#/$defs/pricing", "default": {} },
         "notes": { "type": "string", "maxLength": 4000, "default": "" },
-        "menu": { "$ref": "#/$defs/menu" }
+        "menu": { "$ref": "#/$defs/menu" },
+        "openOrdering": { "type": "boolean", "default": false }
       }
     },
     "contact": {
@@ -90,6 +93,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/label" },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "" },
         "sortOrder": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647, "default": 0 }
       }
     },
@@ -101,7 +105,9 @@
         "id": { "$ref": "#/$defs/label" },
         "categoryId": { "$ref": "#/$defs/label", "description": "Must reference an existing menu.categories[].id." },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "" },
         "description": { "type": "string", "maxLength": 2000, "default": "" },
+        "descriptionAr": { "type": "string", "maxLength": 2000, "default": "" },
         "basePriceMinor": { "$ref": "#/$defs/money", "description": "Full item price when there are no variants. For variants, use the listed default size price, or the cheapest size if no default is stated; a selected variant replaces this amount." },
         "available": { "type": "boolean", "default": true },
         "variants": { "type": "array", "maxItems": 30, "items": { "$ref": "#/$defs/variant" }, "default": [] },
@@ -115,6 +121,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/label" },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "" },
         "priceMinor": { "$ref": "#/$defs/money", "description": "Full replacement price for this size/variant, not an increment added to basePriceMinor." }
       }
     },
@@ -125,6 +132,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/label" },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "" },
         "minSelections": { "type": "integer", "minimum": 0, "maximum": 30, "default": 0 },
         "maxSelections": { "type": "integer", "minimum": 0, "maximum": 30, "default": 1 },
         "options": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "$ref": "#/$defs/option" } }
@@ -138,6 +146,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/label", "description": "Must be unique across every option group in this menu." },
         "name": { "$ref": "#/$defs/label" },
+        "nameAr": { "type": "string", "maxLength": 160, "default": "" },
         "priceDeltaMinor": { "$ref": "#/$defs/money", "description": "Amount added to the selected variant or base price; zero for a free choice. Negative discounts are unsupported." }
       }
     }

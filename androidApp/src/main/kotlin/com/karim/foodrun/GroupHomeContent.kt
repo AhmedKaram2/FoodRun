@@ -109,7 +109,7 @@ internal fun groupActionIcon(button: GroupButton): ImageVector = when {
         GroupAction.QUICK_SPIN, GroupAction.PREPARE_SPIN, GroupAction.REFRESH, GroupAction.RETRY -> Icons.Default.Refresh
         GroupAction.OPEN_LIBRARY, GroupAction.OPEN_ITEM, GroupAction.OPEN_RECEIPTS -> Icons.Default.Menu
         GroupAction.OPEN_HISTORY -> Icons.Default.DateRange
-        GroupAction.SHARE_ROOM, GroupAction.SHARE_RECEIPT, GroupAction.EXPORT_MENU -> Icons.Default.Share
+        GroupAction.SHARE_ROOM, GroupAction.SHARE_RECEIPT, GroupAction.EXPORT_MENU, GroupAction.SHARE_ORDER_WHATSAPP -> Icons.Default.Share
         GroupAction.READY, GroupAction.CONFIRM_QUOTE, GroupAction.SAVE_RESTAURANT, GroupAction.ACCEPT_DUTY,
         GroupAction.SELECT_TAX_TREATMENT -> Icons.Default.Check
         GroupAction.EDIT_RESTAURANT, GroupAction.EDIT_ROOM_RESTAURANT -> Icons.Default.Edit

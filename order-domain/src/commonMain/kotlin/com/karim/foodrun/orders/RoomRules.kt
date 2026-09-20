@@ -4,6 +4,15 @@ object RoomRules {
     fun member(room: Room, id: String): Member = room.members.singleOrNull { it.id == id && !it.removed } ?: error("Membership has been removed. Ask the organizer to join again.")
     fun validateRoom(room: Room) {
         MenuValidation.label(room.name); MenuValidation.validate(room.restaurant)
+        require(room.restaurantOptions.size <= 12) { "A restaurant poll supports up to 12 choices." }
+        require(room.restaurantOptions.map { it.id }.distinct().size == room.restaurantOptions.size) { "Restaurant poll choices must be unique." }
+        room.restaurantOptions.forEach(MenuValidation::validate)
+        require(room.restaurantOptions.isEmpty() || room.restaurantOptions.any { it.id == room.restaurant.id }) { "The active restaurant must be included in the poll." }
+        require(room.restaurantOptions.all { it.currency == room.restaurant.currency }) { "Restaurant poll choices must use the same currency." }
+        require(room.restaurantVotes.map { it.memberId }.distinct().size == room.restaurantVotes.size &&
+            room.restaurantVotes.all { vote -> room.members.any { it.id == vote.memberId && !it.removed } && room.restaurantOptions.any { it.id == vote.restaurantId } }) {
+            "Restaurant poll contains an invalid vote."
+        }
         require(room.expectedNames.size <= 30 && room.expectedNames.map { it.trim().lowercase() }.distinct().size == room.expectedNames.size) { "Expected names must be unique (up to 30)." }
         room.expectedNames.forEach(MenuValidation::label)
         require(!room.deliveryMode || room.destination.isNotBlank()) { "Enter a delivery destination and contact." }
@@ -11,9 +20,10 @@ object RoomRules {
         validateFees(room.fees)
     }
     fun validateFees(fees: FeePolicy) { listOf(fees.delivery, fees.service, fees.discount).forEach(MenuValidation::price) }
-    fun spinReady(room: Room, now: Long) {
+    fun spinReady(room: Room) {
+        require(!room.restaurantPollOpen) { "Finish the restaurant poll before starting the spin." }
         require(room.orderingMembers.isNotEmpty()) { "At least one ordering member must join." }
-        require(room.orderingMembers.all { it.ready && now - it.lastSeen in 0 until 15_000 }) { "Wait for all ordering members to be ready and connected." }
+        require(room.orderingMembers.all { it.ready }) { "Wait for all ordering members to be ready." }
         require(room.expectedNames.all { name -> room.orderingMembers.any { it.name.equals(name.trim(), true) } }) { "Some expected people have not joined. Remove absent invitations explicitly." }
         require(room.orderingMembers.any { it.eligible }) { "At least one member must consent to ordering and paying." }
     }

@@ -15,6 +15,7 @@ val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
     val id: String, val name: String, val branchName: String = "", val currency: String = "AED",
     val contact: RestaurantContact = RestaurantContact(), val pricing: RestaurantPricing = RestaurantPricing(),
     val notes: String = "", val menu: Menu = Menu(), val openOrdering: Boolean = false,
+    val nameAr: String = "", val branchNameAr: String = "",
 )
 @Serializable data class RestaurantContact(val phoneE164: String? = null, val whatsappE164: String? = null, val address: String? = null)
 @Serializable enum class TaxTreatment {
@@ -25,15 +26,23 @@ val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
     val defaultDeliveryFeeMinor: Long = 0, val defaultServiceFeeMinor: Long = 0, val minimumOrderMinor: Long = 0,
 )
 @Serializable data class Menu(val categories: List<MenuCategory> = emptyList(), val optionGroups: List<OptionGroup> = emptyList(), val items: List<MenuItem> = emptyList())
-@Serializable data class MenuCategory(val id: String, val name: String, val sortOrder: Int = 0)
+@Serializable data class MenuCategory(val id: String, val name: String, val sortOrder: Int = 0, val nameAr: String = "")
 @Serializable data class MenuItem(
     val id: String, val categoryId: String, val name: String, val description: String = "",
     val basePriceMinor: Long, val available: Boolean = true, val variants: List<MenuVariant> = emptyList(),
-    val optionGroupIds: List<String> = emptyList(),
+    val optionGroupIds: List<String> = emptyList(), val nameAr: String = "", val descriptionAr: String = "",
 )
-@Serializable data class MenuVariant(val id: String, val name: String, val priceMinor: Long)
-@Serializable data class MenuOption(val id: String, val name: String, val priceDeltaMinor: Long)
-@Serializable data class OptionGroup(val id: String, val name: String, val minSelections: Int = 0, val maxSelections: Int = 1, val options: List<MenuOption>)
+@Serializable data class MenuVariant(val id: String, val name: String, val priceMinor: Long, val nameAr: String = "")
+@Serializable data class MenuOption(val id: String, val name: String, val priceDeltaMinor: Long, val nameAr: String = "")
+@Serializable data class OptionGroup(val id: String, val name: String, val minSelections: Int = 0, val maxSelections: Int = 1, val options: List<MenuOption>, val nameAr: String = "")
+
+fun Restaurant.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun MenuCategory.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun MenuItem.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun MenuItem.localizedDescription(language: String) = if (language == "ar" && descriptionAr.isNotBlank()) descriptionAr else description
+fun MenuVariant.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun MenuOption.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun OptionGroup.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
 
 object MenuValidation {
     const val MAX_BYTES = 2 * 1024 * 1024
@@ -52,28 +61,27 @@ object MenuValidation {
         return export
     }
     fun validate(r: Restaurant) {
-        label(r.id); label(r.name); require(r.branchName.length <= 160 && r.notes.length <= 4000)
-        require(r.currency in Money.currencies) { "Supported currencies: ${Money.currencies.joinToString()}." }
+        label(r.id); label(r.name); if(r.nameAr.isNotBlank()) label(r.nameAr)
+        require(r.branchName.length <= 160 && r.branchNameAr.length <= 160 && r.notes.length <= 4000)
+        require(r.currency == "AED") { "Restaurant menus and rooms use AED (Dirham)." }
         require(r.pricing.taxRateBasisPoints == null || r.pricing.taxRateBasisPoints in 0..10000) { "Invalid tax rate." }
         if (r.pricing.taxTreatment == TaxTreatment.ADDED) require(r.pricing.taxRateBasisPoints != null) { "Enter the restaurant's tax rate." }
         listOf(r.pricing.defaultDeliveryFeeMinor, r.pricing.defaultServiceFeeMinor, r.pricing.minimumOrderMinor).forEach(::price)
-        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach {
-            require(it.matches(Regex("\\+?[0-9 ()-]{5,24}")) && it.count { digit -> digit in '0'..'9' } >= 5) { "Enter a restaurant phone number with at least 5 digits." }
-        }
+        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach { UaePhone.normalize(it) }
         require((r.contact.address?.length ?: 0) <= 1000)
         val m = r.menu
         require(m.items.size in (if (r.openOrdering) 0 else 1)..500 && m.categories.size in (if (r.openOrdering) 0 else 1)..100 && m.optionGroups.size <= 100) { "Menu needs 1–500 items and 1–100 categories." }
         unique(m.categories.map { it.id }); unique(m.items.map { it.id }); unique(m.optionGroups.map { it.id })
-        m.categories.forEach { label(it.name) }
+        m.categories.forEach { label(it.name); if(it.nameAr.isNotBlank()) label(it.nameAr) }
         unique(m.optionGroups.flatMap { it.options }.map { it.id })
         m.optionGroups.forEach { g ->
-            label(g.name); require(g.options.size in 1..30 && g.minSelections in 0..g.maxSelections && g.maxSelections <= g.options.size) { "Invalid option limits for ${g.name}." }
-            unique(g.options.map { it.id }); g.options.forEach { label(it.name); price(it.priceDeltaMinor) }
+            label(g.name); if(g.nameAr.isNotBlank()) label(g.nameAr); require(g.options.size in 1..30 && g.minSelections in 0..g.maxSelections && g.maxSelections <= g.options.size) { "Invalid option limits for ${g.name}." }
+            unique(g.options.map { it.id }); g.options.forEach { label(it.name); if(it.nameAr.isNotBlank()) label(it.nameAr); price(it.priceDeltaMinor) }
         }
         m.items.forEach { i ->
-            label(i.name); require(i.description.length <= 2000); price(i.basePriceMinor)
+            label(i.name); if(i.nameAr.isNotBlank()) label(i.nameAr); require(i.description.length <= 2000 && i.descriptionAr.length <= 2000); price(i.basePriceMinor)
             require(m.categories.any { it.id == i.categoryId }) { "Unknown category for ${i.name}." }
-            require(i.variants.size <= 30); unique(i.variants.map { it.id }); i.variants.forEach { label(it.name); price(it.priceMinor) }
+            require(i.variants.size <= 30); unique(i.variants.map { it.id }); i.variants.forEach { label(it.name); if(it.nameAr.isNotBlank()) label(it.nameAr); price(it.priceMinor) }
             unique(i.optionGroupIds); require(i.optionGroupIds.all { id -> m.optionGroups.any { it.id == id } }) { "Unknown option group for ${i.name}." }
         }
     }

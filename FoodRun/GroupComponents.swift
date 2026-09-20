@@ -102,7 +102,7 @@ struct GroupProgress: View {
         }
         .padding(.vertical, FoodSpacing.s12)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Step \(step + 1) of 4: \(GroupText.shared.progressSteps[step])")
+        .accessibilityLabel("Step \(step + 1) of \(GroupText.shared.progressSteps.count): \(GroupText.shared.progressSteps[step])")
     }
 }
 
@@ -120,7 +120,7 @@ extension GroupButton {
         case .openLibrary, .openItem, .selectRestaurant: return "fork.knife"
         case .openReceipts, .shareReceipt: return "doc.text"
         case .openHistory: return "clock.arrow.circlepath"
-        case .shareRoom, .exportMenu, .shareRestaurantOrder: return "square.and.arrow.up"
+        case .shareRoom, .exportMenu, .shareRestaurantOrder, .shareOrderWhatsapp: return "square.and.arrow.up"
         case .scan: return "qrcode.viewfinder"
         case .useInternet: return "globe"
         case .discover, .connect: return "wifi"

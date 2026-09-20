@@ -5,7 +5,8 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    IDENTITY, HOME, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
+    IDENTITY, HOME, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
+    VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
     ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
     REOPEN, SET_FEES, UPDATE_RESTAURANT, PLACE, PAY_RESTAURANT, FULFILL, DECLARE_TRANSFER, CONFIRM_TRANSFER,
     REJECT_TRANSFER, DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL,
@@ -18,6 +19,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
     val restaurant: Restaurant? = null, val expectedNames: List<String> = emptyList(), val destination: String = "", val deadline: Long = 0,
     val fees: FeePolicy? = null, val cart: MemberCart? = null, val account: ReceivingAccount? = null,
     val amount: Long = 0, val transferId: String = "", val historyOffset: Int = 0,
+    val restaurants: List<Restaurant> = emptyList(),
     // Omit the legacy default so commands saved before this field retain their replay digest.
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)

@@ -18,6 +18,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var editingRoomOrder: Pair<String, Long>? = null
     internal var importPreview: RestaurantExport? = null
     internal var selectedItem: MenuItem? = null
+    internal var editingCartLineId: String? = null
     internal var variant: String? = null
     internal var options = emptyList<String>()
     internal var selectedAccount: ReceivingAccount? = null
@@ -40,6 +41,8 @@ class GroupController(val platform: GroupPlatform) {
         try {
             val saved = platform.read("group-library-v1")
             if (saved.isNotBlank()) library = orderJson.decodeFromString(saved)
+            val missingBuiltIns = BuiltInRestaurants.all.filter { builtIn -> library.restaurants.none { it.restaurant.id == builtIn.restaurant.id } }
+            if (missingBuiltIns.isNotEmpty()) library = library.copy(restaurants = library.restaurants + missingBuiltIns)
             if (library.pending != null && library.pendingHub == null) library = library.copy(pendingHub = library.selectedHub)
             draft[GroupFieldKey.NAME] = library.displayName
         } catch (_: Exception) { storageReadable = false; error = "Saved group data could not be opened. Restore its backup before creating new data." }
@@ -68,6 +71,10 @@ class GroupController(val platform: GroupPlatform) {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
             GroupAction.OPEN_PROFILE -> { openProfile() }
+            GroupAction.SET_LANGUAGE -> {
+                require(value in listOf("en", "ar")) { "Choose Arabic or English." }
+                replaceLibrary(library.copy(language = value))
+            }
             GroupAction.SIGN_IN -> identity(IdentityAction.SIGN_IN)
             GroupAction.REGISTER -> identity(IdentityAction.REGISTER)
             GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE)
@@ -82,12 +89,14 @@ class GroupController(val platform: GroupPlatform) {
                 val restaurant = Restaurant(platform.uuid(), text(GroupFieldKey.RESTAURANT_NAME).trim().ifEmpty { "Group food order" }, openOrdering = true)
                 selectedRestaurant = RestaurantExport(exportId = restaurant.id, restaurant = restaurant)
             }
-            GroupAction.OPEN_CUSTOM_ITEM -> { draft[GroupFieldKey.CUSTOM_NAME] = ""; draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.CUSTOM_ITEM }
+            GroupAction.OPEN_CUSTOM_ITEM -> { editingCartLineId = null; draft[GroupFieldKey.CUSTOM_NAME] = ""; draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.CUSTOM_ITEM }
             GroupAction.ADD_CUSTOM_ITEM -> {
                 val cart = myCart()
-                val line = CartLine(platform.uuid(), "", text(GroupFieldKey.QUANTITY).toIntOrNull() ?: 0, notes = text(GroupFieldKey.NOTE), description = text(GroupFieldKey.CUSTOM_NAME).trim())
-                require(line.description.isNotEmpty()) { "Enter the food item." }; Billing.lines(room().restaurant, cart.copy(lines = cart.lines + line))
-                command(CommandKind.CART, cart = cart.copy(lines = cart.lines + line), revision = cart.revision)
+                val line = CartLine(editingCartLineId ?: platform.uuid(), "", text(GroupFieldKey.QUANTITY).toIntOrNull() ?: 0, notes = text(GroupFieldKey.NOTE), description = text(GroupFieldKey.CUSTOM_NAME).trim())
+                require(line.description.isNotEmpty()) { "Enter the food item." }
+                val lines = if(editingCartLineId == null) cart.lines + line else cart.lines.map { if(it.id == editingCartLineId) line else it }
+                Billing.lines(room().restaurant, cart.copy(lines = lines))
+                command(CommandKind.CART, cart = cart.copy(lines = lines), revision = cart.revision)
             }
             GroupAction.OPEN_PRICE_ITEM -> { val parts = value.split(':'); require(parts.size == 2); pricingTarget = parts[0] to parts[1]; draft[GroupFieldKey.AMOUNT] = ""; page = GroupPage.PRICE_ITEM }
             GroupAction.SAVE_ITEM_PRICE -> { val target = requireNotNull(pricingTarget); command(CommandKind.PRICE_ITEM, memberId = target.first, text = target.second, amount = Money.parse(text(GroupFieldKey.AMOUNT), room().restaurant.currency)) }
@@ -131,7 +140,17 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.JOIN_ROOM -> send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.JOIN, code = text(GroupFieldKey.ROOM_CODE).trim(), name = text(GroupFieldKey.NAME).trim(), guest = flag(GroupFieldKey.GUEST)))
             GroupAction.RETRY -> { val pending = library.pending; if (pending != null) send(pending, true) else startWatching() }
             GroupAction.REFRESH -> startWatching()
-            GroupAction.OPEN_ITEM -> { selectedItem = room().restaurant.menu.items.single { it.id == value }; variant = selectedItem!!.variants.firstOrNull()?.id; options = emptyList(); draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.ITEM }
+            GroupAction.OPEN_ITEM -> { editingCartLineId = null; selectedItem = room().restaurant.menu.items.single { it.id == value }; variant = selectedItem!!.variants.firstOrNull()?.id; options = emptyList(); draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.ITEM }
+            GroupAction.EDIT_CART_ITEM -> {
+                val line = myCart().lines.single { it.id == value }; editingCartLineId = line.id
+                draft[GroupFieldKey.QUANTITY] = line.quantity.toString(); draft[GroupFieldKey.NOTE] = line.notes
+                if(line.description.isNotEmpty()) {
+                    selectedItem = null; draft[GroupFieldKey.CUSTOM_NAME] = line.description; page = GroupPage.CUSTOM_ITEM
+                } else {
+                    selectedItem = room().restaurant.menu.items.single { it.id == line.itemId }
+                    variant = line.variantId; options = line.optionIds; page = GroupPage.ITEM
+                }
+            }
             GroupAction.SELECT_VARIANT -> variant = value
             GroupAction.TOGGLE_OPTION -> options = if (value in options) options - value else options + value
             GroupAction.ADD_CART_ITEM -> addCartItem()
@@ -162,7 +181,8 @@ class GroupController(val platform: GroupPlatform) {
                 platform.copyToClipboard(GroupPresentation(this).restaurantOrderText())
                 platform.notify("Order list copied", "Paste it directly into the restaurant chat or ordering app.")
             }
-            GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share("Food Run · ${room().name}\nRoom code: ${room().code}\n${pairingLink(s.hub)}\nJoin once; this room stays in your app.", "") }
+            GroupAction.SHARE_ORDER_WHATSAPP -> platform.openLink("https://wa.me/?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
+            GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share("Food Run · ${room().name}\nJoin link: ${roomInviteLink(s.hub, room().code)}\nRoom code: ${room().code}\nJoin once; this room stays in your app.", "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
             GroupAction.NEXT_ORDER -> prepareNextOrder()
             else -> dispatchRoom(action, value)
@@ -210,15 +230,24 @@ class GroupController(val platform: GroupPlatform) {
         page = if (accountEditing) GroupPage.PROFILE else GroupPage.SETUP
         accountEditing = false
     }
+    private fun pollChoices(selected: Restaurant): List<Restaurant> =
+        (listOf(selected) + library.restaurants.map { it.restaurant })
+            .distinctBy { it.id }.filter { it.currency == selected.currency }.take(12)
+
     private fun createRoom() {
         val r = requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant
         val names = text(GroupFieldKey.EXPECTED_NAMES).split(',').map { it.trim() }.filter { it.isNotEmpty() }
         val fees = fees(r.currency)
-        if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION))
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION), fees = fees))
+        val choices = if(flag(GroupFieldKey.RESTAURANT_POLL)) pollChoices(r) else listOf(r)
+        if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION))
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION), fees = fees))
     }
     private fun back() {
         val roomRestaurantEditor = page == GroupPage.RESTAURANT && editingRoomOrder != null
+        if (page in listOf(GroupPage.ITEM, GroupPage.CUSTOM_ITEM)) {
+            selectedItem = null
+            editingCartLineId = null
+        }
         if (page == GroupPage.RESTAURANT) {
             formDrafts.finishRestaurant(draft)
             editingRestaurant = null
@@ -242,15 +271,15 @@ class GroupController(val platform: GroupPlatform) {
         draft[GroupFieldKey.DISCOUNT] = Money.format(room.fees.discount, room.restaurant.currency).substringAfter(' ')
         draft[GroupFieldKey.PROPORTIONAL] = room.fees.proportionalDelivery.toString()
     }
-    internal fun command(kind: CommandKind, memberId: String = "", text: String = "", flag: Boolean = false, eligible: Boolean = false, revision: Long = room().revision, cart: MemberCart? = null, account: ReceivingAccount? = null, fees: FeePolicy? = null, amount: Long = 0, transferId: String = "", restaurant: Restaurant? = null, expectedNames: List<String> = emptyList(), destination: String = "", name: String = "") {
+    internal fun command(kind: CommandKind, memberId: String = "", text: String = "", flag: Boolean = false, eligible: Boolean = false, revision: Long = room().revision, cart: MemberCart? = null, account: ReceivingAccount? = null, fees: FeePolicy? = null, amount: Long = 0, transferId: String = "", restaurant: Restaurant? = null, restaurants: List<Restaurant> = emptyList(), expectedNames: List<String> = emptyList(), destination: String = "", name: String = "") {
         val s = requireNotNull(session)
-        send(RoomCommand(commandId = platform.uuid(), kind = kind, roomId = s.roomId, token = s.token, expectedRevision = revision, expectedOrderNumber = room().orderNumber, memberId = memberId, text = text, flag = flag, eligible = eligible, cart = cart, account = account, fees = fees, amount = amount, transferId = transferId, restaurant = restaurant, expectedNames = expectedNames, destination = destination, name = name))
+        send(RoomCommand(commandId = platform.uuid(), kind = kind, roomId = s.roomId, token = s.token, expectedRevision = revision, expectedOrderNumber = room().orderNumber, memberId = memberId, text = text, flag = flag, eligible = eligible, cart = cart, account = account, fees = fees, amount = amount, transferId = transferId, restaurant = restaurant, restaurants = restaurants, expectedNames = expectedNames, destination = destination, name = name))
     }
     private fun send(c: RoomCommand, retry: Boolean = false) {
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN)) null else library.sessions.single { it.roomId == c.roomId }
         val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(library.selectedHub)
-        val outgoing = if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN) && sameHub(library.identityHub, hub)) c.copy(identityToken = library.identityToken) else c
+        val outgoing = if (sameHub(library.identityHub, hub) && library.identityToken.isNotEmpty()) c.copy(identityToken = library.identityToken) else c
         replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
         try { platform.request(hub, orderJson.encodeToString(outgoing), object : GroupReplyCallback {
@@ -279,6 +308,7 @@ class GroupController(val platform: GroupPlatform) {
                     if (c.kind == CommandKind.UPDATE_RESTAURANT && editingRoomOrder != null) {
                         formDrafts.finishRestaurant(draft); editingRoomOrder = null
                     }
+                    if (c.kind == CommandKind.CART) { selectedItem = null; editingCartLineId = null }
                     if (c.kind in listOf(CommandKind.PLACE, CommandKind.PAY_RESTAURANT, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND)) draft.remove(GroupFieldKey.REFERENCE)
                     page = GroupPage.ROOM; startWatching(); startHomeWatching()
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Invalid hub response." }
@@ -310,11 +340,11 @@ class GroupController(val platform: GroupPlatform) {
         reply = combined; online = active
         if (changedOrder || changedFees) formDrafts.acceptRoomFees(room, page, libraryReturnPage, draft)
         acceptFinancialDrafts(previousRoom, room, changedOrder)
-        if (page in listOf(GroupPage.ITEM, GroupPage.ACCOUNT) && changedOrder) {
-            page = GroupPage.ROOM; selectedItem = null; selectedAccount = null
+        if (page in listOf(GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.ACCOUNT) && changedOrder) {
+            page = GroupPage.ROOM; selectedItem = null; editingCartLineId = null; selectedAccount = null
             error = "A new order has started. Review it before choosing food or a receiving account."
-        } else if (page == GroupPage.ITEM && (room.phase != RoomPhase.COLLECTING || previousRoom?.restaurant?.menu != room.restaurant.menu)) {
-            page = GroupPage.ROOM; selectedItem = null
+        } else if (page in listOf(GroupPage.ITEM, GroupPage.CUSTOM_ITEM) && (room.phase !in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING) || previousRoom?.restaurant != room.restaurant)) {
+            page = GroupPage.ROOM; selectedItem = null; editingCartLineId = null
             error = "Ordering or the menu changed. Review the latest order before choosing food."
         } else if (page == GroupPage.ACCOUNT && room.phase !in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) {
             page = GroupPage.ROOM
@@ -362,7 +392,7 @@ class GroupController(val platform: GroupPlatform) {
                 method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
         }
         return FoodProfile(name = name, phone = text(GroupFieldKey.PROFILE_PHONE).trim(), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
-            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false").also { it.validate() }
+            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language).normalized().also { it.validate() }
     }
     private fun identity(action: IdentityAction, value: String = "") {
         val hub = if (action in listOf(IdentityAction.SIGN_IN, IdentityAction.REGISTER, IdentityAction.RESET_PASSWORD)) requireNotNull(library.selectedHub) else requireNotNull(library.identityHub ?: library.selectedHub)
@@ -408,8 +438,12 @@ class GroupController(val platform: GroupPlatform) {
     }
     private fun acceptHome(home: HomePayload, hub: HubPairing) {
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
-        val updated = library.copy(home = home, displayName = home.profile.name,
-            sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } } + sessions)
+        val serverRestaurants = home.restaurants.map { RestaurantExport(exportId = it.id, restaurant = it) }
+        val managedIds = library.managedRestaurantIds + BuiltInRestaurants.all.map { it.restaurant.id } + serverRestaurants.map { it.restaurant.id }
+        val updated = library.copy(home = home, displayName = home.profile.name, language = home.profile.language,
+            sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } } + sessions,
+            restaurants = library.restaurants.filterNot { it.restaurant.id in managedIds } + serverRestaurants,
+            managedRestaurantIds = managedIds)
         if (updated != library) replaceLibrary(updated)
         home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Food Run and tap Join on your home screen.") }
     }
@@ -464,6 +498,14 @@ class GroupController(val platform: GroupPlatform) {
     }
     internal fun pairingLink(hub: HubPairing): String = if (hub.fingerprint.isEmpty()) hub.url else
         "foodrun://pair?host=${hub.url.substringAfter("https://").substringBefore(':')}&port=${hub.url.substringAfterLast(':')}&fingerprint=${hub.fingerprint}"
+    private fun queryEncode(value: String): String = value.encodeToByteArray().joinToString("") { byte ->
+            val number = byte.toInt() and 0xff
+            val character = number.toChar()
+            if (character.isLetterOrDigit() || character in "-._~") character.toString()
+            else "%" + number.toString(16).uppercase().padStart(2, '0')
+        }
+    internal fun roomInviteLink(hub: HubPairing, code: String): String =
+        "https://intrvioo.com/?room=${queryEncode(code)}&hub=${queryEncode(hub.url)}"
     internal fun sameHub(first: HubPairing?, second: HubPairing?): Boolean {
         if (first == null || second == null) return false
         return if (first.fingerprint.isNotEmpty() || second.fingerprint.isNotEmpty())

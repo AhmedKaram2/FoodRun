@@ -16,7 +16,10 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     private fun session(token: String): AccountSession {
         require(token.length in 32..128) { "Sign in to your Food Run account." }
         val saved = db.record("identity:${RoomService.hash(token)}") ?: error("Sign in again to reconnect your account.")
-        return orderJson.decodeFromString<AccountSession>(saved).also { require(it.expires > clock()) { "Your account session expired. Sign in again." } }
+        return orderJson.decodeFromString<AccountSession>(saved).also {
+            require(it.expires > clock()) { "Your account session expired. Sign in again." }
+            require(db.record("admin:disabled:${it.userId}") == null) { "This account is disabled. Contact the Food Run administrator." }
+        }
     }
     fun userId(token: String): String = session(token).userId
     private fun profile(uid: String) = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: FoodProfile(userId = uid)
@@ -44,7 +47,8 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             .filter { db.room(it.roomId)?.let { room -> room.orderNumber == it.orderNumber && room.phase == RoomPhase.LOBBY } == true }
         val people = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
             .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() }.take(100).map { FoodPerson(it.userId, it.name) }
-        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus), serverTime = clock())
+        val restaurants = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
+        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)
@@ -54,10 +58,17 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             cloud().resetPassword(request.email); return RoomReply()
         }
         if (request.action in listOf(IdentityAction.REGISTER, IdentityAction.SIGN_IN, IdentityAction.FIREBASE_SIGN_IN)) {
-            if (request.action == IdentityAction.REGISTER) requireNotNull(request.profile).validate()
+            if(request.action == IdentityAction.REGISTER) {
+                val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
+                require(settings.registrationsEnabled) { "New registration is temporarily disabled by the administrator." }
+            }
+            if (request.action == IdentityAction.REGISTER) requireNotNull(request.profile).normalized().validate()
             val identity = if (request.action == IdentityAction.FIREBASE_SIGN_IN) cloud().exchange(request.firebaseToken)
                 else { require(request.email.contains('@') && request.password.length >= 6) { "Enter your email and a password of at least 6 characters." }; cloud().signIn(request.email, request.password, request.action == IdentityAction.REGISTER) }
-            val savedProfile = cloud().profile(identity) ?: (request.profile ?: FoodProfile(name = identity.name)).copy(userId = identity.userId)
+            val savedProfile = (cloud().profile(identity) ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
+                if (it.phone.isBlank()) it else it.normalized()
+            }
+            require(db.record("admin:disabled:${identity.userId}") == null) { "This account is disabled. Contact the Food Run administrator." }
             if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
             db.putRecord("profile:${identity.userId}", orderJson.encodeToString(savedProfile))
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
@@ -67,7 +78,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val saved = session(c.identityToken)
         return when(request.action) {
             IdentityAction.SAVE_PROFILE -> {
-                val updated = requireNotNull(request.profile).copy(userId = saved.userId)
+                val updated = requireNotNull(request.profile).copy(userId = saved.userId).normalized()
                 updated.validate()
                 cloud().saveProfile(identity(RoomService.hash(c.identityToken), saved), updated)
                 db.putRecord("profile:${saved.userId}", orderJson.encodeToString(updated))

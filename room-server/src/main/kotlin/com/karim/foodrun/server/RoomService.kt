@@ -8,6 +8,12 @@ import java.util.UUID
 class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), identityProvider: IdentityProvider? = null) {
     private val accounts = AccountService(db, identityProvider, this, clock)
     @Synchronized fun syncCloud() = accounts.syncCloud()
+    @Synchronized fun adminCancel(roomId: String) {
+        val room = requireNotNull(db.room(roomId)) { "Room was not found." }
+        require(room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) { "Room is already complete." }
+        db.save(room.copy(phase = RoomPhase.CANCELLED, revision = room.revision + 1, updatedAt = clock()))
+        signalRoom(roomId)
+    }
     private val presence = mutableMapOf<String, Long>()
     private val roomEvents = mutableMapOf<String, Long>()
     private var homeEvents = 1L
@@ -24,6 +30,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     @Synchronized fun execute(c: RoomCommand): RoomReply = try {
         require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160) { "Invalid request identifier." }
         require(c.name.length <= 160 && c.text.length <= 500 && c.destination.length <= 1000 && c.expectedNames.size <= 30) { "Request fields exceed the supported length." }
+        require(c.restaurants.size <= 12) { "A restaurant poll supports up to 12 choices." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
@@ -79,12 +86,21 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
     }
     private fun create(c: RoomCommand): RoomReply {
+        val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
+        require(settings.roomCreationEnabled) { "New room creation is temporarily disabled by the administrator." }
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
         MenuValidation.label(c.name); MenuValidation.label(c.text)
-        val person = Member(uuid(), c.name.trim(), approved = true, eligible = true, lastSeen = clock())
+        val person = Member(uuid(), c.name.trim(), approved = true, eligible = true, ready = true, lastSeen = clock())
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
-        val room = Room(uuid(), code, person.id, c.text.trim(), requireNotNull(c.restaurant), c.expectedNames, c.flag, c.destination, c.deadline, c.fees ?: FeePolicy(), members = listOf(person), createdAt = clock(), updatedAt = clock())
+        val selected = requireNotNull(c.restaurant)
+        val options = c.restaurants.ifEmpty { listOf(selected) }.distinctBy { it.id }
+        require(options.size <= 12 && options.any { it.id == selected.id }) { "Choose up to 12 restaurants, including the current choice." }
+        require(options.all { it.currency == selected.currency }) { "Restaurant poll choices must use the same currency." }
+        options.forEach(MenuValidation::validate)
+        val room = Room(uuid(), code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, c.fees ?: FeePolicy(),
+            members = listOf(person), createdAt = clock(), updatedAt = clock(), restaurantOptions = options,
+            restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1)
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
         signalRoom(room.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
@@ -124,6 +140,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             destination = "", fees = FeePolicy(), members = listOf(member), carts = emptyList(), spin = null,
             pastSpins = emptyList(), payerId = null, account = null, transfers = emptyList(), audit = emptyList(),
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
+            restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false,
         ) else room.copy(
             // Ordering progress is public; cart lines are private. Submitted/confirmation markers are safe.
             carts = room.carts.map { if (payer || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },

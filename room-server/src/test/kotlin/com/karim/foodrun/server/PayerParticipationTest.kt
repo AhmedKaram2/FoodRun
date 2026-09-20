@@ -4,14 +4,13 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class PayerParticipationTest {
-    @Test fun newOrderParticipantsDefaultToTheWheelButStillMustBecomeReady(): Unit = RoomFixture().use { f ->
+    @Test fun approvedOrderParticipantsAreReadyWithoutAnotherConfirmation(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member)
         val orderers = f.state().room!!.orderingMembers
         assertEquals(2, orderers.size)
-        assertTrue(orderers.all { it.eligible && !it.ready })
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PREPARE_SPIN)).ok)
+        assertTrue(orderers.all { it.eligible && it.ready })
         f.restart()
-        assertTrue(f.state(member).room!!.orderingMembers.all { it.eligible && !it.ready })
+        assertTrue(f.state(member).room!!.orderingMembers.all { it.eligible && it.ready })
     }
 
     @Test fun aViewOnlyGuestNeverEntersTheWheel(): Unit = RoomFixture().use { f ->
@@ -46,10 +45,10 @@ class PayerParticipationTest {
         f.send(f.owner, CommandKind.PARTICIPATE) { it.copy(flag = true) }
         val owner = f.state().room!!.orderingMembers.single { it.id == f.owner.memberId }
         assertFalse(owner.eligible)
-        assertFalse(owner.ready)
+        assertTrue(owner.ready)
     }
 
-    @Test fun skippingAndRejoiningStartsWithTheWheelOnAndReadinessOff(): Unit = RoomFixture().use { f ->
+    @Test fun skippingAndRejoiningStartsWithTheWheelOnAndReady(): Unit = RoomFixture().use { f ->
         f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = false) }
         f.send(f.owner, CommandKind.PARTICIPATE) { it.copy(flag = false) }
         assertTrue(f.state().room!!.orderingMembers.isEmpty())
@@ -57,7 +56,7 @@ class PayerParticipationTest {
         f.send(f.owner, CommandKind.PARTICIPATE) { it.copy(flag = true) }
         val joined = f.state().room!!.orderingMembers.single()
         assertTrue(joined.eligible)
-        assertFalse(joined.ready)
+        assertTrue(joined.ready)
     }
 
     @Test fun theNextOrderEnrollsOnlyTheOwnerUntilPermanentMembersJoinAgain(): Unit = RoomFixture().use { f ->
@@ -83,7 +82,7 @@ class PayerParticipationTest {
         assertEquals(RoomPhase.LOBBY, declined.phase)
         assertTrue(declined.members.single().participating)
         assertFalse(declined.members.single().eligible)
-        assertFalse(declined.members.single().ready)
+        assertTrue(declined.members.single().ready)
         f.restart()
         assertFalse(f.state().room!!.members.single().eligible)
     }

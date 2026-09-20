@@ -357,13 +357,11 @@ class GroupFlowIntegrationTest {
         assertEquals(listOf(member.me()), host.room().spin!!.memberIds)
         assertEquals(host.room().spin, member.room().spin)
     }
-    @Test fun consentBeforeReadyIsSavedWithoutMarkingMemberReady() = Bus().use { bus ->
+    @Test fun approvedMemberStaysReadyWhilePayerEligibilityChanges() = Bus().use { bus ->
         val (host, _) = bus.phone(); create(host, bus)
         host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain()
         host.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); bus.sync()
         assertTrue(host.room().orderingMembers.single().eligible)
-        assertFalse(host.room().orderingMembers.single().ready)
-        host.dispatch(GroupAction.READY); bus.drain(); bus.sync()
         assertTrue(host.room().orderingMembers.single().ready)
         assertTrue(host.room().orderingMembers.single().eligible)
     }
@@ -452,8 +450,8 @@ class GroupFlowIntegrationTest {
         listOf(host, member).forEach {
             assertFalse(it.state.fields.any { field -> field.key == GroupFieldKey.ELIGIBLE })
             assertTrue(it.room().members.single { m -> m.id == it.me() }.eligible)
-            assertFalse(it.room().members.single { m -> m.id == it.me() }.ready)
-            it.dispatch(GroupAction.READY); bus.drain(); bus.sync()
+            assertTrue(it.room().members.single { m -> m.id == it.me() }.ready)
+            assertFalse(it.state.buttons.any { button -> button.action == GroupAction.READY })
         }
         host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
         assertEquals(RoomPhase.SPINNING, host.room().phase)
@@ -463,7 +461,8 @@ class GroupFlowIntegrationTest {
         val (host, _) = bus.phone(); create(host, bus)
         host.dispatch(GroupAction.READY); bus.drain()
         host.update(GroupFieldKey.ELIGIBLE, "false"); bus.drain(); bus.sync()
-        assertEquals(GroupAction.READY, host.state.primaryAction?.action)
+        assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
+        assertFalse(host.state.primaryAction!!.enabled)
         host.dispatch(GroupAction.READY); bus.drain(); bus.sync()
         assertTrue(host.room().orderingMembers.single().eligible)
         assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
@@ -491,13 +490,13 @@ class GroupFlowIntegrationTest {
         val (host, _) = bus.phone(); val (second, secondPhone) = bus.phone(); val (third, _) = bus.phone()
         create(host, bus); join(second, "Karam", host, bus); join(third, "Hassan", host, bus)
         val people = listOf(host, second, third)
-        assertEquals(GroupAction.READY, host.state.primaryAction?.action)
-        assertEquals(0, host.state.progressStep)
-        people.forEach { it.update(GroupFieldKey.ELIGIBLE, "true"); bus.drain(); it.dispatch(GroupAction.READY); bus.drain(); bus.sync() }
+        assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
+        assertEquals(2, host.state.progressStep)
+        people.forEach { assertTrue(it.room().members.single { member -> member.id == it.me() }.ready) }
         assertEquals(GroupAction.PREPARE_SPIN, host.state.primaryAction?.action)
         host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); repeat(4) { bus.sync() }
         assertEquals(RoomPhase.SPINNING, host.room().phase)
-        assertEquals(1, host.state.progressStep)
+        assertEquals(3, host.state.progressStep)
         assertEquals(1, people.map { it.room().spin!!.id }.distinct().size)
         bus.time += 10000; bus.server.tick(); bus.sync()
         val payer = people.single { it.me() == host.room().spin!!.winnerId }
@@ -561,8 +560,9 @@ class GroupFlowIntegrationTest {
         val observer = object : GroupObserver { override fun changed(state: GroupState) { updates++ } }
         c.observe(observer); c.removeObserver(observer); c.dispatch(GroupAction.OPEN_LIBRARY)
         assertEquals(1, updates)
-        c.dispatch(GroupAction.IMPORT_MENU); assertTrue(c.library.restaurants.isEmpty())
-        c.dispatch(GroupAction.CONFIRM_IMPORT); assertEquals(1, c.library.restaurants.size)
+        val initialCount = c.library.restaurants.size
+        c.dispatch(GroupAction.IMPORT_MENU); assertEquals(initialCount, c.library.restaurants.size)
+        c.dispatch(GroupAction.CONFIRM_IMPORT); assertEquals(initialCount + 1, c.library.restaurants.size)
         c.dispatch(GroupAction.BACK); assertEquals(GroupPage.HOME, c.page)
     }
     @Test fun unchangedHeartbeatsDoNotRewriteEncryptedLibraryEverySecond() = Bus().use { bus ->
@@ -721,12 +721,12 @@ class GroupFlowIntegrationTest {
     }
     @Test fun partialCurrencyInputNeverCrashesRestaurantRenderingAndContactEditKeepsWhatsApp(): Unit = Bus().use { bus ->
         val (c, _) = bus.phone(); c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.IMPORT_MENU); c.dispatch(GroupAction.CONFIRM_IMPORT)
-        val export = c.library.restaurants.single()
+        val export = c.library.restaurants.single { it.restaurant.id == "kitchen" }
         c.saveRestaurant(export.copy(restaurant = export.restaurant.copy(contact = RestaurantContact(whatsappE164 = "+971500000000"))))
         c.dispatch(GroupAction.EDIT_RESTAURANT, "kitchen")
         for (currency in listOf("", "A", "AE", "aed", "INVALID")) { c.update(GroupFieldKey.CURRENCY, currency); assertEquals(GroupPage.RESTAURANT, c.state.page) }
         c.update(GroupFieldKey.CURRENCY, "AED"); c.dispatch(GroupAction.SAVE_RESTAURANT)
-        assertEquals("+971500000000", c.library.restaurants.single().restaurant.contact.whatsappE164)
+        assertEquals("+971500000000", c.library.restaurants.single { it.restaurant.id == "kitchen" }.restaurant.contact.whatsappE164)
     }
 
 }

@@ -15,9 +15,10 @@ import kotlin.math.pow
 @Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1, val method: PaymentMethod = PaymentMethod.BANK) {
     fun validate() {
         MenuValidation.label(id); MenuValidation.label(holder); MenuValidation.label(bank)
+        require(currency == "AED") { "Food Run uses AED (Dirham) for payments." }
         require(version > 0) { "Invalid account version." }
         if (method == PaymentMethod.AANI) {
-            require(currency == "AED" && identifier.matches(Regex("\\+?[0-9]{7,15}"))) { "Enter the phone number registered with Aani, including country code." }
+            UaePhone.normalize(identifier, mobileOnly = true)
             return
         }
         val v = identifier.replace(" ", "").uppercase()
@@ -32,6 +33,7 @@ import kotlin.math.pow
             require(remainder == 1) { "IBAN checksum is invalid." }
         }
     }
+    fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(currency = "AED")
 }
 @Serializable data class SpinRound(val id: String, val memberIds: List<String>, val winnerId: String, val startAt: Long, val duration: Long = 6500, val turns: Int = 7) {
     init {
@@ -49,12 +51,16 @@ import kotlin.math.pow
     @SerialName("declared") DECLARED, @SerialName("confirmed") CONFIRMED, @SerialName("rejected") REJECTED,
 }
 @Serializable data class Transfer(val id: String, val memberId: String, val amount: Long, val reference: String, val recipient: ReceivingAccount, val refund: Boolean = false, val status: TransferStatus = TransferStatus.DECLARED, val createdAt: Long = 0)
-@Serializable data class ReceiptLine(val description: String, val quantity: Int, val amount: Long, val notes: String = "")
+@Serializable data class ReceiptLine(
+    val description: String, val quantity: Int, val amount: Long, val notes: String = "",
+    val itemId: String = "", val variantId: String? = null, val optionIds: List<String> = emptyList(),
+)
 @Serializable data class Receipt(val memberId: String, val name: String, val lines: List<ReceiptLine>, val food: Long, val delivery: Long, val service: Long, val discount: Long, val tax: Long, val total: Long, val paid: Long, val balance: Long, val revision: Long, val currency: String) {
     val totalText: String get() = Money.format(total, currency)
     val balanceText: String get() = Money.format(balance, currency)
 }
 @Serializable data class AuditEntry(val id: String, val actorId: String, val action: String, val reason: String, val at: Long)
+@Serializable data class RestaurantVote(val memberId: String, val restaurantId: String)
 @Serializable data class Room(
     val id: String, val code: String, val ownerId: String, val name: String, val restaurant: Restaurant,
     val expectedNames: List<String> = emptyList(), val deliveryMode: Boolean = false, val destination: String = "",
@@ -65,6 +71,8 @@ import kotlin.math.pow
     val account: ReceivingAccount? = null, val transfers: List<Transfer> = emptyList(), val audit: List<AuditEntry> = emptyList(),
     val restaurantReference: String = "", val restaurantPaid: Boolean = false, val createdAt: Long = 0, val updatedAt: Long = 0,
     val billRevision: Long = 1, val adjustment: Long = 0, val adjustmentApprovals: List<String> = emptyList(), val orderNumber: Long = 1,
+    val restaurantOptions: List<Restaurant> = emptyList(), val restaurantVotes: List<RestaurantVote> = emptyList(),
+    val restaurantPollOpen: Boolean = false,
 ) {
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }

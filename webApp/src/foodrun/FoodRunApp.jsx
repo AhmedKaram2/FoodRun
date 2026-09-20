@@ -21,6 +21,7 @@ import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlicePath } f
 import builtInRestaurants from './builtInRestaurants.json';
 import { sharjahRestaurants } from './sharjahRestaurants';
 import { dubaiRestaurants } from './dubaiRestaurants';
+import { mergeRestaurantCatalog } from './restaurantCatalog';
 import { validateMenu } from './menuValidation';
 
 const AdminApp = lazy(() => import('./AdminApp'));
@@ -40,6 +41,13 @@ const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
 const SERVER_CATALOG_KEY = 'foodrun-server-catalog-v1';
 const ACTIVE_ROOM_KEY = 'foodrun-active-room-v1';
 const LANGUAGE_KEY = 'foodrun-language-v1';
+const LEGACY_RESTAURANT_METADATA = {
+  'builtin-sultan': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
+  'builtin-al-kalha': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Levantine', cuisineAr: 'شامي', mealTypes: ['breakfast','lunch','dinner'] },
+  'builtin-al-mahla': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
+  'builtin-bait-al-waleema': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Al Majaz', areaAr: 'المجاز', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['lunch','dinner'] },
+};
+const BUNDLED_RESTAURANTS = [...builtInRestaurants.map(value => ({ ...value, ...(LEGACY_RESTAURANT_METADATA[value.id] || {}) })), ...sharjahRestaurants, ...dubaiRestaurants];
 let uiLanguage = localStorage.getItem(LANGUAGE_KEY) === 'ar' ? 'ar' : 'en';
 let updateLanguage = () => {};
 
@@ -109,14 +117,7 @@ function loadRestaurants() {
   try { saved = JSON.parse(localStorage.getItem(RESTAURANT_LIBRARY_KEY) || '[]').map(normalizeRestaurant); }
   catch { saved = []; }
   try { managedIds = JSON.parse(localStorage.getItem(SERVER_CATALOG_KEY) || '[]'); } catch { managedIds = []; }
-  const legacyMetadata = {
-    'builtin-sultan': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
-    'builtin-al-kalha': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Levantine', cuisineAr: 'شامي', mealTypes: ['breakfast','lunch','dinner'] },
-    'builtin-al-mahla': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
-    'builtin-bait-al-waleema': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Al Majaz', areaAr: 'المجاز', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['lunch','dinner'] },
-  };
-  const bundled = [...builtInRestaurants.map(value => ({ ...value, ...(legacyMetadata[value.id] || {}) })), ...sharjahRestaurants, ...dubaiRestaurants];
-  return [...saved, ...bundled.map(normalizeRestaurant).filter(builtIn => !managedIds.includes(builtIn.id) && !saved.some(restaurant => restaurant.id === builtIn.id))]
+  return [...saved, ...BUNDLED_RESTAURANTS.map(normalizeRestaurant).filter(builtIn => !managedIds.includes(builtIn.id) && !saved.some(restaurant => restaurant.id === builtIn.id))]
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 function storeRestaurants(restaurants) {
@@ -969,12 +970,11 @@ function FoodRunClient() {
   useEffect(() => {
     if (!data.hub) return;
     fetch(`${data.hub}/catalog`).then(response => response.ok ? response.json() : Promise.reject()).then(values => {
-      const catalog = values.map(normalizeRestaurant);
       let previousIds = [];
       try { previousIds = JSON.parse(localStorage.getItem(SERVER_CATALOG_KEY) || '[]'); } catch { previousIds = []; }
-      const local = loadRestaurants().filter(restaurant => !previousIds.includes(restaurant.id) && !catalog.some(server => server.id === restaurant.id));
-      storeRestaurants([...local, ...catalog]);
-      localStorage.setItem(SERVER_CATALOG_KEY, JSON.stringify([...new Set([...previousIds, ...builtInRestaurants.map(restaurant => restaurant.id), ...catalog.map(restaurant => restaurant.id)])]));
+      const merged = mergeRestaurantCatalog({ serverValues: values, bundledValues: BUNDLED_RESTAURANTS, currentValues: loadRestaurants(), previousManagedIds: previousIds, normalize: normalizeRestaurant });
+      storeRestaurants(merged.restaurants);
+      localStorage.setItem(SERVER_CATALOG_KEY, JSON.stringify(merged.managedIds));
     }).catch(() => {});
   }, [data.hub]);
   const openRoom = id => {

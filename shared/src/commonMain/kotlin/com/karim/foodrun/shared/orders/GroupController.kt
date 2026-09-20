@@ -455,12 +455,11 @@ class GroupController(val platform: GroupPlatform) {
     }
     private fun acceptHome(home: HomePayload, hub: HubPairing) {
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
-        val serverRestaurants = home.restaurants.map { RestaurantExport(exportId = it.id, restaurant = it) }
-        val managedIds = library.managedRestaurantIds + BuiltInRestaurants.all.map { it.restaurant.id } + serverRestaurants.map { it.restaurant.id }
+        val catalog = mergeManagedRestaurantCatalog(library.restaurants, library.managedRestaurantIds, home.restaurants)
         val updated = library.copy(home = home, displayName = home.profile.name, language = home.profile.language,
             sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } } + sessions,
-            restaurants = library.restaurants.filterNot { it.restaurant.id in managedIds } + serverRestaurants,
-            managedRestaurantIds = managedIds)
+            restaurants = catalog.restaurants,
+            managedRestaurantIds = catalog.managedIds)
         if (updated != library) replaceLibrary(updated)
         home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Food Run and tap Join on your home screen.") }
     }

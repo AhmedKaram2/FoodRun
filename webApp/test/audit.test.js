@@ -134,6 +134,24 @@ test('Dubai catalogue has ten Egyptian, ten Arabic and shawarma, and ten other r
   assert(dubaiRestaurants.every(restaurant => restaurant.googleRatingVerifiedOn === '2026-09-20'));
 });
 
+test('server catalog keeps bundled restaurants and restores missing Sharjah metadata', async () => {
+  const { mergeRestaurantCatalog } = await import('../src/foodrun/restaurantCatalog.js');
+  const bundledValues = [
+    { id: 'builtin-sultan', name: 'Sultan Restaurant', emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', mealTypes: ['breakfast'] },
+    { id: 'builtin-dubai', name: 'Dubai Restaurant', emirate: 'Dubai', area: 'Deira', mealTypes: ['lunch'] },
+  ];
+  const merged = mergeRestaurantCatalog({
+    serverValues: [{ id: 'builtin-sultan', name: 'Sultan Restaurant', emirate: '', area: '', mealTypes: [] }],
+    bundledValues,
+    currentValues: [...bundledValues, { id: 'personal', name: 'Personal Restaurant' }],
+    previousManagedIds: ['builtin-sultan'],
+    normalize: value => value,
+  });
+  assert.deepEqual(merged.restaurants.map(value => value.id), ['personal', 'builtin-sultan', 'builtin-dubai']);
+  assert.equal(merged.restaurants.find(value => value.id === 'builtin-sultan').emirate, 'Sharjah');
+  assert.deepEqual(merged.restaurants.find(value => value.id === 'builtin-sultan').mealTypes, ['breakfast']);
+});
+
 test('Arabic translation preserves user supplied strings and protocol values', async () => {
   const { t } = await import('../src/foodrun/i18n.js');
   assert.equal(t('Wallet dashboard', 'ar'), 'لوحة المحفظة');

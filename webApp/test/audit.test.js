@@ -106,6 +106,34 @@ test('menu editor validation preserves required extras and rejects broken schema
   assert.throws(() => validateMenu(restaurant));
 });
 
+test('Sharjah catalogue keeps only Google ratings of four or higher', async () => {
+  const { sharjahRestaurants } = await import('../src/foodrun/sharjahRestaurants.js');
+  assert(sharjahRestaurants.length >= 9);
+  assert(sharjahRestaurants.every(restaurant => restaurant.googleRating >= 4 && restaurant.googleRating <= 5));
+  assert(sharjahRestaurants.every(restaurant => restaurant.googleRatingVerifiedOn === '2026-09-20'));
+  assert(sharjahRestaurants.some(restaurant => restaurant.id === 'builtin-al-rabiah-al-khadra'));
+  assert(sharjahRestaurants.some(restaurant => restaurant.id === 'builtin-falafel-frayha'));
+  const shawerman = sharjahRestaurants.find(restaurant => restaurant.id === 'builtin-shawerman');
+  assert.equal(shawerman.googleRating, 4.8);
+  assert.equal(shawerman.menu.items.length, 8);
+  const laffah = sharjahRestaurants.find(restaurant => restaurant.id === 'builtin-laffah-al-qasba');
+  assert.equal(laffah.googleRating, 4.2);
+  assert.equal(laffah.menu.items.length, 9);
+  assert.equal(sharjahRestaurants.find(restaurant => restaurant.id === 'builtin-al-farooj-al-shami').googleRating, 4.4);
+  assert.equal(sharjahRestaurants.some(restaurant => restaurant.id === 'builtin-al-farooj-fresh'), false);
+});
+
+test('Dubai catalogue has ten Egyptian, ten Arabic and shawarma, and ten other restaurants', async () => {
+  const { dubaiRestaurants, dubaiEgyptianRestaurants, dubaiArabicShawarmaRestaurants, dubaiOtherRestaurants } = await import('../src/foodrun/dubaiRestaurants.js');
+  assert.equal(dubaiEgyptianRestaurants.length, 10);
+  assert.equal(dubaiArabicShawarmaRestaurants.length, 10);
+  assert.equal(dubaiOtherRestaurants.length, 10);
+  assert.equal(dubaiRestaurants.length, 30);
+  assert(dubaiRestaurants.every(restaurant => restaurant.emirate === 'Dubai'));
+  assert(dubaiRestaurants.every(restaurant => restaurant.googleRating >= 4 && restaurant.googleRating <= 5));
+  assert(dubaiRestaurants.every(restaurant => restaurant.googleRatingVerifiedOn === '2026-09-20'));
+});
+
 test('Arabic translation preserves user supplied strings and protocol values', async () => {
   const { t } = await import('../src/foodrun/i18n.js');
   assert.equal(t('Wallet dashboard', 'ar'), 'لوحة المحفظة');

@@ -76,7 +76,7 @@ class AdminServiceTest {
             assertFalse(dashboard.settings.registrationsEnabled)
             assertEquals("Updating menus", dashboard.settings.maintenanceMessage)
             assertTrue(dashboard.users.single().disabled)
-            assertEquals(4, dashboard.restaurants.size)
+            assertEquals(43, dashboard.restaurants.size)
             assertTrue(dashboard.restaurants.all { it.currency == "AED" })
         }
         directory.deleteRecursively()

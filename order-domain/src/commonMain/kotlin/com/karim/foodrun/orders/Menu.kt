@@ -16,7 +16,16 @@ val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
     val contact: RestaurantContact = RestaurantContact(), val pricing: RestaurantPricing = RestaurantPricing(),
     val notes: String = "", val menu: Menu = Menu(), val openOrdering: Boolean = false,
     val nameAr: String = "", val branchNameAr: String = "",
+    val emirate: String = "", val emirateAr: String = "", val area: String = "", val areaAr: String = "",
+    val cuisine: String = "", val cuisineAr: String = "",
+    val mealTypes: List<MealType> = emptyList(),
+    val googleRating: Double? = null, val googleRatingCount: Int? = null, val googleRatingVerifiedOn: String = "",
 )
+@Serializable enum class MealType {
+    @SerialName("breakfast") BREAKFAST,
+    @SerialName("lunch") LUNCH,
+    @SerialName("dinner") DINNER,
+}
 @Serializable data class RestaurantContact(val phoneE164: String? = null, val whatsappE164: String? = null, val address: String? = null)
 @Serializable enum class TaxTreatment {
     @SerialName("included") INCLUDED, @SerialName("added") ADDED, @SerialName("unspecified") UNSPECIFIED,
@@ -62,7 +71,11 @@ object MenuValidation {
     }
     fun validate(r: Restaurant) {
         label(r.id); label(r.name); if(r.nameAr.isNotBlank()) label(r.nameAr)
-        require(r.branchName.length <= 160 && r.branchNameAr.length <= 160 && r.notes.length <= 4000)
+        require(r.branchName.length <= 160 && r.branchNameAr.length <= 160 && r.emirate.length <= 160 && r.emirateAr.length <= 160 &&
+            r.area.length <= 160 && r.areaAr.length <= 160 && r.cuisine.length <= 160 && r.cuisineAr.length <= 160 && r.notes.length <= 4000)
+        require(r.mealTypes.distinct().size == r.mealTypes.size) { "Restaurant meal types must be unique." }
+        require(r.googleRating == null || r.googleRating in 4.0..5.0) { "Food Run only lists restaurants rated 4.0 or higher on Google." }
+        require(r.googleRatingCount == null || r.googleRatingCount >= 0) { "Invalid Google rating count." }
         require(r.currency == "AED") { "Restaurant menus and rooms use AED (Dirham)." }
         require(r.pricing.taxRateBasisPoints == null || r.pricing.taxRateBasisPoints in 0..10000) { "Invalid tax rate." }
         if (r.pricing.taxTreatment == TaxTreatment.ADDED) require(r.pricing.taxRateBasisPoints != null) { "Enter the restaurant's tax rate." }

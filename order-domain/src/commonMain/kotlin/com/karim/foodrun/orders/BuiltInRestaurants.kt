@@ -26,8 +26,12 @@ object BuiltInRestaurants {
             else -> null
         }
         val nameAr = when(id) { "builtin-sultan" -> "مطعم سلطان"; "builtin-al-kalha" -> "مطعم الكلحة"; "builtin-al-mahla" -> "مطعم المحلة"; else -> "" }
+        val cuisine = when(id) { "builtin-sultan", "builtin-al-mahla" -> "Egyptian"; "builtin-al-kalha" -> "Levantine"; else -> "Arabic" }
+        val cuisineAr = when(id) { "builtin-sultan", "builtin-al-mahla" -> "مصري"; "builtin-al-kalha" -> "شامي"; else -> "عربي" }
         val restaurant = Restaurant(id, name, currency = "AED", contact = RestaurantContact(phoneE164 = phone), pricing = RestaurantPricing(TaxTreatment.INCLUDED),
-            notes = "Menu transcribed from the restaurant's supplied menu image.", menu = Menu(menuCategories, items = menuItems), nameAr = nameAr)
+            notes = "Menu transcribed from the restaurant's supplied menu image.", menu = Menu(menuCategories, items = menuItems), nameAr = nameAr,
+            emirate = "Sharjah", emirateAr = "الشارقة", area = "Sharjah", areaAr = "الشارقة", cuisine = cuisine, cuisineAr = cuisineAr,
+            mealTypes = listOf(MealType.BREAKFAST, MealType.LUNCH, MealType.DINNER))
         return RestaurantExport(exportId = id, restaurant = restaurant)
     }
 
@@ -127,7 +131,10 @@ object BuiltInRestaurants {
         ),
     )
 
-    val baitAlWaleema: RestaurantExport = BaitAlWaleemaRestaurant.export
+    val baitAlWaleema: RestaurantExport = BaitAlWaleemaRestaurant.export.let { export -> export.copy(restaurant = export.restaurant.copy(
+        emirate = "Sharjah", emirateAr = "الشارقة", area = "Al Majaz", areaAr = "المجاز", cuisine = "Egyptian", cuisineAr = "مصري",
+        mealTypes = listOf(MealType.LUNCH, MealType.DINNER),
+    )) }
 
-    val all: List<RestaurantExport> = listOf(sultan, alKalha, alMahla, baitAlWaleema)
+    val all: List<RestaurantExport> = listOf(sultan, alKalha, alMahla, baitAlWaleema) + SharjahRestaurantCatalog.all + DubaiRestaurantCatalog.all
 }

@@ -46,7 +46,7 @@ In that file, a large burger with cheese costs `4200 + 300 = 4500` minor units, 
 | Object | Fields and meaning |
 | --- | --- |
 | Root | `schema: "foodrun.restaurant"`, `schemaVersion: 1`, `exportId`, positive `revision`, `restaurant`. Generate a new export identity for a new restaurant; preserve it for revisions. |
-| `restaurant` | Stable `id`, `name`, `branchName`, `currency`, `contact`, `pricing`, `notes`, `menu`. |
+| `restaurant` | Stable `id`, bilingual name/branch, UAE emirate and area, cuisine, meal types, optional verified Google rating, currency, contact, pricing, notes and menu. |
 | `contact` | `phoneE164`, `whatsappE164`, `address`. Use `null` when unknown. A WhatsApp link is not a phone number. |
 | `pricing` | `taxTreatment`, `taxRateBasisPoints`, `defaultDeliveryFeeMinor`, `defaultServiceFeeMinor`, `minimumOrderMinor`. Fees/minimums are fixed money amounts. |
 | `menu.categories[]` | Unique `id`, `name`, integer `sortOrder`. Use one “Menu” category if the source has no headings. |

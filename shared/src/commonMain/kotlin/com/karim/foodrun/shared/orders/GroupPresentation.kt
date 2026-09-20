@@ -38,6 +38,7 @@ internal class GroupPresentation(private val c: GroupController) {
     private val ar get() = language == "ar"
     private fun tr(en: String, ar: String) = if(this.ar) ar else en
     private fun field(key: GroupFieldKey, label: String, multiline: Boolean = false, toggle: Boolean = false) { fields += GroupField(key, label, c.text(key), multiline, toggle, secret = key == GroupFieldKey.PASSWORD) }
+    private fun choiceField(key: GroupFieldKey, label: String, choices: List<GroupChoice>) { fields += GroupField(key, label, c.text(key), choices = choices) }
     private fun button(title: String, action: GroupAction, value: String = "", primary: Boolean = false, enabled: Boolean = true) { buttons += GroupButton(title, action, value, primary, enabled = enabled) }
     private fun card(id: String, title: String, detail: String = "", badge: String = "", actions: List<GroupButton> = emptyList()) { cards += GroupCard(id, title, detail, badge, actions) }
     private fun append(content: GroupFlowContent) { fields += content.fields; cards += content.cards; buttons += content.buttons }
@@ -178,13 +179,52 @@ internal class GroupPresentation(private val c: GroupController) {
         button(if(c.nextOrder) tr("Start next order", "بدء الطلب التالي") else "Create room", GroupAction.CREATE_ROOM, primary = true)
     }
     private fun library() {
-        title = "Restaurant library"; subtitle = "Your favorites, saved on your device."
+        title = tr("Choose a restaurant", "اختر مطعماً"); subtitle = tr("Search by name, emirate, area, cuisine or meal.", "ابحث بالاسم أو الإمارة أو المنطقة أو نوع المطبخ أو الوجبة.")
+        field(GroupFieldKey.RESTAURANT_SEARCH, tr("Search restaurants", "ابحث عن مطعم"))
+        val allRestaurants = c.library.restaurants.map { it.restaurant }
+        val emirates = allRestaurants.mapNotNull { restaurant ->
+            val value = restaurant.emirate.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            GroupChoice(value, if(ar && restaurant.emirateAr.isNotBlank()) restaurant.emirateAr else value)
+        }.distinctBy { it.value }.sortedBy { it.label }
+        choiceField(GroupFieldKey.RESTAURANT_EMIRATE, tr("Emirate", "الإمارة"), listOf(GroupChoice("", tr("All Emirates", "كل الإمارات"))) + emirates)
+        val emirate = c.text(GroupFieldKey.RESTAURANT_EMIRATE)
+        val areas = allRestaurants.filter { emirate.isBlank() || it.emirate == emirate }.mapNotNull { restaurant ->
+            val value = restaurant.area.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            GroupChoice(value, if(ar && restaurant.areaAr.isNotBlank()) restaurant.areaAr else value)
+        }.distinctBy { it.value }.sortedBy { it.label }
+        choiceField(GroupFieldKey.RESTAURANT_AREA, tr("Area", "المنطقة"), listOf(GroupChoice("", tr("All areas", "كل المناطق"))) + areas)
+        choiceField(GroupFieldKey.RESTAURANT_MEAL, tr("Meal", "الوجبة"), listOf(
+            GroupChoice("", tr("Any meal", "كل الوجبات")),
+            GroupChoice("breakfast", tr("Breakfast", "فطور")),
+            GroupChoice("lunch", tr("Lunch", "غداء")),
+            GroupChoice("dinner", tr("Dinner", "عشاء")),
+        ))
         button(tr("Add restaurant", "إضافة مطعم"), GroupAction.NEW_RESTAURANT, primary = c.library.restaurants.isEmpty() && c.importPreview == null); button("Import menu JSON", GroupAction.IMPORT_MENU)
         field(GroupFieldKey.JSON_MENU, "Or paste a menu JSON file", multiline = true)
         if(c.text(GroupFieldKey.JSON_MENU).isNotBlank()) button("Preview JSON", GroupAction.PREVIEW_IMPORT)
         c.importPreview?.let { card("preview", "Import ${it.restaurant.name}", "${it.restaurant.menu.items.size} items · ${it.restaurant.currency}\nMatching restaurant IDs update the saved copy. Room menus stay unchanged."); button("Confirm import", GroupAction.CONFIRM_IMPORT, primary = true) }
-        c.library.restaurants.forEach { e -> card("restaurant:${e.restaurant.id}", e.restaurant.localizedName(language), "${if(ar && e.restaurant.branchNameAr.isNotBlank()) e.restaurant.branchNameAr else e.restaurant.branchName} · ${e.restaurant.menu.items.size} ${tr("items", "صنفاً")} · ${e.restaurant.currency}", actions = listOf(
+        val query = c.text(GroupFieldKey.RESTAURANT_SEARCH).trim()
+        val area = c.text(GroupFieldKey.RESTAURANT_AREA)
+        val meal = c.text(GroupFieldKey.RESTAURANT_MEAL)
+        val visible = c.library.restaurants.filter { export ->
+            val restaurant = export.restaurant
+            val matchesQuery = query.isBlank() || listOf(restaurant.name, restaurant.nameAr, restaurant.branchName, restaurant.branchNameAr, restaurant.emirate, restaurant.emirateAr, restaurant.area, restaurant.areaAr, restaurant.cuisine, restaurant.cuisineAr, restaurant.contact.address.orEmpty()).any { it.contains(query, ignoreCase = true) }
+            val matchesEmirate = emirate.isBlank() || restaurant.emirate == emirate
+            val matchesArea = area.isBlank() || restaurant.area == area
+            val matchesMeal = meal.isBlank() || restaurant.mealTypes.any { it.name.equals(meal, ignoreCase = true) }
+            matchesQuery && matchesEmirate && matchesArea && matchesMeal
+        }
+        visible.forEach { e ->
+            val restaurant = e.restaurant
+            val selectedEmirate = if(ar && restaurant.emirateAr.isNotBlank()) restaurant.emirateAr else restaurant.emirate
+            val selectedArea = if(ar && restaurant.areaAr.isNotBlank()) restaurant.areaAr else restaurant.area
+            val location = listOf(selectedEmirate, selectedArea).filter { it.isNotBlank() }.joinToString(" · ")
+            val cuisine = if(ar && restaurant.cuisineAr.isNotBlank()) restaurant.cuisineAr else restaurant.cuisine
+            val rating = restaurant.googleRating?.let { "★ $it Google" }.orEmpty()
+            val detail = listOf(location, cuisine, rating, "${restaurant.menu.items.size} ${tr("items", "صنفاً")}").filter { it.isNotBlank() }.joinToString(" · ")
+            card("restaurant:${restaurant.id}", restaurant.localizedName(language), detail, actions = listOf(
             GroupButton(tr("Use for order", "استخدام للطلب"), GroupAction.SELECT_RESTAURANT, e.restaurant.id), GroupButton(tr("Edit", "تعديل"), GroupAction.EDIT_RESTAURANT, e.restaurant.id), GroupButton(tr("Share JSON", "مشاركة القائمة"), GroupAction.EXPORT_MENU, e.restaurant.id), GroupButton(tr("Delete saved copy", "حذف النسخة"), GroupAction.DELETE_RESTAURANT, e.restaurant.id, destructive = true))) }
+        if (visible.isEmpty() && c.library.restaurants.isNotEmpty()) card("empty-filter", tr("No matching restaurants", "لا توجد مطاعم مطابقة"), tr("Try another name, emirate, area or meal.", "جرّب اسماً أو إمارة أو منطقة أو وجبة أخرى."))
         if (c.library.restaurants.isEmpty() && c.importPreview == null) card("empty", "Your next favorite starts here", "Add a restaurant and its menu, or import a menu shared by a friend.")
         c.reply?.room?.takeIf { (it.ownerId == c.me() || it.payerId == c.me()) && it.phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW) }?.let { room ->
             c.library.restaurants.firstOrNull { it.restaurant.id == room.restaurant.id }?.let { saved ->

@@ -19,6 +19,8 @@ import { amount, hubAddress, money, photoData } from './client';
 import { useFoodRun } from './useFoodRun';
 import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlicePath } from './wheel';
 import builtInRestaurants from './builtInRestaurants.json';
+import { sharjahRestaurants } from './sharjahRestaurants';
+import { dubaiRestaurants } from './dubaiRestaurants';
 import { validateMenu } from './menuValidation';
 
 const AdminApp = lazy(() => import('./AdminApp'));
@@ -74,6 +76,7 @@ function blankRestaurant() {
     contact: { phoneE164: null, whatsappE164: null, address: null },
     pricing: { taxTreatment: 'included', taxRateBasisPoints: null, defaultDeliveryFeeMinor: 0, defaultServiceFeeMinor: 0, minimumOrderMinor: 0 },
     notes: '', menu: { categories: [], optionGroups: [], items: [] }, openOrdering: true,
+    emirate: '', emirateAr: '', area: '', areaAr: '', cuisine: '', cuisineAr: '', mealTypes: [], googleRating: null, googleRatingCount: null, googleRatingVerifiedOn: '',
   };
 }
 function normalizeRestaurant(value) {
@@ -89,6 +92,9 @@ function normalizeRestaurant(value) {
   const defaults = blankRestaurant();
   return validateMenu({
     ...defaults, ...value, id: String(value.id).trim(), name: String(value.name).trim(), currency,
+    emirate: String(value.emirate || '').trim(), emirateAr: String(value.emirateAr || '').trim(), area: String(value.area || '').trim(), areaAr: String(value.areaAr || '').trim(), cuisine: String(value.cuisine || '').trim(), cuisineAr: String(value.cuisineAr || '').trim(),
+    mealTypes: [...new Set((Array.isArray(value.mealTypes) ? value.mealTypes : []).filter(meal => ['breakfast','lunch','dinner'].includes(meal)))],
+    googleRating: value.googleRating == null ? null : Number(value.googleRating), googleRatingCount: value.googleRatingCount == null ? null : Number(value.googleRatingCount), googleRatingVerifiedOn: String(value.googleRatingVerifiedOn || ''),
     contact: { address: null, ...(value.contact || {}),
       phoneE164: value.contact?.phoneE164 ? uaePhone(value.contact.phoneE164) : null,
       whatsappE164: value.contact?.whatsappE164 ? uaePhone(value.contact.whatsappE164, true) : null },
@@ -103,7 +109,14 @@ function loadRestaurants() {
   try { saved = JSON.parse(localStorage.getItem(RESTAURANT_LIBRARY_KEY) || '[]').map(normalizeRestaurant); }
   catch { saved = []; }
   try { managedIds = JSON.parse(localStorage.getItem(SERVER_CATALOG_KEY) || '[]'); } catch { managedIds = []; }
-  return [...saved, ...builtInRestaurants.map(normalizeRestaurant).filter(builtIn => !managedIds.includes(builtIn.id) && !saved.some(restaurant => restaurant.id === builtIn.id))]
+  const legacyMetadata = {
+    'builtin-sultan': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
+    'builtin-al-kalha': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Levantine', cuisineAr: 'شامي', mealTypes: ['breakfast','lunch','dinner'] },
+    'builtin-al-mahla': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Sharjah', areaAr: 'الشارقة', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['breakfast','lunch','dinner'] },
+    'builtin-bait-al-waleema': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Al Majaz', areaAr: 'المجاز', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['lunch','dinner'] },
+  };
+  const bundled = [...builtInRestaurants.map(value => ({ ...value, ...(legacyMetadata[value.id] || {}) })), ...sharjahRestaurants, ...dubaiRestaurants];
+  return [...saved, ...bundled.map(normalizeRestaurant).filter(builtIn => !managedIds.includes(builtIn.id) && !saved.some(restaurant => restaurant.id === builtIn.id))]
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 function storeRestaurants(restaurants) {
@@ -503,11 +516,44 @@ function Home({ data, setPage, openRoom, allowRoomCreation = true }) {
   </Page>;
 }
 
+function RestaurantPicker({ restaurants, selectedId, onSelect, onClose }) {
+  const [search, setSearch] = useState('');
+  const [emirate, setEmirate] = useState('');
+  const [area, setArea] = useState('');
+  const [meal, setMeal] = useState('');
+  const emirates = [...new Set(restaurants.map(value => value.emirate).filter(Boolean))].sort();
+  const areas = [...new Set(restaurants.filter(value => !emirate || value.emirate === emirate).map(value => value.area).filter(Boolean))].sort();
+  const visible = restaurants.filter(restaurant => {
+    const haystack = [restaurant.name, restaurant.nameAr, restaurant.emirate, restaurant.emirateAr, restaurant.area, restaurant.areaAr, restaurant.cuisine, restaurant.cuisineAr, restaurant.contact?.address].join(' ').toLowerCase();
+    return (!search.trim() || haystack.includes(search.trim().toLowerCase())) && (!emirate || restaurant.emirate === emirate) && (!area || restaurant.area === area) && (!meal || restaurant.mealTypes?.includes(meal));
+  });
+  const mealName = value => ({ breakfast: tx('Breakfast', 'فطور'), lunch: tx('Lunch', 'غداء'), dinner: tx('Dinner', 'عشاء') })[value];
+  return <div className="restaurant-picker-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="restaurant-picker card" role="dialog" aria-modal="true" aria-labelledby="restaurant-picker-title">
+      <div className="section-title compact"><div><p className="eyebrow">{tx('UAE RESTAURANTS', 'مطاعم الإمارات')}</p><h2 id="restaurant-picker-title">{tx('Choose a restaurant', 'اختر مطعماً')}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label={tx('Close', 'إغلاق')}>×</button></div>
+      <div className="restaurant-picker-filters">
+        <label>{tx('Search', 'بحث')}<input value={search} onChange={event => setSearch(event.target.value)} placeholder={tx('Name, cuisine or address', 'الاسم أو المطبخ أو العنوان')} autoFocus /></label>
+        <label>{tx('Emirate', 'الإمارة')}<select value={emirate} onChange={event => { setEmirate(event.target.value); setArea(''); }}><option value="">{tx('All Emirates', 'كل الإمارات')}</option>{emirates.map(value => <option value={value} key={value}>{uiLanguage === 'ar' ? restaurants.find(item => item.emirate === value)?.emirateAr || value : value}</option>)}</select></label>
+        <label>{tx('Area', 'المنطقة')}<select value={area} onChange={event => setArea(event.target.value)}><option value="">{tx('All areas', 'كل المناطق')}</option>{areas.map(value => <option value={value} key={value}>{uiLanguage === 'ar' ? restaurants.find(item => item.area === value)?.areaAr || value : value}</option>)}</select></label>
+        <label>{tx('Meal', 'الوجبة')}<select value={meal} onChange={event => setMeal(event.target.value)}><option value="">{tx('Any meal', 'كل الوجبات')}</option><option value="breakfast">{mealName('breakfast')}</option><option value="lunch">{mealName('lunch')}</option><option value="dinner">{mealName('dinner')}</option></select></label>
+      </div>
+      <div className="restaurant-picker-results">
+        <button type="button" className={`restaurant-pick-card ${!selectedId ? 'selected' : ''}`} onClick={() => { onSelect(''); onClose(); }}><span className="restaurant-pick-icon">＋</span><span><b>{tx('Quick open order', 'طلب مفتوح سريع')}</b><small>{tx('Enter any restaurant and add custom items', 'أدخل أي مطعم وأضف الأصناف يدوياً')}</small></span></button>
+        {visible.map(restaurant => <button type="button" className={`restaurant-pick-card ${selectedId === restaurant.id ? 'selected' : ''}`} onClick={() => { onSelect(restaurant.id); onClose(); }} key={restaurant.id}>
+          <span className="restaurant-pick-icon">🍽️</span><span><b>{localizedName(restaurant)}</b><small>{[uiLanguage === 'ar' ? restaurant.emirateAr || restaurant.emirate : restaurant.emirate, uiLanguage === 'ar' ? restaurant.areaAr || restaurant.area : restaurant.area, uiLanguage === 'ar' ? restaurant.cuisineAr || restaurant.cuisine : restaurant.cuisine].filter(Boolean).join(' · ')}</small><small>{restaurant.googleRating ? `★ ${restaurant.googleRating} Google · ` : ''}{restaurant.menu.items.length ? `${restaurant.menu.items.length} ${tx('priced items', 'صنفاً بأسعاره')}` : tx('Open order · confirm prices', 'طلب مفتوح · أكد الأسعار')}</small><span className="meal-tags">{(restaurant.mealTypes || []).map(value => <em key={value}>{mealName(value)}</em>)}</span></span>
+        </button>)}
+        {!visible.length && <div className="empty"><span>🔎</span><h3>{tx('No matching restaurants', 'لا توجد مطاعم مطابقة')}</h3><p>{tx('Try another name, emirate, area or meal.', 'جرّب اسماً أو إمارة أو منطقة أو وجبة أخرى.')}</p></div>}
+      </div>
+    </section>
+  </div>;
+}
+
 function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useState(loadRestaurants);
   const [form, setForm] = useState({ room: '', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: false, destination: '', delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
   const [message, setMessage] = useState('');
+  const [restaurantPicker, setRestaurantPicker] = useState(false);
   const chosen = restaurants.find(restaurant => restaurant.id === form.restaurantId);
   const currency = chosen?.currency || 'AED';
   const chooseRestaurant = id => {
@@ -538,7 +584,7 @@ function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
     <form className="card create-form stack" onSubmit={submit}>
       {mode === 'join' ? <label>{t("Six-digit room code")}<input inputMode="numeric" pattern="[0-9]{6}" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, '').slice(0, 6) })} required autoFocus /></label> : <>
         <label>{t("Room name")}<input value={form.room} onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required autoFocus /></label>
-        {restaurants.length > 0 && <label>{tx('Saved restaurant', 'المطعم المحفوظ')}<select value={form.restaurantId} onChange={e => chooseRestaurant(e.target.value)}><option value="">{tx('Quick open order', 'طلب مفتوح سريع')}</option>{restaurants.map(restaurant => <option value={restaurant.id} key={restaurant.id}>{localizedName(restaurant)}{restaurant.branchName ? ` · ${restaurant.branchName}` : ''} · {restaurant.menu.items.length} {tx('items', 'صنفاً')}</option>)}</select></label>}
+        {restaurants.length > 0 && <button className="restaurant-picker-trigger" type="button" onClick={() => setRestaurantPicker(true)}><span><small>{tx('RESTAURANT', 'المطعم')}</small><b>{chosen ? localizedName(chosen) : tx('Choose from UAE restaurants', 'اختر من مطاعم الإمارات')}</b><em>{chosen ? [uiLanguage === 'ar' ? chosen.emirateAr || chosen.emirate : chosen.emirate, uiLanguage === 'ar' ? chosen.areaAr || chosen.area : chosen.area, uiLanguage === 'ar' ? chosen.cuisineAr || chosen.cuisine : chosen.cuisine].filter(Boolean).join(' · ') : tx('Search by name, emirate, area or meal', 'ابحث بالاسم أو الإمارة أو المنطقة أو الوجبة')}</em></span><strong>⌕</strong></button>}
         {!chosen && <div className="form-grid two"><label>{t("Restaurant / order name")}<input value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} placeholder={t("Today’s food order")} required /></label><label>{t("Restaurant phone")}<input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+971…" required /></label></div>}
         {chosen && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
         <div className="segmented restaurant-choice"><button type="button" className={!form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: false })}>{t("Use this restaurant")}</button><button type="button" className={form.restaurantPoll ? 'active' : ''} onClick={() => setForm({ ...form, restaurantPoll: true })}>{t("Start a room poll")}</button></div>
@@ -553,6 +599,7 @@ function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
       <button className="primary" disabled={data.busy || !profile.name || !profile.phone}>{data.busy ? 'Connecting…' : mode === 'join' ? 'Request to join' : 'Create room'}</button>
       {(!profile.name || !profile.phone) && <p className="form-message">{t("Complete your name and phone in your profile first.")}</p>}
     </form>
+    {restaurantPicker && <RestaurantPicker restaurants={restaurants} selectedId={form.restaurantId} onSelect={chooseRestaurant} onClose={() => setRestaurantPicker(false)} />}
   </Page>;
 }
 

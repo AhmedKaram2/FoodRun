@@ -5,7 +5,15 @@ import kotlin.test.*
 class BuiltInRestaurantsTest {
     @Test fun photographedMenusAreValidAndKeepTheRequestedPriceRules() {
         BuiltInRestaurants.all.forEach { MenuValidation.validate(it.restaurant) }
-        assertEquals(4, BuiltInRestaurants.all.size)
+        assertEquals(43, BuiltInRestaurants.all.size)
+        assertTrue(SharjahRestaurantCatalog.all.all { (it.restaurant.googleRating ?: 0.0) >= 4.0 })
+        assertEquals(10, DubaiRestaurantCatalog.egyptian.size)
+        assertEquals(10, DubaiRestaurantCatalog.arabicShawarma.size)
+        assertEquals(10, DubaiRestaurantCatalog.other.size)
+        assertTrue(DubaiRestaurantCatalog.all.all { it.restaurant.emirate == "Dubai" })
+        assertTrue(DubaiRestaurantCatalog.all.all { (it.restaurant.googleRating ?: 0.0) in 4.0..5.0 })
+        assertEquals(8, SharjahRestaurantCatalog.shawerman.restaurant.menu.items.size)
+        assertEquals(9, SharjahRestaurantCatalog.laffah.restaurant.menu.items.size)
         assertEquals(400, BuiltInRestaurants.sultan.restaurant.menu.items.single { it.name == "Falafel" }.basePriceMinor)
         assertEquals(300, BuiltInRestaurants.alMahla.restaurant.menu.items.single { it.name == "Falafel" }.basePriceMinor)
         assertEquals(listOf("Sandwiches"), BuiltInRestaurants.alMahla.restaurant.menu.categories.map { it.name })

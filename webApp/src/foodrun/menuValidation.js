@@ -6,6 +6,7 @@ export function validateMenu(restaurant) {
   const unique = values => { values.forEach(label); if (new Set(values).size !== values.length) throw Error(t("Duplicate identifiers in menu.")); };
   const bilingual = value => { label(value.name); if (value.nameAr) label(value.nameAr); };
   label(restaurant.id); bilingual(restaurant);
+  if (restaurant.googleRating != null && (!Number.isFinite(restaurant.googleRating) || restaurant.googleRating < 4 || restaurant.googleRating > 5)) throw Error(t("Food Run only lists restaurants rated 4.0 or higher on Google."));
   const { categories, items, optionGroups } = restaurant.menu;
   if (items.length > 500 || categories.length > 100 || optionGroups.length > 100 || (!restaurant.openOrdering && (!items.length || !categories.length))) throw Error('Menu needs 1–500 items and 1–100 categories.');
   unique(categories.map(x => x.id)); unique(items.map(x => x.id)); unique(optionGroups.map(x => x.id));

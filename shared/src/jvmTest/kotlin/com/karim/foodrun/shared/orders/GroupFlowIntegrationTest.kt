@@ -806,4 +806,36 @@ class GroupFlowIntegrationTest {
         assertEquals("+971500000000", c.library.restaurants.single { it.restaurant.id == "kitchen" }.restaurant.contact.whatsappE164)
     }
 
+    @Test fun menuCategoriesSeparateSandwichesFromPartyOrders() = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        val restaurant = BuiltInRestaurants.all.single { it.restaurant.id == "builtin-bait-al-waleema" }.restaurant
+        bus.db.save(c.room().copy(restaurant = restaurant)); bus.sync()
+        fun items() = c.state.cards.filter { it.id.startsWith("menu:") }
+        val category = c.state.fields.single { it.key == GroupFieldKey.MENU_CATEGORY }
+        assertEquals("Sandwiches", category.choices.first().label)
+        assertEquals(17, items().size)
+        val parties = category.choices.single { it.label == "Parties" }
+        c.update(GroupFieldKey.MENU_CATEGORY, parties.value)
+        assertEquals(5, items().size)
+        assertTrue(items().first().badge.contains("225.00"))
+        c.update(GroupFieldKey.MENU_SEARCH, "حواوشي")
+        assertEquals(0, items().size)
+        c.update(GroupFieldKey.MENU_CATEGORY, category.value)
+        assertEquals(1, items().size)
+        c.update(GroupFieldKey.MENU_SEARCH, "")
+        c.update(GroupFieldKey.MENU_CATEGORY, "all")
+        assertEquals(126, items().size)
+    }
+
+    @Test fun deliveryRoomCanBeCreatedWithoutTypingAnAddress() = Bus().use { bus ->
+        val (c, _) = bus.phone()
+        connect(c); c.update(GroupFieldKey.NAME, "Karim"); c.update(GroupFieldKey.ROOM_NAME, "Delivery lunch")
+        c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.IMPORT_MENU); c.dispatch(GroupAction.CONFIRM_IMPORT); c.dispatch(GroupAction.SELECT_RESTAURANT, "kitchen")
+        c.update(GroupFieldKey.DELIVERY, "true"); c.dispatch(GroupAction.CREATE_ROOM); bus.drain(); bus.sync()
+        assertEquals("", c.state.error)
+        assertTrue(c.room().deliveryMode)
+        assertTrue(c.room().fees.automaticDelivery)
+        assertEquals("The selected orderer will arrange delivery with the restaurant.", c.room().destination)
+    }
+
 }

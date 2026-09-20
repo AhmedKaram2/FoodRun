@@ -252,9 +252,10 @@ class GroupController(val platform: GroupPlatform) {
         val r = requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant
         val names = text(GroupFieldKey.EXPECTED_NAMES).split(',').map { it.trim() }.filter { it.isNotEmpty() }
         val fees = fees(r.currency)
+        val destination = if(flag(GroupFieldKey.DELIVERY)) text(GroupFieldKey.DESTINATION).trim().ifBlank { "The selected orderer will arrange delivery with the restaurant." } else ""
         val choices = if(flag(GroupFieldKey.RESTAURANT_POLL)) pollChoices(r) else listOf(r)
-        if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION))
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = text(GroupFieldKey.DESTINATION), fees = fees))
+        if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees))
     }
     private fun back() {
         val roomRestaurantEditor = page == GroupPage.RESTAURANT && editingRoomOrder != null

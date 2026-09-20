@@ -44,6 +44,13 @@ struct GroupFieldContent: View {
                 Text("\(field.label): \(field.value)").font(FoodTypography.setting)
             }.padding(FoodSpacing.s16).foodCard(showsBorder: true).disabled(!enabled)
                 .accessibilityIdentifier(field.key.name)
+        } else if !field.choices.isEmpty {
+            Picker(field.label, selection: Binding(get: { field.value }, set: onChange)) {
+                ForEach(field.choices, id: \.value) { choice in
+                    Text(choice.label).tag(choice.value)
+                }
+            }.pickerStyle(.menu).padding(FoodSpacing.s16).foodCard(showsBorder: true)
+                .disabled(!enabled).accessibilityIdentifier(field.key.name)
         } else if field.toggle {
             Toggle(field.label, isOn: Binding(
                 get: { field.value == "true" },

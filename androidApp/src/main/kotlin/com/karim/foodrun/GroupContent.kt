@@ -130,6 +130,21 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             Text(quantity.toString(), style = FoodType.Input)
             TextButton(enabled = !busy && quantity < 99, onClick = { controller.update(field.key, (quantity + 1).toString()) }) { Text("+") }
         }
+    } else if (field.choices.isNotEmpty()) {
+        var expanded by remember { mutableStateOf(false) }
+        Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Small)) {
+            Text(field.label, style = FoodType.Input)
+            Box {
+                androidx.compose.material3.OutlinedButton(onClick = { expanded = true }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag(field.key.name)) {
+                    Text((field.choices.firstOrNull { it.value == field.value }?.label ?: field.value) + " ▾")
+                }
+                androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    field.choices.forEach { choice ->
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(choice.label) }, onClick = { expanded = false; controller.update(field.key, choice.value) })
+                    }
+                }
+            }
+        }
     } else if (field.toggle) {
         Row(
             modifier = Modifier.fillMaxWidth().background(FoodColors.Card, RoundedCornerShape(FoodRadius.Card))

@@ -21,9 +21,10 @@ internal const val FOOD_RUN_INTERNET_API = "https://foodrun-api-q6b9.onrender.co
 enum class GroupFieldKey {
     EMAIL, PASSWORD, PROFILE_PHONE, PHOTO, AANI, DISCOVERABLE, CUSTOM_NAME, HUB_URL, FINGERPRINT, PAIRING_LINK, NAME, ROOM_NAME, ROOM_CODE, EXPECTED_NAMES, RESTAURANT_POLL, DELIVERY, DESTINATION,
     RESTAURANT_NAME, BRANCH, CURRENCY, PHONE, ADDRESS, MENU_ITEM_NAME, MENU_ITEM_PRICE, DELIVERY_FEE, SERVICE_FEE, DISCOUNT, TAX_RATE, MINIMUM_ORDER,
-    MENU_SEARCH, PROPORTIONAL, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
+    MENU_SEARCH, MENU_CATEGORY, PROPORTIONAL, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
 }
-data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false)
+data class GroupChoice(val value: String, val label: String)
+data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false, val choices: List<GroupChoice> = emptyList())
 data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
 data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList())
 data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String)

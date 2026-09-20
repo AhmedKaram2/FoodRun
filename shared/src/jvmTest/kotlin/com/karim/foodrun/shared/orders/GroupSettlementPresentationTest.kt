@@ -190,4 +190,24 @@ class GroupSettlementPresentationTest {
         assertTrue(complete.action(GroupAction.ARCHIVE).enabled)
         assertTrue(complete.cards.single { it.id == "complete-order-guidance" }.detail.contains("Every reimbursement and refund is settled"))
     }
+    @Test fun profileWalletSeparatesPeopleAndPendingApprovalInBothDirections() {
+        val placed = room().copy(phase = RoomPhase.PLACED, account = account.copy(holder = "Bank holder"), transfers = listOf(transfer()))
+        val member = controller(placed, "member")
+        member.library = member.library.copy(sessions = listOf(member.session!!), snapshots = mapOf(placed.id to member.reply!!))
+        member.page = GroupPage.HOME
+        val payable = member.state.cards.single { it.id.startsWith("dashboard:wallet:") }
+        assertEquals("Karim", payable.title)
+        assertEquals("AED 10.00", payable.badge)
+        assertEquals("View pending payment", payable.buttons.single().title)
+        assertTrue(member.state.cards.single { it.id == "dashboard:wallet-direction:false" }.badge.contains("10.00"))
+        val payer = controller(placed)
+        payer.library = payer.library.copy(sessions = listOf(payer.session!!), snapshots = mapOf(placed.id to payer.reply!!))
+        payer.page = GroupPage.HOME
+        val receivable = payer.state.cards.single { it.id.startsWith("dashboard:wallet:") }
+        assertEquals("Hassan", receivable.title)
+        assertEquals("AED 10.00", receivable.badge)
+        assertEquals("Review and approve receipt", receivable.buttons.single().title)
+        assertTrue(payer.state.cards.single { it.id == "dashboard:wallet-direction:true" }.badge.contains("10.00"))
+    }
+
 }

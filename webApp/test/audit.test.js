@@ -145,3 +145,42 @@ test('wallet retains money due until recipient approval and exposes the pending 
   assert.equal(userDashboard(data).toReceive, 700);
   assert.equal(userDashboard(data).entries[0].pending, undefined);
 });
+
+
+test('menu categories keep sandwiches separate from party prices and support Arabic searches', async () => {
+  const { menuCategories, defaultMenuCategory, browsedMenuItems } = await import('../src/foodrun/menuBrowsing.js');
+  const { readFile } = await import('node:fs/promises');
+  const catalog = JSON.parse(await readFile(new URL('../src/foodrun/builtInRestaurants.json', import.meta.url)));
+  const restaurant = catalog.find(value => value.id === 'builtin-bait-al-waleema');
+  const initial = defaultMenuCategory(restaurant);
+  assert.equal(menuCategories(restaurant)[0].name, 'Sandwiches');
+  assert.equal(browsedMenuItems(restaurant, initial).length, 17);
+  assert(browsedMenuItems(restaurant, initial).every(item => item.basePriceMinor < 2000));
+  const parties = menuCategories(restaurant).find(value => value.name === 'Parties');
+  assert.deepEqual(browsedMenuItems(restaurant, `category:${parties.id}`).map(item => item.basePriceMinor), [22500, 48000, 47000, 80000, 120000]);
+  assert.equal(browsedMenuItems(restaurant, initial, 'حواوشي').length, 1);
+  assert.equal(browsedMenuItems(restaurant, `category:${parties.id}`, 'حواوشي').length, 0);
+  assert.equal(browsedMenuItems(restaurant, 'all').length, 126);
+});
+
+test('wallet directions identify the chosen person, retain same-name people and separate refunds', () => {
+  const data = { sessions: {}, rooms: {} };
+  const add = (id, memberId, payerId, members, receipts) => {
+    data.sessions[id] = { roomId: id, memberId };
+    data.rooms[id] = { room: { id, name: id, phase: 'PLACED', payerId, members, account: { holder: 'Bank holder' }, transfers: [] }, receipts };
+  };
+  add('lunch', 'me', 'chosen', [{ id: 'chosen', name: 'Ali' }], [{ ...receipt, balance: 1500 }]);
+  add('dinner', 'me', 'me', [], [{ ...receipt, memberId: 'a', name: 'Same', balance: 900 }, { ...receipt, memberId: 'b', name: 'Same', balance: 700 }, { ...receipt, memberId: 'c', name: 'Refund', balance: -200 }]);
+  const result = userDashboard(data);
+  assert.equal(result.toPay, 1700); assert.equal(result.toReceive, 1600);
+  assert.equal(result.payEntries[0].person, 'Ali'); assert.equal(result.payEntries[0].personId, 'chosen');
+  assert.equal(result.payEntries[1].kind, 'refund');
+  assert.deepEqual(result.receiveEntries.map(value => value.personId), ['a', 'b']);
+});
+
+test('optional delivery address retains automatic delivery mode without requiring an address', async () => {
+  const { deliveryDestination } = await import('../src/foodrun/roomSetup.js');
+  assert.equal(deliveryDestination(true, '  '), 'The selected orderer will arrange delivery with the restaurant.');
+  assert.equal(deliveryDestination(true, ' Office reception '), 'Office reception');
+  assert.equal(deliveryDestination(false, 'Office'), '');
+});

@@ -171,7 +171,7 @@ internal class GroupPresentation(private val c: GroupController) {
         )
         field(GroupFieldKey.EXPECTED_NAMES, "Expected people today · comma separated")
         field(GroupFieldKey.DELIVERY, "Delivery to us", toggle = true)
-        if(c.flag(GroupFieldKey.DELIVERY)) field(GroupFieldKey.DESTINATION, tr("Delivery address and contact", "عنوان التوصيل ووسيلة التواصل"))
+        if(c.flag(GroupFieldKey.DELIVERY)) field(GroupFieldKey.DESTINATION, tr("Delivery address · optional; otherwise the selected orderer arranges it", "عنوان التوصيل · اختياري؛ وإلا يتولى الشخص المختار ترتيبه"))
         feeFields()
         card("restaurant", c.selectedRestaurant?.restaurant?.localizedName(language) ?: tr("Choose a restaurant", "اختر مطعماً"), c.selectedRestaurant?.restaurant?.menu?.items?.size?.let { tr("$it menu items", "$it صنفاً") } ?: tr("Create, import or select a saved menu.", "أنشئ أو استورد أو اختر قائمة محفوظة."))
         button("Choose restaurant", GroupAction.OPEN_LIBRARY)
@@ -345,9 +345,15 @@ internal class GroupPresentation(private val c: GroupController) {
         if(r.restaurant.openOrdering) button(tr("Add a food item", "إضافة صنف"), GroupAction.OPEN_CUSTOM_ITEM, primary = primary)
         field(GroupFieldKey.MENU_SEARCH, tr("Find food · Arabic or English", "ابحث عن طعام بالعربية أو الإنجليزية"))
         val query = c.text(GroupFieldKey.MENU_SEARCH).trim()
-        val menuItems = r.restaurant.menu.items.filter { item -> query.isBlank() || listOf(item.name, item.nameAr, item.description, item.descriptionAr).any { it.contains(query, ignoreCase = true) } }
-        if(menuItems.isEmpty()) card("menu-empty", tr("No matching items", "لا توجد أصناف مطابقة"), tr("Try a different name or clear the search.", "جرّب اسماً آخر أو امسح البحث."))
         val sandwichCategoryIds = r.restaurant.menu.categories.filter { it.name.contains("sandwich", true) || it.nameAr.contains("سند") }.map { it.id }.toSet()
+        val availableCategories = r.restaurant.menu.categories.filter { category -> r.restaurant.menu.items.any { it.available && it.categoryId == category.id } }
+            .sortedWith(compareBy<MenuCategory> { if(it.id in sandwichCategoryIds) 0 else 1 }.thenBy { it.sortOrder })
+        val choices = availableCategories.map { GroupChoice("category:${it.id}", it.localizedName(language)) } + GroupChoice("all", tr("All categories", "كل الأقسام"))
+        val selectedCategory = c.text(GroupFieldKey.MENU_CATEGORY).takeIf { value -> choices.any { it.value == value } }
+            ?: availableCategories.firstOrNull { it.id in sandwichCategoryIds }?.let { "category:${it.id}" } ?: "all"
+        fields += GroupField(GroupFieldKey.MENU_CATEGORY, tr("Menu category", "قسم القائمة"), selectedCategory, choices = choices)
+        val menuItems = r.restaurant.menu.items.filter { item -> item.available && (selectedCategory == "all" || selectedCategory == "category:${item.categoryId}") && (query.isBlank() || listOf(item.name, item.nameAr, item.description, item.descriptionAr).any { it.contains(query, ignoreCase = true) }) }
+        if(menuItems.isEmpty()) card("menu-empty", tr("No matching items", "لا توجد أصناف مطابقة"), tr("Try a different name, clear the search or change the menu category.", "جرّب اسماً آخر أو امسح البحث أو غيّر قسم القائمة."))
         menuItems.sortedBy { if(it.categoryId in sandwichCategoryIds) 0 else 1 }.forEach { i ->
             val simple = i.variants.isEmpty() && i.optionGroupIds.isEmpty()
             val quantity = c.myCart().lines.filter { it.itemId == i.id }.sumOf { it.quantity }
@@ -355,8 +361,10 @@ internal class GroupPresentation(private val c: GroupController) {
                 GroupButton(tr("+ Add", "+ إضافة"), GroupAction.QUICK_ADD_ITEM, i.id),
                 GroupButton(tr("Quantity / notes", "الكمية والملاحظات"), GroupAction.OPEN_ITEM, i.id),
             ) else listOf(GroupButton(tr("Choose size / extras", "اختيار الحجم والإضافات"), GroupAction.OPEN_ITEM, i.id))
-            card("menu:${i.id}", i.localizedName(language), i.localizedDescription(language),
-                Money.format(i.basePriceMinor, r.restaurant.currency) + if(quantity > 0) tr(" · $quantity in your order", " · $quantity في طلبك") else "", actions)
+            val categoryName = r.restaurant.menu.categories.firstOrNull { it.id == i.categoryId }?.localizedName(language).orEmpty()
+            val variant = i.variants.firstOrNull()
+            card("menu:${i.id}", i.localizedName(language), listOf(categoryName, i.localizedDescription(language)).filter { it.isNotBlank() }.joinToString(" · "),
+                Money.format(variant?.priceMinor ?: i.basePriceMinor, r.restaurant.currency) + (variant?.let { " · ${it.localizedName(language)}" } ?: "") + if(quantity > 0) tr(" · $quantity in your order", " · $quantity في طلبك") else "", actions)
         }
         cart()
         if(!c.myCart().submitted) button(if(c.myCart().lines.isEmpty()) "No food this time" else "Submit my food order", GroupAction.SUBMIT_CART, primary = primary)
@@ -456,24 +464,28 @@ internal class GroupPresentation(private val c: GroupController) {
         card("${prefix}wallet-summary", tr("Wallet dashboard", "لوحة المحفظة"),
             tr("You need to pay ${Money.format(toPay, "AED")} · You need to receive ${Money.format(toReceive, "AED")}", "عليك دفع ${Money.format(toPay, "AED")} · لك لدى الآخرين ${Money.format(toReceive, "AED")}"),
             tr("${payableRows.count { it.receipt != null }} active balances", "${payableRows.count { it.receipt != null }} أرصدة حالية"))
-        payableRows.forEach { row ->
-            val payerName = row.room.members.firstOrNull { it.id == row.room.payerId }?.name ?: tr("selected payer", "الشخص المختار")
-            if (row.room.payerId == row.session.memberId) {
-                row.reply.receipts.filterNot { it.memberId == row.session.memberId }.filter { it.balance != 0L }.forEach { receipt ->
-                    val detail = if(receipt.balance > 0) tr("${receipt.name} needs to pay you ${Money.format(receipt.balance, receipt.currency)}", "على ${receipt.name} دفع ${Money.format(receipt.balance, receipt.currency)} لك")
-                        else tr("You need to refund ${Money.format(-receipt.balance, receipt.currency)} to ${receipt.name}", "عليك رد ${Money.format(-receipt.balance, receipt.currency)} إلى ${receipt.name}")
-                    val pending = row.room.transfers.firstOrNull { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
-                    val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: stage(row.room.phase)
-                    card("${prefix}wallet:${row.room.id}:${receipt.memberId}", row.room.name, detail, status, listOf(GroupButton(if(pending != null && !pending.refund) tr("Review and approve receipt", "مراجعة وتأكيد الاستلام") else tr("Open payment", "فتح الدفع"), GroupAction.RESUME, row.room.id)))
-                }
-            } else row.receipt?.takeIf { it.balance != 0L }?.let { receipt ->
-                val recipient = row.room.account?.holder ?: payerName
-                val detail = if(receipt.balance > 0) tr("Pay ${Money.format(receipt.balance, receipt.currency)} to $recipient", "ادفع ${Money.format(receipt.balance, receipt.currency)} إلى $recipient")
-                    else tr("$payerName needs to refund you ${Money.format(-receipt.balance, receipt.currency)}", "على $payerName رد ${Money.format(-receipt.balance, receipt.currency)} لك")
+        data class BalanceRow(val row: SnapshotRow, val receipt: Receipt, val person: String, val receive: Boolean)
+        val balances = payableRows.flatMap { row ->
+            if(row.room.payerId == row.session.memberId) row.reply.receipts.filter { it.memberId != row.session.memberId && it.balance != 0L }
+                .map { BalanceRow(row, it, it.name, it.balance > 0) }
+            else listOfNotNull(row.receipt?.takeIf { it.balance != 0L }?.let {
+                BalanceRow(row, it, row.room.members.firstOrNull { member -> member.id == row.room.payerId }?.name ?: tr("Selected orderer", "الشخص المختار"), it.balance < 0)
+            })
+        }
+        listOf(false, true).forEach { receive ->
+            val entries = balances.filter { it.receive == receive }
+            card("${prefix}wallet-direction:$receive", if(receive) tr("I need to receive", "مبالغ أحتاج إلى استلامها") else tr("I need to pay", "مبالغ يجب علي دفعها"),
+                if(entries.isEmpty()) tr("No outstanding payments", "لا توجد دفعات مستحقة") else tr("Payments by person", "الدفعات حسب الشخص"), Money.format(if(receive) toReceive else toPay, "AED"))
+            entries.forEach { (row, receipt, person, _) ->
                 val pending = row.room.transfers.firstOrNull { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
-                val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: stage(row.room.phase)
-                val action = if(pending != null) { if(pending.refund) tr("Review and approve receipt", "مراجعة وتأكيد الاستلام") else tr("View pending payment", "عرض الدفعة المعلقة") } else tr("Pay now / mark paid", "ادفع الآن / سجل الدفع")
-                card("${prefix}wallet:${row.room.id}", row.room.name, detail, status, listOf(GroupButton(action, GroupAction.RESUME, row.room.id)))
+                val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: ""
+                val action = if(pending != null) {
+                    if(receive) tr("Review and approve receipt", "مراجعة وتأكيد الاستلام") else tr("View pending payment", "عرض الدفعة المعلقة")
+                } else if(receive) tr("Open payment", "فتح الدفع") else tr("Pay now / mark paid", "ادفع الآن / سجل الدفع")
+                val direction = if(receive) tr("To receive", "للاستلام") else tr("To pay", "للدفع")
+                card("${prefix}wallet:${row.room.id}:${receipt.memberId}", person,
+                    listOf(row.room.name, direction, status).filter { it.isNotBlank() }.joinToString(" · "), Money.format(kotlin.math.abs(receipt.balance), receipt.currency),
+                    listOf(GroupButton(action, GroupAction.RESUME, row.room.id)))
             }
         }
         val uniquePast = c.previousOrderChoices().size

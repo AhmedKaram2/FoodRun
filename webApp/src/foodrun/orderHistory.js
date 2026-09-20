@@ -58,15 +58,15 @@ export function userDashboard(data) {
     if (payer) {
       (reply.receipts || []).filter(receipt => receipt.memberId !== session.memberId && receipt.balance !== 0).forEach(receipt => {
         if (receipt.balance > 0) toReceive += receipt.balance; else toPay += -receipt.balance;
-        entries.push({ roomId: room.id, roomName: room.name, person: receipt.name, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === receipt.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
+        entries.push({ roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === receipt.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
       });
     } else {
       const receipt = (reply.receipts || []).find(value => value.memberId === session.memberId);
       if (!receipt || receipt.balance === 0) return;
       if (receipt.balance > 0) toPay += receipt.balance; else toReceive += -receipt.balance;
-      const recipient = room.account?.holder || payerName;
-      entries.push({ roomId: room.id, roomName: room.name, person: recipient, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === session.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
+      const recipient = payerName;
+      entries.push({ roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === session.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
     }
   });
-  return { toPay, toReceive, entries, currentOrders };
+  return { toPay, toReceive, entries, payEntries: entries.filter(entry => entry.kind !== 'receive'), receiveEntries: entries.filter(entry => entry.kind === 'receive'), currentOrders };
 }

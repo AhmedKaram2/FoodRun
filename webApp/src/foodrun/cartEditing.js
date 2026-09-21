@@ -27,5 +27,5 @@ export function menuLineTotal(restaurant, line) {
   if (item.variants.length && !variant) return null;
   const groups = restaurant.menu.optionGroups.filter(group => item.optionGroupIds.includes(group.id));
   const options = groups.flatMap(group => group.options).filter(option => (line.optionIds || []).includes(option.id));
-  return ((variant?.priceMinor ?? item.basePriceMinor) + options.reduce((sum, option) => sum + option.priceDeltaMinor, 0)) * line.quantity;
+  return (line.unitPrice ?? ((variant?.priceMinor ?? item.basePriceMinor) + options.reduce((sum, option) => sum + option.priceDeltaMinor, 0))) * line.quantity;
 }

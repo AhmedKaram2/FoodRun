@@ -38,6 +38,9 @@ object RoomRules {
         require(room.restaurantPaid) { "Confirm the restaurant payment first." }
         require(Billing.receipts(room).all { it.balance == 0L } && room.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
     }
+    fun billApprovalMemberIds(room: Room): Set<String> = Billing.receipts(room)
+        .filter { it.lines.isNotEmpty() || it.total != 0L || it.paid != 0L || it.balance != 0L }
+        .map { it.memberId }.toSet()
     fun requirePlaceable(room: Room) {
         requireReview(room)
         require(room.account != null) { "The payer must share a receiving account." }

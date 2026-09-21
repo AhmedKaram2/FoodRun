@@ -14,7 +14,8 @@ object Billing {
                 MenuValidation.price(amount)
                 return@map ReceiptLine(line.description, line.quantity, amount, line.notes)
             }
-            require(line.unitPrice == null) { "Menu prices are set by the restaurant." }
+            // The server accepts overrides only through the selected payer's PRICE_ITEM command.
+            line.unitPrice?.let(MenuValidation::price)
             val item = restaurant.menu.items.singleOrNull { it.id == line.itemId } ?: error("Menu item no longer exists.")
             require(item.available) { "${item.name} is unavailable." }
             require(line.quantity in 1..99 && line.notes.length <= 500) { "Invalid quantity or note." }
@@ -26,7 +27,7 @@ object Billing {
             require(line.optionIds.all { id -> options.any { it.id == id } }) { "Invalid extra." }
             groups.forEach { group -> require(line.optionIds.count { id -> group.options.any { it.id == id } } in group.minSelections..group.maxSelections) { "Check ${group.name} selection limits." } }
             val selected = options.filter { it.id in line.optionIds }
-            val unit = (variant?.priceMinor ?: item.basePriceMinor) + selected.sumOf { it.priceDeltaMinor }
+            val unit = line.unitPrice ?: ((variant?.priceMinor ?: item.basePriceMinor) + selected.sumOf { it.priceDeltaMinor })
             val amount = unit * line.quantity
             MenuValidation.price(amount)
             val description = (listOf(item.name) + listOfNotNull(variant?.name) + selected.map { it.name }).joinToString(" · ")

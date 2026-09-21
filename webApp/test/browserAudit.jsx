@@ -34,6 +34,24 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
   const roomData = { ...data, sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
     rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
   const props = { data: screen === 'room' || options.room ? roomData : data, onBack: () => {}, openRoom: () => {}, setPage: () => {} };
+  if (options.send) roomData.send = options.send;
+  if (options.liveCart || options.liveCommands) roomData.send = async (kind, fields) => {
+    commands.push({ kind, fields });
+    if (kind === 'CART') {
+      room.carts = [{ ...fields.cart, revision: fields.expectedRevision + 1, submitted: false, confirmedQuote: -1 }];
+    }
+    if (kind === 'VOTE_RESTAURANT') room.restaurantVotes = [{ memberId: 'me', restaurantId: fields.text }];
+    if (kind === 'PRICE_ITEM') {
+      room.carts = room.carts.map(cart => cart.memberId !== fields.memberId ? cart : { ...cart, lines: cart.lines.map(line => line.id !== fields.text ? line : { ...line, unitPrice: fields.flag ? null : fields.amount }) });
+      room.quoteRevision++; room.revision++; room.phase = 'COLLECTING';
+    }
+    if (kind === 'SET_FEES') {
+      room.fees = fields.fees; room.restaurant = fields.restaurant || room.restaurant; room.quoteRevision++; room.revision++;
+      roomData.rooms[room.id].progress = { ...roomData.rooms[room.id].progress, canReview: room.restaurant.pricing.taxTreatment !== 'unspecified', reviewBlocker: '' };
+    }
+    root.render(<RoomScreen {...props} roomId={room.id} />);
+    return { ok: true };
+  };
   root.render(screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
     : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <ProfileScreen {...props} />
     : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />);
@@ -49,6 +67,95 @@ function setValue(node, value) {
   node.dispatchEvent(new Event(node instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 }
 const button = text => [...host.querySelectorAll('button')].find(node => node.textContent === t(text));
+export async function runPollPricingAudit() {
+  commands.length = 0;
+  const catalog = loadRestaurants();
+  const restaurant = catalog.find(value => value.id === 'builtin-laffah-al-qasba');
+  const poll = { restaurantPollOpen: true, restaurantOptions: [restaurant, { ...restaurant, id: 'second', name: 'Second restaurant', nameAr: 'مطعم آخر' }] };
+  await mountAudit('room', 'LOBBY', { room: poll, liveCommands: true });
+  assert(host.querySelector('.poll-dialog').open, 'Entering an open poll did not show the popup');
+  host.querySelector('.poll-dialog-options button').click(); await pause();
+  assert(commands.length === 1 && commands[0].kind === 'VOTE_RESTAURANT', 'Poll choice did not vote exactly once');
+  assert(!host.querySelector('.poll-dialog').open, 'Saved vote did not close popup');
+  await mountAudit('room', 'LOBBY', { room: { ...poll, restaurantVotes: [{ memberId: 'me', restaurantId: restaurant.id }] } });
+  assert(!host.querySelector('.poll-dialog').open, 'Existing voter was prompted again');
+  await mountAudit('room', 'LOBBY', { room: poll, send: async () => null });
+  host.querySelector('.poll-dialog-options button').click(); await pause();
+  assert(host.querySelector('.poll-dialog').open && host.querySelector('.poll-dialog [role=alert]'), 'Failed vote closed popup or lost error');
+  button('Choose later').click(); await pause();
+  assert(!host.querySelector('.poll-dialog').open, 'Choose later did not dismiss popup');
+  await mountAudit('room', 'LOBBY', { room: { ...poll, members: [{ id: 'me', approved: true, guest: true, participating: false }] } });
+  assert(!host.querySelector('.poll-dialog').open, 'Guest saw voting popup');
+  const item = restaurant.menu.items.find(value => value.available);
+  const line = { id: 'priced-line', itemId: item.id, variantId: item.variants[0]?.id || null, optionIds: [], notes: '', description: '', unitPrice: null, quantity: 2 };
+  const room = { restaurant, carts: [{ memberId: 'me', revision: 1, lines: [line], submitted: true }] };
+  await mountAudit('room', 'COLLECTING', { room, liveCommands: true });
+  const before = (first, second) => !!(host.querySelector(first).compareDocumentPosition(host.querySelector(second)) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert(before('.collected-orders', '.restaurant-order-card') && before('.fees-editor', '.restaurant-order-card'), 'Send controls must follow collected orders and fees');
+  assert(host.querySelector('.order-pricing-panel'), 'Selected person cannot edit menu item prices');
+  button('Edit price').click(); await pause();
+  setValue(host.querySelector('.order-pricing-panel input'), '7.50'); await pause();
+  host.querySelector('.order-pricing-panel form').requestSubmit(); await pause();
+  assert(commands.at(-1).kind === 'PRICE_ITEM' && commands.at(-1).fields.amount === 750, 'Unit price was not saved in minor units');
+  assert(host.querySelector('.order-pricing-panel').textContent.includes('15.00'), 'Quantity was not applied to adjusted unit price');
+  button('Edit price').click(); await pause(); button('Use menu price').click(); await pause();
+  assert(commands.at(-1).fields.flag === true, 'Menu price restore command missing');
+  const discount = [...host.querySelectorAll('label')].find(node => node.textContent.startsWith(t('Shared discount (whole order)'))).querySelector('input');
+  setValue(host.querySelector('.fees-editor select'), 'included'); await pause();
+  setValue(discount, '5.25'); await pause(); discount.closest('form').requestSubmit(); await pause();
+  assert(commands.at(-1).kind === 'SET_FEES' && commands.at(-1).fields.fees.discount === 525, 'Shared discount not saved');
+  assert(commands.at(-1).fields.restaurant.pricing.taxTreatment === 'included', 'Confirmed tax not sent with fees');
+  assert(host.querySelector('.fees-editor select').value === 'included', 'Saved tax choice was not retained');
+  assert(!measureAudit().overflow, 'Price editor overflows');
+  await mountAudit('room', 'REVIEW', { room });
+  assert(host.querySelector('.order-pricing-panel'), 'Price editor missing during review');
+  await mountAudit('room', 'COLLECTING', { room: { ...room, payerId: 'other', members: [{ id: 'me', name: 'Me', approved: true, participating: true }, { id: 'other', name: 'Other', approved: true, participating: true }] } });
+  assert(!host.querySelector('.order-pricing-panel'), 'Nonpayer can see item price controls');
+  await mountAudit('room', 'LOBBY', { room: poll, liveCommands: true });
+  assert(!measureAudit().overflow, 'Poll popup overflows');
+  return { passed: ['entry popup', 'vote saves and closes', 'existing voter skipped', 'failed vote retry', 'dismiss', 'guest excluded', 'menu price edit', 'quantity multiplication', 'restore menu price', 'shared discount', 'review phase', 'payer-only controls'], ...measureAudit() };
+}
+export async function runReorderAudit() {
+  commands.length = 0;
+  await mountAudit('room');
+  assert(!host.querySelector('.last-order'), 'New customer sees a last order');
+  const restaurant = structuredClone(loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba'));
+  const item = restaurant.menu.items.find(value => value.available);
+  item.variants = [{ id: 'audit-large', name: 'Large', priceMinor: 1500 }];
+  item.optionGroupIds = ['audit-extras'];
+  restaurant.menu.optionGroups.push({ id: 'audit-extras', name: 'Extras', minSelections: 1, maxSelections: 1, options: [{ id: 'audit-cheese', name: 'Cheese', priceDeltaMinor: 200 }] });
+  const groups = restaurant.menu.optionGroups.filter(group => item.optionGroupIds.includes(group.id));
+  const optionIds = groups.flatMap(group => group.options.slice(0, Math.max(1, group.minSelections)).map(option => option.id));
+  const lines = [{ itemId: item.id, variantId: item.variants[0].id, optionIds, quantity: 2, description: item.name, notes: 'No onions', amount: 1 },
+    { itemId: 'removed-item', quantity: 1, description: 'Unavailable meal', optionIds: [] }];
+  const history = [{ number: 1, restaurantId: restaurant.id, restaurantName: restaurant.name, completedAt: 1700000000000, receipts: [{ memberId: 'me', lines }] }];
+  await mountAudit('room', 'LOBBY', { history, liveCart: true, room: { restaurant } });
+  assert(host.querySelector('.last-order').textContent.includes('2 ×'), 'Last order summary missing quantity');
+  button('Reorder').click(); await pause();
+  assert(commands.length === 0, 'Preview mutated the cart');
+  assert(document.activeElement.id === 'reorder-review-title', 'Review heading did not receive focus');
+  assert(host.querySelector('.reorder-review').textContent.includes(t('This item is unavailable.')), 'Unavailable item was not flagged');
+  assert(host.querySelector('.reorder-review').textContent.includes('34.00'), 'Current size and extra prices were not used');
+  assert(!measureAudit().overflow, 'Reorder review overflows');
+  button('Cancel').click(); await pause();
+  assert(!host.querySelector('.reorder-review') && commands.length === 0, 'Cancel changed the cart');
+  button('Reorder').click(); await pause();
+  button('Add to cart').click(); button('Add to cart').click(); await pause();
+  assert(commands.length === 1 && commands[0].kind === 'CART', 'Reorder should save once without submitting');
+  const cart = commands[0].fields.cart;
+  assert(cart.lines.length === 1 && cart.lines[0].quantity === 2, 'Available quantity was not restored');
+  assert(cart.lines[0].variantId === lines[0].variantId && JSON.stringify(cart.lines[0].optionIds) === JSON.stringify(optionIds) && cart.lines[0].notes === 'No onions', 'Customizations were lost');
+  assert(cart.lines[0].unitPrice === null && !Object.hasOwn(cart.lines[0], 'amount'), 'Historical prices were reused');
+  assert(host.querySelector('.cart-review').textContent.includes(t('Not added to your cart')), 'Skipped items disappeared after adding');
+  assert(document.activeElement.classList.contains('cart-review'), 'Cart was not focused for review');
+  assert(!measureAudit().overflow, 'Cart review overflows');
+  const missing = [{ ...history[0], receipts: [{ memberId: 'me', lines: [lines[1]] }] }];
+  await mountAudit('room', 'LOBBY', { history: missing, liveCart: true, room: { restaurant } });
+  button('Reorder').click(); await pause();
+  assert(button('Add to cart').disabled, 'All-unavailable order can be added');
+  assert(commands.length === 1, 'All-unavailable order sent a command');
+  return { passed: ['new customer hidden', 'last order summary', 'review before mutation', 'cancel', 'unavailable item warning', 'quantity and customizations restored', 'current prices', 'double-click protection', 'cart focused', 'no auto-submit', 'all unavailable blocked'], ...measureAudit() };
+}
 export async function runCreateAudit() {
   commands.length = 0;
   await mountAudit();

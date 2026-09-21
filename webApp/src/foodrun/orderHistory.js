@@ -1,3 +1,5 @@
+import { matchesRestaurant } from './reorder.js';
+
 export function selectionKey(restaurantKey, lines) {
   const normalized = lines.map(line => [
     line.itemId || '', line.variantId || '', JSON.stringify([...(line.optionIds || [])].sort()),
@@ -14,7 +16,7 @@ export function uniquePreviousOrders(data, restaurant = null) {
       const receipt = order.receipts?.find(value => value.memberId === session.memberId);
       if (!receipt?.lines?.length) return;
       const restaurantId = order.restaurantId || data.home?.restaurants?.find(value => value.name?.toLowerCase() === order.restaurantName?.toLowerCase())?.id || '';
-      if (restaurant && restaurantId !== restaurant.id && order.restaurantName?.toLowerCase() !== restaurant.name?.toLowerCase()) return;
+      if (restaurant && !matchesRestaurant(order, restaurant)) return;
       choices.push({ value: `past|${session.roomId}|${order.number}`, roomId: session.roomId, order, receipt, restaurantId, repeatCount: 1 });
     });
   });
@@ -34,7 +36,7 @@ export function uniqueRoomPreviousOrders(history, memberId, restaurant, matching
     const receipt = order.receipts?.find(value => value.memberId === memberId);
     if (!receipt?.lines?.length) return;
     const restaurantId = order.restaurantId || (order.restaurantName?.toLowerCase() === restaurant.name?.toLowerCase() ? restaurant.id : '');
-    if (matchingOnly && restaurantId !== restaurant.id && order.restaurantName?.toLowerCase() !== restaurant.name?.toLowerCase()) return;
+    if (matchingOnly && !matchesRestaurant(order, restaurant)) return;
     const key = selectionKey(restaurantId || `name:${order.restaurantName}`, receipt.lines);
     const choice = { value: `past|room|${order.number}`, order, receipt, restaurantId, key, repeatCount: 1 };
     const old = unique.get(key);

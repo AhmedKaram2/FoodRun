@@ -30,6 +30,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 db.save(room.copy(members = members, revision = room.revision + 1,
                     quoteRevision = room.quoteRevision + if (addedOrderers) 1 else 0, updatedAt = clock()))
             }
+            db.allRooms().filter { it.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW) }.forEach { room ->
+                val repaired = recoverTaxResetSubmissions(room, db::recordedReply)
+                if (repaired != room) db.save(repaired.copy(updatedAt = clock()))
+            }
         }
     }
     private fun admit(member: Member, phase: RoomPhase): Member {
@@ -204,6 +208,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
             restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false,
         ) else room.copy(
+            // Older rooms may still wait on members with no food or financial stake.
+            // Project them as exempt so existing clients do not disable payment for them.
+            adjustmentApprovals = if (room.billRevision > 1)
+                (room.adjustmentApprovals + (room.orderingMembers.map { it.id } - RoomRules.billApprovalMemberIds(room))).distinct()
+                else room.adjustmentApprovals,
             // Ordering progress is public; cart lines are private. Submitted/confirmation markers are safe.
             carts = room.carts.map { if (payer || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },
             account = room.account.takeIf { orderer },

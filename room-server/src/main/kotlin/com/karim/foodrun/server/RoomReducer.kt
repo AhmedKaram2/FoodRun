@@ -122,26 +122,31 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 val old = r.carts.singleOrNull { it.memberId == actorId } ?: MemberCart(actorId)
                 val draft = requireNotNull(c.cart)
                 require(draft.memberId == actorId && c.expectedRevision == old.revision) { "Your cart changed. Review the latest cart." }
-                // Members can edit their food, but only the payer can assign custom-item prices.
+                // CART cannot assign prices, including when sent by the payer. Keep only
+                // server-approved prices for unchanged selections; edited items need repricing.
                 val sanitized = draft.copy(lines = draft.lines.map { line ->
                     val previous = old.lines.singleOrNull { it.id == line.id }
-                    if (line.description.isNotEmpty()) line.copy(unitPrice = previous?.unitPrice.takeIf {
-                        previous?.description == line.description && previous.quantity == line.quantity && previous.notes == line.notes
-                    }) else line.copy(unitPrice = null)
+                    line.copy(unitPrice = previous?.unitPrice.takeIf {
+                        previous?.description == line.description && previous.itemId == line.itemId &&
+                            previous.variantId == line.variantId && previous.optionIds.sorted() == line.optionIds.sorted() &&
+                            previous.quantity == line.quantity && previous.notes == line.notes
+                    })
                 })
                 val cart = sanitized.copy(revision = old.revision + 1, submitted = false, confirmedQuote = -1)
                 Billing.lines(r.restaurant, cart)
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PRICE_ITEM -> {
-                payer(); phase(RoomPhase.COLLECTING); fresh()
+                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh()
                 MenuValidation.price(c.amount)
                 val target = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Order not found.")
                 val line = target.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")
-                require(line.description.isNotEmpty()) { "Only custom items need a price." }
+                require(!c.flag || line.description.isEmpty()) { "Custom items do not have a menu price." }
+                val price = if (c.flag) null else c.amount
                 val priced = target.copy(revision = target.revision + 1, confirmedQuote = -1,
-                    lines = target.lines.map { if (it.id == line.id) it.copy(unitPrice = c.amount) else it })
-                r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it }, quoteRevision = r.quoteRevision + 1)
+                    lines = target.lines.map { if (it.id == line.id) it.copy(unitPrice = price) else it })
+                r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it },
+                    phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1)
                     .also { Billing.receipts(it) }
             }
             CommandKind.SUBMIT_CART -> {
@@ -176,18 +181,31 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     catch (invalid: IllegalArgumentException) { throw IllegalArgumentException("Some cart selections are no longer valid. Reopen ordering and ask members to remove those items or extras before updating the menu.") }
                     catch (invalid: IllegalStateException) { throw IllegalArgumentException("A cart still contains a removed menu item. Reopen ordering and ask that member to remove it before updating the menu.") }
                 }
-                if (restaurant.copy(contact = r.restaurant.contact) == r.restaurant) r.copy(restaurant = restaurant)
-                else r.copy(restaurant = restaurant, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
+                val options = r.restaurantOptions.map { if (it.id == restaurant.id) restaurant else it }
+                val menuChanged = restaurant.menu != r.restaurant.menu || restaurant.openOrdering != r.restaurant.openOrdering
+                if (restaurant.copy(contact = r.restaurant.contact) == r.restaurant) r.copy(restaurant = restaurant, restaurantOptions = options)
+                else r.copy(restaurant = restaurant, restaurantOptions = options, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
                     members = r.members.map { it.copy(ready = it.approved && !it.removed && !it.guest && it.participating) },
-                    carts = r.carts.map { it.copy(revision = it.revision + 1, submitted = false, confirmedQuote = -1) },
+                    carts = r.carts.map { it.copy(revision = it.revision + 1,
+                        submitted = it.submitted && (!menuChanged || it.lines.isEmpty()), confirmedQuote = -1) },
                     quoteRevision = r.quoteRevision + 1, deadline = 0,
                 ).also { Billing.receipts(it) }
             }
             CommandKind.SET_FEES -> {
                 require(actorId == r.ownerId || actorId == r.payerId); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); reason()
                 val fees = requireNotNull(c.fees).copy(automaticDelivery = r.deliveryMode); RoomRules.validateFees(fees)
-                if (fees == r.fees) r
-                else r.copy(fees = fees, phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
+                // Fees and tax are one atomic update; this command cannot replace menu items or other restaurant details.
+                val restaurant = c.restaurant ?: r.restaurant
+                require(restaurant.copy(pricing = r.restaurant.pricing) == r.restaurant &&
+                    restaurant.pricing.copy(taxTreatment = r.restaurant.pricing.taxTreatment,
+                        taxRateBasisPoints = r.restaurant.pricing.taxRateBasisPoints) == r.restaurant.pricing) {
+                    "Only tax settings can be changed with fees. Refresh the room and try again."
+                }
+                MenuValidation.validate(restaurant)
+                if (fees == r.fees && restaurant == r.restaurant) r
+                else r.copy(fees = fees, restaurant = restaurant,
+                    restaurantOptions = r.restaurantOptions.map { if (it.id == restaurant.id) restaurant else it },
+                    phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PLACE -> {
                 payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); RoomRules.requirePlaceable(r)
@@ -197,7 +215,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             CommandKind.PAY_RESTAURANT -> {
                 payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
                 require(c.amount == Billing.receipts(r).sumOf { it.total }) { "Paid amount differs from the bill. Record an approved bill adjustment first." }
-                require(r.billRevision == 1L || r.orderingMembers.all { it.id in r.adjustmentApprovals }) { "Wait for bill adjustment approval." }
+                require(r.billRevision == 1L || RoomRules.billApprovalMemberIds(r).all { it in r.adjustmentApprovals }) { "Wait for bill adjustment approval." }
                 r.copy(restaurantPaid = true)
             }
             CommandKind.FULFILL -> { payer(); phase(RoomPhase.PLACED); fresh(); r.copy(phase = RoomPhase.FULFILLED) }

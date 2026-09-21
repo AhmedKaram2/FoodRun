@@ -71,6 +71,9 @@ import kotlin.math.pow
     val billRevision: Long = 1, val adjustment: Long = 0, val adjustmentApprovals: List<String> = emptyList(), val orderNumber: Long = 1,
     val restaurantOptions: List<Restaurant> = emptyList(), val restaurantVotes: List<RestaurantVote> = emptyList(),
     val restaurantPollOpen: Boolean = false,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val paymentRoom: PaymentRoomDetails? = null,
 ) {
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }

@@ -274,8 +274,7 @@ class RoomServiceTest {
         assertFalse(f.service.execute(f.command(member, CommandKind.CONFIRM_TRANSFER).copy(transferId = payment.id)).ok)
         f.send(f.owner, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = payment.id) }
         f.send(f.owner, CommandKind.ADJUST_BILL) { it.copy(amount = -750, text = "Restaurant discount") }
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 6750)).ok)
-        f.send(member, CommandKind.APPROVE_ADJUSTMENT) { it.copy(expectedRevision = f.state().room!!.billRevision) }; f.pay()
+        f.pay()
         assertEquals(-300, f.state(member).receipts.single().balance)
         val refund = f.send(f.owner, CommandKind.DECLARE_REFUND) { it.copy(memberId = member.memberId, amount = 300, text = "Refunded") }.room!!.transfers.last()
         assertFalse(f.service.execute(f.command(f.owner, CommandKind.CONFIRM_REFUND).copy(transferId = refund.id)).ok)
@@ -410,7 +409,7 @@ class RoomServiceTest {
         assertEquals(RoomPhase.SPINNING, f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.phase)
     }
 
-    @Test fun menuChangesResetQuotesSubmissionsAndStaleCartsWithoutLosingSelections(): Unit = RoomFixture().use { f ->
+    @Test fun menuChangesPreserveSubmissionsAndSelectionsWhileRejectingStaleCarts(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member); f.start(member)
         f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }; f.cart(f.owner, 45); f.cart(member, 30)
         f.send(f.owner, CommandKind.REVIEW)
@@ -421,7 +420,7 @@ class RoomServiceTest {
         val after = f.state().room!!
         assertEquals(RoomPhase.COLLECTING, after.phase)
         assertEquals(before.quoteRevision + 1, after.quoteRevision)
-        assertTrue(after.carts.all { !it.submitted && it.confirmedQuote == -1L })
+        assertTrue(after.carts.all { it.submitted && it.confirmedQuote == -1L })
         assertEquals(before.carts.map { it.lines }, after.carts.map { it.lines })
         assertEquals(4950, f.state().receipts.single { it.memberId == f.owner.memberId }.food)
         assertFalse(f.service.execute(f.command(member, CommandKind.CART).copy(expectedRevision = 1, cart = MemberCart(member.memberId))).ok)
@@ -441,13 +440,12 @@ class RoomServiceTest {
         assertFalse(f.service.execute(f.command(f.owner, CommandKind.UPDATE_RESTAURANT).copy(restaurant = f.restaurant, text = "Too late")).ok)
     }
 
-    @Test fun restoringAnAdjustmentToZeroStillRequiresApprovalOfTheChangedBill(): Unit = RoomFixture().use { f ->
+    @Test fun restoringAnAdjustmentToZeroAppliesWithoutMemberApproval(): Unit = RoomFixture().use { f ->
         val member = f.placed(); f.pay()
         f.send(f.owner, CommandKind.ADJUST_BILL) { it.copy(amount = -750, text = "Discount") }
-        f.send(member, CommandKind.APPROVE_ADJUSTMENT) { it.copy(expectedRevision = f.state().room!!.billRevision) }; f.pay()
+        f.pay()
         f.send(f.owner, CommandKind.ADJUST_BILL) { it.copy(amount = 0, text = "Restaurant removed discount") }
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 7500)).ok)
-        f.send(member, CommandKind.APPROVE_ADJUSTMENT) { it.copy(expectedRevision = f.state().room!!.billRevision) }; f.pay()
+        f.pay()
     }
 
 }

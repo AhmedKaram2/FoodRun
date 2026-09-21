@@ -394,11 +394,7 @@ internal class GroupPresentation(private val c: GroupController) {
                         receipt.lines.joinToString("\n") { "${it.quantity} × ${localizedReceiptDescription(r, it, language)} · ${Money.format(it.amount, receipt.currency)}" },
                         receipt.totalText)
                 }
-                if(payer) r.carts.forEach { cart -> cart.lines.filter { it.description.isNotEmpty() }.forEach { line ->
-                    card("price:${cart.memberId}:${line.id}", "${r.members.single { it.id == cart.memberId }.name} · ${line.quantity} × ${line.description}", line.notes,
-                        line.unitPrice?.let { Money.format(it * line.quantity, r.restaurant.currency) } ?: tr("Awaiting price", "بانتظار التسعير"),
-                        listOf(GroupButton(if(line.unitPrice == null) "Enter unit price" else "Change unit price", GroupAction.OPEN_PRICE_ITEM, "${cart.memberId}:${line.id}")))
-                } }
+                if(payer) itemPricingCards(r)
                 val nextStep = when {
                     awaitingFood.isNotEmpty() -> "Waiting for food orders from ${awaitingFood.joinToString { it.name }}. Each person must submit their food or choose No food this time."
                     needsAccount -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to share a receiving account."
@@ -412,11 +408,11 @@ internal class GroupPresentation(private val c: GroupController) {
                 if(owner) button("Cancel today's order", GroupAction.CANCEL)
             }
             RoomPhase.REVIEW -> {
-                accountCard(); append(GroupSettlementPresentation(c).review())
+                accountCard(); if(payer) itemPricingCards(r); append(GroupSettlementPresentation(c).review())
                 button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
-                accountCard(); append(GroupSettlementPresentation(c).settlement())
+                accountCard(); if(payer) itemPricingCards(r); append(GroupSettlementPresentation(c).settlement())
                 button("Order details", GroupAction.OPEN_RECEIPTS)
                 transferCards()
             }
@@ -430,6 +426,20 @@ internal class GroupPresentation(private val c: GroupController) {
             GroupButton(ui("Copy phone number"), GroupAction.COPY_RESTAURANT_PHONE, enabled = contact.isNotBlank()),
             GroupButton(tr("Call restaurant", "الاتصال بالمطعم"), GroupAction.CALL_RESTAURANT, enabled = contact.isNotBlank()),
         ))
+    }
+    private fun itemPricingCards(r: Room) {
+        card("pricing-help", tr("Item prices", "أسعار الأصناف"),
+            tr("Submitted orders stay submitted. Members do not need to approve price changes.", "الطلبات المرسلة بتفضل متسجلة. مش محتاجين موافقة جديدة على تغيير الأسعار."))
+        r.carts.filter { cart -> r.orderingMembers.any { it.id == cart.memberId } }.forEach { cart ->
+            val priced = Billing.lines(r.restaurant, cart)
+            cart.lines.forEachIndexed { index, line ->
+                val receiptLine = priced[index]
+                val unpriced = line.description.isNotEmpty() && line.unitPrice == null
+                card("price:${cart.memberId}:${line.id}", "${r.members.single { it.id == cart.memberId }.name} · ${line.quantity} × ${localizedReceiptDescription(r, receiptLine, language)}", line.notes,
+                    if (unpriced) tr("Awaiting price", "بانتظار التسعير") else Money.format(receiptLine.amount, r.restaurant.currency),
+                    listOf(GroupButton(tr("Edit price", "تعديل السعر"), GroupAction.OPEN_PRICE_ITEM, "${cart.memberId}:${line.id}")))
+            }
+        }
     }
     private fun foodEditor(r: Room, primary: Boolean) {
         if(!primary) card("early-order", tr("Add your food before the spin", "أضف طلبك قبل الاختيار"), tr("Your saved items stay with this order. You can edit them before or after the payer is selected.", "يبقى طلبك محفوظاً ويمكنك تعديله قبل أو بعد اختيار من سيطلب."))

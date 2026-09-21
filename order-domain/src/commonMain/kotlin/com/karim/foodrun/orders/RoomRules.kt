@@ -3,6 +3,7 @@ package com.karim.foodrun.orders
 object RoomRules {
     fun member(room: Room, id: String): Member = room.members.singleOrNull { it.id == id && !it.removed } ?: error("Membership has been removed. Ask the organizer to join again.")
     fun validateRoom(room: Room) {
+        room.paymentRoom?.validate()
         MenuValidation.label(room.name); MenuValidation.validate(room.restaurant)
         require(room.restaurantOptions.size <= 12) { "A restaurant poll supports up to 12 choices." }
         require(room.restaurantOptions.map { it.id }.distinct().size == room.restaurantOptions.size) { "Restaurant poll choices must be unique." }
@@ -38,9 +39,6 @@ object RoomRules {
         require(room.restaurantPaid) { "Confirm the restaurant payment first." }
         require(Billing.receipts(room).all { it.balance == 0L } && room.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
     }
-    fun billApprovalMemberIds(room: Room): Set<String> = Billing.receipts(room)
-        .filter { it.lines.isNotEmpty() || it.total != 0L || it.paid != 0L || it.balance != 0L }
-        .map { it.memberId }.toSet()
     fun requirePlaceable(room: Room) {
         requireReview(room)
         require(room.account != null) { "The payer must share a receiving account." }

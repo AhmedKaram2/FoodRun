@@ -53,7 +53,7 @@ class TaxAndEmptyOrderTest {
         assertEquals(TaxTreatment.INCLUDED, chosen.restaurant.pricing.taxTreatment)
     }
 
-    @Test fun emptyMemberDoesNotBlockAdjustedBillButFoodMembersStillApprove() = RoomFixture().use { f ->
+    @Test fun adjustedBillNeedsNoRepeatApprovalAndEmptyMemberRemainsUncharged() = RoomFixture().use { f ->
         val member = f.join(); val empty = f.join("No food")
         f.start(member)
         f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }
@@ -61,9 +61,7 @@ class TaxAndEmptyOrderTest {
         f.send(f.owner, CommandKind.PLACE) { it.copy(text = "Confirmed") }
         f.send(f.owner, CommandKind.ADJUST_BILL) { it.copy(amount = -300, text = "Restaurant discount") }
         assertTrue(empty.memberId in f.state().room!!.adjustmentApprovals)
-        assertFalse(member.memberId in f.state().room!!.adjustmentApprovals)
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 2700)).ok)
-        f.send(member, CommandKind.APPROVE_ADJUSTMENT) { it.copy(expectedRevision = f.state().room!!.billRevision) }
+        assertTrue(member.memberId in f.state().room!!.adjustmentApprovals)
         f.pay()
         assertTrue(f.state().room!!.restaurantPaid)
         assertEquals(0L, f.state(empty).receipts.single().total)

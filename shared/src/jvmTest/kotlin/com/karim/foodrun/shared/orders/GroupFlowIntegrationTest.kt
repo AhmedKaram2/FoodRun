@@ -667,7 +667,6 @@ class GroupFlowIntegrationTest {
         member.update(GroupFieldKey.AMOUNT, "40"); member.update(GroupFieldKey.REFERENCE, "Bank transfer"); member.dispatch(GroupAction.DECLARE_TRANSFER); bus.drain(); bus.sync()
         host.dispatch(GroupAction.CONFIRM_TRANSFER, host.room().transfers.last().id); bus.drain(); bus.sync()
         host.update(GroupFieldKey.REASON, "Restaurant discount"); host.update(GroupFieldKey.BILL_ADJUSTMENT, "-10"); host.dispatch(GroupAction.ADJUST_BILL); bus.drain(); bus.sync()
-        member.dispatch(GroupAction.APPROVE_ADJUSTMENT); bus.drain(); bus.sync()
         host.update(GroupFieldKey.AMOUNT, "70"); host.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
         assertEquals("5.00", host.text(GroupFieldKey.AMOUNT))
         host.dispatch(GroupAction.OPEN_RECEIPTS)

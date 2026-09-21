@@ -30,6 +30,7 @@ export default function OrderPricingPanel({ room, data, describeLine }) {
   return <article className="card order-pricing-panel">
     <p className="eyebrow">{t('SELECTED TO ORDER')}</p><h2>{t('Item prices')}</h2>
     <p className="muted">{t('Set the price per item, including its selected extras. Changes apply only to this order and update everyone’s totals.')}</p>
+    <p className="fine">{t('Submitted orders stay submitted. Members do not need to approve price changes.')}</p>
     <p className="fine">{t('Changing an item’s quantity or customizations resets its adjusted price.')}</p>
     {!room.carts.some(cart => cart.lines.length) && <p>{t('Items will appear here as people add their food.')}</p>}
     {room.carts.filter(cart => room.members.some(member => member.id === cart.memberId && member.approved && !member.guest && !member.removed && member.participating)).map(cart => <section key={cart.memberId}>

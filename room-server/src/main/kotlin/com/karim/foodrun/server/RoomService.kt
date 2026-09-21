@@ -63,15 +63,16 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
         else db.transaction {
-            if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN)) {
+            if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) {
                 require(!c.guest) { "Guest mode is unavailable. Sign in to join the room." }
                 if (identityProvider != null) accounts.userId(c.identityToken)
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
-            if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN)) authenticate(c.roomId, c.token)
+            if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             val digest = hash(orderJson.encodeToString(c))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
+                    CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
                     CommandKind.CREATE -> create(c)
                     CommandKind.JOIN -> join(c)
                     CommandKind.REQUEST_BLOCK -> requestBlock(c)
@@ -140,6 +141,48 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(room, person.id).copy(token = token)
     }
+    private fun createPaymentRoom(c: RoomCommand): RoomReply {
+        val uid = accounts.userId(c.identityToken)
+        AccountRestrictions.requireRoomAllowed(db, uid, "", clock())
+        val request = requireNotNull(c.paymentRoom) { "Enter the payment room details." }
+        request.details.validate()
+        val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
+        require(settings.roomCreationEnabled && db.activeRoomCount() < 100) { "New room creation is currently unavailable." }
+        MenuValidation.label(c.text)
+        require(request.shares.size in 2..30 && request.shares.map { it.userId }.distinct().size == request.shares.size) { "Choose yourself and 1–29 different people." }
+        require(request.shares.any { it.userId == uid }) { "Include your own share, even if it is zero." }
+        val profiles = request.shares.associate { share ->
+            require(share.userId.length in 1..128)
+            MenuValidation.label(share.description); MenuValidation.price(share.amount)
+            require(share.received in 0..share.amount && (share.userId != uid || share.received == 0L)) { "Received payments must not exceed a person's share. Your own share needs no transfer." }
+            share.userId to accounts.paymentRoomProfile(share.userId).also { require(share.userId == uid || it.discoverable) { "This person is not available in the users list." } }
+        }
+        require(c.amount > 0 && request.shares.sumOf { it.amount } == c.amount) { "The shares must add up to the receipt total." }
+        val account = requireNotNull(c.account) { "Add your receiving details in your profile first." }.normalized().also { it.validate() }
+        val ids = profiles.keys.associateWith { uuid() }
+        val ownerId = ids.getValue(uid)
+        var code: String
+        do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
+        val room = Room(uuid(), code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, openOrdering = true),
+            phase = RoomPhase.FULFILLED, payerId = ownerId, account = account, restaurantPaid = true,
+            restaurantReference = "Already ordered and paid by ${profiles.getValue(uid).name}",
+            members = profiles.map { (userId, profile) -> Member(ids.getValue(userId), profile.name, approved = true, ready = true) },
+            carts = request.shares.map { share -> MemberCart(ids.getValue(share.userId), submitted = true,
+                lines = if (share.amount == 0L) emptyList() else listOf(CartLine(uuid(), "", 1, description = share.description.trim(), unitPrice = share.amount))) },
+            transfers = request.shares.filter { it.received > 0 }.map { Transfer(uuid(), ids.getValue(it.userId), it.received,
+                "Payment received before this room was created", account, status = TransferStatus.CONFIRMED, createdAt = clock()) },
+            paymentRoom = request.details, createdAt = clock(), updatedAt = clock(),
+            audit = listOf(AuditEntry(c.commandId, ownerId, c.kind.name, "Already ordered; shares and received payments recorded by payer", clock())))
+        RoomRules.validateRoom(room); Billing.receipts(room); requireLoadable(room); db.save(room)
+        var ownerToken = ""
+        profiles.keys.forEach { userId ->
+            val token = token(); db.addSession(hash(token), room.id, ids.getValue(userId))
+            accounts.linkPaymentMember(userId, room, ids.getValue(userId), token)
+            if (userId == uid) ownerToken = token
+        }
+        signalRoom(room.id)
+        return projection(room, ownerId).copy(token = ownerToken)
+    }
     private fun join(c: RoomCommand): RoomReply {
         MenuValidation.label(c.name)
         require(c.code.matches(Regex("[0-9]{6}"))) { "Enter a six-digit room code." }
@@ -149,6 +192,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (room.members.any { it.id == saved.memberId && !it.removed })
                 return projection(room, saved.memberId).copy(token = saved.token)
         }
+        require(room.paymentRoom == null) { "Payment rooms are private to the people selected by the organizer." }
         require(room.activeMembers.count { it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
         val person = admit(Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock()), room.phase)
@@ -206,12 +250,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             destination = "", fees = FeePolicy(), members = listOf(member), carts = emptyList(), spin = null,
             pastSpins = emptyList(), payerId = null, account = null, transfers = emptyList(), audit = emptyList(),
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
-            restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false,
+            restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false, paymentRoom = null,
         ) else room.copy(
-            // Older rooms may still wait on members with no food or financial stake.
-            // Project them as exempt so existing clients do not disable payment for them.
+            // Legacy clients use this field as a payment gate. All members are exempt:
+            // selected-payer price changes apply directly without another approval cycle.
             adjustmentApprovals = if (room.billRevision > 1)
-                (room.adjustmentApprovals + (room.orderingMembers.map { it.id } - RoomRules.billApprovalMemberIds(room))).distinct()
+                room.orderingMembers.map { it.id }
                 else room.adjustmentApprovals,
             // Ordering progress is public; cart lines are private. Submitted/confirmation markers are safe.
             carts = room.carts.map { if (payer || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },

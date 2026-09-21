@@ -121,19 +121,19 @@ class GroupSettlementPresentationTest {
         assertTrue(guest.buttons.isEmpty())
     }
 
-    @Test fun billAdjustmentUsesSeparateInputAndWaitsForAllApprovalsBeforePayment() {
+    @Test fun billAdjustmentAppliesDirectlyWithoutRepeatMemberApproval() {
         val r = confirmed(room()).copy(phase = RoomPhase.PLACED, billRevision = 2, adjustment = -200, adjustmentApprovals = listOf("payer"))
         val payer = GroupSettlementPresentation(controller(r)).settlement()
         assertTrue(payer.fields.any { it.key == GroupFieldKey.BILL_ADJUSTMENT })
-        assertFalse(payer.buttons.single { it.action == GroupAction.PAY_RESTAURANT }.enabled)
-        assertTrue(payer.cards.single { it.id == "bill-adjustment" }.detail.contains("Hassan"))
+        assertTrue(payer.buttons.single { it.action == GroupAction.PAY_RESTAURANT }.enabled)
+        assertTrue(payer.cards.single { it.id == "bill-adjustment" }.detail.contains("No new approval"))
         val member = GroupSettlementPresentation(controller(r, "member")).settlement()
-        assertEquals(GroupAction.APPROVE_ADJUSTMENT, member.buttons.single { it.primary }.action)
+        assertFalse(member.buttons.any { it.action == GroupAction.APPROVE_ADJUSTMENT })
         val approved = GroupSettlementPresentation(controller(r.copy(adjustmentApprovals = listOf("payer", "member")))).settlement()
         assertTrue(approved.buttons.single { it.action == GroupAction.PAY_RESTAURANT }.enabled)
         val unchangedDraft = controller(r).apply { update(GroupFieldKey.BILL_ADJUSTMENT, "-2") }
         assertFalse(GroupSettlementPresentation(unchangedDraft).settlement().action(GroupAction.ADJUST_BILL).enabled,
-            "The saved adjustment must not trigger another approval cycle unchanged.")
+            "The saved adjustment must not trigger another update unchanged.")
         unchangedDraft.update(GroupFieldKey.BILL_ADJUSTMENT, "0")
         assertTrue(GroupSettlementPresentation(unchangedDraft).settlement().action(GroupAction.ADJUST_BILL).enabled)
     }

@@ -62,10 +62,59 @@ class MenuItemPricingTest {
         assertNull(f.state().room!!.carts.single { it.memberId == member.memberId }.lines.single().unitPrice)
     }
 
-    @Test fun staleNegativeAndPostPlacementPriceChangesAreRejected() = RoomFixture().use { f ->
+    @Test fun repeatedPriceAndBillChangesNeedOnlyTheOriginalSubmission() = RoomFixture().use { f ->
+        val member = f.join(); val empty = f.join("No food"); f.start(member)
+        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }
+        f.cart(f.owner, 1); f.cart(member, 2); f.cart(empty, 0)
+        val original = f.state().room!!
+        val line = original.carts.single { it.memberId == member.memberId }.lines.single()
+        fun price(amount: Long) = f.send(f.owner, CommandKind.PRICE_ITEM) { it.copy(memberId = member.memberId, text = line.id, amount = amount) }
+        price(120); price(80)
+        f.send(f.owner, CommandKind.PLACE) { it.copy(text = "Confirmed") }
+        f.pay()
+        val transfer = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 160, text = "Paid share") }.room!!.transfers.single()
+        f.send(f.owner, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = transfer.id) }
+        price(50)
+        assertEquals(RoomPhase.PLACED, f.state().room!!.phase)
+        assertFalse(f.state().room!!.restaurantPaid)
+        assertEquals(-60L, f.state(member).receipts.single().balance)
+        f.send(f.owner, CommandKind.ADJUST_BILL) { it.copy(amount = -20, text = "Restaurant discount") }
+        f.pay()
+        assertEquals(-70L, f.state(member).receipts.single().balance)
+        f.send(f.owner, CommandKind.FULFILL)
+        price(75)
+        assertEquals(RoomPhase.FULFILLED, f.state().room!!.phase)
+        assertEquals(230L, f.state().receipts.sumOf { it.total })
+        assertEquals(-22L, f.state(member).receipts.single().balance)
+        f.pay()
+        // Saving the same price does not invalidate recorded restaurant payment.
+        val revision = f.state().room!!.billRevision
+        price(75)
+        assertTrue(f.state().room!!.restaurantPaid)
+        assertEquals(revision, f.state().room!!.billRevision)
+        assertTrue(f.state().room!!.carts.all { it.submitted })
+        assertEquals(original.carts.map { c -> c.lines.map { it.copy(unitPrice = null) } },
+            f.state().room!!.carts.map { c -> c.lines.map { it.copy(unitPrice = null) } })
+        assertEquals(0L, f.state(empty).receipts.single().total)
+        f.restart()
+        assertTrue(f.state().room!!.carts.all { it.submitted })
+        assertTrue(f.state().room!!.restaurantPaid)
+        assertEquals(230L, f.state().receipts.sumOf { it.total })
+        assertTrue(f.db.room(original.id)!!.audit.none { it.action in listOf("CONFIRM_QUOTE", "APPROVE_ADJUSTMENT") })
+    }
+
+    @Test fun placedPricesRemainPayerOnlyAndCompletedOrdersAreImmutable() = RoomFixture().use { f ->
         val member = f.placed()
         val line = f.state().room!!.carts.single { it.memberId == member.memberId }.lines.single()
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PRICE_ITEM).copy(memberId = member.memberId, text = line.id, amount = 50)).ok)
+        assertFalse(f.service.execute(f.command(member, CommandKind.PRICE_ITEM).copy(memberId = member.memberId, text = line.id, amount = 50)).ok)
+        val command = f.command(f.owner, CommandKind.PRICE_ITEM).copy(memberId = member.memberId, text = line.id, amount = 50)
+        f.send(f.owner, CommandKind.PRICE_ITEM) { command }
+        assertFalse(f.service.execute(command.copy(commandId = f.id(), amount = 60)).ok)
+        for (phase in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) {
+            val room = f.db.room(f.owner.room!!.id)!!
+            f.db.save(room.copy(phase = phase))
+            assertFalse(f.service.execute(f.command(f.owner, CommandKind.PRICE_ITEM).copy(memberId = member.memberId, text = line.id, amount = 70)).ok)
+        }
     }
 
     @Test fun staleAndInvalidPricesLeaveTheBillUntouched() = RoomFixture().use { f ->

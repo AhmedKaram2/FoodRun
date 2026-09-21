@@ -39,6 +39,15 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         db.putRecord("membership:$uid:${room.id}", orderJson.encodeToString(membership))
         db.putRecord("member-user:${room.id}:${result.memberId}", uid)
     }
+    internal fun paymentRoomProfile(uid: String): FoodProfile {
+        AccountRestrictions.requireAllowed(db, uid, clock())
+        return requireNotNull(db.record("profile:$uid")) { "This user is no longer available. Refresh the people list." }
+            .let { orderJson.decodeFromString<FoodProfile>(it) }
+    }
+    internal fun linkPaymentMember(uid: String, room: Room, memberId: String, token: String) {
+        db.putRecord("membership:$uid:${room.id}", orderJson.encodeToString(AccountRoom(room.id, room.name, memberId, token)))
+        db.putRecord("member-user:${room.id}:$memberId", uid)
+    }
     fun linked(token: String, roomId: String): AccountRoom? = db.record("membership:${userId(token)}:$roomId")?.let { orderJson.decodeFromString(it) }
     fun home(token: String): RoomReply {
         val uid = userId(token)

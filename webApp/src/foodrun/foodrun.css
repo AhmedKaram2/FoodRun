@@ -277,3 +277,10 @@ html[dir=rtl] h1,html[dir=rtl] h2,html[dir=rtl] h3{letter-spacing:0;line-height:
 .poll-dialog{width:min(640px,calc(100% - 2rem));max-height:85dvh;overflow:auto;padding:1.5rem;border:1px solid var(--line);margin:auto;color:var(--ink)}
 .poll-dialog::backdrop{background:rgb(15 30 24 / .55)}.poll-dialog-options{display:grid;gap:.75rem;margin:1rem 0}.poll-dialog-options button{white-space:normal;overflow-wrap:anywhere;text-align:start}
 .order-pricing-panel .price-form{display:flex;flex-direction:column;align-items:stretch;padding:.8rem;border:1px solid var(--line);border-radius:12px;margin-bottom:1rem}.order-pricing-panel h3{margin-top:1rem}
+
+/* Existing-bill payment rooms retain the full receipt aspect ratio. */
+.receipt-photo { display: block; max-width: 100%; max-height: 75vh; object-fit: contain; margin: 1rem auto; border-radius: 12px; }
+.payment-people-list { display: grid; gap: .65rem; max-height: 24rem; overflow: auto; }
+.payment-person-choice { display: flex; align-items: center; gap: .75rem; }
+.payment-person-choice input { width: auto; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -39,6 +39,9 @@ class SubmissionRecoveryTest {
         val member = f.join(); f.start(member); f.cart(member, 3)
         val before = f.state().room!!
         f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = before.restaurant.copy(menu = before.restaurant.menu.copy(items = before.restaurant.menu.items.map { item -> item.copy(basePriceMinor = 150) })), text = "Changed menu price") }
+        // Reproduce the old menu-update reset; current price changes preserve submission.
+        val updated = f.db.room(before.id)!!
+        f.db.save(updated.copy(carts = updated.carts.map { it.copy(submitted = false) }))
         f.restart()
         val after = f.state().room!!
         assertFalse(after.carts.single().submitted)

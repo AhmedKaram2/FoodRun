@@ -17,6 +17,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
         val result = when (c.kind) {
             CommandKind.NEXT_ORDER -> {
                 owner(); phase(RoomPhase.ARCHIVED, RoomPhase.CANCELLED); fresh()
+                require(r.paymentRoom == null) { "Create a new payment room for another bill." }
                 val restaurant = c.restaurant ?: r.restaurant
                 MenuValidation.validate(restaurant)
                 val options = (if (c.restaurants.isEmpty()) r.restaurantOptions else c.restaurants)
@@ -137,16 +138,21 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PRICE_ITEM -> {
-                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh()
+                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
                 MenuValidation.price(c.amount)
                 val target = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Order not found.")
                 val line = target.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")
                 require(!c.flag || line.description.isEmpty()) { "Custom items do not have a menu price." }
                 val price = if (c.flag) null else c.amount
+                val placed = r.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED)
                 val priced = target.copy(revision = target.revision + 1, confirmedQuote = -1,
                     lines = target.lines.map { if (it.id == line.id) it.copy(unitPrice = price) else it })
-                r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it },
-                    phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1)
+                if (line.unitPrice == price) r
+                else r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it },
+                    phase = if (placed) r.phase else RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1,
+                    billRevision = r.billRevision + if (placed) 1 else 0,
+                    restaurantPaid = r.restaurantPaid && (!placed || r.paymentRoom != null),
+                    adjustmentApprovals = emptyList())
                     .also { Billing.receipts(it) }
             }
             CommandKind.SUBMIT_CART -> {
@@ -182,12 +188,11 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     catch (invalid: IllegalStateException) { throw IllegalArgumentException("A cart still contains a removed menu item. Reopen ordering and ask that member to remove it before updating the menu.") }
                 }
                 val options = r.restaurantOptions.map { if (it.id == restaurant.id) restaurant else it }
-                val menuChanged = restaurant.menu != r.restaurant.menu || restaurant.openOrdering != r.restaurant.openOrdering
                 if (restaurant.copy(contact = r.restaurant.contact) == r.restaurant) r.copy(restaurant = restaurant, restaurantOptions = options)
                 else r.copy(restaurant = restaurant, restaurantOptions = options, phase = if (r.phase == RoomPhase.LOBBY) RoomPhase.LOBBY else RoomPhase.COLLECTING,
                     members = r.members.map { it.copy(ready = it.approved && !it.removed && !it.guest && it.participating) },
                     carts = r.carts.map { it.copy(revision = it.revision + 1,
-                        submitted = it.submitted && (!menuChanged || it.lines.isEmpty()), confirmedQuote = -1) },
+                        confirmedQuote = -1) },
                     quoteRevision = r.quoteRevision + 1, deadline = 0,
                 ).also { Billing.receipts(it) }
             }
@@ -212,10 +217,34 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 require(c.text.isNotBlank() && c.text.length <= 500) { "Enter the restaurant confirmation/reference and ETA." }
                 r.copy(phase = RoomPhase.PLACED, restaurantReference = c.text)
             }
+            CommandKind.UPDATE_PAYMENT_RECEIPT -> {
+                payer(); phase(RoomPhase.FULFILLED); fresh()
+                require(r.paymentRoom != null) { "This is not a payment room." }
+                val request = requireNotNull(c.paymentRoom)
+                require(request.shares.isEmpty()) { "Use item prices to change existing shares." }
+                request.details.validate()
+                r.copy(paymentRoom = request.details)
+            }
+            CommandKind.UPDATE_PAYMENT_SHARE -> {
+                payer(); phase(RoomPhase.FULFILLED); fresh()
+                require(r.paymentRoom != null) { "This is not a payment room." }
+                MenuValidation.label(c.text); MenuValidation.price(c.amount)
+                val cart = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Member not found.")
+                r.copy(carts = r.carts.map { if (it.memberId != c.memberId) it else cart.copy(revision = cart.revision + 1,
+                    lines = if (c.amount == 0L) emptyList() else listOf(CartLine(cart.lines.firstOrNull()?.id ?: id(), "", 1, description = c.text.trim(), unitPrice = c.amount))) },
+                    billRevision = r.billRevision + 1).also { Billing.receipts(it) }
+            }
+            CommandKind.RECORD_PAYMENT -> {
+                payer(); phase(RoomPhase.FULFILLED); fresh(); reason()
+                require(r.paymentRoom != null && r.restaurantPaid) { "Confirm the updated bill before recording payments." }
+                require(c.memberId != actorId && r.transfers.none { it.memberId == c.memberId && it.status == TransferStatus.DECLARED }) { "Resolve the pending payment first. Your own share needs no transfer." }
+                val receipt = Billing.receipts(r).singleOrNull { it.memberId == c.memberId } ?: error("Member not found.")
+                require(c.amount > 0 && c.amount <= receipt.balance) { "Received amount exceeds the remaining balance." }
+                r.copy(transfers = r.transfers + Transfer(id(), c.memberId, c.amount, c.text, requireNotNull(r.account), status = TransferStatus.CONFIRMED, createdAt = now))
+            }
             CommandKind.PAY_RESTAURANT -> {
                 payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
-                require(c.amount == Billing.receipts(r).sumOf { it.total }) { "Paid amount differs from the bill. Record an approved bill adjustment first." }
-                require(r.billRevision == 1L || RoomRules.billApprovalMemberIds(r).all { it in r.adjustmentApprovals }) { "Wait for bill adjustment approval." }
+                require(c.amount == Billing.receipts(r).sumOf { it.total }) { "Paid amount differs from the bill. Update item prices or the bill adjustment first." }
                 r.copy(restaurantPaid = true)
             }
             CommandKind.FULFILL -> { payer(); phase(RoomPhase.PLACED); fresh(); r.copy(phase = RoomPhase.FULFILLED) }
@@ -244,7 +273,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh(); reason()
                 require(c.amount in -MenuValidation.MAX_MONEY..MenuValidation.MAX_MONEY) { "Invalid bill adjustment." }
                 if (c.amount == r.adjustment) r
-                else r.copy(adjustment = c.amount, adjustmentApprovals = listOf(actorId), billRevision = r.billRevision + 1, restaurantPaid = false).also { Billing.receipts(it) }
+                else r.copy(adjustment = c.amount, adjustmentApprovals = emptyList(), billRevision = r.billRevision + 1, restaurantPaid = r.restaurantPaid && r.paymentRoom != null).also { Billing.receipts(it) }
             }
             CommandKind.APPROVE_ADJUSTMENT -> {
                 orderer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); require(c.expectedRevision == r.billRevision) { "The bill changed again." }

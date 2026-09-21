@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants } from '../src/foodrun/FoodRunApp.jsx';
 import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx';
 import { t } from '../src/foodrun/i18n.js';
+import { CreatePaymentRoom } from '../src/foodrun/PaymentRoom.jsx';
 
 let root, host;
 export const commands = [];
@@ -33,7 +34,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
   Object.assign(room, options.room || {});
   const roomData = { ...data, sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
     rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
-  const props = { data: screen === 'room' || options.room ? roomData : data, onBack: () => {}, openRoom: () => {}, setPage: () => {} };
+  const props = { data: screen === 'room' || options.room ? roomData : options.data || data, onBack: () => {}, openRoom: () => {}, setPage: () => {} };
   if (options.send) roomData.send = options.send;
   if (options.liveCart || options.liveCommands) roomData.send = async (kind, fields) => {
     commands.push({ kind, fields });
@@ -43,7 +44,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
     if (kind === 'VOTE_RESTAURANT') room.restaurantVotes = [{ memberId: 'me', restaurantId: fields.text }];
     if (kind === 'PRICE_ITEM') {
       room.carts = room.carts.map(cart => cart.memberId !== fields.memberId ? cart : { ...cart, lines: cart.lines.map(line => line.id !== fields.text ? line : { ...line, unitPrice: fields.flag ? null : fields.amount }) });
-      room.quoteRevision++; room.revision++; room.phase = 'COLLECTING';
+      room.quoteRevision++; room.revision++; if (!['PLACED','FULFILLED'].includes(room.phase)) room.phase = 'COLLECTING';
     }
     if (kind === 'SET_FEES') {
       room.fees = fields.fees; room.restaurant = fields.restaurant || room.restaurant; room.quoteRevision++; room.revision++;
@@ -52,7 +53,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
     root.render(<RoomScreen {...props} roomId={room.id} />);
     return { ok: true };
   };
-  root.render(screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
+  root.render(screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
     : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <ProfileScreen {...props} />
     : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />);
   await pause(); return measureAudit();
@@ -111,6 +112,17 @@ export async function runPollPricingAudit() {
   assert(host.querySelector('.order-pricing-panel'), 'Price editor missing during review');
   await mountAudit('room', 'COLLECTING', { room: { ...room, payerId: 'other', members: [{ id: 'me', name: 'Me', approved: true, participating: true }, { id: 'other', name: 'Other', approved: true, participating: true }] } });
   assert(!host.querySelector('.order-pricing-panel'), 'Nonpayer can see item price controls');
+  for (const phase of ['PLACED', 'FULFILLED']) {
+    await mountAudit('room', phase, { room: { ...room, billRevision: 2, adjustmentApprovals: [] }, liveCommands: true });
+    assert(host.querySelector('.order-pricing-panel'), 'Menu price editing disappears after sending');
+    button('Edit price').click(); await pause();
+    setValue(host.querySelector('.order-pricing-panel input'), '8.00'); await pause();
+    host.querySelector('.order-pricing-panel form').requestSubmit(); await pause();
+    assert(commands.at(-1).kind === 'PRICE_ITEM', 'Placed menu price was not saved');
+    assert(!button('Approve revised final bill'), 'Repeated approval is still requested');
+    const pay = [...host.querySelectorAll('button')].find(node => node.textContent.startsWith(t('Mark restaurant paid')));
+    assert(pay && !pay.disabled, 'Payment is blocked on repeat approvals');
+  }
   await mountAudit('room', 'LOBBY', { room: poll, liveCommands: true });
   assert(!measureAudit().overflow, 'Poll popup overflows');
   return { passed: ['entry popup', 'vote saves and closes', 'existing voter skipped', 'failed vote retry', 'dismiss', 'guest excluded', 'menu price edit', 'quantity multiplication', 'restore menu price', 'shared discount', 'review phase', 'payer-only controls'], ...measureAudit() };
@@ -316,4 +328,43 @@ export async function runPaymentProfileAudit() {
   assert(commands.at(-1).fields.identity.profile.payment.identifier==='+971501234567','Aani mobile not normalized');
   assert(!measureAudit().overflow,'Profile payments overflow');
   return {passed:['Home/Profile same balance','Home/Profile payment history','profile direct payment','Aani mobile label','separate bank and phone drafts','IBAN normalization','Aani mobile normalization'], ...measureAudit()};
+}
+
+export async function runPaymentRoomAudit() {
+  commands.length = 0;
+  const account = { id: 'account', holder: 'Audit User', bank: 'Aani', identifier: '+971500000001', method: 'aani', currency: 'AED' };
+  const fixture = { ...data, home: { ...data.home, profile: { ...data.home.profile, payment: account }, people: [{ userId: 'friend', name: 'Friend' }] } };
+  await mountAudit('payment-create', 'LOBBY', { data: fixture });
+  const input = label => [...host.querySelectorAll('label')].find(node => node.textContent.startsWith(t(label)))?.querySelector('input,textarea');
+  for (const [label, value] of [['Room name','Friday lunch'],['What did you order?','Sandwiches and drinks'],['Receipt total','30.01']]) {
+    setValue(input(label), value); await pause();
+  }
+  host.querySelector('input[type=checkbox]').click(); await pause();
+  button('Split equally').click(); await pause();
+  const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = 1200;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0,0,600,1200); ctx.fillStyle = 'black'; ctx.fillText('Audit receipt 30.01',20,30);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  const transfer = new DataTransfer(); transfer.items.add(new File([blob], 'receipt.png', { type: 'image/png' }));
+  const upload = host.querySelector('input[type=file]'); upload.files = transfer.files; upload.dispatchEvent(new Event('change', { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert(host.querySelector('.receipt-photo'), 'Receipt image not previewed');
+  host.querySelector('form').requestSubmit(); await pause();
+  assert(commands.length === 1 && commands[0].kind === 'CREATE_PAYMENT_ROOM', 'Payment room did not create directly');
+  const payload = commands[0].fields;
+  assert(payload.paymentRoom.shares.reduce((sum,s) => sum+s.amount,0) === 3001, 'Equal split lost a minor unit');
+  assert(payload.paymentRoom.details.receiptPhoto.startsWith('data:image/jpeg;'), 'Receipt photo missing');
+  assert(!measureAudit().overflow, 'Payment creation overflows');
+  const room = { paymentRoom: payload.paymentRoom.details, restaurantPaid: true, account,
+    members: [{ id:'me', name:'Payer', approved:true, participating:true },{ id:'friend', name:'Friend', approved:true, participating:true }],
+    carts: [{ memberId:'me', submitted:true, lines:[] },{ memberId:'friend', submitted:true, lines:[] }] };
+  const receipts = [{ memberId:'me', name:'Payer', food:0,total:0,paid:0,balance:0,currency:'AED',lines:[] },
+    { memberId:'friend', name:'Friend',food:3001,total:3001,paid:500,balance:2501,currency:'AED',lines:[{ description:'Meal',quantity:1,amount:3001 }] }];
+  await mountAudit('room','FULFILLED',{ room, receipts });
+  assert(button('Edit share') && host.innerText.includes(t('Record payment received')), 'Payer cannot manage shares or payments');
+  assert(!host.querySelector('.restaurant-order-card') && !host.querySelector('.room-invite-card'), 'Payment room exposes ordering flow');
+  assert(!measureAudit().overflow, 'Payment wallet overflows');
+  await mountAudit('room','FULFILLED',{ room, receipts:[receipts[1]], memberId:'friend' });
+  assert(!button('Edit share') && !host.innerText.includes(t('Record payment received')), 'Member received payer controls');
+  assert(!button('Approve revised final bill'), 'Member must approve the bill again');
+  return { passed:['direct creation','user selection','exact equal split','portrait receipt photo','payer share and payment controls','member-only wallet','no ordering steps'], ...measureAudit() };
 }

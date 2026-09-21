@@ -5,7 +5,7 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
+    CREATE_PAYMENT_ROOM, UPDATE_PAYMENT_RECEIPT, UPDATE_PAYMENT_SHARE, RECORD_PAYMENT, IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
     VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
     ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
     REOPEN, SET_FEES, UPDATE_RESTAURANT, PLACE, PAY_RESTAURANT, FULFILL, DECLARE_TRANSFER, CONFIRM_TRANSFER,
@@ -30,6 +30,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val identityToken: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val paymentRoom: PaymentRoomRequest? = null,
 
 )
 @Serializable data class OrderProgress(

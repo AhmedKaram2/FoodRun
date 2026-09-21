@@ -95,7 +95,6 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val fields = mutableListOf<GroupField>()
         val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>()
-        val awaitingApproval = if (r.billRevision > 1) r.orderingMembers.filterNot { it.id in r.adjustmentApprovals } else emptyList()
         val pending = r.transfers.filter { it.status == TransferStatus.DECLARED }
         val ownPending = pending.firstOrNull { it.memberId == me }
         val ownReceipt = receipts.firstOrNull { it.memberId == me }
@@ -104,18 +103,16 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         if (r.billRevision > 1) {
             val detail = buildString {
                 append(tr("Total adjustment from the original bill: ${money(r.adjustment)}. ", "إجمالي التعديل على الفاتورة الأصلية: ${money(r.adjustment)}. "))
-                append(if (awaitingApproval.isEmpty()) tr("Everyone has approved the revised bill.", "وافق الجميع على الفاتورة المعدلة.") else tr("Waiting for ${awaitingApproval.joinToString { it.name }} to approve the revised bill.", "بانتظار موافقة ${awaitingApproval.joinToString { it.name }} على الفاتورة المعدلة."))
-                if (orderer && me in r.adjustmentApprovals) append(" Your approval is saved.")
+                append(tr("Updated totals apply automatically. No new approval is needed.", "الإجماليات بتتحدث تلقائيًا. مش محتاج موافقة جديدة."))
             }
             cards += GroupCard("bill-adjustment", tr("Revised bill · revision ${r.billRevision}", "الفاتورة المعدلة · إصدار ${r.billRevision}"), detail)
-            if (orderer && me !in r.adjustmentApprovals) buttons += GroupButton(tr("Approve revised bill", "الموافقة على الفاتورة المعدلة"), GroupAction.APPROVE_ADJUSTMENT, primary = true)
         }
         if (payer) {
             if (!r.restaurantPaid) {
                 cards += GroupCard("restaurant-balance", tr("Restaurant bill: ${money(receipts.sumOf { it.total })}", "فاتورة المطعم: ${money(receipts.sumOf { it.total })}"),
-                    if (awaitingApproval.isEmpty()) tr("Pay the restaurant, then record the full amount paid. This only records payment; it does not move money.", "ادفع للمطعم ثم سجل المبلغ الكامل. هذا يوثق الدفع ولا يحول الأموال.") else tr("Wait for everyone's revised-bill approval before recording restaurant payment.", "انتظر موافقة الجميع على الفاتورة المعدلة قبل تسجيل دفع المطعم."))
+                    tr("Pay the restaurant, then record the full amount paid. This only records payment; it does not move money.", "ادفع للمطعم ثم سجل المبلغ الكامل. هذا يوثق الدفع ولا يحول الأموال."))
                 fields += field(GroupFieldKey.AMOUNT, tr("Full amount paid to restaurant", "كامل المبلغ المدفوع للمطعم"))
-                buttons += GroupButton(tr("Confirm restaurant paid", "تأكيد دفع المطعم"), GroupAction.PAY_RESTAURANT, primary = true, enabled = awaitingApproval.isEmpty())
+                buttons += GroupButton(tr("Confirm restaurant paid", "تأكيد دفع المطعم"), GroupAction.PAY_RESTAURANT, primary = true)
             }
             if (r.phase == RoomPhase.PLACED) buttons += GroupButton(tr("Food collected / delivered", "تم استلام الطعام أو توصيله"), GroupAction.FULFILL, primary = r.restaurantPaid)
             if (r.restaurantPaid && receipts.any { refundAvailable(r, it) }) {
@@ -127,7 +124,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             val proposedAdjustment = runCatching {
                 Money.parse(adjustmentText.removePrefix("-"), currency) * if (adjustmentText.startsWith('-')) -1 else 1
             }.getOrNull()
-            buttons += GroupButton(tr("Propose bill adjustment", "اقتراح تعديل الفاتورة"), GroupAction.ADJUST_BILL,
+            buttons += GroupButton(tr("Update final bill", "تعديل الفاتورة النهائية"), GroupAction.ADJUST_BILL,
                 enabled = proposedAdjustment == null || proposedAdjustment != r.adjustment)
             if (r.restaurantPaid) {
                 val owed = receipts.filter { it.balance > 0 }

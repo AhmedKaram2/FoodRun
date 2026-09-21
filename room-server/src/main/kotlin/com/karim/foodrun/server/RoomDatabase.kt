@@ -48,7 +48,7 @@ class RoomDatabase(directory: File) : AutoCloseable {
     fun roomByCode(code: String): Room? = query("SELECT body FROM rooms WHERE code=?", code)?.let { orderJson.decodeFromString<Room>(decrypt(it)) }
     fun allRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
     fun activeRoomCount(): Int = connection.createStatement().use { s -> s.executeQuery("SELECT COUNT(*) FROM rooms WHERE phase NOT IN ('ARCHIVED','CANCELLED')").use { it.next(); it.getInt(1) } }
-    fun spinningRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms WHERE phase='SPINNING'").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
+    fun spinningRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms WHERE phase IN ('SPINNING','PREPARING_SPIN')").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
     fun save(room: Room) { enqueueCloud("room-${room.id}", orderJson.encodeToString(room)); connection.prepareStatement("INSERT INTO rooms(id,code,body,phase) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,phase=excluded.phase").use { it.setString(1, room.id); it.setString(2, room.code); it.setString(3, encrypt(orderJson.encodeToString(room))); it.setString(4, room.phase.name); it.executeUpdate() } }
     fun session(hash: String): Pair<String, String>? = connection.prepareStatement("SELECT room_id,member_id FROM sessions WHERE hash=?").use { it.setString(1, hash); it.executeQuery().use { rs -> if (rs.next()) rs.getString(1) to rs.getString(2) else null } }
     fun addSession(hash: String, room: String, member: String) { connection.prepareStatement("INSERT INTO sessions VALUES(?,?,?)").use { it.setString(1, hash); it.setString(2, room); it.setString(3, member); it.executeUpdate() } }
@@ -60,8 +60,8 @@ class RoomDatabase(directory: File) : AutoCloseable {
     fun history(roomId: String, offset: Int = 0, limit: Int = 6): List<Room> = connection.prepareStatement("SELECT body FROM orders WHERE room_id=? ORDER BY number DESC LIMIT ? OFFSET ?").use { it.setString(1, roomId); it.setInt(2, limit); it.setInt(3, offset); it.executeQuery().use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
     fun allHistory(): List<Room> = connection.createStatement().use { statement -> statement.executeQuery("SELECT body FROM orders ORDER BY room_id,number DESC").use { rows -> buildList { while(rows.next()) add(orderJson.decodeFromString<Room>(decrypt(rows.getString(1)))) } } }
     fun record(key: String): String? = query("SELECT body FROM account_records WHERE key=?", key)?.let(::decrypt)
-    fun records(prefix: String): List<Pair<String, String>> = connection.prepareStatement("SELECT key,body FROM account_records WHERE key LIKE ?").use {
-        it.setString(1, "$prefix%"); it.executeQuery().use { rs -> buildList { while(rs.next()) add(rs.getString(1) to decrypt(rs.getString(2))) } }
+    fun records(prefix: String): List<Pair<String, String>> = connection.prepareStatement("SELECT key,body FROM account_records WHERE substr(key,1,?)=?").use {
+        it.setInt(1, prefix.length); it.setString(2, prefix); it.executeQuery().use { rs -> buildList { while(rs.next()) add(rs.getString(1) to decrypt(rs.getString(2))) } }
     }
     fun putRecord(key: String, value: String) { connection.prepareStatement("INSERT INTO account_records VALUES(?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").use {
         it.setString(1, key); it.setString(2, encrypt(value)); it.executeUpdate()
@@ -75,6 +75,40 @@ class RoomDatabase(directory: File) : AutoCloseable {
         // Do not drop a newer queued revision while a cloud request was in flight.
         if (query("SELECT body FROM cloud_outbox WHERE key=?", key)?.let(::decrypt) == value)
             connection.prepareStatement("DELETE FROM cloud_outbox WHERE key=?").use { it.setString(1, key); it.executeUpdate() }
+    }
+    /** Called under the room service lock and a transaction after admin validation. */
+    fun deletedHistory(roomId: String): Set<Long> = records("admin:deleted-history:$roomId:").mapNotNull { it.first.substringAfterLast(':').toLongOrNull() }.toSet()
+    fun deleteHistory(roomId: String, number: Long) {
+        putRecord("admin:deleted-history:$roomId:$number", "true")
+        connection.prepareStatement("DELETE FROM orders WHERE room_id=? AND number=?").use { it.setString(1, roomId); it.setLong(2, number); it.executeUpdate() }
+        enqueueCloud("order-$roomId-$number", "{\"deleted\":true}")
+    }
+    fun deleteRoom(roomId: String) {
+        putRecord("admin:deleted-room:$roomId", "true")
+        allHistory().filter { it.id == roomId }.forEach { deleteHistory(it.id, it.orderNumber) }
+        for (table in listOf("sessions", "rooms")) {
+            val column = if (table == "rooms") "id" else "room_id"
+            connection.prepareStatement("DELETE FROM $table WHERE $column=?").use { it.setString(1, roomId); it.executeUpdate() }
+        }
+        records("membership:").filter { orderJson.decodeFromString<AccountRoom>(it.second).roomId == roomId }.forEach { deleteRecord(it.first) }
+        records("invitation:").filter { orderJson.decodeFromString<FoodInvitation>(it.second).roomId == roomId }.forEach { deleteRecord(it.first) }
+        records("member-user:$roomId:").forEach { deleteRecord(it.first) }
+        // Erase idempotent responses too: a retry must not resurrect the deleted room.
+        val commandIds = connection.createStatement().use { statement -> statement.executeQuery("SELECT id,body FROM commands").use { rows ->
+            buildList { while(rows.next()) if (orderJson.decodeFromString<RoomReply>(decrypt(rows.getString(2))).room?.id == roomId) add(rows.getString(1)) }
+        } }
+        commandIds.forEach { id -> connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use { it.setString(1, encrypt(orderJson.encodeToString(RoomReply(ok = false, code = "REMOVED", error = "This room was deleted by the administrator.")))); it.setString(2, id); it.executeUpdate() } }
+        enqueueCloud("room-$roomId", "{\"deleted\":true}")
+    }
+    fun revokeUserSessions(userId: String) {
+        val memberships = records("membership:$userId:")
+        memberships.forEach { (_, body) ->
+            val member = orderJson.decodeFromString<AccountRoom>(body)
+            connection.prepareStatement("DELETE FROM sessions WHERE room_id=? AND member_id=?").use { it.setString(1, member.roomId); it.setString(2, member.memberId); it.executeUpdate() }
+        }
+        records("identity:").filter { kotlinx.serialization.json.Json.parseToJsonElement(it.second).let { value ->
+            (value as kotlinx.serialization.json.JsonObject)["userId"] == kotlinx.serialization.json.JsonPrimitive(userId)
+        } }.forEach { deleteRecord(it.first) }
     }
     private fun encrypt(text: String): String { val iv = ByteArray(12).also(random::nextBytes); val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv)); return Base64.getEncoder().encodeToString(iv + cipher.doFinal(text.toByteArray())) }
     private fun decrypt(text: String): String { val data = Base64.getDecoder().decode(text); val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, data.copyOfRange(0, 12))); return cipher.doFinal(data.copyOfRange(12, data.size)).toString(Charsets.UTF_8) }

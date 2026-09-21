@@ -18,7 +18,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val saved = db.record("identity:${RoomService.hash(token)}") ?: error("Sign in again to reconnect your account.")
         return orderJson.decodeFromString<AccountSession>(saved).also {
             require(it.expires > clock()) { "Your account session expired. Sign in again." }
-            require(db.record("admin:disabled:${it.userId}") == null) { "This account is disabled. Contact the Food Run administrator." }
+            AccountRestrictions.requireAllowed(db, it.userId, clock())
         }
     }
     fun userId(token: String): String = session(token).userId
@@ -37,18 +37,24 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val membership = AccountRoom(room.id, room.name, result.memberId, result.token)
         require(membership.token.isNotEmpty())
         db.putRecord("membership:$uid:${room.id}", orderJson.encodeToString(membership))
+        db.putRecord("member-user:${room.id}:${result.memberId}", uid)
     }
     fun linked(token: String, roomId: String): AccountRoom? = db.record("membership:${userId(token)}:$roomId")?.let { orderJson.decodeFromString(it) }
     fun home(token: String): RoomReply {
         val uid = userId(token)
         val memberships = db.records("membership:$uid:").map { orderJson.decodeFromString<AccountRoom>(it.second) }
             .filter { m -> db.room(m.roomId)?.members?.any { it.id == m.memberId && !it.removed } == true }
+            .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
         val invitations = db.records("invitation:$uid:").map { orderJson.decodeFromString<FoodInvitation>(it.second) }
             .filter { db.room(it.roomId)?.let { room -> room.orderNumber == it.orderNumber && room.phase == RoomPhase.LOBBY } == true }
         val people = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
-            .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() }.take(100).map { FoodPerson(it.userId, it.name) }
+            .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() && AccountRestrictions.current(db, it.userId, clock())?.removed != true }.take(100).map { FoodPerson(it.userId, it.name) }
         val restaurants = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
-        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db)), serverTime = clock())
+        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db), db.records("admin:deleted-room:").map { it.first.removePrefix("admin:deleted-room:") }.toSet(),
+            buildMap {
+                AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
+                memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }
+            }), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)
@@ -65,10 +71,14 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             if (request.action == IdentityAction.REGISTER) requireNotNull(request.profile).normalized().validate()
             val identity = if (request.action == IdentityAction.FIREBASE_SIGN_IN) cloud().exchange(request.firebaseToken)
                 else { require(request.email.contains('@') && request.password.length >= 6) { "Enter your email and a password of at least 6 characters." }; cloud().signIn(request.email, request.password, request.action == IdentityAction.REGISTER) }
-            val savedProfile = (cloud().profile(identity) ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
+            if (db.record("profile:${identity.userId}") == null) {
+                val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
+                require(settings.registrationsEnabled) { "New registration is temporarily disabled by the administrator." }
+            }
+            val savedProfile = (cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
                 if (it.phone.isBlank()) it else it.normalized()
             }
-            require(db.record("admin:disabled:${identity.userId}") == null) { "This account is disabled. Contact the Food Run administrator." }
+            AccountRestrictions.requireAllowed(db, identity.userId, clock())
             if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
             db.putRecord("profile:${identity.userId}", orderJson.encodeToString(savedProfile))
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))

@@ -19,6 +19,14 @@ class RestaurantReadyTextTest {
             receipt("two", listOf(ReceiptLine("فول", 1, 100), ReceiptLine("Water", 1, 100))),
         ))
 
-        assertEquals("مطعم البيت\nPickup\n\n٢ فول\n٤ طعمية — بدون سلطة\n1 Water", text)
+        assertEquals("مطعم البيت\nPickup\nExpected delivery / pickup: To be confirmed by restaurant\n\n٢ فول\n٤ طعمية — بدون سلطة\n1 Water", text)
     }
+    @Test fun whatsappPrefersExplicitNumberAndUsesOnlyMobileFallback() {
+        fun number(phone: String, whatsapp: String? = null) = restaurantWhatsAppNumber(
+            Restaurant("r", "Restaurant", contact = RestaurantContact(phoneE164 = phone, whatsappE164 = whatsapp)))
+        assertEquals("971501234567", number("+97165569877", "+971501234567"))
+        assertEquals("971501234567", number("+971501234567"))
+        assertEquals("", number("+97165569877"))
+    }
+
 }

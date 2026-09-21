@@ -20,6 +20,12 @@ struct GroupScreen: View {
                 }
             } else { content }
         }
+        .task(id: state.accessBlocked) {
+            while state.accessBlocked && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if !Task.isCancelled { store.controller.tickAccessBlock() }
+            }
+        }
         .background(FoodTheme.cream.ignoresSafeArea())
         .environment(\.layoutDirection, state.rtl ? .rightToLeft : .leftToRight)
         .onChange(of: scenePhase) { _, phase in
@@ -38,6 +44,9 @@ struct GroupScreen: View {
                         header.id("groupHeader")
                         if state.progressStep >= 0 { GroupProgress(step: Int(state.progressStep), rtl: state.rtl) }
                         if let wheel = state.wheel { GroupWheelContent(wheel: wheel).id(wheel.round.id) }
+                        ForEach(state.topCards, id: \.renderID) { card in
+                            GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
+                        }
                         ForEach(state.mainFields, id: \.key.name) { field in fieldContent(field) }
                         if state.page != .room { extraOptions }
                         ForEach(state.inlineButtons.filter { $0.action != .setLanguage }, id: \.renderID) { button in
@@ -120,6 +129,10 @@ struct GroupScreen: View {
             }
             if !state.roomCode.isEmpty {
                 VStack(spacing: FoodSpacing.s16) {
+                    if !state.inviteSummary.isEmpty {
+                        Text(state.inviteSummary).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let image = inviteQRCode {
                         Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
                             .frame(width: 164, height: 164).accessibilityLabel("Scan to join \(state.title)")

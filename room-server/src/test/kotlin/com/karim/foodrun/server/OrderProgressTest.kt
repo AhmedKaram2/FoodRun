@@ -18,7 +18,7 @@ class OrderProgressTest {
     @Test fun sharingTheSameAccountPreservesConfirmedQuotes(): Unit = RoomFixture().use { f ->
         val member = f.confirmedReview()
         // The saved local copy keeps its own version even after the hub increments it.
-        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account.copy(identifier = "87654321")) }
+        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account.copy(identifier = "AE770331234567890123457")) }
         val changed = f.state().room!!
         assertTrue(changed.carts.all { it.confirmedQuote != changed.quoteRevision })
         listOf(f.owner, member).forEach { actor ->
@@ -141,10 +141,11 @@ class OrderProgressTest {
         assertFalse(f.state().progress!!.canArchive)
     }
 
-    @Test fun pendingMembersReceiveNoPrivateOrderProgress(): Unit = RoomFixture().use { f ->
+    @Test fun newViewersCannotReviewOrSeePaymentDetails(): Unit = RoomFixture().use { f ->
         f.placed()
         val pending = f.join("Pending")
-        assertNull(f.state(pending).progress)
+        assertFalse(f.state(pending).progress!!.canReview)
+        assertFalse(f.state(pending).progress!!.canArchive)
         assertNull(f.state(pending).room!!.account)
     }
 }

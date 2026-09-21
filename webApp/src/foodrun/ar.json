@@ -8,7 +8,7 @@
   "Take the table with you.": "طلبات المجموعة معك أينما كنت.",
   "Use the same account and join Internet Rooms from Android, iPhone, or the web.": "استخدم الحساب نفسه وانضم إلى غرف الإنترنت من أندرويد أو آيفون أو الويب.",
   "Android app": "تطبيق أندرويد",
-  "Version 1.4.2 · Android 8+": "الإصدار ١٫٤٫٢ · أندرويد ٨ فأحدث",
+  "Version 1.4.3 · Android 8+": "الإصدار ١٫٤٫٣ · أندرويد ٨ فأحدث",
   "Download APK": "تنزيل تطبيق أندرويد",
   "iPhone app": "تطبيق آيفون",
   "Open App Store": "فتح متجر التطبيقات",
@@ -461,5 +461,13 @@
   "Orders": "الطلبات",
   "Wallets": "المحافظ",
   "Restaurants": "المطاعم",
-  "Settings": "الإعدادات"
+  "Settings": "الإعدادات",
+  "UAE IBAN": "رقم الآيبان الإماراتي",
+  "UAE IBAN · optional": "رقم الآيبان الإماراتي · اختياري",
+  "Aani · UAE mobile number": "آني · رقم الموبايل الإماراتي",
+  "Bank transfer · IBAN": "تحويل بنكي · آيبان",
+  "Payment history": "سجل المدفوعات",
+  "No payment history yet": "لسه مفيش مدفوعات سابقة",
+  "Order totals and confirmed payments, newest first.": "إجمالي الطلبات والمدفوعات المؤكدة، الأحدث الأول.",
+  "Enter a UAE IBAN starting with AE and containing 23 characters.": "اكتب آيبان إماراتي بيبدأ بـ AE ومكوّن من ٢٣ حرف ورقم."
 }

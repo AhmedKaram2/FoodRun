@@ -76,6 +76,9 @@ fun GroupScreen(controller: GroupController) {
         onDispose { controller.removeObserver(observer) }
     }
     val state = screenState
+    LaunchedEffect(state.accessBlocked) {
+        while (state.accessBlocked) { kotlinx.coroutines.delay(1000); controller.tickAccessBlock() }
+    }
     val focus = LocalFocusManager.current
     LaunchedEffect(state.page) { focus.clearFocus() }
     BackHandler(state.canGoBack) { controller.dispatch(GroupAction.BACK, "") }
@@ -122,6 +125,7 @@ fun GroupScreen(controller: GroupController) {
                     item(key = "header") { GroupHeader(state, controller) }
                     if (state.progressStep >= 0) item(key = "steps") { GroupProgress(state.progressStep, state.rtl) }
                     state.wheel?.let { wheel -> item(key = "wheel:${wheel.round.id}") { GroupWheelContent(wheel) } }
+                    items(state.topCards, key = { "top-card:${it.id}" }) { GroupCardContent(it, state.busy, controller) }
                     items(state.mainFields, key = { "field:${it.key.name}" }) { GroupFieldContent(it, state.busy, controller) }
                     if (state.page != GroupPage.ROOM && state.extraFields.isNotEmpty()) item(key = "extras") {
                         GroupOptions(state, controller, optionsExpanded) { optionsExpanded = !optionsExpanded }
@@ -163,6 +167,7 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
         if (state.status.isNotEmpty()) Text(text = state.status, style = FoodType.Status, color = FoodColors.Muted)
         if (state.roomCode.isNotEmpty()) FoodCard(bordered = true) {
             Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (state.inviteSummary.isNotEmpty()) Text(state.inviteSummary, style = FoodType.Body, color = FoodColors.Ink)
                 if (state.inviteLink.isNotEmpty()) remember(state.inviteLink) {
                     runCatching { BarcodeEncoder().encodeBitmap(state.inviteLink, BarcodeFormat.QR_CODE, 480, 480) }.getOrNull()
                 }?.let { bitmap ->

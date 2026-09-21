@@ -85,7 +85,7 @@ class OrderDomainTest {
         assertFailsWith<IllegalArgumentException> { Billing.receipts(room().copy(adjustment = Long.MIN_VALUE)) }
     }
     @Test fun onlyConfirmedTransfersReduceBalancesAndConfirmedRefundsRestoreThem() {
-        val account = ReceivingAccount("account", "Karim", "Bank", "12345678")
+        val account = ReceivingAccount("account", "Karim", "Bank", "AE070331234567890123456")
         val r = room().copy(transfers = listOf(
             Transfer("1", "b", 1000, "bank", account, status = TransferStatus.CONFIRMED),
             Transfer("2", "b", 500, "bank", account),
@@ -184,4 +184,15 @@ class OrderDomainTest {
         assertEquals(key, favorite.selectionKey())
         favorite.validate()
     }
+    @Test fun aaniUsesUaeMobileWhileBankRequiresAnIban() {
+        val aani = ReceivingAccount("a", "Person", "", "0501234567", method = PaymentMethod.AANI)
+        aani.validate()
+        assertEquals("+971501234567", aani.normalized().identifier)
+        assertEquals("Aani", aani.normalized().bank)
+        assertFailsWith<IllegalArgumentException> { aani.copy(identifier = "061234567").validate() }
+        assertFailsWith<IllegalArgumentException> { aani.copy(bank = "Bank", method = PaymentMethod.BANK).validate() }
+        assertFailsWith<IllegalArgumentException> { aani.copy(identifier = "AE070331234567890123456").validate() }
+        assertEquals("AE070331234567890123456", aani.copy(method = PaymentMethod.BANK, bank = "Bank", identifier = "ae07 0331 2345 6789 0123 456").normalized().also { it.validate() }.identifier)
+    }
+
 }

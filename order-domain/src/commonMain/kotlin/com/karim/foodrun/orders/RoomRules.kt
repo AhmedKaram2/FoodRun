@@ -23,7 +23,6 @@ object RoomRules {
     fun spinReady(room: Room) {
         require(!room.restaurantPollOpen) { "Finish the restaurant poll before starting the spin." }
         require(room.orderingMembers.isNotEmpty()) { "At least one ordering member must join." }
-        require(room.orderingMembers.all { it.ready }) { "Wait for all ordering members to be ready." }
         require(room.expectedNames.all { name -> room.orderingMembers.any { it.name.equals(name.trim(), true) } }) { "Some expected people have not joined. Remove absent invitations explicitly." }
         require(room.orderingMembers.any { it.eligible }) { "At least one member must consent to ordering and paying." }
     }
@@ -39,8 +38,8 @@ object RoomRules {
         require(room.restaurantPaid) { "Confirm the restaurant payment first." }
         require(Billing.receipts(room).all { it.balance == 0L } && room.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
     }
-    fun requireConfirmed(room: Room) {
-        require(room.orderingMembers.all { m -> room.carts.any { it.memberId == m.id && it.submitted && it.confirmedQuote == room.quoteRevision } }) { "Wait for everyone to confirm the current quote, including members ordering no food." }
+    fun requirePlaceable(room: Room) {
+        requireReview(room)
         require(room.account != null) { "The payer must share a receiving account." }
         require(room.restaurant.pricing.taxTreatment != TaxTreatment.UNSPECIFIED) { "Resolve the restaurant's tax treatment first." }
         val receipts = Billing.receipts(room)

@@ -30,7 +30,7 @@ class AdminServiceTest {
                 assertEquals(HttpStatusCode.OK, client.get("/admin/dashboard") { bearerAuth("valid-token") }.status)
                 provider.identity = provider.identity.copy(email = "other@example.com")
                 assertEquals(HttpStatusCode.Unauthorized, client.get("/admin/dashboard") { bearerAuth("valid-token") }.status)
-                for (path in listOf("settings", "restaurant", "user", "room")) {
+                for (path in listOf("settings", "restaurant", "user", "room", "block-request", "cleanup/preview", "cleanup/delete")) {
                     val response = client.post("/admin/$path") { bearerAuth("valid-token"); contentType(ContentType.Application.Json); setBody("{}") }
                     assertFalse(response.status.isSuccess(), path)
                 }
@@ -55,6 +55,8 @@ class AdminServiceTest {
             provider.identity = provider.identity.copy(email = AdminService.ADMIN_EMAIL.uppercase(), emailVerified = true)
             admin.authorize("Bearer valid-token")
             db.putRecord("admin:disabled:admin", "true")
+            admin.authorize("Bearer valid-token") // A room-access block does not disable account administration.
+            db.putRecord("admin:restriction:admin", orderJson.encodeToString(AccountRestriction(removed = true)))
             assertFails { admin.authorize("Bearer valid-token") }
         }
         directory.deleteRecursively()

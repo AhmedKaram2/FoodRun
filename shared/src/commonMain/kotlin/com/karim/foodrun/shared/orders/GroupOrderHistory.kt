@@ -154,3 +154,11 @@ internal fun GroupController.reuseOrder(value: String) {
     Billing.lines(currentRoom.restaurant, cart.copy(lines = merged))
     command(CommandKind.CART, cart = cart.copy(lines = merged), revision = cart.revision)
 }
+
+/** Home and room subscriptions retain the same downloaded history and honor admin deletions. */
+internal fun mergePaymentHistory(cached: RoomReply?, next: RoomReply): RoomReply {
+    if(cached?.room?.id != next.room?.id || cached?.memberId != next.memberId) return next
+    val history = (next.history + cached.history).filterNot { it.number in next.deletedHistoryNumbers }.distinctBy { it.number }.sortedByDescending { it.number }
+    val offset = if(next.deletedHistoryNumbers.isEmpty() && cached.room?.orderNumber == next.room?.orderNumber && cached.history.size > next.history.size) cached.historyNextOffset else next.historyNextOffset
+    return next.copy(history = history, historyNextOffset = offset)
+}

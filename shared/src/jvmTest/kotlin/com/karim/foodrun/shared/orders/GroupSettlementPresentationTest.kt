@@ -4,7 +4,7 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupSettlementPresentationTest {
-    private val account = ReceivingAccount("account", "Karim", "Test Bank", "1234567890")
+    private val account = ReceivingAccount("account", "Karim", "Test Bank", "AE070331234567890123456")
     private val restaurant = Restaurant("kitchen", "Kitchen", contact = RestaurantContact("+971500000000"),
         menu = Menu(categories = listOf(MenuCategory("main", "Main")), items = listOf(MenuItem("meal", "main", "Meal", basePriceMinor = 1000))))
     private fun room() = Room("room", "123456", "payer", "Lunch", restaurant, phase = RoomPhase.REVIEW,
@@ -47,25 +47,19 @@ class GroupSettlementPresentationTest {
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
 
-    @Test fun ownConfirmationIsEnabledOnceAndThenBecomesWaitingFeedback() {
-        val first = GroupSettlementPresentation(controller(room(), "member")).review()
-        assertTrue(GroupSettlementPresentation.quoteConfirmationAction(room(), "member").enabled)
-        assertFalse(first.buttons.any { it.action == GroupAction.CONFIRM_QUOTE }, "Confirmation stays attached to the receipt and recipient details.")
-        val confirmedOwn = room().copy(carts = room().carts.map { if (it.memberId == "member") it.copy(confirmedQuote = 1) else it })
-        val waiting = GroupSettlementPresentation(controller(confirmedOwn, "member")).review()
-        assertFalse(waiting.buttons.any { it.action == GroupAction.CONFIRM_QUOTE })
-        assertFalse(GroupSettlementPresentation.quoteConfirmationAction(confirmedOwn, "member").enabled)
-        assertTrue(waiting.cards.single { it.id == "review-next-step" }.detail.contains("Karim"))
-        assertEquals("Your total is confirmed", waiting.cards.single { it.id == "review-next-step" }.title)
+    @Test fun membersSeeWhoIsSendingWithoutASecondConfirmation() {
+        val content = GroupSettlementPresentation(controller(room(), "member")).review()
+        assertFalse(content.buttons.any { it.action == GroupAction.CONFIRM_QUOTE })
+        assertTrue(content.cards.single { it.id == "review-next-step" }.detail.contains("Karim"))
+        assertEquals("Ready for the restaurant", content.cards.single { it.id == "review-next-step" }.title)
     }
 
-    @Test fun payerCannotPlaceUntilEveryOrderingMemberIncludingNoFoodConfirms() {
-        val r = room().copy(carts = listOf(room().carts.first().copy(confirmedQuote = 1), MemberCart("member", submitted = true)))
-        val pending = GroupSettlementPresentation(controller(r)).review()
-        assertFalse(pending.action(GroupAction.PLACE).enabled)
-        assertTrue(pending.cards.single { it.id == "review-next-step" }.detail.contains("Hassan"))
-        val ready = GroupSettlementPresentation(controller(confirmed(r))).review()
+    @Test fun payerCanPlaceAfterEveryoneSubmitsWithoutQuoteConfirmations() {
+        val r = room().copy(carts = listOf(room().carts.first(), MemberCart("member", submitted = true)))
+        val ready = GroupSettlementPresentation(controller(r)).review()
         assertTrue(ready.action(GroupAction.PLACE).enabled)
+        assertTrue(ready.buttons.single { it.primary }.action == GroupAction.PLACE)
+        assertFalse(ready.buttons.any { it.action == GroupAction.CONFIRM_QUOTE })
     }
 
     @Test fun placementExplainsMissingContactAndMinimumBeforeTheAction() {
@@ -193,21 +187,48 @@ class GroupSettlementPresentationTest {
     @Test fun profileWalletSeparatesPeopleAndPendingApprovalInBothDirections() {
         val placed = room().copy(phase = RoomPhase.PLACED, account = account.copy(holder = "Bank holder"), transfers = listOf(transfer()))
         val member = controller(placed, "member")
-        member.library = member.library.copy(sessions = listOf(member.session!!), snapshots = mapOf(placed.id to member.reply!!))
+        member.library = member.library.copy(home = HomePayload(FoodProfile(name = "Test member")), sessions = listOf(member.session!!), snapshots = mapOf(placed.id to member.reply!!))
         member.page = GroupPage.HOME
         val payable = member.state.cards.single { it.id.startsWith("dashboard:wallet:") }
         assertEquals("Karim", payable.title)
         assertEquals("AED 10.00", payable.badge)
-        assertEquals("View pending payment", payable.buttons.single().title)
+        assertTrue(payable.buttons.any { it.action == GroupAction.RESUME })
+        assertTrue(payable.detail.contains("AE070331234567890123456"))
+        assertFalse(payable.buttons.any { it.action == GroupAction.WALLET_PAY })
         assertTrue(member.state.cards.single { it.id == "dashboard:wallet-direction:false" }.badge.contains("10.00"))
         val payer = controller(placed)
-        payer.library = payer.library.copy(sessions = listOf(payer.session!!), snapshots = mapOf(placed.id to payer.reply!!))
+        payer.library = payer.library.copy(home = HomePayload(FoodProfile(name = "Test member")), sessions = listOf(payer.session!!), snapshots = mapOf(placed.id to payer.reply!!))
         payer.page = GroupPage.HOME
         val receivable = payer.state.cards.single { it.id.startsWith("dashboard:wallet:") }
         assertEquals("Hassan", receivable.title)
         assertEquals("AED 10.00", receivable.badge)
-        assertEquals("Review and approve receipt", receivable.buttons.single().title)
+        assertTrue(receivable.buttons.any { it.action == GroupAction.WALLET_CONFIRM })
+        assertTrue(receivable.buttons.any { it.action == GroupAction.RESUME })
         assertTrue(payer.state.cards.single { it.id == "dashboard:wallet-direction:true" }.badge.contains("10.00"))
+    }
+
+    @Test fun homeAndProfileShareBalancesAndHistoryAppearsBeforeProfileFields() {
+        val placed = room().copy(phase = RoomPhase.PLACED, account = account)
+        val c = controller(placed, "member")
+        val receipt = c.reply!!.receipts.single { it.memberId == "member" }
+        val snapshot = c.reply!!.copy(history = listOf(PastOrder(8, "Earlier kitchen", 100, listOf(receipt.copy(paid = receipt.total, balance = 0)))))
+        c.library = c.library.copy(home = HomePayload(FoodProfile(name = "Member")), sessions = listOf(c.session!!), snapshots = mapOf(placed.id to snapshot))
+        c.page = GroupPage.HOME
+        val home = c.state.cards.single { it.id == "dashboard:wallet-summary" }
+        c.page = GroupPage.PROFILE
+        val profile = c.state
+        assertEquals(home.detail, profile.topCards.single { it.id == "profile-dashboard:wallet-summary" }.detail)
+        assertTrue(profile.topCards.any { it.id.endsWith(":8") && it.detail.contains("Paid") })
+        assertFalse(profile.sections.flatMap { it.cards }.any { it.id.startsWith("profile-dashboard:") })
+        assertEquals(2, profile.topCards.count { it.id.startsWith("profile-dashboard:payment-history:") })
+    }
+
+    @Test fun backgroundHistoryMergeKeepsOlderPaymentsAndHonorsDeletion() {
+        val current = controller(room()).reply!!
+        val old = PastOrder(1, "Old kitchen", 10, current.receipts)
+        val cached = current.copy(history = listOf(old), historyNextOffset = -1)
+        assertEquals(listOf(old), mergePaymentHistory(cached, current).history)
+        assertTrue(mergePaymentHistory(cached, current.copy(deletedHistoryNumbers = setOf(1))).history.isEmpty())
     }
 
 }

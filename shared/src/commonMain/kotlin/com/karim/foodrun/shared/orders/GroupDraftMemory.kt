@@ -58,13 +58,13 @@ internal fun GroupController.deleteAccount(id: String) {
     replaceLibrary(library.copy(accounts = library.accounts.filterNot { it.id == id }))
     if (selectedAccount?.id == id) {
         selectedAccount = null
-        listOf(GroupFieldKey.ACCOUNT_HOLDER, GroupFieldKey.ACCOUNT_BANK, GroupFieldKey.ACCOUNT_IDENTIFIER).forEach(draft::remove)
+        listOf(GroupFieldKey.ACCOUNT_HOLDER, GroupFieldKey.ACCOUNT_BANK, GroupFieldKey.ACCOUNT_IDENTIFIER, GroupFieldKey.ACCOUNT_IBAN_DRAFT, GroupFieldKey.ACCOUNT_AANI_DRAFT).forEach(draft::remove)
     }
 }
 
 internal fun GroupController.newAccount() {
     selectedAccount = null
-    listOf(GroupFieldKey.ACCOUNT_HOLDER, GroupFieldKey.ACCOUNT_BANK, GroupFieldKey.ACCOUNT_IDENTIFIER).forEach(draft::remove)
+    listOf(GroupFieldKey.ACCOUNT_HOLDER, GroupFieldKey.ACCOUNT_BANK, GroupFieldKey.ACCOUNT_IDENTIFIER, GroupFieldKey.ACCOUNT_IBAN_DRAFT, GroupFieldKey.ACCOUNT_AANI_DRAFT).forEach(draft::remove)
     page = GroupPage.ACCOUNT
 }
 

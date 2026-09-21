@@ -13,8 +13,10 @@ internal class RoomFixture(private val identityProvider: IdentityProvider? = nul
     private val random = object : SecureRandom() { override fun nextInt(bound: Int): Int = if (bound == 900000) super.nextInt(bound) else 0 }
     var service = RoomService(db, { now }, random, identityProvider)
     val restaurant = Restaurant("restaurant", "Test Kitchen", contact = RestaurantContact("+971501234567"), menu = Menu(categories = listOf(MenuCategory("main", "Main")), items = listOf(MenuItem("meal", "main", "Meal", basePriceMinor = 100))))
-    val account = ReceivingAccount("account", "Owner", "Test Bank", "12345678")
-    val owner = execute(RoomCommand(commandId = id(), kind = CommandKind.CREATE, name = "Owner", text = "Daily lunch", restaurant = restaurant))
+    val account = ReceivingAccount("account", "Owner", "Test Bank", "AE070331234567890123456")
+    private val ownerIdentity = if (identityProvider == null) "" else execute(RoomCommand(commandId = id(), kind = CommandKind.IDENTITY,
+        identity = IdentityRequest(IdentityAction.SIGN_IN, email = "fixture-owner@example.test", password = "fixture-password"))).identityToken
+    val owner = execute(RoomCommand(commandId = id(), kind = CommandKind.CREATE, name = "Owner", text = "Daily lunch", restaurant = restaurant, identityToken = ownerIdentity))
     fun id(): String = UUID.randomUUID().toString()
     fun execute(c: RoomCommand): RoomReply = service.execute(c).also { assertTrue(it.ok, "${c.kind}: ${it.error}") }
     fun state(actor: RoomReply = owner): RoomReply = service.snapshot(requireNotNull(owner.room).id, actor.token)
@@ -24,7 +26,20 @@ internal class RoomFixture(private val identityProvider: IdentityProvider? = nul
             expectedRevision = room.revision, expectedOrderNumber = room.orderNumber)
     }
     fun send(actor: RoomReply, kind: CommandKind, modify: (RoomCommand) -> RoomCommand = { it }): RoomReply = execute(modify(command(actor, kind)))
-    fun join(name: String = "Member", guest: Boolean = false): RoomReply = execute(RoomCommand(commandId = id(), kind = CommandKind.JOIN, name = name, code = requireNotNull(owner.room).code, guest = guest))
+    fun join(name: String = "Member", guest: Boolean = false): RoomReply {
+        if (guest) {
+            // Historical guest fixtures remain useful for testing privacy after guest mode removal.
+            val room = db.room(owner.room!!.id)!!
+            val member = Member(id(), name, approved = true, guest = true, participating = false)
+            db.save(room.copy(members = room.members + member, revision = room.revision + 1))
+            val token = id() + id()
+            db.addSession(RoomService.hash(token), room.id, member.id)
+            return service.snapshot(room.id, token).copy(token = token)
+        }
+        val identity = if (identityProvider == null) "" else execute(RoomCommand(commandId = id(), kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(IdentityAction.SIGN_IN, email = "${name.replace(" ", "-")}@example.test", password = "fixture-password"))).identityToken
+        return execute(RoomCommand(commandId = id(), kind = CommandKind.JOIN, name = name, code = owner.room!!.code, identityToken = identity))
+    }
     fun approve(actor: RoomReply) = send(owner, CommandKind.APPROVE) { it.copy(memberId = actor.memberId) }
     fun start(member: RoomReply): RoomReply {
         send(owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }

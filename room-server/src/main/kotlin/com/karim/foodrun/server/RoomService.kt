@@ -5,8 +5,9 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 
-class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), identityProvider: IdentityProvider? = null) {
+class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null) {
     private val accounts = AccountService(db, identityProvider, this, clock)
+    fun validateFirebaseSignIn(token: String) { requireNotNull(identityProvider) { "Firebase is unavailable." }.exchange(token) }
     @Synchronized fun syncCloud() = accounts.syncCloud()
     @Synchronized fun adminCancel(roomId: String) {
         val room = requireNotNull(db.room(roomId)) { "Room was not found." }
@@ -20,6 +21,22 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private var homeEvents = 1L
     private var eventSequence = 1L
     private val reducer = RoomReducer(::uuid, random::nextInt)
+    init {
+        // Admit members left waiting by older hubs without changing a locked order's participants.
+        db.transaction {
+            db.allRooms().filter { room -> room.members.any { !it.approved && !it.removed } }.forEach { room ->
+                val members = room.members.map { if (!it.approved && !it.removed) admit(it, room.phase) else it }
+                val addedOrderers = members.any { member -> member.participating && !member.guest && room.members.any { it.id == member.id && !it.approved } }
+                db.save(room.copy(members = members, revision = room.revision + 1,
+                    quoteRevision = room.quoteRevision + if (addedOrderers) 1 else 0, updatedAt = clock()))
+            }
+        }
+    }
+    private fun admit(member: Member, phase: RoomPhase): Member {
+        val participating = !member.guest && member.participating && phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING)
+        return member.copy(approved = true, participating = participating, ready = participating,
+            eligible = participating, latePayerApproved = false)
+    }
     @Synchronized fun eventVersion(kind: CommandKind, roomId: String): Long =
         if (kind == CommandKind.HOME) homeEvents else roomEvents[roomId] ?: 0L
     @Synchronized fun touch(memberId: String) { if (memberId.isNotEmpty()) presence[memberId] = clock() }
@@ -42,6 +59,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
         else db.transaction {
+            if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN)) {
+                require(!c.guest) { "Guest mode is unavailable. Sign in to join the room." }
+                if (identityProvider != null) accounts.userId(c.identityToken)
+            }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN)) authenticate(c.roomId, c.token)
             val digest = hash(orderJson.encodeToString(c))
@@ -49,6 +70,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 val reply = when(c.kind) {
                     CommandKind.CREATE -> create(c)
                     CommandKind.JOIN -> join(c)
+                    CommandKind.REQUEST_BLOCK -> requestBlock(c)
                     else -> {
                         val actor = authenticate(c.roomId, c.token)
                         presence[actor] = clock()
@@ -65,7 +87,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 db.record(c.commandId, digest, reply); reply
             }
         }
-    } catch (e: IllegalArgumentException) { RoomReply(ok = false, error = e.message ?: "Invalid request.", code = "VALIDATION", serverTime = clock()) }
+    } catch (e: AccountBlockedException) { RoomReply(ok = false, error = e.message.orEmpty(), code = if(e.block.removed) "ACCOUNT_BLOCKED" else "ROOM_BLOCKED", accessBlock = e.block, serverTime = clock()) }
+      catch (e: IllegalArgumentException) { RoomReply(ok = false, error = e.message ?: "Invalid request.", code = "VALIDATION", serverTime = clock()) }
       catch (e: IllegalStateException) { RoomReply(ok = false, error = e.message ?: "Action unavailable.", code = "STATE", serverTime = clock()) }
 
     @Synchronized fun snapshot(roomId: String, token: String, historyOffset: Int = 0): RoomReply {
@@ -75,7 +98,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         return projection(withPresence(room), actor, historyOffset)
     }
     @Synchronized fun tick() {
-        db.transaction { db.spinningRooms().forEach { finalizeSpin(it) } }
+        db.transaction { db.spinningRooms().forEach { room ->
+            if (room.phase == RoomPhase.PREPARING_SPIN) {
+                val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
+                if (candidates.isNotEmpty()) db.save(room.copy(phase = RoomPhase.SPINNING, spin = SpinRound(uuid(), candidates, candidates[random.nextInt(candidates.size)], clock() + 3000), revision = room.revision + 1)).also { signalRoom(room.id) }
+            } else finalizeSpin(room)
+        } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
     }
     private fun withPresence(room: Room): Room = room.copy(members = room.members.map { member -> member.copy(lastSeen = presence[member.id] ?: member.lastSeen) })
@@ -87,6 +115,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
     }
     private fun create(c: RoomCommand): RoomReply {
+        if(c.identityToken.isNotBlank()) AccountRestrictions.requireRoomAllowed(db, accounts.userId(c.identityToken), "", clock())
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
         require(settings.roomCreationEnabled) { "New room creation is temporarily disabled by the administrator." }
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
@@ -111,22 +140,54 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         MenuValidation.label(c.name)
         require(c.code.matches(Regex("[0-9]{6}"))) { "Enter a six-digit room code." }
         val room = db.roomByCode(c.code) ?: error("Room code was not found.")
+        if(c.identityToken.isNotBlank()) AccountRestrictions.requireRoomAllowed(db, accounts.userId(c.identityToken), room.id, clock())
         if (c.identityToken.isNotEmpty()) accounts.linked(c.identityToken, room.id)?.let { saved ->
             if (room.members.any { it.id == saved.memberId && !it.removed })
                 return projection(room, saved.memberId).copy(token = saved.token)
         }
-        require(room.members.count { !it.removed } < 60) { "Too many pending participants. Ask the organizer to remove unused requests." }
+        require(room.activeMembers.count { it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
-        val person = Member(uuid(), c.name.trim(), guest = c.guest, eligible = !c.guest, lastSeen = clock())
-        val next = room.copy(members = room.members + person, revision = room.revision + 1, updatedAt = clock()); requireLoadable(next); db.save(next)
+        val person = admit(Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock()), room.phase)
+        val next = room.copy(members = room.members + person, revision = room.revision + 1,
+            quoteRevision = room.quoteRevision + if (person.participating) 1 else 0, updatedAt = clock()); requireLoadable(next); db.save(next)
         signalRoom(next.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(next, person.id).copy(token = token)
     }
+    private fun requestBlock(c: RoomCommand): RoomReply {
+        val actor = authenticate(c.roomId, c.token)
+        val room = requireNotNull(db.room(c.roomId))
+        require(actor == room.ownerId) { "Only the room owner can request a block." }
+        val requesterId = accounts.userId(c.identityToken)
+        require(db.record("member-user:${room.id}:$actor") == requesterId ||
+            db.record("membership:$requesterId:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it).memberId == actor } == true) { "Sign in with the room owner's account." }
+        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "Refresh this room before requesting a block." }
+        require(c.amount in 1..8760 && c.text.trim().length in 5..300) { "Choose 1 to 8760 hours and give a reason of 5 to 300 characters." }
+        val target = RoomRules.member(room, c.memberId)
+        require(target.id != actor) { "Choose another room member." }
+        val targetId = db.record("member-user:${room.id}:${target.id}") ?: db.records("membership:").firstOrNull { (_, body) ->
+            orderJson.decodeFromString<AccountRoom>(body).let { it.roomId == room.id && it.memberId == target.id }
+        }?.first?.removePrefix("membership:")?.substringBefore(':') ?: error("This member has no registered account.")
+        val pending = db.records("admin:block-request:").map { orderJson.decodeFromString<AdminBlockRequest>(it.second) }
+        require(pending.none { it.roomId == room.id && it.userId == targetId && it.status == "pending" }) { "A block request for this member is already waiting for admin review." }
+        require(pending.count { it.requesterId == requesterId && it.createdAt > clock() - 86_400_000 } < 10) { "You can submit up to 10 block requests per day." }
+        val request = AdminBlockRequest(c.commandId, room.id, room.name, requesterId, room.members.single { it.id == actor }.name,
+            targetId, target.name, c.text.trim(), c.amount.toInt(), clock())
+        db.putRecord("admin:block-request:${request.id}", orderJson.encodeToString(request))
+        return projection(room, actor)
+    }
+    @Synchronized fun adminChanged(roomIds: List<String> = emptyList()) {
+        signalHome(); roomIds.forEach(::signalRoom)
+    }
     private fun authenticate(roomId: String, token: String): String {
         require(token.length in 32..128) { "Room credentials are missing. Join or resume this order." }
-        val session = db.session(hash(token)) ?: error("Session was removed. Rejoin this room with organizer approval.")
+        val session = db.session(hash(token)) ?: error("Session was removed. Rejoin this room using its link or code.")
         require(session.first == roomId) { "This credential belongs to another room." }
+        val userId = db.record("member-user:$roomId:${session.second}") ?: db.records("membership:").firstOrNull { (_, body) ->
+            val membership = orderJson.decodeFromString<AccountRoom>(body)
+            membership.roomId == roomId && membership.memberId == session.second
+        }?.first?.removePrefix("membership:")?.substringBefore(':')
+        userId?.let { AccountRestrictions.requireRoomAllowed(db, it, roomId, clock()) }
         RoomRules.member(requireNotNull(db.room(roomId)), session.second)
         return session.second
     }
@@ -153,11 +214,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             progress = if (authorized) progress(room, actor) else null)
     }
     private fun progress(room: Room, actor: String): OrderProgress {
-        val reviewStage = (actor == room.ownerId || actor == room.payerId) && room.phase == RoomPhase.COLLECTING
+        val reviewStage = (actor == room.ownerId || actor == room.payerId) && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)
         val archiveStage = (actor == room.ownerId || actor == room.payerId) && room.phase == RoomPhase.FULFILLED
         fun blocker(validate: () -> Unit): String = try { validate(); "" }
             catch (invalid: IllegalArgumentException) { invalid.message ?: "Review the order before continuing." }
-        val reviewBlocker = if (reviewStage) blocker { RoomRules.requireReview(room) } else ""
+        val reviewBlocker = if (reviewStage) blocker { RoomRules.requirePlaceable(room) } else ""
         val archiveBlocker = if (archiveStage) blocker { RoomRules.requireArchive(room) } else ""
         return OrderProgress(accountShared = room.account != null,
             canReview = reviewStage && reviewBlocker.isEmpty(), reviewBlocker = reviewBlocker,
@@ -175,7 +236,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     private fun projection(room: Room, actor: String, offset: Int = 0): RoomReply {
         require(offset in 0..1_000_000) { "Invalid history page." }
-        val reply = baseProjection(room, actor)
+        val reply = baseProjection(room, actor).copy(deletedHistoryNumbers = db.deletedHistory(room.id))
         val member = RoomRules.member(room, actor)
         if (!member.approved || member.guest) return reply
         val orders = db.history(room.id, offset)

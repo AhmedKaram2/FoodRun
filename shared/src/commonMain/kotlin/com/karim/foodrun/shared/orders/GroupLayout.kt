@@ -5,7 +5,7 @@ data class GroupSection(val title: String, val cards: List<GroupCard>)
 
 internal object GroupLayout {
     val roomUtilities = setOf(
-        GroupAction.SHARE_ROOM, GroupAction.OPEN_RECEIPTS, GroupAction.OPEN_HISTORY,
+        GroupAction.OPEN_BLOCK_REQUEST, GroupAction.SHARE_ROOM, GroupAction.OPEN_RECEIPTS, GroupAction.OPEN_HISTORY,
         GroupAction.SAVE_ROOM_RESTAURANT, GroupAction.SET_FEES, GroupAction.REOPEN,
         GroupAction.CANCEL, GroupAction.ADJUST_BILL, GroupAction.OPEN_ACCOUNT, GroupAction.OPEN_LIBRARY, GroupAction.EDIT_ROOM_RESTAURANT,
     )
@@ -30,7 +30,9 @@ internal object GroupLayout {
         fun category(card: GroupCard): String = when {
             card.id.startsWith("menu:") -> "Choose your food"
             card.id.startsWith("cart:") || card.id == "estimate" -> "Your order"
-            card.id.startsWith("receipt:") || card.id == "account" -> "Totals & recipient"
+            card.id == "account" || card.id == "restaurant-balance" || card.id == "my-payment-status" -> "Payment actions"
+            card.id == "contact" || card.id == "review-total" -> "Restaurant order"
+            card.id.startsWith("receipt:") -> "Totals & recipient"
             card.id.startsWith("transfer:") -> "Payment activity"
             card.id.startsWith("wallet") -> "Wallet"
             card.id.startsWith("member:") || card.id.startsWith("invite:") -> "At the table"
@@ -38,7 +40,7 @@ internal object GroupLayout {
             else -> "Order updates"
         }
         val grouped = cards.groupBy(::category)
-        return listOf("Order updates", "Choose your food", "Your order", "Wallet", "Totals & recipient", "Quote confirmations", "Payment activity", "At the table")
+        return listOf("Payment actions", "Payment activity", "Restaurant order", "Wallet", "Order updates", "Choose your food", "Your order", "Totals & recipient", "At the table")
             .mapNotNull { title -> grouped[title]?.let { GroupSection(title, it) } }
     }
 }

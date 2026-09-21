@@ -59,36 +59,26 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val fields = mutableListOf<GroupField>()
         val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>()
-        val waiting = r.orderingMembers.filterNot { quoteConfirmed(r, it.id) }
-        val ownConfirmed = quoteConfirmed(r, me)
         cards += walletCards()
-        r.orderingMembers.forEach { member ->
-            cards += GroupCard("quote:${member.id}", member.name,
-                if (quoteConfirmed(r, member.id)) tr("Total and recipient confirmed", "تم تأكيد الإجمالي والمستلم") else tr("Awaiting total and recipient confirmation", "بانتظار تأكيد الإجمالي والمستلم"))
-        }
-        val progress = when {
-            waiting.isNotEmpty() -> tr("Waiting for ${waiting.joinToString { it.name }} to confirm their total and recipient. Members choosing no food must also confirm.", "بانتظار ${waiting.joinToString { it.name }} لتأكيد الإجمالي والمستلم. يجب التأكيد أيضاً عند اختيار عدم طلب طعام.")
-            payer -> tr("Everyone has confirmed. Contact the restaurant, then enter its confirmation and ETA below.", "أكد الجميع. تواصل مع المطعم ثم أدخل تأكيده ووقت الوصول المتوقع.")
-            else -> tr("Everyone has confirmed. ${name(r.payerId)} will contact the restaurant and confirm placement here.", "أكد الجميع. سيتواصل ${name(r.payerId)} مع المطعم ويؤكد إرسال الطلب هنا.")
-        }
-        cards += GroupCard("review-next-step", if (orderer && ownConfirmed) tr("Your total is confirmed", "تم تأكيد إجمالي طلبك") else tr("Next step", "الخطوة التالية"), progress)
+        cards += GroupCard("review-next-step", tr("Ready for the restaurant", "جاهز للمطعم"),
+            if (payer) tr("Copy or share the order, then record the restaurant confirmation and expected arrival. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها سجّل تأكيد المطعم ومعاد الوصول. مش محتاج تأكيد تاني من الناس.")
+            else tr("${name(r.payerId)} is sending the order to the restaurant.", "${name(r.payerId)} بيبعت الطلب للمطعم."))
         if (payer) {
             val blocker = placementBlocker()
             fields += field(GroupFieldKey.REFERENCE, tr("Restaurant confirmation / ETA", "تأكيد المطعم ووقت الوصول المتوقع"))
-            cards += GroupCard("review-total", tr("Total to pay the restaurant", "إجمالي المبلغ المطلوب للمطعم"), "${money(receipts.sumOf { it.total })}\nYour own food share is included. Other members reimburse their individual shares after restaurant payment.", buttons = listOf(
-                GroupButton(tr("I accept the total — order placed", "أوافق على الإجمالي — تم إرسال الطلب"), GroupAction.PLACE,
-                    primary = true, enabled = waiting.isEmpty() && blocker.isEmpty()),
-            ))
+            cards += GroupCard("review-total", tr("Total to pay the restaurant", "إجمالي المبلغ المطلوب للمطعم"), "${money(receipts.sumOf { it.total })}\nYour own food share is included. Other members reimburse their individual shares after restaurant payment.")
+            buttons += GroupButton(tr("Order sent · save expected arrival", "الطلب اتبعت · سجّل معاد الوصول"), GroupAction.PLACE,
+                primary = true, enabled = blocker.isEmpty())
             if (blocker.isNotEmpty()) cards += GroupCard("placement-blocked", tr("Before placing the order", "قبل إرسال الطلب"), blocker,
                 buttons = if (r.restaurant.contact.phoneE164.isNullOrBlank() && r.restaurant.contact.whatsappE164.isNullOrBlank() || r.restaurant.pricing.taxTreatment == TaxTreatment.UNSPECIFIED)
                     listOf(GroupButton(tr("Edit restaurant details", "تعديل بيانات المطعم"), GroupAction.EDIT_ROOM_RESTAURANT)) else emptyList())
-            buttons += GroupButton(tr("Change receiving account", "تغيير حساب الاستلام"), GroupAction.OPEN_ACCOUNT)
+            if (r.phase == RoomPhase.REVIEW) buttons += GroupButton(tr("Change receiving account", "تغيير حساب الاستلام"), GroupAction.OPEN_ACCOUNT)
         }
-        if (owner || payer) buttons += GroupButton(tr("Reopen for changes", "إعادة فتح التعديل"), GroupAction.REOPEN)
+        if (r.phase == RoomPhase.REVIEW && (owner || payer)) buttons += GroupButton(tr("Reopen for changes", "إعادة فتح التعديل"), GroupAction.REOPEN)
         return GroupFlowContent(fields, cards, buttons)
     }
 
-    private fun placementBlocker(): String = when {
+    private fun placementBlocker(): String = c.reply?.progress?.reviewBlocker?.takeIf { it.isNotBlank() } ?: when {
         r.account == null -> tr("Share a receiving account before placing the order.", "شارك حساب استلام الأموال قبل إرسال الطلب.")
         r.restaurant.contact.phoneE164.isNullOrBlank() && r.restaurant.contact.whatsappE164.isNullOrBlank() ->
             tr("Add a restaurant contact to this order. Updating only contact details keeps everyone's food and confirmations.", "أضف رقم المطعم إلى الطلب. تعديل بيانات التواصل فقط يحافظ على الطلبات والتأكيدات.")

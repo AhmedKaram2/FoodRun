@@ -19,6 +19,17 @@ class AccountServiceTest {
         private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid)
     }
 
+    @Test fun configuredServerRequiresAccountForRoomCreationAndJoining() = RoomFixture(FakeIdentityProvider()).use { fixture ->
+        val create = fixture.service.execute(RoomCommand(commandId = fixture.id(), kind = CommandKind.CREATE,
+            name = "Anonymous", text = "Room", restaurant = fixture.restaurant))
+        assertTrue(!create.ok)
+        val join = fixture.service.execute(RoomCommand(commandId = fixture.id(), kind = CommandKind.JOIN,
+            name = "Anonymous", code = fixture.owner.room!!.code))
+        assertTrue(!join.ok)
+        assertEquals(1, fixture.db.allRooms().size)
+        assertEquals(1, fixture.state().room!!.members.size)
+    }
+
     @Test fun registeredPeopleCanBeInvitedAndResumeTheirRoomFromHome() = RoomFixture(FakeIdentityProvider()).use { fixture ->
         fun register(email: String, name: String): RoomReply = fixture.execute(RoomCommand(
             commandId = fixture.id(), kind = CommandKind.IDENTITY,
@@ -40,7 +51,7 @@ class AccountServiceTest {
             roomId = room.room!!.id, token = room.token, identityToken = organizer.identityToken,
             identity = IdentityRequest(action = IdentityAction.INVITE, userId = invited.home!!.profile.userId),
         ))
-        assertEquals(1, invitationReply.home?.people?.size)
+        assertTrue(invitationReply.home!!.people.any { it.userId == invited.home!!.profile.userId })
 
         val invitedHome = fixture.execute(RoomCommand(
             commandId = fixture.id(), kind = CommandKind.HOME, identityToken = invited.identityToken,

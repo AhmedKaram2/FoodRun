@@ -15,7 +15,7 @@ class PayerParticipationTest {
 
     @Test fun aViewOnlyGuestNeverEntersTheWheel(): Unit = RoomFixture().use { f ->
         val guest = f.join("Watcher", guest = true)
-        assertFalse(guest.room!!.members.single().eligible)
+        assertFalse(guest.room!!.members.single { it.id == guest.memberId }.eligible)
         f.approve(guest)
         assertFalse(f.state(guest).room!!.members.single { it.id == guest.memberId }.eligible)
         assertFalse(f.service.execute(f.command(guest, CommandKind.READY).copy(flag = true, eligible = true)).ok)

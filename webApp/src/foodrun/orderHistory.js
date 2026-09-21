@@ -46,10 +46,20 @@ export function uniqueRoomPreviousOrders(history, memberId, restaurant, matching
 
 
 export function userDashboard(data) {
-  const entries = [], currentOrders = [];
+  const entries = [], currentOrders = [], paymentHistory = [];
   let toPay = 0, toReceive = 0;
   Object.values(data.sessions || {}).forEach(session => {
     const reply = data.rooms?.[session.roomId], room = reply?.room;
+    const orders = [...(reply?.history || [])];
+    if (room && ['PLACED', 'FULFILLED', 'ARCHIVED'].includes(room.phase)) orders.unshift({ number: room.orderNumber, restaurantName: room.restaurant?.name || '', completedAt: room.updatedAt, receipts: reply.receipts });
+    const seen = new Set();
+    for (const order of orders) {
+      const receipt = order.receipts?.find(value => value.memberId === session.memberId);
+      const key = `${session.roomId}:${order.number}`;
+      if (!receipt || seen.has(key)) continue;
+      seen.add(key);
+      paymentHistory.push({ key, roomId: session.roomId, roomName: room?.name || session.roomName || '', number: order.number, restaurantName: order.restaurantName, at: order.completedAt || 0, receipt });
+    }
     if (!room) return;
     currentOrders.push({ room, session, reply });
     if (!['PLACED', 'FULFILLED'].includes(room.phase) || !room.payerId) return;
@@ -58,15 +68,17 @@ export function userDashboard(data) {
     if (payer) {
       (reply.receipts || []).filter(receipt => receipt.memberId !== session.memberId && receipt.balance !== 0).forEach(receipt => {
         if (receipt.balance > 0) toReceive += receipt.balance; else toPay += -receipt.balance;
-        entries.push({ roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === receipt.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
+        entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === receipt.memberId && String(value.status).toLowerCase() === 'declared'), kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
       });
     } else {
       const receipt = (reply.receipts || []).find(value => value.memberId === session.memberId);
       if (!receipt || receipt.balance === 0) return;
       if (receipt.balance > 0) toPay += receipt.balance; else toReceive += -receipt.balance;
       const recipient = payerName;
-      entries.push({ roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === session.memberId && value.status === 'DECLARED'), kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
+      entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === session.memberId && String(value.status).toLowerCase() === 'declared'), kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
     }
   });
-  return { toPay, toReceive, entries, payEntries: entries.filter(entry => entry.kind !== 'receive'), receiveEntries: entries.filter(entry => entry.kind === 'receive'), currentOrders };
+  currentOrders.sort((a, b) => (b.room.createdAt || 0) - (a.room.createdAt || 0));
+  paymentHistory.sort((a, b) => b.at - a.at);
+  return { paymentHistory, toPay, toReceive, entries, payEntries: entries.filter(entry => entry.kind !== 'receive'), receiveEntries: entries.filter(entry => entry.kind === 'receive'), currentOrders };
 }

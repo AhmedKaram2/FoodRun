@@ -5,8 +5,8 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    IDENTITY, HOME, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
-    VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, ACK_SPIN, ABORT_PREPARE,
+    IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
+    VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
     ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
     REOPEN, SET_FEES, UPDATE_RESTAURANT, PLACE, PAY_RESTAURANT, FULFILL, DECLARE_TRANSFER, CONFIRM_TRANSFER,
     REJECT_TRANSFER, DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL,
@@ -50,6 +50,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val identityToken: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val accessBlock: AccessBlock? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val deletedHistoryNumbers: Set<Long> = emptySet(),
 
 )
 /** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */

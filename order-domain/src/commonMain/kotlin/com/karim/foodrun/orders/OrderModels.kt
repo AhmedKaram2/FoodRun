@@ -14,26 +14,24 @@ import kotlin.math.pow
 @Serializable data class FeePolicy(val delivery: Long = 0, val service: Long = 0, val discount: Long = 0, val proportionalDelivery: Boolean = false, val automaticDelivery: Boolean = false)
 @Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1, val method: PaymentMethod = PaymentMethod.BANK) {
     fun validate() {
-        MenuValidation.label(id); MenuValidation.label(holder); MenuValidation.label(bank)
+        MenuValidation.label(id); MenuValidation.label(holder)
         require(currency == "AED") { "Food Run uses AED (Dirham) for payments." }
         require(version > 0) { "Invalid account version." }
         if (method == PaymentMethod.AANI) {
             UaePhone.normalize(identifier, mobileOnly = true)
             return
         }
-        val v = identifier.replace(" ", "").uppercase()
-        require(currency in Money.currencies && v.length in 5..50 && v.all { it in 'A'..'Z' || it in '0'..'9' || it == '-' }) { "Enter a valid receiving account." }
-        if (v.take(2).all { it in 'A'..'Z' } && v.drop(2).take(2).all { it.isDigit() }) {
-            require(v.length in 15..34) { "Invalid IBAN length." }
-            var remainder = 0
-            (v.drop(4) + v.take(4)).forEach { c ->
-                val n = if (c in 'A'..'Z') (c.code - 55).toString() else c.toString()
-                n.forEach { require(it.isDigit()) { "Invalid IBAN." }; remainder = (remainder * 10 + it.digitToInt()) % 97 }
-            }
-            require(remainder == 1) { "IBAN checksum is invalid." }
+        MenuValidation.label(bank)
+        val v = identifier.filterNot { it.isWhitespace() }.uppercase()
+        require(Regex("AE[0-9]{21}").matches(v)) { "Enter a UAE IBAN starting with AE and containing 23 characters." }
+        var remainder = 0
+        (v.drop(4) + v.take(4)).forEach { c ->
+            val n = if (c in 'A'..'Z') (c.code - 55).toString() else c.toString()
+            n.forEach { remainder = (remainder * 10 + it.digitToInt()) % 97 }
         }
+        require(remainder == 1) { "IBAN checksum is invalid." }
     }
-    fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(currency = "AED")
+    fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(bank = "Aani", identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(identifier = identifier.filterNot { it.isWhitespace() }.uppercase(), currency = "AED")
 }
 @Serializable data class SpinRound(val id: String, val memberIds: List<String>, val winnerId: String, val startAt: Long, val duration: Long = 6500, val turns: Int = 7) {
     init {

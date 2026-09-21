@@ -12,6 +12,12 @@ struct GroupHomeContent: View {
                 Spacer()
                 GroupLanguagePicker(state: state, dispatch: dispatch)
             }
+            if let signIn = state.cards.first(where: { $0.id == "sign-in" }) {
+                GroupCardContent(card: signIn, busy: state.busy, dispatch: dispatch)
+                ForEach(state.buttons.filter { $0.action != .setLanguage }, id: \.renderID) { button in
+                    GroupActionContent(button: button, busy: state.busy, dispatch: dispatch)
+                }
+            } else {
             VStack(alignment: .leading, spacing: FoodSpacing.s8) {
                 Text(GroupText.shared.localized(value: GroupText.shared.homeTitle, rtl: state.rtl)).font(FoodTypography.hero).tracking(-1)
                     .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
@@ -75,6 +81,7 @@ struct GroupHomeContent: View {
                 Label(about.detail, systemImage: "checkmark.shield")
                     .font(FoodTypography.footer).foregroundStyle(FoodTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
+            }
             }
         }.foregroundStyle(FoodTheme.ink)
     }

@@ -29,8 +29,8 @@ The APK is signed for installation and future updates. Quick Spin works offline.
 
 1. Build the hub distribution on a Mac or PC with Java 17 or newer. Follow the [hub setup guide](room-server/README.md#build-from-source) to build and start it with your computer's LAN address.
 2. Keep the computer awake and connect phones to the same network. In Food Run, create or join a room and scan the hub's setup QR or paste its pairing link.
-3. The organizer chooses a saved restaurant or creates/imports its menu, sets fees, and approves joining members. Participating members mark themselves ready before the shared wheel starts.
-4. The selected person accepts, shares a receiving account, contacts the restaurant, and records ordering/payment. Each member chooses food, confirms the quoted total and recipient, and declares reimbursement; the recipient confirms receipt.
+3. The organizer chooses a saved restaurant or creates/imports its menu, sets fees. Anyone with the link or code joins immediately. New members are ready automatically while ordering is open. Members arriving after selection starts or totals are under review can view the room and join the next order.
+4. Choose the ordering person directly, or use the wheel (joined members can be offline). The selected person shares a receiving account and sends the combined order with an expected arrival. Members submit food once; there is no second total-confirmation step. Record payments and confirm receipt from the room or wallet cards.
 5. After fulfillment and settlement, start the next order in the same room.
 
 **Rooms and memberships do not expire automatically.** Join once, then open the saved room for future meals. Use **Join this order / Skip this order** for daily participation. The organizer can remove members explicitly. Preserve the hub's data and keys and the app's saved data; uninstalling/resetting storage removes that device's saved membership.

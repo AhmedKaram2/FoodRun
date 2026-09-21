@@ -10,7 +10,13 @@ private fun localizedReceiptDescription(room: Room, line: ReceiptLine, language:
     return (listOf(item.localizedName(language)) + listOfNotNull(variant?.localizedName(language)) + options.map { it.localizedName(language) }).joinToString(" · ")
 }
 
-internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: String = "en"): String {
+internal fun restaurantWhatsAppNumber(restaurant: Restaurant): String {
+    val explicit = restaurant.contact.whatsappE164
+    val phone = explicit ?: restaurant.contact.phoneE164?.takeIf { it.matches(Regex("\\+9715[0-9]{8}")) }
+    return phone.orEmpty().filter(Char::isDigit)
+}
+
+internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: String = "en", expectedArrival: String = room.restaurantReference): String {
     val combined = linkedMapOf<Pair<String, String>, Int>()
     receipts.flatMap { it.lines }.forEach { line ->
         val key = localizedReceiptDescription(room, line, language) to line.notes
@@ -25,7 +31,8 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
         } else rawQuantity
         "$shownQuantity $description${if(notes.isNotBlank()) " — $notes" else ""}"
     }
-    return (listOf(room.restaurant.localizedName(language), if(room.deliveryMode) (if(language == "ar") "توصيل: ${room.destination}" else "Delivery: ${room.destination}") else if(language == "ar") "استلام من المطعم" else "Pickup", "") + lines).joinToString("\n")
+    return (listOf(room.restaurant.localizedName(language), if(room.deliveryMode) (if(language == "ar") "توصيل: ${room.destination}" else "Delivery: ${room.destination}") else if(language == "ar") "استلام من المطعم" else "Pickup",
+        (if(language == "ar") "وقت الوصول أو الاستلام المتوقع: " else "Expected delivery / pickup: ") + expectedArrival.ifBlank { if(language == "ar") "يحدده المطعم" else "To be confirmed by restaurant" }, "") + lines).joinToString("\n")
 }
 
 internal class GroupPresentation(private val c: GroupController) {
@@ -44,7 +51,28 @@ internal class GroupPresentation(private val c: GroupController) {
     private fun card(id: String, title: String, detail: String = "", badge: String = "", actions: List<GroupButton> = emptyList()) { cards += GroupCard(id, title, detail, badge, actions.map { it.copy(title = ui(it.title)) }) }
     private fun append(content: GroupFlowContent) { fields += content.fields; cards += content.cards; buttons += content.buttons }
     fun render(): GroupState {
+        c.accessBlock?.takeIf { c.page in listOf(GroupPage.ROOM, GroupPage.SETUP, GroupPage.CONNECT, GroupPage.BLOCK_REQUEST) }?.let { block ->
+            val remaining = maxOf(0, (block.until - c.platform.now() - c.blockClockOffset + 999) / 1000)
+            val countdown = "${remaining / 86400} ${ui("days")} · " + listOf(remaining % 86400 / 3600, remaining % 3600 / 60, remaining % 60).joinToString(":") { it.toString().padStart(2, '0') }
+            val message = listOfNotNull(
+                ui(if(block.removed) "Account removed" else "Room access blocked"),
+                if(block.durationHours > 0) "${ui("Blocked duration")} · ${block.durationHours} ${ui("hours")}" else null,
+                if(block.until > 0) countdown else ui("Until unblocked by admin"), block.reason.takeIf { it.isNotBlank() },
+                if(block.until > 0 && remaining == 0L) ui("The block period ended. Reconnect to continue.") else null,
+            ).joinToString("\n")
+            return GroupState(page = GroupPage.PROFILE, title = ui("Room access"), error = message, rtl = ar, accessBlocked = true,
+                buttons = listOf(GroupButton(ui("Check access again"), GroupAction.REFRESH), GroupButton(ui("Back to my account"), GroupAction.BACK)))
+        }
         when(c.page) {
+            GroupPage.BLOCK_REQUEST -> {
+                title = ui("Request a user block")
+                subtitle = ui("The admin reviews your request before any access is blocked.")
+                val candidates = c.room().activeMembers.filter { it.id != c.me() && !it.guest }
+                fields += GroupField(GroupFieldKey.BLOCK_MEMBER, ui("Member"), c.text(GroupFieldKey.BLOCK_MEMBER).ifBlank { candidates.firstOrNull()?.id.orEmpty() }, choices = candidates.map { GroupChoice(it.id, it.name) })
+                fields += GroupField(GroupFieldKey.BLOCK_HOURS, ui("Requested duration"), c.text(GroupFieldKey.BLOCK_HOURS).ifBlank { "24" }, choices = listOf("1" to "1 hour", "6" to "6 hours", "24" to "1 day", "72" to "3 days", "168" to "7 days", "720" to "30 days").map { GroupChoice(it.first, ui(it.second)) })
+                field(GroupFieldKey.BLOCK_REASON, ui("Reason"), multiline = true)
+                button("Send block request", GroupAction.REQUEST_BLOCK, primary = true, enabled = candidates.isNotEmpty() && c.text(GroupFieldKey.BLOCK_REASON).trim().length in 5..300)
+            }
             GroupPage.HOME -> home()
             GroupPage.PROFILE -> profile()
             GroupPage.PEOPLE -> people()
@@ -77,17 +105,26 @@ internal class GroupPresentation(private val c: GroupController) {
                 RoomPhase.COLLECTING, RoomPhase.REVIEW -> 4
                 RoomPhase.PLACED, RoomPhase.FULFILLED, RoomPhase.ARCHIVED -> 5
                 else -> -1
-            }, if(c.page == GroupPage.ROOM && room != null && c.session != null) c.roomInviteLink(c.session!!.hub, room.code) else "", ar)
+            }, if(c.page == GroupPage.ROOM && room != null && c.session != null) c.roomInviteLink(c.session!!.hub, room.code) else "", ar,
+            inviteSummary = if (c.page == GroupPage.ROOM && room != null) roomInvitation(room, "", language).lines().drop(1).take(2).joinToString("\n") else "")
     }
     private fun home() {
         title = tr("Food Run", "فود رن"); subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
+        if (c.library.home == null) {
+            button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
+            button(ui("Register / sign in"), GroupAction.OPEN_PROFILE)
+            button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar)
+            button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
+            card("sign-in", ui("Use your existing web account"), ui("Sign in or register with Google to open your rooms. Guest mode is unavailable."))
+            return
+        }
         button(tr("Create a room", "إنشاء غرفة"), GroupAction.CREATE, primary = true); button(tr("Join a room", "الانضمام إلى غرفة"), GroupAction.JOIN)
         button(if(c.library.home == null) tr("Register / sign in", "تسجيل أو دخول") else tr("My profile", "ملفي الشخصي"), GroupAction.OPEN_PROFILE); button(tr("Enable notifications", "تفعيل الإشعارات"), GroupAction.ENABLE_ALERTS)
         button(tr("Quick Spin", "اختيار سريع"), GroupAction.QUICK_SPIN); button(tr("Restaurant library", "المطاعم والقوائم"), GroupAction.OPEN_LIBRARY)
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         card("about", tr("Your table, always here", "مجموعتك دائماً هنا"), tr("Join a room once. Return for tomorrow's order. Downloaded receipts stay with you offline.", "انضم مرة واحدة وعد للطلبات القادمة. تبقى الإيصالات المحفوظة متاحة دون إنترنت."))
         c.library.home?.invitations?.forEach { invite -> card("invitation:${invite.id}", "Join ${invite.roomName}", "${invite.invitedBy} invited you to order #${invite.orderNumber}", "Invitation", listOf(GroupButton(ui("Join"), GroupAction.ACCEPT_INVITE, invite.id, primary = true))) }
-        c.library.sessions.forEach { s ->
+        c.library.sessions.sortedByDescending { c.library.snapshots[it.roomId]?.room?.createdAt ?: 0L }.forEach { s ->
             val snapshot = c.library.snapshots[s.roomId]; val room = snapshot?.room
             val winner = room?.spin?.takeIf { room.phase !in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING) }?.winnerId
             val person = room?.members?.singleOrNull { it.id == (room.payerId ?: winner) }
@@ -104,6 +141,7 @@ internal class GroupPresentation(private val c: GroupController) {
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         if(c.library.home == null) {
             field(GroupFieldKey.EMAIL, tr("Email", "البريد الإلكتروني")); field(GroupFieldKey.PASSWORD, tr("Password", "كلمة المرور"))
+            button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
             button(tr("Sign in", "تسجيل الدخول"), GroupAction.SIGN_IN, primary = true); button(tr("Reset password", "إعادة تعيين كلمة المرور"), GroupAction.RESET_PASSWORD)
         }
         field(GroupFieldKey.NAME, tr("Profile name", "الاسم في الملف الشخصي")); field(GroupFieldKey.PROFILE_PHONE, tr("Phone · with country code", "رقم الهاتف الإماراتي"))
@@ -112,7 +150,7 @@ internal class GroupPresentation(private val c: GroupController) {
         field(GroupFieldKey.AANI, tr("Receive payments with Aani", "استلام الدفعات عبر آني"), toggle = true)
         field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder · optional", "صاحب الحساب · اختياري"))
         if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name · optional", "اسم البنك · اختياري"))
-        field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) tr("Aani phone number", "رقم الهاتف المسجل في آني") else tr("IBAN / account number · optional", "رقم آيبان أو الحساب · اختياري"))
+        field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("UAE IBAN · optional"))
         if(c.library.home == null) button(tr("Create account", "إنشاء حساب"), GroupAction.REGISTER)
         else {
             button(tr("Save profile", "حفظ الملف الشخصي"), GroupAction.SAVE_PROFILE, primary = true)
@@ -158,7 +196,7 @@ internal class GroupPresentation(private val c: GroupController) {
         subtitle = "Your membership stays saved for future meals."
         if (!c.nextOrder) field(GroupFieldKey.NAME, tr("Your name", "اسمك"))
         if(c.joinMode && !c.nextOrder) {
-            field(GroupFieldKey.ROOM_CODE, tr("Six-digit room code", "رمز الغرفة من ستة أرقام")); field(GroupFieldKey.GUEST, "Watch only — no food or payment", toggle = true)
+            field(GroupFieldKey.ROOM_CODE, tr("Six-digit room code", "رمز الغرفة من ستة أرقام"))
             button("Request to join", GroupAction.JOIN_ROOM, primary = true); return
         }
         if (!c.nextOrder) field(GroupFieldKey.ROOM_NAME, tr("Room name", "اسم الغرفة"))
@@ -286,12 +324,11 @@ internal class GroupPresentation(private val c: GroupController) {
         val me = r.members.singleOrNull { it.id == c.me() } ?: return
         val owner = c.me() == r.ownerId; val payer = c.me() == r.payerId
         if(!me.approved) {
-            val detail = when {
-                r.phase !in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING) -> "This meal is already in progress. Your join request stays saved for organizer approval when the next order opens."
-                r.phase == RoomPhase.COLLECTING && !me.guest && !me.latePayerApproved -> "The selected payer and room organizer must approve your late food order."
-                else -> "The room organizer will approve your join request."
-            }
-            card("pending", tr("Waiting for approval", "بانتظار الموافقة"), detail); button(tr("Refresh", "تحديث"), GroupAction.REFRESH); return
+            card("sync-membership", ui("Reconnect to update room access"), ui("Refresh the room. If access is still unavailable, update the room server."))
+            button(tr("Refresh", "تحديث"), GroupAction.REFRESH); return
+        }
+        if(!me.guest && !me.participating && r.phase != RoomPhase.LOBBY) {
+            card("viewing-order", ui("You’re in the room"), ui("You’re viewing this order. You can join when the next order opens."))
         }
         button("Invite people", GroupAction.SHARE_ROOM); if(owner && r.phase == RoomPhase.LOBBY && c.sameHub(c.library.identityHub, c.session?.hub)) button(tr("Invite registered people", "دعوة مستخدمين مسجلين"), GroupAction.OPEN_PEOPLE); button("Receipts", GroupAction.OPEN_RECEIPTS); button("Past orders", GroupAction.OPEN_HISTORY)
         button(tr("Save restaurant", "حفظ المطعم"), GroupAction.SAVE_ROOM_RESTAURANT)
@@ -299,12 +336,11 @@ internal class GroupPresentation(private val c: GroupController) {
         if (!c.online) card("offline", "Your saved order is available", "Reconnect to the same local hub to make changes. Cached payment status may have changed.", actions = listOf(GroupButton("Reconnect", GroupAction.REFRESH)))
         r.members.filterNot { it.removed }.forEach { m ->
             val actions = mutableListOf<GroupButton>()
-            if(owner && !m.approved && r.phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING) && (r.phase == RoomPhase.LOBBY || m.guest || payer || m.latePayerApproved)) actions += GroupButton(ui("Approve join"), GroupAction.APPROVE, m.id)
-            if(payer && !m.approved && !m.guest && !m.latePayerApproved && r.phase == RoomPhase.COLLECTING) actions += GroupButton("Accept this late orderer", GroupAction.APPROVE_LATE_JOIN, m.id)
             if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY) { actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true); if(m.approved && !m.guest) actions += GroupButton(ui("Make organizer"), GroupAction.HANDOVER, m.id) }
-            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.approved) "Pending" else if(!m.guest && !m.participating) "Skipping this order" else if(m.eligible) "Joined · Can be selected" else "Joined", actions)
+            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.guest && !m.participating) "Skipping this order" else if(m.eligible) "Joined · Can be selected" else "Joined", actions)
         }
         if(owner) r.expectedNames.filter { name -> r.orderingMembers.none { it.name.equals(name.trim(), true) } }.forEach { card("invite:$it", it, "Expected · not participating today", actions = if(r.phase == RoomPhase.LOBBY) listOf(GroupButton(ui("Remove invitation"), GroupAction.REMOVE, "invite:$it")) else emptyList()) }
+        if(owner && r.activeMembers.any { it.id != c.me() && !it.guest }) button("Request a user block", GroupAction.OPEN_BLOCK_REQUEST)
         field(GroupFieldKey.REASON, "Reason for removal, reroll, reopening or adjustment")
         when(r.phase) {
             RoomPhase.LOBBY -> {
@@ -326,9 +362,15 @@ internal class GroupPresentation(private val c: GroupController) {
                     if(owner) button("Finish poll & use leading restaurant", GroupAction.FINALIZE_RESTAURANT, primary = true, enabled = r.restaurantVotes.isNotEmpty())
                 } else if(!me.guest && me.participating) foodEditor(r, primary = false)
                 if(owner) {
-                    val blocker = runCatching { RoomRules.spinReady(r) }.exceptionOrNull()?.message
-                    button("Spin together", GroupAction.PREPARE_SPIN, primary = !r.restaurantPollOpen, enabled = blocker == null)
-                    if(blocker != null) card("spin-next-step", ui("Before spinning"), blocker)
+                    fields += GroupField(GroupFieldKey.PAYER_MODE, ui("Choose the ordering person"), c.text(GroupFieldKey.PAYER_MODE).ifBlank { "wheel" }, choices = listOf(GroupChoice("wheel", ui("Use the wheel")), GroupChoice("direct", ui("Choose person directly"))))
+                    if (c.text(GroupFieldKey.PAYER_MODE) == "direct") {
+                        fields += GroupField(GroupFieldKey.PAYER_CHOICE, ui("Ordering person"), c.text(GroupFieldKey.PAYER_CHOICE).takeIf { choice -> r.orderingMembers.any { it.id == choice } } ?: r.orderingMembers.firstOrNull()?.id.orEmpty(), choices = r.orderingMembers.map { GroupChoice(it.id, it.name) })
+                        button("Choose person directly", GroupAction.SELECT_PAYER, primary = true, enabled = !r.restaurantPollOpen && r.orderingMembers.isNotEmpty())
+                    } else {
+                        val blocker = runCatching { RoomRules.spinReady(r) }.exceptionOrNull()?.message
+                        button("Spin together", GroupAction.PREPARE_SPIN, primary = !r.restaurantPollOpen, enabled = blocker == null)
+                        if(blocker != null) card("spin-next-step", ui("Before spinning"), blocker)
+                    }
                     button("Cancel today's order", GroupAction.CANCEL)
                 } else if(!r.restaurantPollOpen && me.participating) card("ready-next-step", ui("You are joined"), ui("Add or change your sandwiches while waiting for the organizer to start the shared spin."))
             }
@@ -345,7 +387,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 val needsAccount = progress?.accountShared?.not() ?: (r.account == null && !me.guest && me.participating)
                 val awaitingFood = r.orderingMembers.filter { m -> r.carts.none { it.memberId == m.id && it.submitted } }
                 if(payer) button(if(needsAccount) "Choose receiving account" else tr("Change receiving account", "تغيير حساب الاستلام"), GroupAction.OPEN_ACCOUNT, primary = needsAccount)
-                r.account?.let { card("account-shared", ui("Receiving account shared"), "${it.holder} · ${it.bank}\n•••• ${it.identifier.takeLast(4)}\nEveryone will confirm this recipient with their total.") }
+                accountCard()
                 if(!me.guest && me.participating) foodEditor(r, primary = true)
                 if(payer) c.reply!!.receipts.forEach { receipt ->
                     card("collected-order:${receipt.memberId}", receipt.name,
@@ -361,30 +403,32 @@ internal class GroupPresentation(private val c: GroupController) {
                     awaitingFood.isNotEmpty() -> "Waiting for food orders from ${awaitingFood.joinToString { it.name }}. Each person must submit their food or choose No food this time."
                     needsAccount -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to share a receiving account."
                     (owner || payer) && !progress?.reviewBlocker.isNullOrBlank() -> requireNotNull(progress).reviewBlocker
-                    owner || payer -> "Everyone has submitted. Review the totals so each person can confirm their share and recipient."
-                    else -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to review everyone's totals. Then you can confirm your share and recipient."
+                    owner || payer -> "Everyone has submitted. Send the order to the restaurant and record the expected arrival."
+                    else -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to send the order to the restaurant."
                 }
                 card("order-next-step", tr("Next step", "الخطوة التالية"), nextStep)
-                if(owner || payer) button(tr("Review everyone's totals", "مراجعة إجمالي طلبات الجميع"), GroupAction.REVIEW, primary = true, enabled = progress?.canReview ?: (awaitingFood.isEmpty() && !needsAccount))
+                if(payer) append(GroupSettlementPresentation(c).review())
                 if(owner || payer) { feeFields(); button("Update fees and reopen", GroupAction.SET_FEES); button("Reopen ordering", GroupAction.REOPEN) }
                 if(owner) button("Cancel today's order", GroupAction.CANCEL)
             }
             RoomPhase.REVIEW -> {
-                receiptCards(c.reply!!.receipts); accountCard()
-                append(GroupSettlementPresentation(c).review())
+                accountCard(); append(GroupSettlementPresentation(c).review())
+                button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
-                receiptCards(c.reply!!.receipts); accountCard()
-                append(GroupSettlementPresentation(c).settlement())
+                accountCard(); append(GroupSettlementPresentation(c).settlement())
+                button("Order details", GroupAction.OPEN_RECEIPTS)
                 transferCards()
             }
             RoomPhase.ARCHIVED, RoomPhase.CANCELLED -> { card("complete", "Your room stays open", "This order is ${if(r.phase == RoomPhase.CANCELLED) "cancelled" else "complete"}. Everyone keeps their membership for the next meal."); if(owner) button("Start a new order", GroupAction.NEXT_ORDER, primary = true) }
         }
         val contact = r.restaurant.contact.phoneE164 ?: r.restaurant.contact.whatsappE164 ?: ""
-        if(payer) card("contact", r.restaurant.localizedName(language), "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = listOf(
+        card("contact", r.restaurant.localizedName(language), "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = (if(payer) listOf(
             GroupButton(tr("Share order via WhatsApp", "مشاركة الطلب عبر واتساب"), GroupAction.SHARE_ORDER_WHATSAPP, primary = r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)),
             GroupButton(tr("Copy restaurant-ready list", "نسخ قائمة الطلب للمطعم"), GroupAction.SHARE_RESTAURANT_ORDER),
-            GroupButton(tr("Call restaurant", "الاتصال بالمطعم"), GroupAction.CALL_RESTAURANT),
+        ) else emptyList()) + listOf(
+            GroupButton(ui("Copy phone number"), GroupAction.COPY_RESTAURANT_PHONE, enabled = contact.isNotBlank()),
+            GroupButton(tr("Call restaurant", "الاتصال بالمطعم"), GroupAction.CALL_RESTAURANT, enabled = contact.isNotBlank()),
         ))
     }
     private fun foodEditor(r: Room, primary: Boolean) {
@@ -470,7 +514,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 GroupButton(ui("Delete saved account"), GroupAction.DELETE_ACCOUNT, a.id, destructive = true),
             ))
         }
-        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) "Aani phone number · with country code" else "IBAN / account identifier")
+        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("UAE IBAN"))
         button("Save on this device", GroupAction.SAVE_ACCOUNT)
         if(c.reply?.room?.account?.let(c::accountMatchesDraft) == true) {
             subtitle = "This account is already shared with this order. Continue to ${if(c.reply?.room?.phase == RoomPhase.REVIEW) "review the totals" else "submit your food"}."
@@ -540,14 +584,43 @@ internal class GroupPresentation(private val c: GroupController) {
             entries.forEach { (row, receipt, person, _) ->
                 val pending = row.room.transfers.firstOrNull { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
                 val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: ""
-                val action = if(pending != null) {
-                    if(receive) tr("Review and approve receipt", "مراجعة وتأكيد الاستلام") else tr("View pending payment", "عرض الدفعة المعلقة")
-                } else if(receive) tr("Open payment", "فتح الدفع") else tr("Pay now / mark paid", "ادفع الآن / سجل الدفع")
-                val direction = if(receive) tr("To receive", "للاستلام") else tr("To pay", "للدفع")
-                card("${prefix}wallet:${row.room.id}:${receipt.memberId}", person,
-                    listOf(row.room.name, direction, status).filter { it.isNotBlank() }.joinToString(" · "), Money.format(kotlin.math.abs(receipt.balance), receipt.currency),
-                    listOf(GroupButton(action, GroupAction.RESUME, row.room.id)))
+                val value = "${row.room.id}:${receipt.memberId}"
+                val target = "${row.room.id}|${receipt.memberId}"
+                val payer = row.room.payerId == row.session.memberId
+                val actions = mutableListOf<GroupButton>()
+                if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
+                    actions += GroupButton(ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
+                    actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)
+                } else if (pending == null && row.room.restaurantPaid) {
+                    if (payer && receipt.balance < 0) actions += GroupButton(ui("Mark refund sent"), GroupAction.WALLET_REFUND, target, primary = true)
+                    if (!payer && receipt.balance > 0) actions += GroupButton(ui("Mark paid") + " · " + Money.format(receipt.balance, receipt.currency), GroupAction.WALLET_PAY, target, primary = true)
+                }
+                if (row.room.account != null) actions += GroupButton(ui("Copy payment details"), GroupAction.WALLET_COPY, target)
+                actions += GroupButton(ui("Order and payment details"), GroupAction.RESUME, row.room.id)
+                val account = row.room.account?.let { "${it.holder} · ${it.bank}\n${it.identifier}" }.orEmpty()
+                card("${prefix}wallet:$value", person,
+                    listOf("${row.room.name} · #${row.room.orderNumber} · ${row.room.restaurant.localizedName(language)}",
+                        receiptSummary(receipt), "${ui("Order")} ${receipt.totalText} · ${ui("Paid")} ${Money.format(receipt.paid, receipt.currency)}",
+                        account, status).filter { it.isNotBlank() }.joinToString("\n"), Money.format(kotlin.math.abs(receipt.balance), receipt.currency), actions)
+
             }
+        }
+        card("${prefix}payment-history", ui("Payment history"), ui("Order totals and confirmed payments, newest first."))
+        data class PaymentRecord(val roomId: String, val roomName: String, val number: Long, val restaurant: String, val at: Long, val receipt: Receipt)
+        val records = rows.flatMap { row ->
+            val past = row.reply.history.mapNotNull { order -> order.receipts.firstOrNull { it.memberId == row.session.memberId }?.let {
+                PaymentRecord(row.room.id, row.room.name, order.number, order.restaurantName, order.completedAt, it)
+            } }
+            val current = row.receipt?.takeIf { row.room.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED, RoomPhase.ARCHIVED) }?.let {
+                PaymentRecord(row.room.id, row.room.name, row.room.orderNumber, row.room.restaurant.localizedName(language), row.room.updatedAt, it)
+            }
+            listOfNotNull(current) + past
+        }.distinctBy { "${it.roomId}:${it.number}" }.sortedByDescending { it.at }
+        if(records.isEmpty()) card("${prefix}payment-history-empty", ui("No payment history yet"))
+        records.take(if(c.page == GroupPage.HOME) 3 else 30).forEach { record ->
+            card("${prefix}payment-history:${record.roomId}:${record.number}", "${record.restaurant} · #${record.number}",
+                "${record.roomName} · ${timeLabel(record.at)}\n${ui("Order")} ${record.receipt.totalText} · ${ui("Paid")} ${Money.format(record.receipt.paid, record.receipt.currency)}",
+                actions = listOf(GroupButton(ui("Order and payment details"), GroupAction.RESUME, record.roomId)))
         }
         val uniquePast = c.previousOrderChoices().size
         card("${prefix}orders-summary", tr("Orders dashboard", "لوحة الطلبات"),
@@ -564,7 +637,7 @@ internal class GroupPresentation(private val c: GroupController) {
             val account = c.reply?.room?.account
             val recipient = if (reviewingOwn && account != null) "\nRecipient: ${account.holder} · ${account.bank}\n${account.identifier} · account version ${account.version}" else ""
             val actions = mutableListOf(GroupButton(ui("Share receipt"), GroupAction.SHARE_RECEIPT, prefix + receipt.memberId))
-            if (reviewingOwn) actions += GroupSettlementPresentation.quoteConfirmationAction(c.room(), c.me(), language)
+
             card("receipt:$prefix${receipt.memberId}", "${receipt.name} · ${receipt.totalText}", receiptDetail(receipt, prefix.isEmpty()) + recipient, "Revision ${receipt.revision}", actions)
         }
     }
@@ -581,10 +654,10 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }
-        return restaurantReadyText(r, c.reply!!.receipts, language)
+        return restaurantReadyText(r, c.reply!!.receipts, language, c.text(GroupFieldKey.REFERENCE).ifBlank { r.restaurantReference })
     }
     private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
-        account?.let { a -> card(id, "$label ${a.holder}", "${a.bank}\n${a.identifier}\n${a.currency} · account version ${a.version}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }
+        account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }
     }
     private fun transferCards() { val r = c.reply?.room ?: return; r.transfers.forEach { t ->
         val actions = if(t.status.name == "DECLARED") when { t.refund && t.memberId == c.me() -> listOf(GroupButton(ui("Confirm refund received"), GroupAction.CONFIRM_REFUND, t.id), GroupButton(ui("Reject refund claim"), GroupAction.REJECT_TRANSFER, t.id)); !t.refund && r.payerId == c.me() -> listOf(GroupButton(tr("Approve · money received", "موافقة · استلمت المبلغ"), GroupAction.CONFIRM_TRANSFER, t.id), GroupButton("Reject claim", GroupAction.REJECT_TRANSFER, t.id)); else -> emptyList() } else emptyList()
@@ -597,7 +670,7 @@ internal class GroupPresentation(private val c: GroupController) {
         if(delivery && c.page != GroupPage.SETUP && c.reply?.room?.fees?.automaticDelivery == false) card("delivery-update", tr("Saved delivery fees", "رسوم التوصيل المحفوظة"), tr("Update fees to apply automatic delivery and request new total confirmations.", "حدّث الرسوم لتطبيق التوصيل التلقائي وإعادة تأكيد الإجمالي."))
         field(GroupFieldKey.SERVICE_FEE, tr("Service fee", "رسوم الخدمة")); field(GroupFieldKey.DISCOUNT, tr("Shared discount", "الخصم المشترك"))
     }
-    private fun stage(phase: RoomPhase): String = when(phase) { RoomPhase.LOBBY -> tr("Gathering", "تجمع الأعضاء"); RoomPhase.PREPARING_SPIN -> tr("Getting ready", "جارٍ الاستعداد"); RoomPhase.SPINNING -> ui("Spinning"); RoomPhase.ACCEPTING -> ui("Accepting duty"); RoomPhase.COLLECTING -> ui("Choose food"); RoomPhase.REVIEW -> tr("Confirm totals", "تأكيد الإجمالي"); RoomPhase.PLACED -> tr("Order placed", "تم إرسال الطلب"); RoomPhase.FULFILLED -> tr("Food arrived", "وصل الطعام"); RoomPhase.ARCHIVED -> tr("Complete", "مكتمل"); RoomPhase.CANCELLED -> tr("Cancelled", "ملغى") }
+    private fun stage(phase: RoomPhase): String = when(phase) { RoomPhase.LOBBY -> tr("Gathering", "تجمع الأعضاء"); RoomPhase.PREPARING_SPIN -> tr("Getting ready", "جارٍ الاستعداد"); RoomPhase.SPINNING -> ui("Spinning"); RoomPhase.ACCEPTING -> ui("Accepting duty"); RoomPhase.COLLECTING -> ui("Choose food"); RoomPhase.REVIEW -> ui("Ready for the restaurant"); RoomPhase.PLACED -> tr("Order placed", "تم إرسال الطلب"); RoomPhase.FULFILLED -> tr("Food arrived", "وصل الطعام"); RoomPhase.ARCHIVED -> tr("Complete", "مكتمل"); RoomPhase.CANCELLED -> tr("Cancelled", "ملغى") }
     private fun timeLabel(millis: Long): String = PickupDateFormatterForGroups.format(millis)
 }
 

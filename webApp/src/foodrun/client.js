@@ -25,7 +25,7 @@ export async function request(hub, command, signal) {
   const reply = await response.json().catch(() => null);
   if (!response.ok || !reply?.ok) {
     const definitive = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status) || response.ok && reply?.code && reply.code !== 'HUB_UNAVAILABLE';
-    throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive });
+    throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive, accessBlock: reply?.accessBlock, serverTime: reply?.serverTime });
   }
   return normalizeReply(reply);
 }
@@ -39,7 +39,7 @@ export function watch(hub, payload, onReply, onStatus) {
     socket.onmessage = event => {
       try {
         const reply = JSON.parse(event.data);
-        if (!reply.ok) { onStatus(false, reply.error); stopped = true; socket.close(); return; }
+        if (!reply.ok) { onStatus(false, reply.error, reply); stopped = true; socket.close(); return; }
         retry = 1000; onStatus(true, ''); onReply(normalizeReply(reply));
       } catch { onStatus(false, 'The hub returned an unreadable update.'); }
     };

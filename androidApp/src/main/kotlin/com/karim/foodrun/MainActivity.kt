@@ -12,6 +12,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         groups.platform.attach(this)
+        groups.platform.handleGoogleCallback(intent?.data)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
@@ -22,7 +23,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    override fun onStart() { super.onStart(); groups.controller.foreground() }
-    override fun onStop() { groups.controller.background(); super.onStop() }
+    override fun onStart() { super.onStart(); groups.controller.foreground(); groups.platform.googleForegrounded() }
+    override fun onStop() { groups.platform.googleBackgrounded(); groups.controller.background(); super.onStop() }
+    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); setIntent(intent); groups.platform.handleGoogleCallback(intent.data) }
     override fun onDestroy() { groups.platform.detach(this); super.onDestroy() }
 }

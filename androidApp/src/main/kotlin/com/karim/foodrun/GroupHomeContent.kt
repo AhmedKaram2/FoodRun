@@ -31,6 +31,11 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
             Text(FoodRunText.brand, style = FoodType.Brand, color = FoodColors.Ink, modifier = Modifier.weight(1f))
             GroupLanguagePicker(state, controller)
         }
+        state.cards.firstOrNull { it.id == "sign-in" }?.let { signIn ->
+            GroupCardContent(signIn, state.busy, controller)
+            state.buttons.filter { it.action != GroupAction.SET_LANGUAGE }.forEach { GroupActionButton(it, state.busy, controller) }
+            return@Column
+        }
         Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
             Text(GroupText.localized(GroupText.homeTitle, state.rtl), style = FoodType.Hero, color = FoodColors.Ink, modifier = Modifier.semantics { heading() })
             Text(GroupText.localized(GroupText.homeSubtitle, state.rtl), style = FoodType.Body, color = FoodColors.Muted)

@@ -7,7 +7,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
         require(c.expectedOrderNumber > 0) { "Update Food Run before changing this order, then refresh the room and try again." }
         require(c.expectedOrderNumber == r.orderNumber) { "This request belongs to an earlier order. Refresh the room and review today's order before trying again." }
         val actor = RoomRules.member(r, actorId)
-        require(actor.approved) { "Wait for organizer approval." }
+        require(actor.approved) { "Refresh the room to sync membership." }
         fun owner() { require(actorId == r.ownerId) { "Only the organizer can do this." } }
         fun payer() { require(actorId == r.payerId) { "Only the selected payer can do this." } }
         fun orderer() { require(!actor.guest && actor.participating) { "View-only guests cannot order or pay." } }
@@ -33,19 +33,12 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     restaurantPollOpen = options.size > 1,
                 ).also(RoomRules::validateRoom)
             }
-            CommandKind.APPROVE_LATE_JOIN -> {
-                payer(); phase(RoomPhase.COLLECTING); fresh()
-                val target = RoomRules.member(r, c.memberId)
-                require(!target.approved && !target.guest) { "This member does not need late-order approval." }
-                r.copy(members = r.members.map { if (it.id == target.id) it.copy(latePayerApproved = true) else it })
-            }
-            CommandKind.APPROVE -> {
-                owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh()
-                val target = RoomRules.member(r, c.memberId)
-                require(!target.approved)
-                require(r.activeMembers.count { it.guest == target.guest } < if (target.guest) 10 else 30) { "Room capacity reached." }
-                require(r.phase == RoomPhase.LOBBY || target.guest || actorId == r.payerId || target.latePayerApproved) { "The payer must approve this late join before the organizer admits them." }
-                r.copy(members = r.members.map { if (it.id == target.id) it.copy(approved = true, ready = !it.guest && it.participating, lastSeen = now) else it }, quoteRevision = r.quoteRevision + if (target.guest) 0 else 1)
+            // Retain old command names so an already-open client can finish a queued request.
+            CommandKind.APPROVE_LATE_JOIN, CommandKind.APPROVE -> {
+                if (c.kind == CommandKind.APPROVE) owner() else payer()
+                fresh()
+                require(RoomRules.member(r, c.memberId).approved) { "Refresh the room to sync membership." }
+                r
             }
             CommandKind.REMOVE -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); reason()
@@ -84,23 +77,28 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     quoteRevision = r.quoteRevision + 1,
                 )
             }
+            CommandKind.SELECT_PAYER -> {
+                owner(); phase(RoomPhase.LOBBY); fresh()
+                require(!r.restaurantPollOpen) { "Finish the restaurant poll before choosing the orderer." }
+                val selected = r.orderingMembers.singleOrNull { it.id == c.memberId }
+                    ?: error("Choose someone who has joined this order.")
+                r.copy(phase = RoomPhase.COLLECTING, payerId = selected.id, spin = null, preparationId = "", preparedIds = emptyList())
+            }
             CommandKind.PREPARE_SPIN -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); RoomRules.spinReady(r)
-                r.copy(phase = RoomPhase.PREPARING_SPIN, preparationId = id(), preparedIds = emptyList())
+                val candidates = r.orderingMembers.filter { it.eligible }.map { it.id }
+                val spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000)
+                r.copy(phase = RoomPhase.SPINNING, preparationId = id(), preparedIds = emptyList(), spin = spin)
             }
             CommandKind.ABORT_PREPARE -> { owner(); phase(RoomPhase.PREPARING_SPIN); fresh(); reason(); r.copy(phase = RoomPhase.LOBBY, preparationId = "", preparedIds = emptyList()) }
             CommandKind.ACK_SPIN -> {
-                orderer(); phase(RoomPhase.PREPARING_SPIN)
+                orderer(); phase(RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
                 require(c.text == r.preparationId) { "Spin preparation has changed." }
-                val prepared = (r.preparedIds + actorId).distinct()
-                val members = r.members.map { if(it.id == actorId) it.copy(lastSeen = now) else it }
-                if (r.orderingMembers.all { it.id in prepared }) {
-                    require(members.filter { member -> r.orderingMembers.any { it.id == member.id } }.all { now - it.lastSeen in 0 until 15_000 }) { "A required member disconnected before the spin. Wait for reconnection or restart preparation." }
+                if (r.spin != null) r else {
                     val candidates = r.orderingMembers.filter { it.eligible }.map { it.id }
                     require(candidates.isNotEmpty())
-                    val spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000)
-                    r.copy(phase = RoomPhase.SPINNING, spin = spin, preparedIds = prepared, members = members)
-                } else r.copy(preparedIds = prepared, members = members)
+                    r.copy(phase = RoomPhase.SPINNING, spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000))
+                }
             }
             CommandKind.ACCEPT_DUTY -> {
                 phase(RoomPhase.ACCEPTING); require(r.spin?.winnerId == actorId) { "The selected person must accept." }
@@ -192,7 +190,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 else r.copy(fees = fees, phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PLACE -> {
-                payer(); phase(RoomPhase.REVIEW); fresh(); RoomRules.requireConfirmed(r)
+                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); RoomRules.requirePlaceable(r)
                 require(c.text.isNotBlank() && c.text.length <= 500) { "Enter the restaurant confirmation/reference and ETA." }
                 r.copy(phase = RoomPhase.PLACED, restaurantReference = c.text)
             }

@@ -16,6 +16,7 @@ import io.ktor.websocket.*
 import io.ktor.utils.io.*
 import kotlinx.io.readByteArray
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.net.Inet4Address
@@ -75,6 +76,7 @@ fun main() {
 }
 
 fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
+    val nativeSignIn = NativeSignInBroker(service::validateFirebaseSignIn)
     val origins = (System.getenv("FOODRUN_WEB_ORIGINS") ?: "http://localhost:5173,http://127.0.0.1:5173").split(',').filter { it.isNotBlank() }
     install(CORS) {
         origins.forEach { value -> val uri = java.net.URI(value.trim()); allowHost(uri.authority, schemes = listOf(uri.scheme)) }
@@ -145,15 +147,53 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         }
         post("/admin/user") {
             try {
-                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
-                serviceAdmin.mutateUser(orderJson.decodeFromString(call.receiveText())); call.respondText("{\"ok\":true}", ContentType.Application.Json)
+                val serviceAdmin = requireNotNull(admin); val actor = serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                serviceAdmin.mutateUser(orderJson.decodeFromString(call.receiveText()), actor.userId); call.respondText("{\"ok\":true}", ContentType.Application.Json)
             } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
         }
         post("/admin/room") {
             try {
-                val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
-                serviceAdmin.mutateRoom(orderJson.decodeFromString(call.receiveText())); call.respondText("{\"ok\":true}", ContentType.Application.Json)
+                val serviceAdmin = requireNotNull(admin); val actor = serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                serviceAdmin.mutateRoom(orderJson.decodeFromString(call.receiveText()), actor.userId); call.respondText("{\"ok\":true}", ContentType.Application.Json)
             } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/admin/block-request") {
+            try {
+                val serviceAdmin = requireNotNull(admin); val actor = serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                serviceAdmin.reviewBlockRequest(orderJson.decodeFromString(call.receiveText()), actor.userId)
+                call.respondText("{\"ok\":true}", ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/admin/cleanup/{action}") {
+            try {
+                val serviceAdmin = requireNotNull(admin); val actor = serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
+                val request = orderJson.decodeFromString<AdminCleanupRequest>(call.receiveText())
+                val body = when(call.parameters["action"]) {
+                    "preview" -> orderJson.encodeToString(serviceAdmin.cleanupPreview(request))
+                    "delete" -> orderJson.encodeToString(serviceAdmin.cleanup(request, actor.userId))
+                    else -> error("Unsupported cleanup action.")
+                }
+                call.respondText(body, ContentType.Application.Json)
+            } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
+        }
+        post("/auth/native/{action}") {
+            call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+            if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            try {
+                val bytes = call.receiveChannel().readRemaining(20001).readByteArray()
+                require(bytes.size <= 20000)
+                val input = orderJson.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+                fun value(name: String) = input[name]?.jsonPrimitive?.content.orEmpty()
+                val result = withContext(Dispatchers.IO) {
+                    when (call.parameters["action"]) {
+                        "complete" -> buildJsonObject { put("code", nativeSignIn.complete(value("challenge"), value("firebaseToken"))) }
+                        "exchange" -> buildJsonObject { put("firebaseToken", nativeSignIn.exchange(value("code"), value("verifier"))) }
+                        else -> error("Unknown sign-in action.")
+                    }
+                }
+                call.respondText(result.toString(), ContentType.Application.Json)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.respondText("{\"error\":\"Sign-in could not be completed. Start again in the app.\"}", ContentType.Application.Json, HttpStatusCode.BadRequest) }
         }
         post("/command") {
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }

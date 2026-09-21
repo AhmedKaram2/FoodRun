@@ -146,16 +146,18 @@ class RoomServiceTest {
         val revision = f.state().room!!.revision
         f.service.tick(); assertEquals(revision, f.state().room!!.revision)
     }
-    @Test fun allOrderingMembersMustAcknowledgeBeforeRandomSelection(): Unit = RoomFixture().use { f ->
-        val member = f.join(); f.approve(member)
-        f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }; f.send(member, CommandKind.READY) { it.copy(flag = true) }
-        val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
-        f.send(f.owner, CommandKind.ACK_SPIN) { it.copy(text = preparation) }
-        f.now += 60_000; f.service.tick()
-        assertNull(f.state().room!!.spin); assertEquals(RoomPhase.PREPARING_SPIN, f.state().room!!.phase)
-        f.send(f.owner, CommandKind.ABORT_PREPARE) { it.copy(text = "Member disconnected") }
-        assertEquals(RoomPhase.LOBBY, f.state().room!!.phase)
-        assertFalse(f.service.execute(f.command(member, CommandKind.ACK_SPIN).copy(text = preparation)).ok)
+    @Test fun offlineMembersDoNotBlockSelectionAndSeeTheSameWinnerWhenTheyReturn(): Unit = RoomFixture().use { f ->
+        val member = f.join()
+        f.now += 60_000
+        val started = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!
+        assertEquals(RoomPhase.SPINNING, started.phase)
+        val spin = assertNotNull(started.spin)
+        assertEquals(setOf(f.owner.memberId, member.memberId), spin.memberIds.toSet())
+        f.now = spin.endAt + 1
+        f.restart(); f.service.tick()
+        val returned = f.state(member).room!!
+        assertEquals(RoomPhase.ACCEPTING, returned.phase)
+        assertEquals(spin, returned.spin)
     }
     @Test fun skippedPersistentMemberDoesNotBlockTodaysSpin(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member)
@@ -215,13 +217,14 @@ class RoomServiceTest {
         assertEquals(2, room.carts.single { it.memberId == f.owner.memberId }.lines.single().quantity)
         assertEquals(3, room.carts.single { it.memberId == member.memberId }.lines.single().quantity)
     }
-    @Test fun pendingGuestsAndInactiveMembersCannotSeePrivateDataOrAct(): Unit = RoomFixture().use { f ->
+    @Test fun newViewersGuestsAndInactiveMembersCannotSeePrivateDataOrAct(): Unit = RoomFixture().use { f ->
         val member = f.placed(); val pending = f.join("Pending"); val guest = f.join("Guest", guest = true)
         val raw = f.db.room(f.owner.room!!.id)!!
         f.db.save(raw.copy(members = raw.members.map { if (it.id == guest.memberId) it.copy(approved = true) else it }))
         val pendingState = f.state(pending)
         assertTrue(pendingState.receipts.isEmpty()); assertNull(pendingState.room!!.account)
-        assertTrue(pendingState.room!!.carts.isEmpty()); assertEquals("Waiting for organizer approval", pendingState.room!!.restaurant.name)
+        assertTrue(pendingState.room!!.carts.all { it.lines.isEmpty() }); assertEquals(f.restaurant.name, pendingState.room!!.restaurant.name)
+        assertTrue(pendingState.room!!.members.single { it.id == pending.memberId }.approved)
         val guestState = f.state(guest)
         assertTrue(guestState.receipts.isEmpty()); assertNull(guestState.room!!.account)
         assertTrue(guestState.room!!.carts.all { it.lines.isEmpty() }); assertTrue(guestState.room!!.audit.isEmpty())
@@ -247,15 +250,15 @@ class RoomServiceTest {
         assertEquals(1, f.state(member).receipts.size)
         assertEquals(2, f.state().receipts.size)
     }
-    @Test fun quoteChangesRequireEveryMembersConfirmationAgain(): Unit = RoomFixture().use { f ->
+    @Test fun freshPlacementUsesUpdatedTotalsWithoutRequiringAnotherMemberConfirmation(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member); f.start(member)
         f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }; f.cart(f.owner, 45); f.cart(member, 30)
         f.send(f.owner, CommandKind.REVIEW)
         val quote = f.state().room!!.quoteRevision
         f.send(member, CommandKind.CONFIRM_QUOTE) { it.copy(expectedRevision = quote) }
-        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account.copy(identifier = "98765432")) }
+        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account.copy(identifier = "AE770331234567890123457")) }
         assertFalse(f.service.execute(f.command(member, CommandKind.CONFIRM_QUOTE).copy(expectedRevision = quote)).ok)
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PLACE).copy(text = "confirmed")).ok)
+        assertTrue(f.service.execute(f.command(f.owner, CommandKind.PLACE).copy(text = "Expected delivery in 30 minutes")).ok)
     }
     @Test fun deadlinesRejectEditsAndSubmitUntilOrganizerReopens(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member); f.start(member)
@@ -326,16 +329,12 @@ class RoomServiceTest {
         assertFalse(sqlite.contains(f.account.identifier)); assertFalse(sqlite.contains(f.owner.token))
         assertEquals(f.account.identifier, f.state().room!!.account!!.identifier)
     }
-    @Test fun lateJoinNeedsActualPayerConsentAndOrganizerApproval(): Unit = RoomFixture().use { f ->
-        val organizer = f.join(); f.approve(organizer); f.start(organizer)
-        f.send(f.owner, CommandKind.HANDOVER) { it.copy(memberId = organizer.memberId, text = "Organizer duties") }
+    @Test fun lateJoinEntersCollectingWithoutPayerOrOrganizerApproval(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.start(member)
         val late = f.join("Late member")
-        assertFalse(f.service.execute(f.command(organizer, CommandKind.APPROVE).copy(memberId = late.memberId, flag = true)).ok)
-        assertFalse(f.service.execute(f.command(organizer, CommandKind.APPROVE_LATE_JOIN).copy(memberId = late.memberId)).ok)
-        f.send(f.owner, CommandKind.APPROVE_LATE_JOIN) { it.copy(memberId = late.memberId) }
-        assertFalse(f.state(late).room!!.members.single().approved)
-        f.send(organizer, CommandKind.APPROVE) { it.copy(memberId = late.memberId) }
-        assertTrue(f.state(late).room!!.orderingMembers.any { it.id == late.memberId })
+        assertTrue(late.room!!.orderingMembers.any { it.id == late.memberId && it.ready })
+        f.cart(late, 2)
+        assertEquals(2, f.state(late).room!!.carts.single { it.memberId == late.memberId }.lines.single().quantity)
     }
     @Test fun historyPaginationRetainsOlderOrdersWithoutExpiringMembership(): Unit = RoomFixture().use { f ->
         repeat(12) {
@@ -364,21 +363,23 @@ class RoomServiceTest {
         assertEquals(1, f.db.activeRoomCount())
     }
 
-    @Test fun aDisconnectedPreparedMemberPreventsChoosingTheWinnerUntilReconnect(): Unit = RoomFixture().use { f ->
-        val member = f.join(); f.approve(member)
-        f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }; f.send(member, CommandKind.READY) { it.copy(flag = true) }
-        val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
-        f.send(f.owner, CommandKind.ACK_SPIN) { it.copy(text = preparation) }
-        f.now += 20_000
-        assertFalse(f.service.execute(f.command(member, CommandKind.ACK_SPIN).copy(text = preparation)).ok)
-        f.state(f.owner)
-        assertEquals(RoomPhase.SPINNING, f.send(member, CommandKind.ACK_SPIN) { it.copy(text = preparation) }.room!!.phase)
+    @Test fun delayedLegacyAcknowledgementsCannotRerollTheWheel(): Unit = RoomFixture().use { f ->
+        val member = f.join()
+        val started = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!
+        f.now = started.spin!!.endAt + 1; f.service.tick()
+        val reply = f.send(member, CommandKind.ACK_SPIN) { it.copy(text = started.preparationId) }
+        assertEquals(started.spin, reply.room!!.spin)
+        assertEquals(RoomPhase.ACCEPTING, reply.room!!.phase)
     }
     @Test fun thirtyMembersAndTenGuestsCanJoinButOnlyOrderersControlSpinReadiness(): Unit = RoomFixture().use { f ->
         val members = (1..29).map { f.join("Member $it").also(f::approve) }
         (1..10).forEach { f.approve(f.join("Guest $it", guest = true)) }
-        val extra = f.join("Over capacity")
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.APPROVE).copy(memberId = extra.memberId)).ok)
+        for (guest in listOf(false, true)) {
+            val extra = f.service.execute(RoomCommand(commandId = f.id(), kind = CommandKind.JOIN,
+                code = f.owner.room!!.code, name = "Over capacity", guest = guest))
+            assertFalse(extra.ok)
+            assertEquals(if (guest) "Guest mode is unavailable. Sign in to join the room." else "Room capacity reached.", extra.error)
+        }
         f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }
         members.forEach { member -> f.send(member, CommandKind.READY) { it.copy(flag = true) } }
         val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
@@ -406,7 +407,7 @@ class RoomServiceTest {
         val updated = f.restaurant.copy(menu = f.restaurant.menu.copy(items = f.restaurant.menu.items.map { it.copy(basePriceMinor = 150) }))
         f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = updated, text = "Updated menu price") }
         assertTrue(f.state().room!!.orderingMembers.all { it.ready })
-        assertEquals(RoomPhase.PREPARING_SPIN, f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.phase)
+        assertEquals(RoomPhase.SPINNING, f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.phase)
     }
 
     @Test fun menuChangesResetQuotesSubmissionsAndStaleCartsWithoutLosingSelections(): Unit = RoomFixture().use { f ->

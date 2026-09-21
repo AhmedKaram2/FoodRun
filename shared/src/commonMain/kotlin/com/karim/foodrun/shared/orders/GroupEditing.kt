@@ -66,6 +66,7 @@ internal fun GroupController.addCartItem() {
     command(CommandKind.CART, cart = next, revision = cart.revision)
 }
 internal fun GroupController.seedAccount(a: ReceivingAccount) {
+    draft.remove(GroupFieldKey.ACCOUNT_IBAN_DRAFT); draft.remove(GroupFieldKey.ACCOUNT_AANI_DRAFT)
     draft[GroupFieldKey.AANI] = (a.method == PaymentMethod.AANI).toString(); draft[GroupFieldKey.ACCOUNT_HOLDER] = a.holder; draft[GroupFieldKey.ACCOUNT_BANK] = a.bank; draft[GroupFieldKey.ACCOUNT_IDENTIFIER] = a.identifier
 }
 internal fun GroupController.accountMatchesDraft(a: ReceivingAccount): Boolean =
@@ -93,6 +94,7 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = reason)
         GroupAction.VOTE_RESTAURANT -> command(CommandKind.VOTE_RESTAURANT, text = value)
         GroupAction.FINALIZE_RESTAURANT -> command(CommandKind.FINALIZE_RESTAURANT, text = value)
+        GroupAction.SELECT_PAYER -> command(CommandKind.SELECT_PAYER, memberId = text(GroupFieldKey.PAYER_CHOICE).takeIf { choice -> room().orderingMembers.any { it.id == choice } } ?: room().orderingMembers.firstOrNull()?.id.orEmpty())
         GroupAction.PREPARE_SPIN -> command(CommandKind.PREPARE_SPIN)
         GroupAction.ABORT_SPIN -> command(CommandKind.ABORT_PREPARE, text = reason)
         GroupAction.ACCEPT_DUTY -> command(CommandKind.ACCEPT_DUTY)

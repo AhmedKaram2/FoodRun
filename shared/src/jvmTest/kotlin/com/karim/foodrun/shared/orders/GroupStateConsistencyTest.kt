@@ -47,6 +47,24 @@ class GroupStateConsistencyTest {
         override fun close() { controller.close(); database.close(); directory.deleteRecursively() }
     }
 
+    @Test fun bankAndAaniKeepSeparateDraftsAndProfileCannotReuseRoomAccount() = Device().use { device ->
+        val c = device.controller
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE070331234567890123456")
+        c.update(GroupFieldKey.AANI, "true")
+        assertEquals("", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER))
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "0501234567")
+        c.update(GroupFieldKey.AANI, "false")
+        assertEquals("AE070331234567890123456", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER))
+        c.update(GroupFieldKey.AANI, "true")
+        assertEquals("0501234567", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER))
+        c.library = c.library.copy(home = HomePayload(FoodProfile(name = "User")))
+        c.dispatch(GroupAction.OPEN_PROFILE)
+        assertEquals("", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER))
+        c.page = GroupPage.ACCOUNT
+        assertFalse(c.state.fields.any { it.key == GroupFieldKey.ACCOUNT_BANK })
+        assertTrue(c.state.fields.single { it.key == GroupFieldKey.ACCOUNT_IDENTIFIER }.label.contains("Aani"))
+    }
+
     @Test fun savedLegacyRestaurantsHaveSharjahMetadataBeforeConnecting() = Device().use { device ->
         val edited = BuiltInRestaurants.sultan.copy(revision = 7, restaurant = BuiltInRestaurants.sultan.restaurant.copy(
             name = "My saved Sultan", emirate = "", emirateAr = "", area = "", areaAr = "", mealTypes = emptyList(),
@@ -257,16 +275,16 @@ class GroupStateConsistencyTest {
         c.dispatch(GroupAction.OPEN_ACCOUNT)
         c.update(GroupFieldKey.ACCOUNT_HOLDER, "Karim")
         c.update(GroupFieldKey.ACCOUNT_BANK, "Example Bank")
-        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "123456789012")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE070331234567890123456")
         c.dispatch(GroupAction.SAVE_ACCOUNT)
         val before = c.library.accounts.single()
-        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "987654321012")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE770331234567890123457")
         device.storageAvailable = false
         c.dispatch(GroupAction.SAVE_ACCOUNT)
         assertTrue(c.state.error.contains("Could not save"))
         assertEquals(listOf(before), c.library.accounts)
         assertEquals(before, c.selectedAccount)
-        assertEquals("987654321012", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER), "Keep the rejected edit available to retry.")
+        assertEquals("AE770331234567890123457", c.text(GroupFieldKey.ACCOUNT_IDENTIFIER), "Keep the rejected edit available to retry.")
     }
 
     @Test fun reopeningTheAccountEditorDoesNotDuplicateThePrefilledSavedAccount() = Device().use { device ->
@@ -274,7 +292,7 @@ class GroupStateConsistencyTest {
         c.dispatch(GroupAction.OPEN_ACCOUNT)
         c.update(GroupFieldKey.ACCOUNT_HOLDER, "Karim")
         c.update(GroupFieldKey.ACCOUNT_BANK, "Example Bank")
-        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "123456789012")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE070331234567890123456")
         c.dispatch(GroupAction.SAVE_ACCOUNT)
         val savedAccount = c.library.accounts.single()
         c.dispatch(GroupAction.BACK)
@@ -291,7 +309,7 @@ class GroupStateConsistencyTest {
         c.dispatch(GroupAction.OPEN_ACCOUNT)
         c.update(GroupFieldKey.ACCOUNT_HOLDER, "Karim")
         c.update(GroupFieldKey.ACCOUNT_BANK, "Example Bank")
-        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "123456789012")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE070331234567890123456")
         c.dispatch(GroupAction.SAVE_ACCOUNT)
         val firstAccount = c.library.accounts.single()
         c.dispatch(GroupAction.NEW_ACCOUNT)
@@ -301,7 +319,7 @@ class GroupStateConsistencyTest {
         assertEquals(listOf(firstAccount), c.library.accounts)
         c.update(GroupFieldKey.ACCOUNT_HOLDER, "Karim")
         c.update(GroupFieldKey.ACCOUNT_BANK, "Other Bank")
-        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "987654321012")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE770331234567890123457")
         c.dispatch(GroupAction.SAVE_ACCOUNT)
         assertEquals("", c.state.error)
         assertEquals(2, c.library.accounts.size)

@@ -270,3 +270,34 @@ test('optional delivery address retains automatic delivery mode without requirin
   assert.equal(deliveryDestination(true, ' Office reception '), 'Office reception');
   assert.equal(deliveryDestination(false, 'Office'), '');
 });
+
+test('bank IBAN and Aani phone drafts are separate and IBAN is validated', async () => {
+  const { paymentDraft, uaeIban } = await import('../src/foodrun/paymentDetails.js');
+  const bank = paymentDraft({ method: 'BANK', identifier: 'AE070331234567890123456', bank: 'Bank' });
+  assert.equal(bank.aaniPhone, ''); assert.equal(bank.iban, 'AE070331234567890123456');
+  const aani = paymentDraft({ method: 'AANI', identifier: '+971501234567', bank: 'Aani' });
+  assert.equal(aani.iban, ''); assert.equal(aani.bank, ''); assert.equal(aani.aaniPhone, '+971501234567');
+  assert.equal(uaeIban('ae07 0331 2345 6789 0123 456'), bank.iban);
+  for (const invalid of ['0501234567', '+971501234567', 'AE080331234567890123456', 'GB82WEST12345698765432']) assert.throws(() => uaeIban(invalid));
+});
+
+test('payment history retains repeated orders separately and shares the current wallet source', () => {
+  const own = { ...receipt, total: 1200, paid: 1200, balance: 0 };
+  const data = { sessions: { room: { roomId: 'room', memberId: 'me' } }, rooms: { room: {
+    room: { id: 'room', name: 'Lunch', phase: 'PLACED', orderNumber: 3, updatedAt: 300, payerId: 'payer', members: [], transfers: [], restaurant: { name: 'Kitchen' } },
+    receipts: [{ ...own, paid: 200, balance: 1000 }],
+    history: [1, 2, 3].map(number => ({ number, restaurantName: 'Kitchen', completedAt: number * 100, receipts: [own, { ...own, memberId: 'other' }] })),
+  } } };
+  const dashboard = userDashboard(data);
+  assert.equal(dashboard.toPay, 1000);
+  assert.deepEqual(dashboard.paymentHistory.map(value => value.number), [3, 2, 1]);
+  assert.equal(dashboard.paymentHistory[0].receipt.paid, 200);
+  assert(dashboard.paymentHistory.every(value => value.receipt.memberId === 'me'));
+});
+
+test('administrator history deletion removes cached records and resets paging', () => {
+  const previous = { memberId:'me', room:{id:'room',revision:3,orderNumber:4}, history:[{number:1},{number:2}], historyNextOffset:-1 };
+  const next = { ...previous, history:[], deletedHistoryNumbers:[1,2], historyNextOffset:0 };
+  const merged = mergeRoomReply(previous, next);
+  assert.deepEqual(merged.history, []); assert.equal(merged.historyNextOffset, 0);
+});

@@ -31,6 +31,61 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
     private var importCallback: GroupReplyCallback? = null
     private var scanCallback: GroupReplyCallback? = null
     private var closed = false
+    private var googleCallback: GroupReplyCallback? = null
+    private var googleVerifier = ""
+    private var googleChallenge = ""
+    private var googleWasBackgrounded = false
+    private var googleGeneration = 0
+
+    override fun googleSignIn(callback: GroupReplyCallback) {
+        googleCallback?.complete("", "Sign-in was restarted.")
+        googleGeneration++
+        googleCallback = callback
+        googleVerifier = (UUID.randomUUID().toString() + UUID.randomUUID().toString()).replace("-", "")
+        googleChallenge = java.security.MessageDigest.getInstance("SHA-256").digest(googleVerifier.toByteArray()).joinToString("") { "%02x".format(it) }
+        googleWasBackgrounded = false
+        try { requireNotNull(activity).startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://intrvioo.com/?nativeSignIn=$googleChallenge"))) }
+        catch (_: Exception) { finishGoogle("", "Could not open Google sign-in. Check your browser.") }
+    }
+    fun googleBackgrounded() { if (googleCallback != null) googleWasBackgrounded = true }
+    fun googleForegrounded() {
+        if (googleWasBackgrounded && googleCallback != null) main.postDelayed({
+            if (googleWasBackgrounded && googleCallback != null) finishGoogle("", "Google sign-in was cancelled. Try again.")
+        }, 1000)
+    }
+    fun handleGoogleCallback(uri: android.net.Uri?) {
+        if (uri?.scheme != "foodrun" || uri.host != "signin" || googleCallback == null) return
+        if (uri.getQueryParameter("state") != googleChallenge) return
+        val code = uri.getQueryParameter("code").orEmpty()
+        if (!code.matches(Regex("[A-Za-z0-9_-]{43}"))) return
+        googleWasBackgrounded = false
+        val verifier = googleVerifier
+        val generation = googleGeneration
+        googleChallenge = ""
+        files.execute {
+            var token = ""
+            var error = ""
+            try {
+                val url = java.net.URL("https://foodrun-api-q6b9.onrender.com/auth/native/exchange")
+                val connection = url.openConnection() as javax.net.ssl.HttpsURLConnection
+                try {
+                    connection.requestMethod = "POST"; connection.doOutput = true
+                    connection.connectTimeout = 15000; connection.readTimeout = 15000
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(org.json.JSONObject().put("code", code).put("verifier", verifier).toString().toByteArray()) }
+                    require(connection.responseCode == 200)
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    token = org.json.JSONObject(json).getString("firebaseToken")
+                } finally { connection.disconnect() }
+            } catch (_: Exception) { error = "Google sign-in could not finish. Start again in the app." }
+            main.post { if (!closed && generation == googleGeneration) finishGoogle(token, error) }
+        }
+    }
+    private fun finishGoogle(token: String, error: String) {
+        val callback = googleCallback
+        googleCallback = null; googleVerifier = ""; googleChallenge = ""; googleWasBackgrounded = false
+        callback?.complete(token, error)
+    }
 
     fun attach(activity: ComponentActivity) {
         check(!closed)
@@ -141,6 +196,7 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
 
     fun close() {
         closed = true
+        googleCallback = null; googleVerifier = ""; googleChallenge = ""; googleGeneration++
         transport.close()
         discovery.close()
         files.shutdownNow()

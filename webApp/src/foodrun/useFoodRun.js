@@ -17,6 +17,16 @@ function invitedHub() {
 function sessionStorageKey(userId, hub) { return `foodrun-sessions-v1:${userId}:${hub}`; }
 
 export function useFoodRun() {
+  const [accessBlock, setAccessBlock] = useState(null);
+  const [joinBlock, setJoinBlock] = useState(null);
+  const [roomBlocks, setRoomBlocks] = useState({});
+  const readBlock = reply => {
+    if (reply?.accessBlock) {
+      const block = { ...reply.accessBlock, serverTime: reply.serverTime || Date.now(), receivedAt: Date.now() };
+      setAccessBlock(block); setRoomBlocks(old => ({ ...old, [block.roomId || '*']: block }));
+    }
+    if (reply?.home) setRoomBlocks(Object.fromEntries(Object.entries(reply.home.roomAccessBlocks || {}).map(([id, block]) => [id, { ...block, serverTime: reply.serverTime || Date.now(), receivedAt: Date.now() }])));
+  };
   const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
   const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
@@ -42,7 +52,7 @@ export function useFoodRun() {
     setUser(next); setAuthReady(true);
   }), []);
   useEffect(() => {
-    const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); seen.current.clear(); pending.current = null;
+    const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); seen.current.clear(); pending.current = null;
     if (!user || !hub) return;
     try {
       pending.current = JSON.parse(sessionStorage.getItem(`foodrun-pending:${user.uid}:${hub}`) || 'null');
@@ -54,15 +64,15 @@ export function useFoodRun() {
       try {
         const reply = await request(hub, command('IDENTITY', { identity: { action: 'FIREBASE_SIGN_IN', firebaseToken: await user.getIdToken() } }));
         if (cancelled || epoch !== alive.current) return;
-        setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); setHome(reply.home); if (!pending.current) setError('');
+        readBlock(reply); setAccessBlock(null); setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); setHome(reply.home); if (!pending.current) setError('');
         setSessions(Object.fromEntries(reply.home.rooms.map(room => [room.roomId, room])));
         stop = watch(hub, command('HOME', { identityToken: reply.identityToken }), next => {
           if (cancelled || epoch !== alive.current) return;
-          setHome(next.home);
+          readBlock(next); setHome(next.home);
           setSessions(Object.fromEntries(next.home.rooms.map(room => [room.roomId, room])));
           next.home.invitations.forEach(invite => alert(`invite:${invite.id}`, `You're invited to ${invite.roomName}.`, t("Join from your home screen.")));
-        }, (connected, reason) => { if (cancelled || epoch !== alive.current) return; setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
-      } catch (e) { if (!cancelled) setError(hub === publicHub
+        }, (connected, reason, statusReply) => { if (cancelled || epoch !== alive.current) return; readBlock(statusReply); setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
+      } catch (e) { if (!cancelled) readBlock(e); if (!cancelled) setError(hub === publicHub
         ? `Could not connect to the internet room. ${e.message} Retry when your internet connection is available.`
         : `Could not connect to the nearby hub. ${e.message} Open its HTTPS address once to trust its certificate after checking the fingerprint, and allow local-network access.`); }
     };
@@ -98,6 +108,7 @@ export function useFoodRun() {
       roomRef.current = { ...roomRef.current, [r.id]: mergeRoomReply(previous, reply) }; setRooms(roomRef.current);
       if (!previous || previous.room.revision !== r.revision) cacheReceipt(roomRef.current[r.id]);
       if (r.phase === 'ACCEPTING' && r.spin?.winnerId === session.memberId) alert(`spin:${r.spin.id}`, t("You're selected!"), `Join ${r.name} and accept to collect everyone's food.`);
+      if (r.phase === 'COLLECTING' && !r.spin && r.payerId === session.memberId) alert(`selected:${r.id}:${r.orderNumber}`, t("You're selected!"), r.name);
       if (r.phase === 'PLACED' && previous?.room.phase !== 'PLACED') alert(`placed:${r.id}:${r.orderNumber}`, t("The restaurant order was placed."), `${r.restaurant.name} · ${r.restaurantReference}`);
       const currentReceipt = reply.receipts.find(receipt => receipt.memberId === session.memberId);
       const previousReceipt = previous?.receipts?.find(receipt => receipt.memberId === session.memberId);
@@ -105,7 +116,7 @@ export function useFoodRun() {
       if (r.phase === 'PREPARING_SPIN' && !r.preparedIds.includes(session.memberId) && r.members.some(m => m.id === session.memberId && m.approved && m.participating && !m.guest)) {
         request(hub, command('ACK_SPIN', { roomId: r.id, token: session.token, expectedOrderNumber: r.orderNumber, text: r.preparationId })).catch(e => setError(e.message));
       }
-    }, connected => { if (!stopped && epoch === alive.current) setOnline(old => ({ ...old, [session.roomId]: connected })); }));
+    }, (connected, reason, statusReply) => { if (!stopped && epoch === alive.current) { readBlock(statusReply); setOnline(old => ({ ...old, [session.roomId]: connected })); if(reason) setError(reason); } }));
     return () => { stopped = true; stops.forEach(stop => stop()); };
     // sessionKey describes the membership credentials; object replacement must not reconnect every second.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,6 +151,8 @@ export function useFoodRun() {
       return reply;
     } catch (e) {
       if (epoch !== alive.current) return null;
+      readBlock(e);
+      if (e.accessBlock && ['JOIN', 'CREATE'].includes(payload.kind)) setJoinBlock({ ...e.accessBlock, serverTime: e.serverTime || Date.now(), receivedAt: Date.now() });
       if (e.definitive) savePending(null);
       setError(e.message + (pending.current ? ' Retry the saved request to confirm its result.' : ''));
       return null;
@@ -161,11 +174,11 @@ export function useFoodRun() {
   };
   const connect = address => {
     if (address) localStorage.setItem('foodrun-hub', address); else localStorage.removeItem('foodrun-hub');
-    setError(''); setHub(address); setHubRevision(value => value + 1);
+    setError(''); setJoinBlock(null); setHub(address); setHubRevision(value => value + 1);
   };
   const clearOfflineReceipts = async () => {
     try { await clearReceiptArchive(user.uid, hub); setOfflineReceipts([]); }
     catch { setError(t("Could not remove downloaded receipts. Check browser storage permissions.")); }
   };
-  return { user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts };
+  return { accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts };
 }

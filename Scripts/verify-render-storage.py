@@ -32,13 +32,28 @@ def get(path):
         sys.exit(f'Render read failed ({error.code}); deployment is not cleared.')
 
 service = get('services/' + args.service_id)
-if service.get('serviceDetails', {}).get('plan') in (None, 'free'):
-    sys.exit('STOP: FoodRun SQLite cannot survive deployments on the Free plan. Configure a paid instance and persistent disk first.')
 # Fail closed if pagination prevents proving the required disk is present.
 disks = get('disks?limit=100')
 matched = [value.get('disk', value) for value in disks if value.get('disk', value).get('serviceId') == args.service_id]
 envs = get('services/' + args.service_id + '/env-vars?limit=100')
 variables = {value['envVar']['key']: value['envVar']['value'] for value in envs}
+if variables.get('FOODRUN_STORAGE') == 'firestore':
+    required = ('FOODRUN_FIRESTORE_NAMESPACE', 'FOODRUN_FIRESTORE_CREDENTIALS', 'FOODRUN_FIREBASE_PROJECT_ID')
+    if any(not variables.get(key) for key in required):
+        sys.exit('STOP: Firestore storage configuration is incomplete.')
+    try:
+        credential = json.loads(variables['FOODRUN_FIRESTORE_CREDENTIALS'])
+        assert credential['type'] == 'service_account'
+        assert credential['project_id'] == variables['FOODRUN_FIREBASE_PROJECT_ID']
+        assert credential.get('private_key')
+        assert re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', variables['FOODRUN_FIRESTORE_NAMESPACE'])
+        assert not variables.get('FIRESTORE_EMULATOR_HOST')
+    except (ValueError, KeyError, AssertionError):
+        sys.exit('STOP: Firestore credentials or namespace are invalid.')
+    print('PASS: Firestore durable storage is configured. Verify initialized cloud records, billing disabled, and X-FoodRun-Storage: firestore after deployment.')
+    sys.exit(0)
+if service.get('serviceDetails', {}).get('plan') in (None, 'free'):
+    sys.exit('STOP: SQLite requires a persistent disk. Configure Firestore for the free server.')
 data_path = variables.get('FOODRUN_DATA', '')
 if not data_path.startswith('/') or not any(data_path == disk.get('mountPath') or data_path.startswith(disk.get('mountPath', '').rstrip('/') + '/') for disk in matched if disk.get('mountPath')):
     sys.exit('STOP: FOODRUN_DATA is not covered by a persistent disk. Deployment is not cleared.')

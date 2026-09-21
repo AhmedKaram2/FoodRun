@@ -20,3 +20,8 @@ Distributions/*.zip
 webApp/node_modules/
 webApp/dist/
 webApp/.env.local
+
+# Local Firebase emulator and CLI diagnostics
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*

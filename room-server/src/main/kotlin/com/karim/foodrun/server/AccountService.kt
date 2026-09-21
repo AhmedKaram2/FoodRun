@@ -11,7 +11,7 @@ import java.util.Base64
 
 /** Invites and account sessions are hub-local; profiles and room records persist in the existing Firebase project. */
 class AccountService(private val db: RoomDatabase, private val provider: IdentityProvider?, private val rooms: RoomService, private val clock: () -> Long) {
-    private var cloudStatus = "Cloud storage has not been connected for this hub."
+    private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
     private fun session(token: String): AccountSession {
         require(token.length in 32..128) { "Sign in to your Food Run account." }
@@ -123,6 +123,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 result
             }
             IdentityAction.ENABLE_CLOUD -> {
+                if (db.cloudDurable) return home(c.identityToken)
                 require(saved.refreshToken.isNotEmpty()) { "Sign in from the mobile app with email and password before connecting persistent hub storage." }
                 val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) }
                 if (owner != null) {
@@ -142,6 +143,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     }
     /** Called by a separate worker under the room-service lock; failures retain the durable outbox. */
     fun syncCloud() {
+        if (db.cloudDurable) return
         val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) } ?: return
         val next = db.pendingCloud() ?: run { cloudStatus = "All room changes saved to Firebase"; return }
         try {

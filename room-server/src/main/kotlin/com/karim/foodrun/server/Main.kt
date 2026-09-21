@@ -65,7 +65,7 @@ fun main() {
     println("Food Run API: ${publicUrl ?: "https://$host:$port"}\nPairing link: $pairing\nCertificate SHA-256: ${if (proxyMode) "managed by public HTTPS" else fingerprint}\nPairing QR: ${qrFile.absolutePath}\nData: ${directory.absolutePath}")
     File(directory, "pairing.txt").writeText(pairing)
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
-    val db = RoomDatabase(directory)
+    val db = RoomDatabase(directory, FirestoreStore.configured())
     val service = RoomService(db, identityProvider = FirebaseIdentity.configured())
     val admin = AdminService(db, service)
     Runtime.getRuntime().addShutdownHook(Thread { discoveries.forEach { it.close() }; db.close() })
@@ -116,7 +116,10 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
             if(bytes == null) call.respond(HttpStatusCode.NotFound) else call.respondBytes(bytes, ContentType.Text.Html)
         }
         staticResources("/", "web")
-        get("/health") { call.respondText("Food Run hub · protocol 1") }
+        get("/health") {
+            call.response.headers.append("X-FoodRun-Storage", service.storageMode)
+            call.respondText("Food Run hub · protocol 1", status = if (service.storageAvailable) HttpStatusCode.OK else HttpStatusCode.ServiceUnavailable)
+        }
         get("/catalog") {
             val catalog = admin?.catalogPayload() ?: RestaurantCatalogPayload(BuiltInRestaurants.all.map { it.restaurant }, emptySet())
             val body = if (call.request.queryParameters["includeDeleted"] == "true") orderJson.encodeToString(catalog) else orderJson.encodeToString(catalog.restaurants)

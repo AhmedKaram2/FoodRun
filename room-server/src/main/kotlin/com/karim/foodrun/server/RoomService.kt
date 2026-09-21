@@ -8,6 +8,8 @@ import java.util.UUID
 class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null) {
     private val accounts = AccountService(db, identityProvider, this, clock)
     fun validateFirebaseSignIn(token: String) { requireNotNull(identityProvider) { "Firebase is unavailable." }.exchange(token) }
+    val storageAvailable: Boolean get() = db.available
+    val storageMode: String get() = if (db.cloudDurable) "firestore" else "sqlite"
     @Synchronized fun syncCloud() = accounts.syncCloud()
     @Synchronized fun adminCancel(roomId: String) {
         val room = requireNotNull(db.room(roomId)) { "Room was not found." }
@@ -56,7 +58,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
-        if (c.kind == CommandKind.IDENTITY) accounts.execute(c).also { reply ->
+        if (c.kind == CommandKind.IDENTITY) db.transaction { accounts.execute(c) }.also { reply ->
             signalHome()
             reply.room?.let { signalRoom(it.id) }
         }

@@ -10,6 +10,7 @@ dependencies {
     implementation("io.ktor:ktor-server-cors:3.5.2")
     implementation("io.ktor:ktor-network-tls-certificates:3.5.2")
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+    implementation("com.google.cloud:google-cloud-firestore:3.47.0")
     implementation("org.jmdns:jmdns:3.6.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")

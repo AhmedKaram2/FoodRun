@@ -2,20 +2,24 @@ services:
   - type: web
     name: foodrun-api
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: frankfurt
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     autoDeployTrigger: commit
     numInstances: 1
-    disk:
-      name: foodrun-data
-      mountPath: /var/lib/foodrun
-      sizeGB: 1
     envVars:
       - key: FOODRUN_TLS_MODE
         value: proxy
+      - key: FOODRUN_STORAGE
+        value: firestore
+      - key: FOODRUN_FIRESTORE_NAMESPACE
+        value: foodrun-production
+      - key: FOODRUN_FIRESTORE_CREDENTIALS
+        sync: false
+      - key: JAVA_OPTS
+        value: -Xmx256m -XX:MaxDirectMemorySize=64m
       - key: FOODRUN_DATA
         value: /var/lib/foodrun
       - key: FOODRUN_FIREBASE_PROJECT_ID

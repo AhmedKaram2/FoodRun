@@ -116,8 +116,9 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         staticResources("/", "web")
         get("/health") { call.respondText("Food Run hub · protocol 1") }
         get("/catalog") {
-            val restaurants = admin?.catalog() ?: BuiltInRestaurants.all.map { it.restaurant }
-            call.respondText(orderJson.encodeToString(restaurants), ContentType.Application.Json)
+            val catalog = admin?.catalogPayload() ?: RestaurantCatalogPayload(BuiltInRestaurants.all.map { it.restaurant }, emptySet())
+            val body = if (call.request.queryParameters["includeDeleted"] == "true") orderJson.encodeToString(catalog) else orderJson.encodeToString(catalog.restaurants)
+            call.respondText(body, ContentType.Application.Json)
         }
         get("/config") {
             call.respondText(orderJson.encodeToString(admin?.settings() ?: AdminSettings()), ContentType.Application.Json)

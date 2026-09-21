@@ -48,7 +48,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val people = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
             .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() }.take(100).map { FoodPerson(it.userId, it.name) }
         val restaurants = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
-        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants), serverTime = clock())
+        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db)), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)

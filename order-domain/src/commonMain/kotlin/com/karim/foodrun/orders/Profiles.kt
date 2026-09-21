@@ -83,4 +83,5 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     val profile: FoodProfile, val people: List<FoodPerson> = emptyList(),
     val invitations: List<FoodInvitation> = emptyList(), val rooms: List<AccountRoom> = emptyList(), val cloudStatus: String = "Cloud storage has not been connected for this hub.",
     val restaurants: List<Restaurant> = emptyList(),
+    val deletedRestaurantIds: Set<String> = emptySet(),
 )

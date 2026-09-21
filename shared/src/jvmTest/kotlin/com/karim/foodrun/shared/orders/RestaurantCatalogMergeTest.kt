@@ -7,6 +7,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class RestaurantCatalogMergeTest {
+    @Test fun administratorDeletionsOverrideBundledFallback() {
+        val removed = RestaurantExport(exportId = "removed", restaurant = Restaurant("removed", "Removed", openOrdering = true))
+        val added = removed.copy(exportId = "new", restaurant = removed.restaurant.copy(id = "new"))
+        val result = mergeManagedRestaurantCatalog(listOf(removed), emptySet(), emptyList(), listOf(removed, added), setOf("removed"))
+        assertEquals(listOf("new"), result.restaurants.map { it.restaurant.id })
+        assertEquals(setOf("removed", "new"), result.managedIds)
+    }
+
     @Test fun staleServerCopyKeepsSharjahMetadataAndDoesNotRemoveNewBundledRestaurants() {
         fun export(id: String, emirate: String = "", meals: List<MealType> = emptyList()) =
             RestaurantExport(exportId = id, restaurant = Restaurant(id = id, name = id, emirate = emirate, mealTypes = meals, openOrdering = true))

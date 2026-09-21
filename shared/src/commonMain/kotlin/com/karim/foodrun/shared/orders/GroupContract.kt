@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 
 enum class GroupPage { HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY }
 enum class GroupAction {
+    OPEN_POLL_RESTAURANTS, TOGGLE_POLL_RESTAURANT, CONFIRM_POLL_RESTAURANTS,
     OPEN_PROFILE, SET_LANGUAGE, SIGN_IN, REGISTER, SAVE_PROFILE, SIGN_OUT, RESET_PASSWORD, ENABLE_CLOUD, ENABLE_ALERTS, OPEN_PEOPLE, INVITE_PERSON, ACCEPT_INVITE, OPEN_CUSTOM_ITEM, ADD_CUSTOM_ITEM, OPEN_PRICE_ITEM, SAVE_ITEM_PRICE, USE_OPEN_ORDER, BACK, QUICK_SPIN, CREATE, JOIN, USE_INTERNET, CONNECT, DISCOVER, SCAN, OPEN_LIBRARY, NEW_RESTAURANT, EDIT_RESTAURANT,
     IMPORT_MENU, PREVIEW_IMPORT, CONFIRM_IMPORT, EXPORT_MENU, SAVE_RESTAURANT, DELETE_RESTAURANT, SELECT_RESTAURANT, EDIT_ROOM_RESTAURANT, SELECT_TAX_TREATMENT,
     ADD_MENU_ITEM, REMOVE_MENU_ITEM, SAVE_ROOM_RESTAURANT, UPDATE_ROOM_MENU, RESUME, CREATE_ROOM, JOIN_ROOM, RETRY, REFRESH,
@@ -46,16 +47,17 @@ data class GroupState(
         when (page) {
             GroupPage.CONNECT -> it.key in listOf(GroupFieldKey.HUB_URL, GroupFieldKey.FINGERPRINT)
             GroupPage.LIBRARY -> it.key == GroupFieldKey.JSON_MENU
+            GroupPage.SETUP -> it.key in listOf(GroupFieldKey.EXPECTED_NAMES, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE, GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL)
             GroupPage.ROOM -> it.key in GroupLayout.roomExtraFields
             else -> false
         }
     }
     val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
-    val sections: List<GroupSection> get() = GroupLayout.sections(page, cards)
+    val sections: List<GroupSection> get() = GroupLayout.sections(page, cards).map { it.copy(title = GroupUiText.translate(it.title, rtl)) }
 }
 interface GroupObserver { fun changed(state: GroupState) }
 object GroupText {
-    fun localized(value: String, rtl: Boolean): String = if(!rtl) value else when(value) {
+    fun localized(value: String, rtl: Boolean): String = if(!rtl) value else GroupUiText.translate(value, true).takeIf { it != value } ?: when(value) {
         homeTitle -> "أكل طيب.\nأحلى مع بعض."
         homeSubtitle -> "شارك أصحابك الوجبة القادمة."
         groupEyebrow -> "مكان للجميع"

@@ -5,6 +5,17 @@ import { mergeRoomReply } from '../src/foodrun/roomState.js';
 import { request, normalizeReply } from '../src/foodrun/client.js';
 const line = { itemId: 'meal', quantity: 2, optionIds: ['a', 'b'], notes: 'بدون بصل' };
 const receipt = { memberId: 'me', lines: [line], balance: 1200, currency: 'AED', name: 'Me' };
+test('restaurant polls contain only the explicitly chosen restaurants', async () => {
+  const { selectedPollRestaurants } = await import('../src/foodrun/restaurantPoll.js');
+  const restaurants = Array.from({ length: 15 }, (_, index) => ({ id: String(index), currency: 'AED' }));
+  assert.deepEqual(selectedPollRestaurants(restaurants, ['7', '2', '7']).map(value => value.id), ['7', '2']);
+  assert.throws(() => selectedPollRestaurants(restaurants, []));
+  assert.throws(() => selectedPollRestaurants(restaurants, ['2']));
+  assert.throws(() => selectedPollRestaurants(restaurants, ['2', 'deleted']));
+  assert.throws(() => selectedPollRestaurants(restaurants, restaurants.map(value => value.id)));
+  assert.equal(selectedPollRestaurants(restaurants, restaurants.slice(0, 12).map(value => value.id)).length, 12);
+  assert.throws(() => selectedPollRestaurants([{ id: 'a', currency: 'AED' }, { id: 'b', currency: 'USD' }], ['a', 'b']));
+});
 const past = (number, restaurantId = 'r', lines = [line]) => ({ number, restaurantId, restaurantName: restaurantId, completedAt: number, receipts: [{ ...receipt, lines }] });
 const reply = (revision, history, offset = -1, orderNumber = 4) => ({ memberId: 'me', room: { id: 'room', revision, orderNumber }, history, historyNextOffset: offset });
 test('repeats ignore display order and price but preserve quantity, extras and punctuation', () => {
@@ -152,12 +163,41 @@ test('server catalog keeps bundled restaurants and restores missing Sharjah meta
   assert.deepEqual(merged.restaurants.find(value => value.id === 'builtin-sultan').mealTypes, ['breakfast']);
 });
 
+test('explicit administrator deletions override bundled fallback while older catalogs retain it', async () => {
+  const { mergeRestaurantCatalog } = await import('../src/foodrun/restaurantCatalog.js');
+  const bundledValues = [{ id: 'removed', name: 'Removed' }, { id: 'new', name: 'New' }];
+  const args = { serverValues: [], bundledValues, currentValues: bundledValues, previousManagedIds: [], normalize: value => value };
+  assert.equal(mergeRestaurantCatalog(args).restaurants.length, 2);
+  const deleted = mergeRestaurantCatalog({ ...args, deletedRestaurantIds: ['removed'] });
+  assert.deepEqual(deleted.restaurants.map(value => value.id), ['new']);
+  assert(deleted.managedIds.includes('removed'));
+  assert.equal(mergeRestaurantCatalog({ ...args, previousManagedIds: deleted.managedIds, serverValues: [bundledValues[0]] }).restaurants.length, 2);
+});
+
+test('offline restaurant upgrades restore location without replacing edited menus or contact details', async () => {
+  const { restoreRestaurantMetadata } = await import('../src/foodrun/restaurantCatalog.js');
+  const saved = { id: 'sultan', name: 'My Sultan', emirate: '', mealTypes: [], menu: { items: [{ id: 'local', basePriceMinor: 800 }] }, contact: { phoneE164: '+971500000001' } };
+  const bundled = { id: 'sultan', name: 'Sultan', emirate: 'Sharjah', mealTypes: ['breakfast'], menu: { items: [] } };
+  const [upgraded] = restoreRestaurantMetadata([saved], [bundled]);
+  assert.equal(upgraded.emirate, 'Sharjah');
+  assert.deepEqual(upgraded.mealTypes, ['breakfast']);
+  assert.deepEqual(upgraded.menu, saved.menu);
+  assert.deepEqual(upgraded.contact, saved.contact);
+  assert.equal(upgraded.name, 'My Sultan');
+  assert.equal(saved.emirate, '');
+  assert.equal(restoreRestaurantMetadata([{ ...saved, emirate: 'Dubai' }], [bundled])[0].emirate, 'Dubai');
+});
+
 test('Arabic translation preserves user supplied strings and protocol values', async () => {
-  const { t } = await import('../src/foodrun/i18n.js');
-  assert.equal(t('Wallet dashboard', 'ar'), 'لوحة المحفظة');
+  const { t, tf } = await import('../src/foodrun/i18n.js');
+  assert.equal(t('Wallet dashboard', 'ar'), 'متابعة الحسابات');
   assert.equal(t('Ahmed – without onions', 'ar'), 'Ahmed – without onions');
   assert.equal(t('DECLARE_TRANSFER', 'ar'), 'DECLARE_TRANSFER');
   assert.equal(t('Wallet dashboard', 'en'), 'Wallet dashboard');
+  assert.equal(t('Breakfast', 'ar'), 'فطار');
+  assert.equal(t('Create room', 'ar'), 'اعمل الغرفة');
+  assert.equal(tf('Join {name}', { name: 'Home & AED 8.00' }, 'ar'), 'ادخل Home & AED 8.00');
+  assert.equal(tf('Room code: {code}', { code: '001234' }, 'ar'), 'كود الغرفة: 001234');
 });
 
 test('known menu prices immediately include quantity, selected size and extras', async () => {

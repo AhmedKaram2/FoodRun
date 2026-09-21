@@ -21,6 +21,7 @@ import kotlinx.serialization.Serializable
 )
 @Serializable data class AdminUserMutation(val userId: String, val disabled: Boolean)
 @Serializable data class AdminRestaurantMutation(val action: String = "save", val restaurant: Restaurant? = null, val restaurantId: String = "")
+@Serializable data class RestaurantCatalogPayload(val restaurants: List<Restaurant>, val deletedRestaurantIds: Set<String>)
 @Serializable data class AdminRoomMutation(val roomId: String, val action: String)
 
 class AdminService(
@@ -40,6 +41,7 @@ class AdminService(
         db.putRecord(SETTINGS, orderJson.encodeToString(value)); value
     }
     fun catalog(): List<Restaurant> = synchronized(rooms) { catalogUnlocked() }
+    fun catalogPayload(): RestaurantCatalogPayload = synchronized(rooms) { RestaurantCatalogPayload(catalogUnlocked(), deletedRestaurantIds(db)) }
     private fun catalogUnlocked(): List<Restaurant> = db.record(RESTAURANTS)?.let { orderJson.decodeFromString(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
     fun mutateRestaurant(change: AdminRestaurantMutation): List<Restaurant> = synchronized(rooms) {
         val current = catalogUnlocked()
@@ -49,7 +51,12 @@ class AdminService(
             else -> error("Unsupported restaurant action.")
         }
         require(next.size <= 100) { "Restaurant catalog limit reached." }
-        db.putRecord(RESTAURANTS, orderJson.encodeToString(next)); next.sortedBy { it.name }
+        val deleted = deletedRestaurantIds(db).let { if (change.action == "delete") it + change.restaurantId else it - requireNotNull(change.restaurant).id }
+        db.transaction {
+            db.putRecord(DELETED_RESTAURANTS, orderJson.encodeToString(deleted))
+            db.putRecord(RESTAURANTS, orderJson.encodeToString(next))
+        }
+        next.sortedBy { it.name }
     }
     fun mutateUser(change: AdminUserMutation) = synchronized(rooms) {
         require(db.record("profile:${change.userId}") != null) { "User was not found." }
@@ -76,5 +83,11 @@ class AdminService(
             receipts.sumOf { it.paid }, receipts.filterNot { it.memberId == room.payerId }.sumOf { maxOf(0, it.balance) }, room.restaurant.currency, room.updatedAt,
             receipts.map { AdminWalletView(it.memberId, it.name, it.total, it.paid, it.balance) })
     }
-    companion object { const val ADMIN_EMAIL = "1ahmedkaram1@gmail.com"; const val SETTINGS = "admin:settings"; const val RESTAURANTS = "admin:restaurants" }
+    companion object {
+        const val ADMIN_EMAIL = "1ahmedkaram1@gmail.com"
+        const val SETTINGS = "admin:settings"
+        const val RESTAURANTS = "admin:restaurants"
+        const val DELETED_RESTAURANTS = "admin:deleted-restaurants"
+        fun deletedRestaurantIds(db: RoomDatabase): Set<String> = db.record(DELETED_RESTAURANTS)?.let { orderJson.decodeFromString(it) } ?: emptySet()
+    }
 }

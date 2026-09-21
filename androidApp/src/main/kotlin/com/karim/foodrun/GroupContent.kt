@@ -84,6 +84,8 @@ internal fun GroupErrorBanner(message: String) {
 
 @Composable
 internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: GroupController) {
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    fun translated(value: String) = com.karim.foodrun.shared.orders.GroupText.localized(value, rtl)
     if (field.key == GroupFieldKey.PHOTO) {
         val context = LocalContext.current
         var photoError by remember { mutableStateOf("") }
@@ -115,11 +117,11 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
         }
         FoodCard(bordered = true) {
             Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (photoError.isNotEmpty()) Text(photoError, color = FoodColors.Orange, modifier = Modifier.semantics { error(photoError) })
-                if (preview != null) Image(preview.asImageBitmap(), "Selected profile photo", Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = ContentScale.Crop)
-                Text(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected", style = FoodType.Input, color = FoodColors.Ink)
-                PrimaryButton(if (field.value.isBlank()) "Choose from gallery" else "Change photo", null, enabled = !busy) { launcher.launch("image/*") }
-                if (field.value.isNotBlank()) SecondaryButton("Remove photo", null, enabled = !busy, destructive = true) { controller.update(GroupFieldKey.PHOTO, "") }
+                if (photoError.isNotEmpty()) Text(translated(photoError), color = FoodColors.Orange, modifier = Modifier.semantics { error(translated(photoError)) })
+                if (preview != null) Image(preview.asImageBitmap(), translated("Selected profile photo"), Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = ContentScale.Crop)
+                Text(translated(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected"), style = FoodType.Input, color = FoodColors.Ink)
+                PrimaryButton(translated(if (field.value.isBlank()) "Choose from gallery" else "Change photo"), null, enabled = !busy) { launcher.launch("image/*") }
+                if (field.value.isNotBlank()) SecondaryButton(translated("Remove photo"), null, enabled = !busy, destructive = true) { controller.update(GroupFieldKey.PHOTO, "") }
             }
         }
     } else if (field.key == GroupFieldKey.QUANTITY) {

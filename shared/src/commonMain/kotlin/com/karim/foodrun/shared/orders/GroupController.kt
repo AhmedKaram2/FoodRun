@@ -25,6 +25,8 @@ class GroupController(val platform: GroupPlatform) {
     internal var selectedAccount: ReceivingAccount? = null
     internal var joinMode = false
     internal var nextOrder = false
+    internal var choosingPollRestaurants = false
+    internal val pollRestaurantIds = linkedSetOf<String>()
     private var observer: GroupObserver? = null
     private var watching: GroupSubscription? = null
     internal var accountEditing = false
@@ -42,7 +44,8 @@ class GroupController(val platform: GroupPlatform) {
         try {
             val saved = platform.read("group-library-v1")
             if (saved.isNotBlank()) library = orderJson.decodeFromString(saved)
-            val missingBuiltIns = BuiltInRestaurants.all.filter { builtIn -> library.restaurants.none { it.restaurant.id == builtIn.restaurant.id } }
+            library = library.copy(restaurants = restoreRestaurantMetadata(library.restaurants))
+            val missingBuiltIns = BuiltInRestaurants.all.filter { builtIn -> builtIn.restaurant.id !in library.managedRestaurantIds && library.restaurants.none { it.restaurant.id == builtIn.restaurant.id } }
             if (missingBuiltIns.isNotEmpty()) library = library.copy(restaurants = library.restaurants + missingBuiltIns)
             if (library.pending != null && library.pendingHub == null) library = library.copy(pendingHub = library.selectedHub)
             draft[GroupFieldKey.NAME] = library.displayName
@@ -64,13 +67,34 @@ class GroupController(val platform: GroupPlatform) {
                 require(member.approved && !member.guest && member.participating) { "Join this order before choosing whether to pay." }
                 require(library.pending == null) { "Retry the saved request before changing payment consent." }
                 if (member.eligible != (value == "true")) command(CommandKind.READY, flag = member.ready, eligible = value == "true")
-            } else draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.PHOTO) 180_000 else 4000)
+            } else {
+                if (key == GroupFieldKey.RESTAURANT_EMIRATE && value != text(key)) draft.remove(GroupFieldKey.RESTAURANT_AREA)
+                draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.PHOTO) 180_000 else 4000)
+                if (key == GroupFieldKey.RESTAURANT_POLL && value == "true") openPollRestaurants()
+            }
         } catch (e: Exception) { error = e.message ?: "This change could not be saved." }
         publish()
     }
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
+            GroupAction.OPEN_POLL_RESTAURANTS -> openPollRestaurants()
+            GroupAction.TOGGLE_POLL_RESTAURANT -> {
+                require(choosingPollRestaurants) { "Open the poll restaurant selection first." }
+                if (value in pollRestaurantIds) pollRestaurantIds.remove(value) else {
+                    require(pollRestaurantIds.size < 12) { "Choose up to 12 restaurants." }
+                    require(library.restaurants.any { it.restaurant.id == value }) { "Restaurant is no longer available." }
+                    pollRestaurantIds.add(value)
+                }
+            }
+            GroupAction.CONFIRM_POLL_RESTAURANTS -> {
+                val first = pollChoices().first()
+                if (selectedRestaurant?.restaurant?.id != first.id) seedFees(first)
+                selectedRestaurant = RestaurantExport(exportId = first.id, restaurant = first)
+                if (text(GroupFieldKey.ROOM_NAME).isBlank()) draft[GroupFieldKey.ROOM_NAME] = if (library.language == "ar") "تصويت مطعمنا" else "Our restaurant poll"
+                choosingPollRestaurants = false
+                page = GroupPage.SETUP
+            }
             GroupAction.OPEN_PROFILE -> { openProfile() }
             GroupAction.SET_LANGUAGE -> {
                 require(value in listOf("en", "ar")) { "Choose Arabic or English." }
@@ -113,7 +137,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.CONNECT -> connect()
             GroupAction.DISCOVER -> platform.discover(callback { body -> draft[GroupFieldKey.HUB_URL] = body; error = "Hub found. Scan its setup QR or paste its fingerprint to verify its identity."; publish() })
             GroupAction.SCAN -> platform.scanPairing(callback { body -> draft[GroupFieldKey.PAIRING_LINK] = body; connect() })
-            GroupAction.OPEN_LIBRARY -> { libraryReturnPage = page; page = GroupPage.LIBRARY }
+            GroupAction.OPEN_LIBRARY -> { choosingPollRestaurants = false; libraryReturnPage = page; page = GroupPage.LIBRARY }
             GroupAction.NEW_RESTAURANT -> restaurantEditor(null)
             GroupAction.EDIT_RESTAURANT -> restaurantEditor(library.restaurants.single { it.restaurant.id == value })
             GroupAction.EDIT_ROOM_RESTAURANT -> {
@@ -131,7 +155,13 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.EXPORT_MENU -> { val item = library.restaurants.single { it.restaurant.id == value }; platform.share(orderJson.encodeToString(item), "restaurant-menu.json") }
             GroupAction.SAVE_RESTAURANT -> saveEditor()
             GroupAction.DELETE_RESTAURANT -> deleteRestaurant(value)
-            GroupAction.SELECT_RESTAURANT -> { selectedRestaurant = library.restaurants.single { it.restaurant.id == value }; seedFees(selectedRestaurant!!.restaurant); joinMode = false; page = if(library.selectedHub == null && !nextOrder) GroupPage.CONNECT else GroupPage.SETUP }
+            GroupAction.SELECT_RESTAURANT -> {
+                selectedRestaurant = library.restaurants.single { it.restaurant.id == value }
+                if (text(GroupFieldKey.ROOM_NAME).isBlank()) draft[GroupFieldKey.ROOM_NAME] = selectedRestaurant!!.restaurant.localizedName(library.language)
+                seedFees(selectedRestaurant!!.restaurant)
+                joinMode = false
+                page = if(library.selectedHub == null && !nextOrder) GroupPage.CONNECT else GroupPage.SETUP
+            }
             GroupAction.ADD_MENU_ITEM -> addMenuItem()
             GroupAction.REMOVE_MENU_ITEM -> { editingRestaurant = editingRestaurant?.let { it.copy(restaurant = it.restaurant.copy(menu = it.restaurant.menu.copy(items = it.restaurant.menu.items.filterNot { item -> item.id == value }))) } }
             GroupAction.SAVE_ROOM_RESTAURANT -> { val r = room().restaurant; saveRestaurant(RestaurantExport(exportId = r.id, restaurant = r)); error = "Restaurant saved to your library." }
@@ -244,20 +274,32 @@ class GroupController(val platform: GroupPlatform) {
         page = if (accountEditing) GroupPage.PROFILE else GroupPage.SETUP
         accountEditing = false
     }
-    private fun pollChoices(selected: Restaurant): List<Restaurant> =
-        (listOf(selected) + library.restaurants.map { it.restaurant })
-            .distinctBy { it.id }.filter { it.currency == selected.currency }.take(12)
+    private fun openPollRestaurants() {
+        pollRestaurantIds.retainAll(library.restaurants.map { it.restaurant.id }.toSet())
+        if (pollRestaurantIds.isEmpty()) selectedRestaurant?.restaurant?.id?.takeIf { id -> library.restaurants.any { it.restaurant.id == id } }?.let(pollRestaurantIds::add)
+        choosingPollRestaurants = true
+        libraryReturnPage = GroupPage.SETUP
+        page = GroupPage.LIBRARY
+    }
+
+    private fun pollChoices(): List<Restaurant> {
+        require(pollRestaurantIds.size in 2..12) { "Choose between 2 and 12 restaurants for the poll." }
+        val choices = pollRestaurantIds.map { id -> requireNotNull(library.restaurants.find { it.restaurant.id == id }) { "A selected restaurant is no longer available. Update the poll choices." }.restaurant }
+        require(choices.all { it.currency == choices.first().currency }) { "Poll restaurants must use the same currency." }
+        return choices
+    }
 
     private fun createRoom() {
-        val r = requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant
+        val choices = if(flag(GroupFieldKey.RESTAURANT_POLL)) pollChoices() else listOf(requireNotNull(selectedRestaurant) { "Choose or create a restaurant first." }.restaurant)
+        val r = choices.first()
         val names = text(GroupFieldKey.EXPECTED_NAMES).split(',').map { it.trim() }.filter { it.isNotEmpty() }
         val fees = fees(r.currency)
         val destination = if(flag(GroupFieldKey.DELIVERY)) text(GroupFieldKey.DESTINATION).trim().ifBlank { "The selected orderer will arrange delivery with the restaurant." } else ""
-        val choices = if(flag(GroupFieldKey.RESTAURANT_POLL)) pollChoices(r) else listOf(r)
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
         else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees))
     }
     private fun back() {
+        if (page == GroupPage.LIBRARY) choosingPollRestaurants = false
         val roomRestaurantEditor = page == GroupPage.RESTAURANT && editingRoomOrder != null
         if (page in listOf(GroupPage.ITEM, GroupPage.CUSTOM_ITEM)) {
             selectedItem = null
@@ -455,7 +497,7 @@ class GroupController(val platform: GroupPlatform) {
     }
     private fun acceptHome(home: HomePayload, hub: HubPairing) {
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
-        val catalog = mergeManagedRestaurantCatalog(library.restaurants, library.managedRestaurantIds, home.restaurants)
+        val catalog = mergeManagedRestaurantCatalog(library.restaurants, library.managedRestaurantIds, home.restaurants, deletedRestaurantIds = home.deletedRestaurantIds)
         val updated = library.copy(home = home, displayName = home.profile.name, language = home.profile.language,
             sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } } + sessions,
             restaurants = catalog.restaurants,

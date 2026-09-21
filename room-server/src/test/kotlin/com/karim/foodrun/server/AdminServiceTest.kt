@@ -60,6 +60,22 @@ class AdminServiceTest {
         directory.deleteRecursively()
     }
 
+    @Test fun deletedRestaurantIdsPersistAndExplicitSaveRestoresTheRestaurant() {
+        val directory = Files.createTempDirectory("foodrun-catalog-deletion").toFile()
+        RoomDatabase(directory).use { db ->
+            val admin = AdminService(db, RoomService(db))
+            val restaurant = admin.catalog().first()
+            admin.mutateRestaurant(AdminRestaurantMutation(action = "delete", restaurantId = restaurant.id))
+            val restoredAdmin = AdminService(db, RoomService(db))
+            assertTrue(restaurant.id in restoredAdmin.catalogPayload().deletedRestaurantIds)
+            assertFalse(restoredAdmin.catalog().any { it.id == restaurant.id })
+            restoredAdmin.mutateRestaurant(AdminRestaurantMutation(restaurant = restaurant))
+            assertFalse(restaurant.id in restoredAdmin.catalogPayload().deletedRestaurantIds)
+            assertTrue(restoredAdmin.catalog().any { it.id == restaurant.id })
+        }
+        directory.deleteRecursively()
+    }
+
     @Test fun adminIdentityControlsSettingsUsersAndRestaurantCatalog() {
         val directory = Files.createTempDirectory("foodrun-admin-test").toFile()
         RoomDatabase(directory).use { db ->

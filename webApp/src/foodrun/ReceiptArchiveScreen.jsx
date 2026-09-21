@@ -1,7 +1,8 @@
 import { money } from './client';
+import { t as translate } from './i18n.js';
 
 export default function OfflineReceipts({ receipts, onBack, onClear, language = 'en' }) {
-  const t = (en, ar) => language === 'ar' ? ar : en;
+  const t = (en, ar) => language === 'ar' ? (translate(en, 'ar') === en ? ar : translate(en, 'ar')) : en;
   return <main className="app-shell" dir={language === 'ar' ? 'rtl' : 'ltr'}>
     <button className="back" onClick={onBack}>{t('← Back', 'رجوع ←')}</button>
     <h1>{t('Downloaded receipts', 'الإيصالات المحفوظة')}</h1>

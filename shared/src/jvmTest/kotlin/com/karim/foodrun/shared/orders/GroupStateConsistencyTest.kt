@@ -47,6 +47,89 @@ class GroupStateConsistencyTest {
         override fun close() { controller.close(); database.close(); directory.deleteRecursively() }
     }
 
+    @Test fun savedLegacyRestaurantsHaveSharjahMetadataBeforeConnecting() = Device().use { device ->
+        val edited = BuiltInRestaurants.sultan.copy(revision = 7, restaurant = BuiltInRestaurants.sultan.restaurant.copy(
+            name = "My saved Sultan", emirate = "", emirateAr = "", area = "", areaAr = "", mealTypes = emptyList(),
+        ))
+        device.saved["group-library-v1"] = orderJson.encodeToString(GroupLibrary(restaurants = listOf(edited)))
+        val restored = GroupController(device)
+        val actual = restored.library.restaurants.single { it.restaurant.id == edited.restaurant.id }
+        assertEquals("Sharjah", actual.restaurant.emirate)
+        assertEquals("My saved Sultan", actual.restaurant.name)
+        assertEquals(edited.restaurant.menu, actual.restaurant.menu)
+        assertEquals(7, actual.revision)
+        restored.dispatch(GroupAction.OPEN_LIBRARY)
+        restored.update(GroupFieldKey.RESTAURANT_EMIRATE, "Sharjah")
+        assertTrue(restored.state.cards.any { it.id == "restaurant:${edited.restaurant.id}" })
+        restored.close()
+    }
+
+    @Test fun removedManagedRestaurantStaysRemovedAfterOfflineRestart() = Device().use { device ->
+        device.saved["group-library-v1"] = orderJson.encodeToString(GroupLibrary(managedRestaurantIds = setOf("builtin-sultan")))
+        val restored = GroupController(device)
+        assertFalse(restored.library.restaurants.any { it.restaurant.id == "builtin-sultan" })
+        assertTrue(restored.library.restaurants.any { it.restaurant.emirate == "Dubai" })
+        restored.close()
+    }
+
+    @Test fun switchingEmiratesClearsThePreviousAreaFilter() = Device().use { device ->
+        val c = device.controller
+        c.dispatch(GroupAction.OPEN_LIBRARY)
+        c.update(GroupFieldKey.RESTAURANT_EMIRATE, "Dubai")
+        c.update(GroupFieldKey.RESTAURANT_AREA, "Deira")
+        c.update(GroupFieldKey.RESTAURANT_EMIRATE, "Sharjah")
+        assertEquals("", c.text(GroupFieldKey.RESTAURANT_AREA))
+        assertTrue(c.state.cards.any { it.id == "restaurant:builtin-sultan" })
+    }
+
+    @Test fun pollIncludesOnlyChosenRestaurantsAndRejectsFewerThanTwo() = Device().use { device ->
+        val c = device.controller
+        setup(c)
+        c.update(GroupFieldKey.RESTAURANT_POLL, "true")
+        assertEquals(GroupPage.LIBRARY, c.state.page)
+        assertEquals(setOf("kitchen"), c.pollRestaurantIds)
+        c.dispatch(GroupAction.CONFIRM_POLL_RESTAURANTS)
+        assertTrue(c.state.error.contains("2 and 12"))
+        c.dispatch(GroupAction.TOGGLE_POLL_RESTAURANT, "other")
+        c.dispatch(GroupAction.CONFIRM_POLL_RESTAURANTS)
+        assertEquals(GroupPage.SETUP, c.state.page)
+        c.dispatch(GroupAction.CREATE_ROOM)
+        device.drain()
+        assertEquals("", c.state.error)
+        assertEquals(listOf("kitchen", "other"), c.room().restaurantOptions.map { it.id })
+        assertTrue(c.room().restaurantPollOpen)
+    }
+
+    @Test fun pollSelectionCapsAtTwelveAndAllowsRemovalAcrossFilters() = Device().use { device ->
+        val c = device.controller
+        c.update(GroupFieldKey.RESTAURANT_POLL, "true")
+        val ids = c.library.restaurants.take(13).map { it.restaurant.id }
+        ids.forEach { c.dispatch(GroupAction.TOGGLE_POLL_RESTAURANT, it) }
+        assertEquals(ids.take(12).toSet(), c.pollRestaurantIds)
+        c.update(GroupFieldKey.RESTAURANT_EMIRATE, "Dubai")
+        c.dispatch(GroupAction.TOGGLE_POLL_RESTAURANT, ids.first())
+        c.dispatch(GroupAction.TOGGLE_POLL_RESTAURANT, ids.last())
+        assertEquals(12, c.pollRestaurantIds.size)
+        assertFalse(ids.first() in c.pollRestaurantIds)
+        assertTrue(ids.last() in c.pollRestaurantIds)
+    }
+
+    @Test fun arabicFormsTranslateLabelsAndKeepEnteredValuesUnchanged() = Device().use { device ->
+        val c = device.controller
+        c.dispatch(GroupAction.SET_LANGUAGE, "ar")
+        c.dispatch(GroupAction.OPEN_PROFILE)
+        assertTrue(c.state.rtl)
+        assertTrue(c.state.fields.all { field -> field.label.any { it in '\u0600'..'\u06ff' } }, c.state.fields.toString())
+        c.update(GroupFieldKey.NAME, "Home AED 8.00")
+        assertEquals("Home AED 8.00", c.text(GroupFieldKey.NAME))
+        setup(c)
+        assertTrue(c.state.fields.all { field -> field.label.any { it in '\u0600'..'\u06ff' } }, c.state.fields.toString())
+        c.update(GroupFieldKey.RESTAURANT_POLL, "true")
+        assertEquals("اختار مطاعم التصويت", c.state.title)
+        assertTrue(c.state.fields.all { field -> field.label.any { it in '\u0600'..'\u06ff' } }, c.state.fields.toString())
+        assertEquals("Kitchen", c.library.restaurants.single { it.restaurant.id == "kitchen" }.restaurant.name)
+    }
+
     private fun restaurant(id: String = "kitchen", name: String = "Kitchen") = RestaurantExport(
         exportId = id,
         restaurant = Restaurant(id, name, contact = RestaurantContact("+971500000000"), menu = Menu(

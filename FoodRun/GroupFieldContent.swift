@@ -9,24 +9,28 @@ struct GroupFieldContent: View {
     let onChange: (String) -> Void
     @State private var photoError = ""
     @State private var selectedPhoto: PhotosPickerItem?
+    @Environment(\.layoutDirection) private var layoutDirection
+    private func translated(_ value: String) -> String {
+        GroupText.shared.localized(value: value, rtl: layoutDirection == .rightToLeft)
+    }
 
     var body: some View {
         if field.key == .photo {
             VStack(spacing: FoodSpacing.s14) {
                 if let image = profileImage {
                     Image(uiImage: image).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle())
-                        .accessibilityLabel("Selected profile photo")
+                        .accessibilityLabel(translated("Selected profile photo"))
                 }
-                Text(field.value.isEmpty ? "Add a profile photo" : "Profile photo selected")
+                Text(translated(field.value.isEmpty ? "Add a profile photo" : "Profile photo selected"))
                     .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label(field.value.isEmpty ? "Choose from Photos" : "Change photo", systemImage: "photo.on.rectangle")
+                    Label(translated(field.value.isEmpty ? "Choose from Photos" : "Change photo"), systemImage: "photo.on.rectangle")
                         .font(FoodTypography.button).frame(maxWidth: .infinity, minHeight: FoodSpacing.s48)
                         .foregroundStyle(.white).background(FoodTheme.orange, in: RoundedRectangle(cornerRadius: FoodRadius.input))
                 }.disabled(!enabled)
-                if !photoError.isEmpty { Text(photoError).foregroundStyle(FoodTheme.orange).accessibilityAddTraits(.isStaticText) }
+                if !photoError.isEmpty { Text(translated(photoError)).foregroundStyle(FoodTheme.orange).accessibilityAddTraits(.isStaticText) }
                 if !field.value.isEmpty {
-                    Button(role: .destructive) { onChange("") } label: { Text("Remove photo").frame(maxWidth: .infinity) }
+                    Button(role: .destructive) { onChange("") } label: { Text(translated("Remove photo")).frame(maxWidth: .infinity) }
                         .disabled(!enabled)
                 }
             }

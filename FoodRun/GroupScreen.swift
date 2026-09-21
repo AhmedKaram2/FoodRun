@@ -146,7 +146,7 @@ struct GroupScreen: View {
             VStack(spacing: FoodSpacing.s16) {
                 Button { optionsExpanded.toggle() } label: {
                     HStack(spacing: FoodSpacing.s12) {
-                        Text(state.page == .connect ? GroupText.shared.localized(value: GroupText.shared.manualConnection, rtl: state.rtl) : state.page == .library ? GroupText.shared.localized(value: GroupText.shared.pasteMenu, rtl: state.rtl) : GroupText.shared.localized(value: GroupText.shared.roomOptions, rtl: state.rtl))
+                        Text(state.page == .setup ? (state.rtl ? "خيارات إضافية · التصويت والرسوم" : "More options · voting and fees") : state.page == .connect ? GroupText.shared.localized(value: GroupText.shared.manualConnection, rtl: state.rtl) : state.page == .library ? GroupText.shared.localized(value: GroupText.shared.pasteMenu, rtl: state.rtl) : GroupText.shared.localized(value: GroupText.shared.roomOptions, rtl: state.rtl))
                             .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
                         Spacer(minLength: FoodSpacing.s8)
                         Image(systemName: optionsExpanded ? "chevron.up" : "chevron.down")

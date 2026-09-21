@@ -71,6 +71,9 @@ internal fun GroupController.newAccount() {
 internal fun GroupController.prepareNextOrder() {
     val previous = room()
     nextOrder = true
+    choosingPollRestaurants = false
+    pollRestaurantIds.clear()
+    draft[GroupFieldKey.RESTAURANT_POLL] = "false"
     selectedRestaurant = RestaurantExport(exportId = previous.restaurant.id, restaurant = previous.restaurant)
     seedFees(previous.restaurant)
     draft[GroupFieldKey.DELIVERY] = previous.deliveryMode.toString()

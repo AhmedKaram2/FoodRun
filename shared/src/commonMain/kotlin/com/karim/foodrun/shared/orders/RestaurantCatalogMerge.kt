@@ -6,14 +6,13 @@ import com.karim.foodrun.orders.RestaurantExport
 
 internal data class ManagedRestaurantCatalog(val restaurants: List<RestaurantExport>, val managedIds: Set<String>)
 
-internal fun mergeManagedRestaurantCatalog(
-    current: List<RestaurantExport>,
-    previousManagedIds: Set<String>,
-    serverValues: List<Restaurant>,
+internal fun restoreRestaurantMetadata(
+    values: List<RestaurantExport>,
     bundledValues: List<RestaurantExport> = BuiltInRestaurants.all,
-): ManagedRestaurantCatalog {
+): List<RestaurantExport> {
     val bundledById = bundledValues.associateBy { it.restaurant.id }
-    val server = serverValues.map { value ->
+    return values.map { export ->
+        val value = export.restaurant
         val fallback = bundledById[value.id]?.restaurant
         val enriched = if (fallback == null) value else value.copy(
             nameAr = value.nameAr.ifBlank { fallback.nameAr },
@@ -28,10 +27,20 @@ internal fun mergeManagedRestaurantCatalog(
             googleRatingCount = value.googleRatingCount ?: fallback.googleRatingCount,
             googleRatingVerifiedOn = value.googleRatingVerifiedOn.ifBlank { fallback.googleRatingVerifiedOn },
         )
-        RestaurantExport(exportId = enriched.id, restaurant = enriched)
+        export.copy(restaurant = enriched)
     }
+}
+
+internal fun mergeManagedRestaurantCatalog(
+    current: List<RestaurantExport>,
+    previousManagedIds: Set<String>,
+    serverValues: List<Restaurant>,
+    bundledValues: List<RestaurantExport> = BuiltInRestaurants.all,
+    deletedRestaurantIds: Set<String> = emptySet(),
+): ManagedRestaurantCatalog {
+    val server = restoreRestaurantMetadata(serverValues.map { RestaurantExport(exportId = it.id, restaurant = it) }, bundledValues)
     val serverIds = server.map { it.restaurant.id }.toSet()
-    val managed = server + bundledValues.filterNot { it.restaurant.id in serverIds }
-    val managedIds = previousManagedIds + managed.map { it.restaurant.id }
+    val managed = (server + bundledValues.filterNot { it.restaurant.id in serverIds }).filterNot { it.restaurant.id in deletedRestaurantIds }
+    val managedIds = previousManagedIds + managed.map { it.restaurant.id } + deletedRestaurantIds
     return ManagedRestaurantCatalog(current.filterNot { it.restaurant.id in managedIds } + managed, managedIds)
 }

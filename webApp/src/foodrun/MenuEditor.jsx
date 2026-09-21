@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { amount, money } from './client';
 import { removeOptionGroup } from './menuValidation';
+import { t as translate } from './i18n.js';
 
 export function MenuMoneyInput({ value, onChange, label }) {
   const [text, setText] = useState((value / 100).toFixed(2));
@@ -12,7 +13,7 @@ export function MenuMoneyInput({ value, onChange, label }) {
   }} />;
 }
 export default function MenuEditor({ menu, onChange, language = 'en' }) {
-  const t = (en, ar) => language === 'ar' ? ar : en;
+  const t = (en, ar) => language === 'ar' ? (translate(en, 'ar') === en ? ar : translate(en, 'ar')) : en;
   const id = () => crypto.randomUUID();
   const editItem = (itemId, fields) => onChange({ ...menu, items: menu.items.map(item => item.id === itemId ? { ...item, ...fields } : item) });
   const editGroup = (groupId, fields) => onChange({ ...menu, optionGroups: menu.optionGroups.map(group => group.id === groupId ? { ...group, ...fields } : group) });

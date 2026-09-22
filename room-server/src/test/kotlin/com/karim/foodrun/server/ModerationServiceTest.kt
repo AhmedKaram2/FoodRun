@@ -114,6 +114,27 @@ class ModerationServiceTest {
         admin.mutateUser(AdminUserMutation(userId = "new", action = "restore"), "admin")
         assertTrue(token(f, "new@example.test").isNotEmpty())
     }
+    @Test fun adminCanRenameAUserAndTheNextSignInSyncsTheCloudProfile() {
+        val provider = Identity()
+        RoomFixture(provider).use { f ->
+            val admin = AdminService(f.db, f.service, { f.now }, provider)
+            admin.mutateUser(AdminUserMutation(action = "create", name = "Old name", email = "rename@example.test", password = "fixture-password", phone = "+971501234567"), "admin")
+            val firstSignIn = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.SIGN_IN, email = "rename@example.test", password = "fixture-password")))
+            val joined = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.JOIN, code = f.owner.room!!.code,
+                name = "Old name", identityToken = firstSignIn.identityToken))
+
+            admin.mutateUser(AdminUserMutation(userId = "rename", action = "rename", name = "New name"), "admin")
+
+            assertEquals("New name", admin.dashboard().users.single { it.id == "rename" }.name)
+            assertEquals("New name", f.db.room(f.owner.room!!.id)!!.members.single { it.id == joined.memberId }.name)
+            val signedIn = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.SIGN_IN, email = "rename@example.test", password = "fixture-password")))
+            assertEquals("New name", signedIn.home!!.profile.name)
+            assertEquals("New name", provider.profiles.getValue("rename").name)
+            assertNull(f.db.record("admin:profile-name:rename"))
+        }
+    }
     @Test fun historyCleanupPublishesDeletionForConnectedClients() = RoomFixture().use { f ->
         f.send(f.owner, CommandKind.CANCEL) { it.copy(text = "Finished meal") }
         f.send(f.owner, CommandKind.NEXT_ORDER)

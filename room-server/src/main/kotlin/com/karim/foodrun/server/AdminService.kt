@@ -89,10 +89,32 @@ class AdminService(
             audit(actorId, "create-user", identity.userId); rooms.adminChanged()
             return@synchronized
         }
-        require(change.userId.isNotBlank() && change.userId != actorId) { "You cannot block or remove your own administrator account." }
+        require(change.userId.isNotBlank()) { "Choose a user." }
+        require(change.action == "rename" || change.userId != actorId) { "You cannot block or remove your own administrator account." }
         require(db.record("profile:${change.userId}") != null || db.record("admin:restriction:${change.userId}") != null) { "User was not found." }
         val memberships = db.records("membership:${change.userId}:").map { orderJson.decodeFromString<AccountRoom>(it.second) }
         when (change.action) {
+            "rename" -> {
+                val name = change.name.trim().also(MenuValidation::label)
+                val profile = requireNotNull(db.record("profile:${change.userId}")) { "Restore this removed user first." }
+                    .let { orderJson.decodeFromString<FoodProfile>(it) }
+                val linkedRooms = memberships.mapNotNull { membership -> db.room(membership.roomId)?.let { membership to it } }
+                linkedRooms.forEach { (membership, room) ->
+                    require(room.members.none { it.id != membership.memberId && !it.removed && it.name.equals(name, true) }) {
+                        "Another member in ${room.name} already uses this name."
+                    }
+                }
+                db.putRecord("profile:${change.userId}", orderJson.encodeToString(profile.copy(name = name)))
+                db.putRecord("admin:profile-name:${change.userId}", name)
+                linkedRooms.forEach { (membership, room) ->
+                    db.save(room.copy(
+                        members = room.members.map { if (it.id == membership.memberId) it.copy(name = name) else it },
+                        revision = room.revision + 1,
+                        updatedAt = clock(),
+                    ))
+                }
+                audit(actorId, "rename-user", change.userId)
+            }
             "status", "block", "unblock" -> {
                 val block = change.action == "block" || change.action == "status" && change.disabled
                 require(change.durationHours in 0..8760) { "Choose a duration of up to 365 days." }

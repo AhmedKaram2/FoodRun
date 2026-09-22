@@ -336,7 +336,10 @@ internal class GroupPresentation(private val c: GroupController) {
         if (!c.online) card("offline", "Your saved order is available", "Reconnect to the same local hub to make changes. Cached payment status may have changed.", actions = listOf(GroupButton("Reconnect", GroupAction.REFRESH)))
         r.members.filterNot { it.removed }.forEach { m ->
             val actions = mutableListOf<GroupButton>()
-            if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY) { actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true); if(m.approved && !m.guest) actions += GroupButton(ui("Make organizer"), GroupAction.HANDOVER, m.id) }
+            val submitted = r.carts.any { it.memberId == m.id && it.submitted }
+            val canRemove = owner && m.id != r.ownerId && (r.phase == RoomPhase.LOBBY || r.phase == RoomPhase.COLLECTING && m.id != r.payerId && !submitted)
+            if(canRemove) actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true)
+            if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY && m.approved && !m.guest) actions += GroupButton(ui("Make organizer"), GroupAction.HANDOVER, m.id)
             card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.guest && !m.participating) "Skipping this order" else if(m.eligible) "Joined · Can be selected" else "Joined", actions)
         }
         if(owner) r.expectedNames.filter { name -> r.orderingMembers.none { it.name.equals(name.trim(), true) } }.forEach { card("invite:$it", it, "Expected · not participating today", actions = if(r.phase == RoomPhase.LOBBY) listOf(GroupButton(ui("Remove invitation"), GroupAction.REMOVE, "invite:$it")) else emptyList()) }

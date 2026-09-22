@@ -242,6 +242,25 @@ class RoomServiceTest {
         f.send(f.owner, CommandKind.REMOVE) { it.copy(memberId = member.memberId, text = "Removed") }
         assertFalse(f.service.execute(RoomCommand(commandId = f.id(), kind = CommandKind.SNAPSHOT, roomId = f.owner.room!!.id, token = member.token)).ok)
     }
+    @Test fun organizerCanRemoveAnUnsubmittedMemberDuringCollectionWithoutWaiting(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member); f.start(member)
+        f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }
+        f.cart(f.owner, 1)
+        f.send(member, CommandKind.CART) { it.copy(expectedRevision = 0, cart = MemberCart(member.memberId, lines = listOf(CartLine(f.id(), "meal", 1)))) }
+
+        val removed = f.send(f.owner, CommandKind.REMOVE) { it.copy(memberId = member.memberId, text = "Did not finish ordering") }.room!!
+
+        assertTrue(removed.members.single { it.id == member.memberId }.removed)
+        assertTrue(removed.carts.none { it.memberId == member.memberId })
+        assertEquals(RoomPhase.REVIEW, f.send(f.owner, CommandKind.REVIEW).room!!.phase)
+    }
+    @Test fun organizerCannotRemoveThePayerOrACompletedOrderDuringCollection(): Unit = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member); f.start(member)
+        f.cart(member, 1)
+
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.REMOVE).copy(memberId = f.owner.memberId, text = "Owner")).ok)
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.REMOVE).copy(memberId = member.memberId, text = "Already ordered")).ok)
+    }
     @Test fun aDifferentOwnerDoesNotGainOtherMembersReceipts(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.approve(member); f.start(member)
         f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }; f.cart(f.owner, 45); f.cart(member, 30)

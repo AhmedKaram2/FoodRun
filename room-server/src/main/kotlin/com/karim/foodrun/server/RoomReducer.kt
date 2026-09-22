@@ -42,10 +42,22 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r
             }
             CommandKind.REMOVE -> {
-                owner(); phase(RoomPhase.LOBBY); fresh(); reason()
+                owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh(); reason()
                 require(c.memberId != r.ownerId) { "Hand over ownership before leaving." }
                 if (c.memberId.isEmpty()) r.copy(expectedNames = r.expectedNames.filterNot { it == c.name })
-                else { val target = RoomRules.member(r, c.memberId); r.copy(members = r.members.map { if (it.id == target.id) it.copy(removed = true) else it }, expectedNames = r.expectedNames.filterNot { it.equals(target.name, true) }) }
+                else {
+                    val target = RoomRules.member(r, c.memberId)
+                    require(target.id != r.payerId) { "Choose another ordering person before removing this member." }
+                    val cart = r.carts.singleOrNull { it.memberId == target.id }
+                    require(r.phase == RoomPhase.LOBBY || cart?.submitted != true) { "This member already submitted an order and cannot be removed from today's bill." }
+                    r.copy(
+                        members = r.members.map { if (it.id == target.id) it.copy(removed = true) else it },
+                        expectedNames = r.expectedNames.filterNot { it.equals(target.name, true) },
+                        carts = r.carts.filterNot { it.memberId == target.id },
+                        restaurantVotes = r.restaurantVotes.filterNot { it.memberId == target.id },
+                        quoteRevision = r.quoteRevision + if (cart == null) 0 else 1,
+                    )
+                }
             }
             CommandKind.PARTICIPATE -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)

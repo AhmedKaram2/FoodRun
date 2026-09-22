@@ -84,11 +84,14 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
                 require(settings.registrationsEnabled) { "New registration is temporarily disabled by the administrator." }
             }
+            val pendingAdminName = db.record("admin:profile-name:${identity.userId}")
             val savedProfile = (cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
                 if (it.phone.isBlank()) it else it.normalized()
-            }
+            }.let { if (pendingAdminName == null) it else it.copy(name = pendingAdminName) }
             AccountRestrictions.requireAllowed(db, identity.userId, clock())
             if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
+            else if (pendingAdminName != null && runCatching { cloud().saveProfile(identity, savedProfile) }.isSuccess)
+                db.deleteRecord("admin:profile-name:${identity.userId}")
             db.putRecord("profile:${identity.userId}", orderJson.encodeToString(savedProfile))
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))
@@ -101,6 +104,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 updated.validate()
                 cloud().saveProfile(identity(RoomService.hash(c.identityToken), saved), updated)
                 db.putRecord("profile:${saved.userId}", orderJson.encodeToString(updated))
+                db.deleteRecord("admin:profile-name:${saved.userId}")
                 home(c.identityToken)
             }
             IdentityAction.SIGN_OUT -> { db.deleteRecord("identity:${RoomService.hash(c.identityToken)}"); RoomReply() }

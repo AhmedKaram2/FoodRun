@@ -107,7 +107,10 @@ export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy }) {
 function AdminUserCard({ person, self, rooms, mutate, busy }) {
   const [duration, setDuration] = useState('24'), [reason, setReason] = useState('');
   const [scopeRoomId, setScopeRoomId] = useState('');
+  const [name, setName] = useState(person.name || '');
+  useEffect(() => setName(person.name || ''), [person.name]);
   return <article className="admin-person stack"><div className="section-title"><div><b>{person.name || t('Incomplete profile')}</b><small>{person.phone || person.id}</small></div><span className={`status ${person.disabled ? '' : 'live'}`}>{t(person.removed ? 'Removed' : person.disabled ? 'Blocked' : 'Active')}</span></div>
+    {!person.removed && <form className="admin-rename" onSubmit={event => { event.preventDefault(); const next = name.trim(); if (next && next !== person.name) mutate('/admin/user', { userId: person.id, action: 'rename', name: next }); }}><label>{t('User name')}<input required maxLength={160} value={name} onChange={event => setName(event.target.value)} /></label><button className="secondary" disabled={busy || !name.trim() || name.trim() === person.name}>{t('Save name')}</button></form>}
     {person.disabled && <p className="admin-block-status">{person.blockedUntil ? `${t('Blocked until')} ${new Date(person.blockedUntil).toLocaleString()}` : t('Until unblocked by admin')}{person.blockReason && <> · {person.blockReason}</>}</p>}
     {Object.entries(person.roomBlocks || {}).map(([roomId, block]) => <div className="admin-block-status" key={roomId}>{rooms.find(room => room.id === roomId)?.name || roomId} · {block.until ? new Date(block.until).toLocaleString() : t('Until unblocked by admin')} · {block.reason}<button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'unblock', scopeRoomId: roomId })}>{t('Unblock now')}</button></div>)}
     {self ? <p>{t('Your administrator account')}</p> : person.removed ? <button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'restore' })}>{t('Restore Food Run access')}</button> : <>

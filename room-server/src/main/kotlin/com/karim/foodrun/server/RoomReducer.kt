@@ -210,7 +210,9 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.SET_FEES -> {
                 require(actorId == r.ownerId || actorId == r.payerId); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); reason()
-                val fees = requireNotNull(c.fees).copy(automaticDelivery = r.deliveryMode); RoomRules.validateFees(fees)
+                val requestedFees = requireNotNull(c.fees)
+                val fees = requestedFees.copy(automaticDelivery = r.deliveryMode && requestedFees.automaticDelivery)
+                RoomRules.validateFees(fees)
                 // Fees and tax are one atomic update; this command cannot replace menu items or other restaurant details.
                 val restaurant = c.restaurant ?: r.restaurant
                 require(restaurant.copy(pricing = r.restaurant.pricing) == r.restaurant &&

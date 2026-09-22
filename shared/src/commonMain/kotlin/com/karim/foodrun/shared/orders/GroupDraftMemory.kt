@@ -9,7 +9,7 @@ internal class GroupDraftMemory {
     private var restaurantReturnFees: Map<GroupFieldKey, String?>? = null
     private val feeKeys = listOf(
         GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
-        GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL,
+        GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL, GroupFieldKey.AUTOMATIC_DELIVERY,
     )
 
     fun beginRestaurant(draft: Map<GroupFieldKey, String>) {
@@ -29,6 +29,7 @@ internal class GroupDraftMemory {
             GroupFieldKey.SERVICE_FEE to Money.format(room.fees.service, room.restaurant.currency).substringAfter(' '),
             GroupFieldKey.DISCOUNT to Money.format(room.fees.discount, room.restaurant.currency).substringAfter(' '),
             GroupFieldKey.PROPORTIONAL to room.fees.proportionalDelivery.toString(),
+            GroupFieldKey.AUTOMATIC_DELIVERY to room.fees.automaticDelivery.toString(),
         )
         when {
             page == GroupPage.SETUP -> Unit

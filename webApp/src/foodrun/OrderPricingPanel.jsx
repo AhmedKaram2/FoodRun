@@ -27,7 +27,7 @@ export default function OrderPricingPanel({ room, data, describeLine }) {
     } catch (error) { setError(error.message); }
     finally { pending.current = false; setSaving(false); }
   };
-  return <article className="card order-pricing-panel">
+  return <article id="order-pricing" className="card order-pricing-panel">
     <p className="eyebrow">{t('SELECTED TO ORDER')}</p><h2>{t('Item prices')}</h2>
     <p className="muted">{t('Set the price per item, including its selected extras. Changes apply only to this order and update everyone’s totals.')}</p>
     <p className="fine">{t('Submitted orders stay submitted. Members do not need to approve price changes.')}</p>

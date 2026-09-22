@@ -4,6 +4,21 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class TaxAndEmptyOrderTest {
+    @Test fun organizerCanReplaceTheDefaultAutomaticDeliveryWithAManualFee() = RoomFixture().use { f ->
+        val member = f.join()
+        val initial = f.db.room(f.owner.room!!.id)!!
+        f.db.save(initial.copy(deliveryMode = true, destination = "Restaurant delivery",
+            fees = FeePolicy(automaticDelivery = true)))
+        f.start(member)
+
+        val updated = f.send(f.owner, CommandKind.SET_FEES) {
+            it.copy(fees = FeePolicy(delivery = 700, automaticDelivery = false), text = "Restaurant delivery quote")
+        }.room!!
+
+        assertFalse(updated.fees.automaticDelivery)
+        assertEquals(700, updated.fees.delivery)
+    }
+
     @Test fun confirmingTaxPreservesEverySubmissionIncludingNoFood() = RoomFixture().use { f ->
         val unknown = f.restaurant.copy(pricing = f.restaurant.pricing.copy(taxTreatment = TaxTreatment.UNSPECIFIED))
         f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = unknown, text = "Tax not yet confirmed") }
@@ -28,7 +43,7 @@ class TaxAndEmptyOrderTest {
         f.cart(f.owner, 0)
         members.zip(listOf(20, 20, 20, 26, 33)).forEach { (member, quantity) -> f.cart(member, quantity) }
         val room = f.state().room!!
-        f.send(f.owner, CommandKind.SET_FEES) { it.copy(fees = FeePolicy(service = 1000, discount = 2500),
+        f.send(f.owner, CommandKind.SET_FEES) { it.copy(fees = FeePolicy(service = 1000, discount = 2500, automaticDelivery = true),
             restaurant = room.restaurant.copy(pricing = room.restaurant.pricing.copy(taxTreatment = TaxTreatment.INCLUDED)), text = "Tax included, service fee and discount") }
         val receipts = f.state().receipts
         assertEquals(10900L, receipts.sumOf { it.total })

@@ -355,6 +355,7 @@ class GroupController(val platform: GroupPlatform) {
         draft[GroupFieldKey.SERVICE_FEE] = Money.format(room.fees.service, room.restaurant.currency).substringAfter(' ')
         draft[GroupFieldKey.DISCOUNT] = Money.format(room.fees.discount, room.restaurant.currency).substringAfter(' ')
         draft[GroupFieldKey.PROPORTIONAL] = room.fees.proportionalDelivery.toString()
+        draft[GroupFieldKey.AUTOMATIC_DELIVERY] = room.fees.automaticDelivery.toString()
     }
     internal fun command(kind: CommandKind, memberId: String = "", text: String = "", flag: Boolean = false, eligible: Boolean = false, revision: Long = room().revision, cart: MemberCart? = null, account: ReceivingAccount? = null, fees: FeePolicy? = null, amount: Long = 0, transferId: String = "", restaurant: Restaurant? = null, restaurants: List<Restaurant> = emptyList(), expectedNames: List<String> = emptyList(), destination: String = "", name: String = "") {
         val s = requireNotNull(session)

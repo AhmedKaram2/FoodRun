@@ -21,7 +21,8 @@ internal fun GroupController.seedFees(r: Restaurant) {
     draft[GroupFieldKey.DISCOUNT] = "0"
 }
 internal fun GroupController.fees(currency: String): FeePolicy {
-    val automatic = if(page == GroupPage.SETUP) flag(GroupFieldKey.DELIVERY) else reply?.room?.deliveryMode == true
+    val automatic = if(page == GroupPage.SETUP) flag(GroupFieldKey.DELIVERY)
+        else reply?.room?.deliveryMode == true && flag(GroupFieldKey.AUTOMATIC_DELIVERY)
     return FeePolicy(
         if(automatic) 0 else Money.parse(text(GroupFieldKey.DELIVERY_FEE).ifBlank { "0" }, currency),
         Money.parse(text(GroupFieldKey.SERVICE_FEE).ifBlank { "0" }, currency),

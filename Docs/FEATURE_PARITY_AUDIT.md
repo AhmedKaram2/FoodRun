@@ -1,5 +1,7 @@
 # Web, Android and iOS feature audit
 
+**24 September 2026 update:** see [Food Run 1.5.0 source audit](RELEASE_1.5.0.md) for the latest capability changes and validation boundaries. The report below is the historical 20 September audit.
+
 20 September 2026. Audited the FoodRun checkout, including `webApp`, shared presentation/domain/contracts, native adapters and `room-server`. This report accompanies the audited source changes for `fork/main`. Existing restaurant/profile work was preserved. Physical-device acceptance, mobile distribution and the production rollout are not established by these local checks.
 
 ## Result

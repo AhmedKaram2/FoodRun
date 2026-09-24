@@ -258,6 +258,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val authorized = member.approved && !member.removed
         val orderer = authorized && !member.guest && member.participating
         val payer = authorized && room.payerId == actor
+        val canViewPrices = payer || authorized && room.ownerId == actor && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)
         val receipts = if (orderer) Billing.receipts(room).filter { payer || it.memberId == actor } else emptyList()
         val visible = if (!authorized) room.copy(
             restaurant = Restaurant("pending", "Waiting for organizer approval"), expectedNames = emptyList(),
@@ -268,12 +269,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             lastChosenMemberId = null, lastChosenName = "",
         ) else room.copy(
             // Legacy clients use this field as a payment gate. All members are exempt:
-            // selected-payer price changes apply directly without another approval cycle.
+            // Owner and payer price changes apply directly without another approval cycle.
             adjustmentApprovals = if (room.billRevision > 1)
                 room.orderingMembers.map { it.id }
                 else room.adjustmentApprovals,
-            // Ordering progress is public; cart lines are private. Submitted/confirmation markers are safe.
-            carts = room.carts.map { if (payer || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },
+            // Owners need current item lines to price orders. Other members retain their own lines only.
+            carts = room.carts.map { if (canViewPrices || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },
             account = room.account.takeIf { orderer },
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },

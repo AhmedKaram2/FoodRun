@@ -154,7 +154,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PRICE_ITEM -> {
-                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
+                require(actorId == r.ownerId || actorId == r.payerId) { "Only the room owner or selected payer can edit item prices." }
+                phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
                 MenuValidation.price(c.amount)
                 val target = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Order not found.")
                 val line = target.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")

@@ -403,7 +403,7 @@ internal class GroupPresentation(private val c: GroupController) {
                         receipt.lines.joinToString("\n") { "${it.quantity} × ${localizedReceiptDescription(r, it, language)} · ${Money.format(it.amount, receipt.currency)}" },
                         receipt.totalText)
                 }
-                if(payer) itemPricingCards(r)
+                if(owner || payer) itemPricingCards(r)
                 val nextStep = when {
                     awaitingFood.isNotEmpty() -> "Waiting for food orders from ${awaitingFood.joinToString { it.name }}. Each person must submit their food or choose No food this time."
                     needsAccount -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to share a receiving account."
@@ -417,15 +417,15 @@ internal class GroupPresentation(private val c: GroupController) {
                 if(owner) button("Cancel today's order", GroupAction.CANCEL)
             }
             RoomPhase.REVIEW -> {
-                accountCard(); if(payer) itemPricingCards(r); append(GroupSettlementPresentation(c).review())
+                accountCard(); if(owner || payer) itemPricingCards(r); append(GroupSettlementPresentation(c).review())
                 button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
                 if(payer) {
                     card("order-summary", r.restaurant.localizedName(language), restaurantReadyText(r, c.reply!!.receipts, language), Money.format(c.reply!!.receipts.sumOf { it.total }, r.restaurant.currency))
-                    button(tr("Edit item prices", "تعديل أسعار الأصناف"), GroupAction.OPEN_ORDER_PRICES)
                     button(tr("Edit receiving details", "تعديل بيانات الاستلام"), GroupAction.OPEN_ACCOUNT)
                 }
+                if(owner || payer) button(tr("Edit item prices", "تعديل أسعار الأصناف"), GroupAction.OPEN_ORDER_PRICES)
                 accountCard(); append(GroupSettlementPresentation(c).settlement())
                 button("Order details", GroupAction.OPEN_RECEIPTS)
                 transferCards()

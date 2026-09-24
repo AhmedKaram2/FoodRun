@@ -110,7 +110,7 @@ export async function runPollPricingAudit() {
   assert(!measureAudit().overflow, 'Price editor overflows');
   await mountAudit('room', 'REVIEW', { room });
   assert(host.querySelector('.order-pricing-panel'), 'Price editor missing during review');
-  await mountAudit('room', 'COLLECTING', { room: { ...room, payerId: 'other', members: [{ id: 'me', name: 'Me', approved: true, participating: true }, { id: 'other', name: 'Other', approved: true, participating: true }] } });
+  await mountAudit('room', 'COLLECTING', { room: { ...room, ownerId: 'organizer', payerId: 'other', members: [{ id: 'me', name: 'Me', approved: true, participating: true }, { id: 'other', name: 'Other', approved: true, participating: true }] } });
   assert(!host.querySelector('.order-pricing-panel'), 'Nonpayer can see item price controls');
   for (const phase of ['PLACED', 'FULFILLED']) {
     await mountAudit('room', phase, { room: { ...room, billRevision: 2, adjustmentApprovals: [] }, liveCommands: true });
@@ -125,8 +125,41 @@ export async function runPollPricingAudit() {
   }
   await mountAudit('room', 'LOBBY', { room: poll, liveCommands: true });
   assert(!measureAudit().overflow, 'Poll popup overflows');
-  return { passed: ['entry popup', 'vote saves and closes', 'existing voter skipped', 'failed vote retry', 'dismiss', 'guest excluded', 'menu price edit', 'quantity multiplication', 'restore menu price', 'shared discount', 'review phase', 'payer-only controls'], ...measureAudit() };
+  return { passed: ['entry popup', 'vote saves and closes', 'existing voter skipped', 'failed vote retry', 'dismiss', 'guest excluded', 'menu price edit', 'quantity multiplication', 'restore menu price', 'shared discount', 'review phase', 'ordinary members cannot price'], ...measureAudit() };
 }
+export async function runOwnerPricingAudit() {
+  commands.length = 0;
+  const restaurant = loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba');
+  const item = restaurant.menu.items.find(value => value.available);
+  const members = ['me', 'payer', 'member'].map(id => ({ id, name: id, approved: true, participating: true }));
+  const line = { id: 'other-item', itemId: item.id, variantId: item.variants[0]?.id || null, optionIds: [], description: '', notes: '', quantity: 2, unitPrice: null };
+  const room = { restaurant, ownerId: 'me', payerId: 'payer', members, carts: [{ memberId: 'member', revision: 1, submitted: true, lines: [line] }] };
+  for (const phase of ['COLLECTING', 'REVIEW', 'PLACED', 'FULFILLED']) {
+    await mountAudit('room', phase, { room, liveCommands: true });
+    const details = host.querySelector('.order-edit-options');
+    if (details) details.open = true;
+    assert(host.querySelector('.order-pricing-panel'), `Owner cannot price in ${phase}`);
+    button('Edit price').click(); await pause();
+    setValue(host.querySelector('.order-pricing-panel input'), '7.50'); await pause();
+    host.querySelector('.order-pricing-panel form').requestSubmit(); await pause();
+    const saved = commands.at(-1);
+    assert(saved.kind === 'PRICE_ITEM' && saved.fields.memberId === 'member' && saved.fields.amount === 750, 'Owner price change did not target the item');
+    assert(host.querySelector('.order-pricing-panel').textContent.includes('15.00'), 'Owner change did not recalculate quantity');
+    button('Edit price').click(); await pause(); button('Use menu price').click(); await pause();
+    assert(commands.at(-1).fields.flag === true, 'Owner cannot restore the menu price');
+    assert(![...host.querySelectorAll('button')].some(node => node.textContent.startsWith(t('Mark restaurant paid'))), 'Owner received payer payment controls');
+    assert(!measureAudit().overflow, `Owner editor overflows in ${phase}`);
+    await mountAudit('room', phase, { room: { ...room, ownerId: 'organizer' } });
+    assert(!host.querySelector('.order-pricing-panel'), `Ordinary member can price in ${phase}`);
+  }
+  for (const phase of ['ARCHIVED', 'CANCELLED']) {
+    await mountAudit('room', phase, { room });
+    assert(!host.querySelector('.order-pricing-panel'), `Owner can price a closed order in ${phase}`);
+  }
+  await mountAudit('room', 'COLLECTING', { room, liveCommands: true });
+  return { passed: ['owner editing in all four active stages', 'other member item prices', 'quantity totals', 'restore menu price', 'payer controls retained', 'ordinary members excluded', 'closed orders unchanged'], ...measureAudit() };
+}
+
 export async function runReorderAudit() {
   commands.length = 0;
   await mountAudit('room');

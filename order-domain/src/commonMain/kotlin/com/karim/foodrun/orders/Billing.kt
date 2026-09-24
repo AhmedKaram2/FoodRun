@@ -14,7 +14,7 @@ object Billing {
                 MenuValidation.price(amount)
                 return@map ReceiptLine(line.description, line.quantity, amount, line.notes)
             }
-            // The server accepts overrides only through the selected payer's PRICE_ITEM command.
+            // The server accepts overrides only through the owner or selected payer's PRICE_ITEM command.
             line.unitPrice?.let(MenuValidation::price)
             val item = restaurant.menu.items.singleOrNull { it.id == line.itemId } ?: error("Menu item no longer exists.")
             require(item.available) { "${item.name} is unavailable." }

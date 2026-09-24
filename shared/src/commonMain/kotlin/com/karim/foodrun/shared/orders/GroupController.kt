@@ -108,7 +108,7 @@ class GroupController(val platform: GroupPlatform) {
                 page = GroupPage.SETUP
             }
             GroupAction.OPEN_PROFILE -> { openProfile() }
-            GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me()); page = GroupPage.PRICES }
+            GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
                 require(value in listOf("en", "ar")) { "Choose Arabic or English." }
                 replaceLibrary(library.copy(language = value))

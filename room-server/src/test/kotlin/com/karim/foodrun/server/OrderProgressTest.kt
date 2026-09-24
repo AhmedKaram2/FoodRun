@@ -149,7 +149,7 @@ class OrderProgressTest {
         assertTrue(reviewable.progress!!.canReview)
         assertTrue(reviewable.receipts.isEmpty())
         assertNull(reviewable.room!!.account)
-        assertTrue(reviewable.room!!.carts.all { it.lines.isEmpty() })
+        assertEquals(setOf(payer.memberId, member.memberId), reviewable.room!!.carts.filter { it.lines.isNotEmpty() }.map { it.memberId }.toSet())
         assertTrue(f.state(payer).progress!!.canReview)
         f.send(f.owner, CommandKind.REVIEW)
         listOf(payer, member).forEach { actor ->

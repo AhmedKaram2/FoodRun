@@ -32,9 +32,10 @@ class GroupSettlementPresentationTest {
     /** Match the hub's privacy projection: only the payer sees every receipt. */
     private fun controller(room: Room, member: String = "payer"): GroupController {
         val isPayer = room.payerId == member
+        val canViewPrices = isPayer || room.ownerId == member && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)
         val isOrderer = room.orderingMembers.any { it.id == member }
         val visibleRoom = room.copy(
-            carts = room.carts.map { if (isPayer || it.memberId == member) it else it.copy(lines = emptyList()) },
+            carts = room.carts.map { if (canViewPrices || it.memberId == member) it else it.copy(lines = emptyList()) },
             account = room.account.takeIf { isOrderer },
             transfers = room.transfers.filter { isOrderer && (isPayer || it.memberId == member) },
         )
@@ -46,6 +47,25 @@ class GroupSettlementPresentationTest {
     }
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
+
+    @Test fun roomOwnerCanOpenPricesForEveryMemberWithoutReceivingPayerActions() {
+        for (phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)) {
+            val owner = controller(room().copy(ownerId = "member", phase = phase), "member")
+            if (phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED)) {
+                assertTrue(owner.state.buttons.any { it.action == GroupAction.OPEN_ORDER_PRICES })
+                assertFalse(owner.state.buttons.any { it.action == GroupAction.PAY_RESTAURANT })
+                owner.dispatch(GroupAction.OPEN_ORDER_PRICES)
+                assertEquals(GroupPage.PRICES, owner.state.page)
+            }
+            val edits = owner.state.cards.flatMap { it.buttons }.filter { it.action == GroupAction.OPEN_PRICE_ITEM }
+            assertEquals(setOf("payer:line-payer", "member:line-member"), edits.map { it.value }.toSet())
+            owner.dispatch(GroupAction.OPEN_PRICE_ITEM, "payer:line-payer")
+            assertEquals(GroupPage.PRICE_ITEM, owner.state.page)
+            val ordinary = controller(room().copy(phase = phase), "member").state
+            assertFalse(ordinary.cards.flatMap { it.buttons }.any { it.action == GroupAction.OPEN_PRICE_ITEM })
+            assertFalse(ordinary.buttons.any { it.action == GroupAction.OPEN_ORDER_PRICES })
+        }
+    }
 
     @Test fun membersSeeWhoIsSendingWithoutASecondConfirmation() {
         val content = GroupSettlementPresentation(controller(room(), "member")).review()

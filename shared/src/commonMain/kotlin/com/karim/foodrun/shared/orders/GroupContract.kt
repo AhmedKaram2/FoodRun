@@ -3,8 +3,8 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
 
-enum class GroupPage { BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY }
-enum class GroupAction {
+enum class GroupPage { MENU_EDITOR, MENU_ENTITY, ADMIN, ADMIN_USER, ADMIN_CONFIRM, PAYMENT_ROOM, PAYMENT_SHARE, RECORD_PAYMENT, PAYMENT, REORDER, NOTIFICATIONS, BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY }
+enum class GroupAction { MENU_OPEN, MENU_EDIT, MENU_SAVE, MENU_REMOVE, MENU_TOGGLE_GROUP, OPEN_ADMIN, ADMIN_TAB, ADMIN_USER, ADMIN_NEW_USER, ADMIN_SAVE_USER, ADMIN_ACTION, ADMIN_CONFIRM, ADMIN_RESTAURANT, ADMIN_NEW_RESTAURANT, ADMIN_SAVE_SETTINGS, ADMIN_PREVIEW_CLEANUP, ADMIN_DELETE_CLEANUP, CREATE_PAYMENT_ROOM, SAVE_PAYMENT_ROOM, EDIT_PAYMENT_RECEIPT, EDIT_PAYMENT_SHARE, EDIT_EXISTING_PAYMENT_SHARE, REMOVE_PAYMENT_SHARE, SAVE_PAYMENT_SHARE, RECORD_PAYMENT, SAVE_RECORDED_PAYMENT, CONFIRM_REORDER, OPEN_NOTIFICATIONS, OPEN_NOTIFICATION, NOTIFICATION_ACTION, DISABLE_ALERTS,
     OPEN_BLOCK_REQUEST, REQUEST_BLOCK, OPEN_POLL_RESTAURANTS, TOGGLE_POLL_RESTAURANT, CONFIRM_POLL_RESTAURANTS, OPEN_ORDER_PRICES,
     OPEN_PROFILE, SET_LANGUAGE, SIGN_IN, REGISTER, SAVE_PROFILE, SIGN_OUT, RESET_PASSWORD, ENABLE_CLOUD, ENABLE_ALERTS, OPEN_PEOPLE, INVITE_PERSON, ACCEPT_INVITE, OPEN_CUSTOM_ITEM, ADD_CUSTOM_ITEM, OPEN_PRICE_ITEM, SAVE_ITEM_PRICE, USE_OPEN_ORDER, BACK, QUICK_SPIN, CREATE, JOIN, USE_INTERNET, CONNECT, DISCOVER, SCAN, OPEN_LIBRARY, NEW_RESTAURANT, EDIT_RESTAURANT,
     IMPORT_MENU, PREVIEW_IMPORT, CONFIRM_IMPORT, EXPORT_MENU, SAVE_RESTAURANT, DELETE_RESTAURANT, SELECT_RESTAURANT, EDIT_ROOM_RESTAURANT, SELECT_TAX_TREATMENT,
@@ -20,7 +20,8 @@ enum class GroupAction {
     QUICK_ADD_ITEM, INCREASE_CART_QUANTITY, DECREASE_CART_QUANTITY,
 }
 internal const val FOOD_RUN_INTERNET_API = "https://foodrun-api-q6b9.onrender.com"
-enum class GroupFieldKey {
+enum class GroupFieldKey { RESTAURANT_NAME_AR, BRANCH_AR, EMIRATE, EMIRATE_AR, AREA, AREA_AR, CUISINE, CUISINE_AR, RESTAURANT_NOTES, RESTAURANT_WHATSAPP, OPEN_ORDERING, MEAL_BREAKFAST, MEAL_LUNCH, MEAL_DINNER, MENU_ENTITY_NAME, MENU_ENTITY_AR, MENU_ENTITY_DESCRIPTION, MENU_ENTITY_DESCRIPTION_AR, MENU_ENTITY_PRICE, MENU_ENTITY_CATEGORY, MENU_ENTITY_AVAILABLE, MENU_ENTITY_MIN, MENU_ENTITY_MAX, MENU_ENTITY_SORT, ADMIN_SEARCH, ADMIN_SCOPE, ADMIN_DAYS, ADMIN_CONFIRMATION, ADMIN_REGISTRATION, ADMIN_ROOMS, ADMIN_MESSAGE, ADMIN_LANGUAGE, ADMIN_NAME, ADMIN_PHONE, ADMIN_PHOTO, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_DISCOVERABLE, ADMIN_METHOD, ADMIN_HOLDER, ADMIN_BANK, ADMIN_IDENTIFIER, ADMIN_DURATION, ADMIN_REASON, PAYMENT_ROOM_NAME, PAYMENT_RESTAURANT, PAYMENT_DETAILS, PAYMENT_TOTAL, PAYMENT_SHARE, PAYMENT_RECEIVED, PAYMENT_DESCRIPTION, RECEIPT_PHOTO, SELECTION_STYLE,
+    ORDER_COPY_LANGUAGE,
     BLOCK_MEMBER, BLOCK_HOURS, BLOCK_REASON, PAYER_MODE, PAYER_CHOICE, EMAIL, PASSWORD, PROFILE_PHONE, PHOTO, ACCOUNT_IBAN_DRAFT, ACCOUNT_AANI_DRAFT, AANI, DISCOVERABLE, CUSTOM_NAME, HUB_URL, FINGERPRINT, PAIRING_LINK, NAME, ROOM_NAME, ROOM_CODE, EXPECTED_NAMES, RESTAURANT_POLL, DELIVERY, DESTINATION,
     RESTAURANT_NAME, BRANCH, CURRENCY, PHONE, ADDRESS, MENU_ITEM_NAME, MENU_ITEM_PRICE, DELIVERY_FEE, SERVICE_FEE, DISCOUNT, TAX_RATE, MINIMUM_ORDER,
     RESTAURANT_SEARCH, RESTAURANT_EMIRATE, RESTAURANT_AREA, RESTAURANT_MEAL, MENU_SEARCH, MENU_CATEGORY, PROPORTIONAL, AUTOMATIC_DELIVERY, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
@@ -28,8 +29,8 @@ enum class GroupFieldKey {
 data class GroupChoice(val value: String, val label: String)
 data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false, val choices: List<GroupChoice> = emptyList())
 data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
-data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList())
-data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String)
+data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList(), val image: String = "")
+data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String, val style: String = "wheel")
 data class GroupState(
     val page: GroupPage = GroupPage.HOME, val title: String = "Food Run", val subtitle: String = "Good food. Great company.",
     val fields: List<GroupField> = emptyList(), val cards: List<GroupCard> = emptyList(), val buttons: List<GroupButton> = emptyList(),
@@ -56,7 +57,7 @@ data class GroupState(
         }
     }
     val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
-    val topCards: List<GroupCard> get() = emptyList()
+    val topCards: List<GroupCard> get() = if(page == GroupPage.ROOM) cards.filter { it.id == "notification-action" } else emptyList()
     val sections: List<GroupSection> get() = GroupLayout.sections(page, cards.filterNot { it in topCards }).map { it.copy(title = GroupUiText.translate(it.title, rtl)) }
 }
 interface GroupObserver { fun changed(state: GroupState) }
@@ -112,6 +113,10 @@ interface GroupSubscription { fun cancel() }
 interface GroupPlatform {
     fun notify(title: String, body: String) {}
     fun enableNotifications() {}
+    fun pushToken(prompt: Boolean, callback: GroupReplyCallback) { callback.complete("", "Push notifications are unavailable on this device.") }
+    fun disablePush() {}
+    fun adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete("", "Administration is unavailable on this device.") }
+    fun notificationRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete("", "Notifications are unavailable on this device.") }
     fun read(key: String): String
     fun write(key: String, value: String): Boolean
     fun now(): Long

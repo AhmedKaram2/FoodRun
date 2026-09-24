@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "461326313648",
+    "project_id": "devassess-c8833",
+    "storage_bucket": "devassess-c8833.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:461326313648:android:4407da7e47f4b19fd6b375",
+        "android_client_info": {
+          "package_name": "com.karim.foodrun"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "461326313648-bcdvmfklk1fkl6318p4ndlbe0jfkb6j0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAwTNcOhArYFZbqepJrOARXaLmagV9muAo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "461326313648-bcdvmfklk1fkl6318p4ndlbe0jfkb6j0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "461326313648-992pdoa6r1s30evmmof9ng3fbasueeb3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.karim.foodrun"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

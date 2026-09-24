@@ -41,7 +41,7 @@ export function useFoodRun() {
   const alert = useCallback((id, title, body) => {
     if (seen.current.has(id)) return;
     seen.current.add(id); setNotice(`${title} ${body}`);
-    try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body, tag: id }); } catch { /* In-app notice remains available on browsers without notification constructors. */ }
+    try { if ('Notification' in window && Notification.permission === 'granted') /* The server delivers system notifications through Firebase. */ void 0; } catch { /* In-app notice remains available on browsers without notification constructors. */ }
   }, []);
   useEffect(() => onAuthStateChanged(auth, next => {
     if (authUser.current && authUser.current !== next?.uid) {
@@ -180,5 +180,5 @@ export function useFoodRun() {
     try { await clearReceiptArchive(user.uid, hub); setOfflineReceipts([]); }
     catch { setError(t("Could not remove downloaded receipts. Check browser storage permissions.")); }
   };
-  return { accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts };
+  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts };
 }

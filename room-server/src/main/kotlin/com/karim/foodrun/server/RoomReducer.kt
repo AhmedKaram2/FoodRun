@@ -36,7 +36,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     members = r.members.filterNot { it.removed }.map { it.copy(ready = it.id == r.ownerId && !it.guest, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
                     revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
                     restaurantOptions = options, restaurantVotes = listOf(RestaurantVote(r.ownerId, restaurant.id)),
-                    restaurantPollOpen = options.size > 1,
+                    restaurantPollOpen = options.size > 1, selectionStyle = r.selectionStyle,
                     lastChosenMemberId = r.lastChosenMemberId ?: r.payerId,
                     lastChosenName = r.members.firstOrNull { it.id == (r.lastChosenMemberId ?: r.payerId) }?.name ?: r.lastChosenName,
                 ).also(RoomRules::validateRoom)

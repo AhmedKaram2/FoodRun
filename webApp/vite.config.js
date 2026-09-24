@@ -19,6 +19,7 @@ function offlineShell() {
       const version = [...files].sort().join('|');
       // Hashed asset paths change on every code change; old caches are removed on activation.
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: `
+importScripts('/notification-worker.js');
 const CACHE = 'foodrun-shell-' + ${JSON.stringify(version)};
 const FILES = ${JSON.stringify([...files])};
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))); });

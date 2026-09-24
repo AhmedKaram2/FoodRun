@@ -31,6 +31,8 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
     private var importCallback: GroupReplyCallback? = null
     private var scanCallback: GroupReplyCallback? = null
     private var closed = false
+    private var notificationPermission: ActivityResultLauncher<String>? = null
+    private var notificationCallback: GroupReplyCallback? = null
     private var googleCallback: GroupReplyCallback? = null
     private var googleVerifier = ""
     private var googleChallenge = ""
@@ -108,6 +110,10 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
                 }
             }
         }
+        notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+            val callback = notificationCallback; notificationCallback = null
+            if (allowed) callback?.let(::fetchPushToken) else callback?.complete("", "Enable notifications in Android settings.")
+        }
         scanner = activity.registerForActivityResult(ScanContract()) { result ->
             val callback = scanCallback
             scanCallback = null
@@ -123,6 +129,34 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
         }
     }
 
+    override fun adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) = transport.request(hub, body, callback, "admin/native")
+    override fun notificationRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) = transport.request(hub, body, callback, "notifications")
+    override fun pushToken(prompt: Boolean, callback: GroupReplyCallback) {
+        val enabled = context.getSharedPreferences("push-settings", Context.MODE_PRIVATE).getBoolean("enabled", false)
+        if (!prompt && !enabled) { callback.complete("", ""); return }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (prompt && notificationPermission != null) { notificationCallback = callback; notificationPermission?.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+            else callback.complete("", "Enable notifications in Android settings.")
+        } else fetchPushToken(callback)
+    }
+    private fun fetchPushToken(callback: GroupReplyCallback) {
+        val messaging = com.google.firebase.messaging.FirebaseMessaging.getInstance()
+        messaging.isAutoInitEnabled = true
+        messaging.token.addOnCompleteListener { result ->
+            if (!result.isSuccessful) callback.complete("", "Notifications could not be enabled. Check Google Play services and try again.")
+            else {
+                val prefs = context.getSharedPreferences("push-settings", Context.MODE_PRIVATE)
+                val installation = prefs.getString("installation", null) ?: UUID.randomUUID().toString()
+                prefs.edit().putString("installation", installation).putBoolean("enabled", true).apply()
+                callback.complete(org.json.JSONObject().put("token", result.result).put("platform", "android").put("installationId", installation).toString(), "")
+            }
+        }
+    }
+    override fun disablePush() {
+        context.getSharedPreferences("push-settings", Context.MODE_PRIVATE).edit().putBoolean("enabled", false).apply()
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().let { it.isAutoInitEnabled = false; it.deleteToken() }
+        context.getSystemService(android.app.NotificationManager::class.java).cancelAll()
+    }
     override fun enableNotifications() {
         if (android.os.Build.VERSION.SDK_INT >= 33) activity?.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1204)
     }

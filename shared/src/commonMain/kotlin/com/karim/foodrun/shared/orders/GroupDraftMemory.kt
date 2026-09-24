@@ -33,8 +33,8 @@ internal class GroupDraftMemory {
         )
         when {
             page == GroupPage.SETUP -> Unit
-            page in listOf(GroupPage.RESTAURANT, GroupPage.LIBRARY) && libraryReturnPage == GroupPage.SETUP -> Unit
-            page == GroupPage.RESTAURANT -> restaurantReturnFees = fees
+            page in listOf(GroupPage.RESTAURANT, GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY, GroupPage.LIBRARY) && libraryReturnPage == GroupPage.SETUP -> Unit
+            page in listOf(GroupPage.RESTAURANT, GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY) -> restaurantReturnFees = fees
             else -> draft.putAll(fees)
         }
     }

@@ -33,8 +33,8 @@ final class PinnedHubSession: NSObject, URLSessionDataDelegate {
         return components.url
     }
 
-    func command(_ body: String, completion: @escaping (String, String) -> Void) {
-        guard let url = endpoint("/command"), body.utf8.count <= Self.maximumBytes else {
+    func command(_ body: String, path: String = "/command", completion: @escaping (String, String) -> Void) {
+        guard let url = endpoint(path), body.utf8.count <= Self.maximumBytes else {
             completion("", "Check the hub pairing link and request size.")
             return
         }

@@ -1,6 +1,7 @@
 import java.util.Properties
 
 plugins {
+    id("com.google.gms.google-services")
     id("com.android.application")
     kotlin("android")
     kotlin("plugin.compose")
@@ -18,8 +19,8 @@ android {
         applicationId = "com.karim.foodrun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.4.3"
+        versionCode = 9
+        versionName = "1.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -53,11 +54,16 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation(project(":shared"))
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    // Keep the scanner dependency compatible with Activity Result APIs.
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")

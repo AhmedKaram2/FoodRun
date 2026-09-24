@@ -30,6 +30,72 @@ class ProfileSyncTest {
         return copy
     }
 
+    @Test fun directChoiceUsesTheChosenPersonsSavedPaymentWithoutSharingAgain() {
+        val provider = Identity().apply {
+            profiles[userId] = FoodProfile(userId, "Owner", "+971501234567", payment = aani)
+            profiles["Chosen"] = FoodProfile("Chosen", "Chosen", "+971509999999", payment = ReceivingAccount("chosen-bank", "Chosen", "Bank", "AE070331234567890123456"))
+        }
+        RoomFixture(provider).use { f ->
+            val chosen = f.join("Chosen")
+            repeat(2) {
+                val selected = f.send(f.owner, CommandKind.SELECT_PAYER) { it.copy(memberId = chosen.memberId) }
+                assertEquals("chosen-bank", selected.room!!.account!!.id)
+                assertTrue(selected.progress!!.accountShared)
+                assertTrue(selected.room!!.audit.none { it.action == "SHARE_ACCOUNT" })
+                if (it == 0) {
+                    f.send(f.owner, CommandKind.CANCEL) { it.copy(text = "Next meal") }
+                    f.send(f.owner, CommandKind.NEXT_ORDER)
+                    f.send(chosen, CommandKind.PARTICIPATE) { it.copy(flag = true) }
+                    f.send(chosen, CommandKind.READY) { it.copy(flag = true, eligible = true) }
+                }
+            }
+            f.cart(f.owner, 1); f.cart(chosen, 2)
+            assertTrue(f.state(chosen).progress!!.canReview)
+            assertEquals(RoomPhase.PLACED, f.send(chosen, CommandKind.PLACE).room!!.phase)
+            f.restart()
+            assertEquals("chosen-bank", f.state(chosen).room!!.account!!.id)
+        }
+    }
+
+    @Test fun wheelWinnerCanPlaceAnOrderUsingTheSavedProfileAccount() {
+        val provider = Identity().apply { profiles[userId] = FoodProfile(userId, "Owner", "+971501234567", payment = aani) }
+        RoomFixture(provider).use { f ->
+            val member = f.join(); f.start(member)
+            assertEquals(aani, f.state().room!!.account)
+            f.cart(f.owner, 1); f.cart(member, 2)
+            assertTrue(f.state().progress!!.canReview)
+            assertEquals(RoomPhase.PLACED, f.send(f.owner, CommandKind.PLACE).room!!.phase)
+            assertTrue(f.state().room!!.audit.none { it.action == "SHARE_ACCOUNT" })
+        }
+    }
+
+    @Test fun missingOrInvalidSavedPaymentStillAllowsChoiceAndRequestsDetails() {
+        for (payment in listOf(null, aani.copy(identifier = "invalid"))) {
+            RoomFixture(Identity()).use { f ->
+                f.db.putRecord("profile:$userId", orderJson.encodeToString(profile(f).copy(payment = payment)))
+                val result = f.send(f.owner, CommandKind.SELECT_PAYER) { it.copy(memberId = f.owner.memberId) }
+                assertEquals(RoomPhase.COLLECTING, result.room!!.phase)
+                assertNull(result.room!!.account)
+                assertFalse(result.progress!!.accountShared)
+            }
+        }
+    }
+
+    @Test fun olderActiveRoomsGetSavedPaymentWhileExistingAndClosedAccountsStayIntact() = RoomFixture(Identity()).use { f ->
+        f.send(f.owner, CommandKind.SELECT_PAYER) { it.copy(memberId = f.owner.memberId) }
+        val current = f.state().room!!
+        val existing = current.copy(id = "existing", code = "222222", account = f.account)
+        val archived = current.copy(id = "archived", code = "333333", phase = RoomPhase.ARCHIVED)
+        f.db.save(existing); f.db.save(archived)
+        f.db.putRecord("profile:$userId", orderJson.encodeToString(profile(f).copy(payment = aani)))
+        f.db.deleteRecord("member-user:${current.id}:${f.owner.memberId}")
+        f.restart()
+        assertEquals(aani, f.state().room!!.account)
+        assertEquals(current.revision + 1, f.state().room!!.revision)
+        assertEquals(existing, f.db.room(existing.id))
+        assertEquals(archived, f.db.room(archived.id))
+    }
+
     @Test fun aFailingCloudProfileDoesNotBlockOtherUsers() {
         val provider = Identity()
         RoomFixture(provider).use { f ->

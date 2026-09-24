@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -86,7 +87,8 @@ internal fun GroupErrorBanner(message: String) {
 internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: GroupController) {
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     fun translated(value: String) = com.karim.foodrun.shared.orders.GroupText.localized(value, rtl)
-    if (field.key == GroupFieldKey.PHOTO) {
+    if (field.key in listOf(GroupFieldKey.PHOTO, GroupFieldKey.RECEIPT_PHOTO, GroupFieldKey.ADMIN_PHOTO)) {
+        val receipt = field.key == GroupFieldKey.RECEIPT_PHOTO
         val context = LocalContext.current
         var photoError by remember { mutableStateOf("") }
         val scope = rememberCoroutineScope()
@@ -97,15 +99,22 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
                 val value = withContext(Dispatchers.IO) {
                     val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readNBytes(10 * 1024 * 1024 + 1) }
                     require(bytes.size <= 10 * 1024 * 1024) { "Choose a photo under 10 MB." }
-                    val source = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size)) { "This photo could not be opened." }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "This photo could not be opened." }
+                    val decode = BitmapFactory.Options().apply { while(maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 2800) inSampleSize *= 2 }
+                    val source = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)) { "This photo could not be opened." }
                     val side = minOf(source.width, source.height)
-                    val square = Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
-                    val scaled = Bitmap.createScaledBitmap(square, 256, 256, true)
+                    val square = if(receipt) source else Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
+                    val scale = if(receipt) minOf(1.0, 1400.0 / maxOf(source.width, source.height)) else 256.0 / side
+                    val scaled = Bitmap.createScaledBitmap(square, maxOf(1, (square.width * scale).toInt()), maxOf(1, (square.height * scale).toInt()), true)
                     val output = ByteArrayOutputStream()
                     scaled.compress(Bitmap.CompressFormat.JPEG, 78, output)
+                    if(receipt && output.size() > 440_000) { output.reset(); scaled.compress(Bitmap.CompressFormat.JPEG, 50, output) }
+                    require(output.size() <= if(receipt) 440_000 else 130_000) { "Choose a smaller photo." }
                     "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
                 }
-                controller.update(GroupFieldKey.PHOTO, value)
+                controller.update(field.key, value)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                 catch (failure: Exception) { photoError = failure.message ?: "This photo could not be opened. Choose another image." }
             }
@@ -118,10 +127,10 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
         FoodCard(bordered = true) {
             Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (photoError.isNotEmpty()) Text(translated(photoError), color = FoodColors.Orange, modifier = Modifier.semantics { error(translated(photoError)) })
-                if (preview != null) Image(preview.asImageBitmap(), translated("Selected profile photo"), Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = ContentScale.Crop)
-                Text(translated(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected"), style = FoodType.Input, color = FoodColors.Ink)
+                if (preview != null) Image(preview.asImageBitmap(), field.label, if(receipt) Modifier.fillMaxWidth().heightIn(max = 340.dp) else Modifier.size(FoodSize.AvatarLarge).clip(CircleShape), contentScale = if(receipt) ContentScale.Fit else ContentScale.Crop)
+                Text(if(receipt) field.label else translated(if (field.value.isBlank()) "Add a profile photo" else "Profile photo selected"), style = FoodType.Input, color = FoodColors.Ink)
                 PrimaryButton(translated(if (field.value.isBlank()) "Choose from gallery" else "Change photo"), null, enabled = !busy) { launcher.launch("image/*") }
-                if (field.value.isNotBlank()) SecondaryButton(translated("Remove photo"), null, enabled = !busy, destructive = true) { controller.update(GroupFieldKey.PHOTO, "") }
+                if (field.value.isNotBlank()) SecondaryButton(translated("Remove photo"), null, enabled = !busy, destructive = true) { controller.update(field.key, "") }
             }
         }
     } else if (field.key == GroupFieldKey.QUANTITY) {
@@ -171,7 +180,7 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             GroupFieldKey.JSON_MENU, GroupFieldKey.FINGERPRINT, GroupFieldKey.ACCOUNT_IDENTIFIER -> KeyboardType.Ascii
             // Decimal input does not request a signed number pad. Keep minus accessible for bill reductions.
             GroupFieldKey.BILL_ADJUSTMENT -> KeyboardType.Ascii
-            GroupFieldKey.AMOUNT, GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
+            GroupFieldKey.PAYMENT_TOTAL, GroupFieldKey.PAYMENT_SHARE, GroupFieldKey.PAYMENT_RECEIVED, GroupFieldKey.AMOUNT, GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
             GroupFieldKey.DISCOUNT, GroupFieldKey.TAX_RATE, GroupFieldKey.MINIMUM_ORDER -> KeyboardType.Decimal
             else -> KeyboardType.Text
         }
@@ -238,6 +247,10 @@ internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupC
                         modifier = Modifier.background(FoodColors.AccentWash, RoundedCornerShape(FoodRadius.Card))
                             .padding(horizontal = FoodSpacing.XSmall, vertical = FoodSpacing.XXSmall))
                 }
+            }
+            if(card.image.isNotEmpty()) {
+                val receipt = remember(card.image) { runCatching { Base64.decode(card.image.substringAfter("base64,"), Base64.DEFAULT) }.getOrNull()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
+                receipt?.let { Image(it.asImageBitmap(), card.title, Modifier.fillMaxWidth().heightIn(max = 600.dp), contentScale = ContentScale.Fit) }
             }
             if (card.detail.isNotEmpty()) SelectionContainer {
                 Text(text = card.detail, style = FoodType.Body, color = FoodColors.Muted)

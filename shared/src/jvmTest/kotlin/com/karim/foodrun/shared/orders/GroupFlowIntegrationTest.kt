@@ -808,6 +808,8 @@ class GroupFlowIntegrationTest {
         assertEquals(1, choices.single { it.receipt.lines.single().quantity == 2 }.repeatCount)
 
         c.dispatch(GroupAction.REUSE_ORDER, choices.single { it.receipt.lines.single().quantity == 2 }.value)
+        assertEquals(GroupPage.REORDER, c.state.page)
+        c.dispatch(GroupAction.CONFIRM_REORDER)
         bus.drain(); bus.sync()
         assertEquals(2, c.myCart().lines.single().quantity)
         assertEquals("burger", c.myCart().lines.single().itemId)
@@ -866,6 +868,8 @@ class GroupFlowIntegrationTest {
         val (c, _) = bus.phone()
         connect(c); c.update(GroupFieldKey.NAME, "Karim"); c.update(GroupFieldKey.ROOM_NAME, "Delivery lunch")
         c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.IMPORT_MENU); c.dispatch(GroupAction.CONFIRM_IMPORT); c.dispatch(GroupAction.SELECT_RESTAURANT, "kitchen")
+        assertTrue(c.text(GroupFieldKey.DESTINATION).startsWith("Mohre, Backside Parking"))
+        c.update(GroupFieldKey.DESTINATION, "")
         c.update(GroupFieldKey.DELIVERY, "true"); c.dispatch(GroupAction.CREATE_ROOM); bus.drain(); bus.sync()
         assertEquals("", c.state.error)
         assertTrue(c.room().deliveryMode)

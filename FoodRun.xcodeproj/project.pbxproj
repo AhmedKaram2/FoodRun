@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FCF000000000000000000001 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = FCF000000000000000000002 /* FirebaseMessaging */; };
+        FCF000000000000000000003 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCF000000000000000000004 /* GoogleService-Info.plist */; };
 		0DB91B5A77A2E25B94009D8D /* FoodRunApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646BFA5B0B22080363718416 /* FoodRunApp.swift */; };
 		114E1C1ADDF4EBAD7330CFB5 /* FoodAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46371208348C485813B172B /* FoodAvatar.swift */; };
 		17BB84C7F7D9F3F650511D0E /* GroupErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */; };
@@ -60,6 +62,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FCF000000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupErrorBanner.swift; sourceTree = "<group>"; };
 		00FBDF448534DB804DA70B51 /* FoodSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodSpacing.swift; sourceTree = "<group>"; };
 		06B9858DD26A206478178359 /* GroupFieldContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupFieldContent.swift; sourceTree = "<group>"; };
@@ -112,6 +115,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				265C1986C54D969834712885 /* IosComponents in Frameworks */,
+                FCF000000000000000000001 /* FirebaseMessaging in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,7 +142,8 @@
 		5AC00E086B6E02890530340C /* FoodRun */ = {
 			isa = PBXGroup;
 			children = (
-				94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */,
+				FCF000000000000000000004 /* GoogleService-Info.plist */,
+                94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */,
 				E503A8239E5FCB10C6D92F1F /* Assets.xcassets */,
 				2238643A86ADE70CC86A5383 /* ContentView.swift */,
 				31BEEF71FAEF9FA313BFD9B5 /* CrewSheet.swift */,
@@ -218,6 +223,7 @@
 			);
 			name = FoodRun;
 			packageProductDependencies = (
+                FCF000000000000000000002 /* FirebaseMessaging */,
 				60612AEDFDB3129A7A02D421 /* IosComponents */,
 			);
 			productName = FoodRun;
@@ -262,6 +268,7 @@
 			mainGroup = 67680FC9A51DBA519063AC5B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+                FCF000000000000000000005 /* firebase-ios-sdk */,
 				7AA14DA055B07597812A0B5D /* XCLocalSwiftPackageReference "Packages/IosComponents" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -280,6 +287,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B955CE75237939C6B3A52A80 /* Assets.xcassets in Resources */,
+                FCF000000000000000000003 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,7 +459,8 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
+				APS_ENVIRONMENT = development;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -476,7 +485,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -557,7 +566,8 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
+				APS_ENVIRONMENT = production;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -576,7 +586,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -627,7 +637,11 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+        FCF000000000000000000005 /* firebase-ios-sdk */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git"; requirement = { kind = exactVersion; version = 12.19.0; }; };
+/* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        FCF000000000000000000002 /* FirebaseMessaging */ = {isa = XCSwiftPackageProductDependency; package = FCF000000000000000000005; productName = FirebaseMessaging; };
 		60612AEDFDB3129A7A02D421 /* IosComponents */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = IosComponents;

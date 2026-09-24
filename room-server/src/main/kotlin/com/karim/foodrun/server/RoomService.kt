@@ -7,6 +7,11 @@ import java.util.UUID
 
 class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null) {
     private val accounts = AccountService(db, identityProvider, this, clock)
+    private val notifications = NotificationService(db, clock)
+    @Synchronized fun notificationRequest(request: NotificationRequest, pushAvailable: Boolean): NotificationReply =
+        db.transaction { notifications.request(accounts.userId(request.identityToken), request, pushAvailable) }
+    @Synchronized internal fun nextPush(): PushDelivery? = db.transaction { notifications.pending() }
+    @Synchronized internal fun finishPush(delivery: PushDelivery, result: PushResult) = db.transaction { notifications.delivered(delivery, result) }
     fun validateFirebaseSignIn(token: String) { requireNotNull(identityProvider) { "Firebase is unavailable." }.exchange(token) }
     val storageAvailable: Boolean get() = db.available
     val storageMode: String get() = if (db.cloudDurable) "firestore" else "sqlite"
@@ -27,6 +32,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         // Admit members left waiting by older hubs without changing a locked order's participants.
         db.transaction {
             CatalogMigrations.apply(db)
+            db.allRooms().filter { it.account == null && it.payerId != null }.forEach { room ->
+                val updated = accounts.withSavedPayment(room)
+                if (updated != room) db.save(updated.copy(revision = room.revision + 1, updatedAt = clock()))
+            }
             db.allRooms().filter { it.lastChosenMemberId == null }.forEach { room ->
                 val previous = room.payerId?.let { room } ?: generateSequence(0) { it + 50 }
                     .map { db.history(room.id, it, 50) }.takeWhile { it.isNotEmpty() }
@@ -80,7 +89,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -91,10 +100,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         val actor = authenticate(c.roomId, c.token)
                         presence[actor] = clock()
                         val room = withPresence(finalizeSpin(requireNotNull(db.room(c.roomId))))
-                        val result = reducer.apply(room, actor, c, clock())
+                        val changed = reducer.apply(room, actor, c, clock())
+                        val result = if (c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY)) accounts.withSavedPayment(changed) else changed
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        notifications.changed(room, result, actor, c)
                         if (c.kind == CommandKind.SHARE_ACCOUNT) accounts.updatePayment(result.id, actor, requireNotNull(result.account))
                         signalRoom(result.id)
                         projection(requireNotNull(db.room(result.id)), actor)
@@ -129,7 +140,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val winner = requireNotNull(room.spin).winnerId
         return room.copy(phase = RoomPhase.ACCEPTING, revision = room.revision + 1, updatedAt = clock(),
             lastChosenMemberId = winner, lastChosenName = room.members.firstOrNull { it.id == winner }?.name.orEmpty()).also {
-            db.save(it)
+            db.transaction {
+                db.save(it)
+                notifications.selected(it)
+            }
             signalRoom(it.id)
         }
     }
@@ -138,6 +152,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
         require(settings.roomCreationEnabled) { "New room creation is temporarily disabled by the administrator." }
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
+        require(c.selectionStyle in listOf("wheel", "names")) { "Choose Wheel or Running names." }
         MenuValidation.label(c.name); MenuValidation.label(c.text)
         val person = Member(uuid(), c.name.trim(), approved = true, eligible = true, ready = true, lastSeen = clock())
         var code: String
@@ -149,12 +164,14 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         options.forEach(MenuValidation::validate)
         val room = Room(uuid(), code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, (c.fees ?: FeePolicy()).copy(automaticDelivery = c.flag),
             members = listOf(person), createdAt = clock(), updatedAt = clock(), restaurantOptions = options,
-            restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1)
+            restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1, selectionStyle = c.selectionStyle)
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
         signalRoom(room.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(room, person.id).copy(token = token)
     }
+    @Synchronized internal fun nativeAdminToken(token: String): String = accounts.firebaseIdToken(token)
+
     private fun createPaymentRoom(c: RoomCommand): RoomReply {
         val uid = accounts.userId(c.identityToken)
         AccountRestrictions.requireRoomAllowed(db, uid, "", clock())
@@ -194,6 +211,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             accounts.linkPaymentMember(userId, room, ids.getValue(userId), token)
             if (userId == uid) ownerToken = token
         }
+        notifications.paymentRoom(room)
         signalRoom(room.id)
         return projection(room, ownerId).copy(token = ownerToken)
     }

@@ -15,13 +15,16 @@ struct GroupFieldContent: View {
     }
 
     var body: some View {
-        if field.key == .photo {
+        if field.key == .photo || field.key == .receiptPhoto || field.key == .adminPhoto {
             VStack(spacing: FoodSpacing.s14) {
                 if let image = profileImage {
-                    Image(uiImage: image).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle())
-                        .accessibilityLabel(translated("Selected profile photo"))
+                    if field.key == .receiptPhoto {
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 340).accessibilityLabel(field.label)
+                    } else {
+                        Image(uiImage: image).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle()).accessibilityLabel(field.label)
+                    }
                 }
-                Text(translated(field.value.isEmpty ? "Add a profile photo" : "Profile photo selected"))
+                Text(field.key == .receiptPhoto ? field.label : translated(field.value.isEmpty ? "Add a profile photo" : "Profile photo selected"))
                     .font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Label(translated(field.value.isEmpty ? "Choose from Photos" : "Change photo"), systemImage: "photo.on.rectangle")
@@ -86,6 +89,17 @@ struct GroupFieldContent: View {
     }
 
     private func resizedPhoto(_ source: UIImage) -> Data? {
+        if field.key == .receiptPhoto {
+            let scale = min(1, 1400 / max(source.size.width, source.size.height))
+            guard scale.isFinite, scale > 0 else { return nil }
+            let size = CGSize(width: source.size.width * scale, height: source.size.height * scale)
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in source.draw(in: CGRect(origin: .zero, size: size)) }
+            for quality in [0.78, 0.6, 0.45] {
+                if let data = image.jpegData(compressionQuality: quality), data.count <= 440_000 { return data }
+            }
+            return nil
+        }
         let side = min(source.size.width, source.size.height)
         guard side > 0 else { return nil }
         let crop = CGRect(x: (source.size.width - side) / 2, y: (source.size.height - side) / 2, width: side, height: side)
@@ -140,7 +154,7 @@ struct GroupFieldContent: View {
         case .jsonMenu, .fingerprint, .accountIdentifier: .asciiCapable
         // Bill adjustments accept a leading minus; decimalPad has no minus key.
         case .billAdjustment: .numbersAndPunctuation
-        case .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice, .taxRate, .minimumOrder: .decimalPad
+        case .paymentTotal, .paymentShare, .paymentReceived, .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice, .taxRate, .minimumOrder: .decimalPad
         case .quantity, .roomCode: .numberPad
         default: .default
         }

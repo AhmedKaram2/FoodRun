@@ -49,6 +49,13 @@ import kotlin.math.pow
         val progress = ((now - startAt).toDouble() / duration).coerceIn(0.0, 1.0)
         return (turns * 360 + target) * (1 - (1 - progress).pow(4))
     }
+    /** Deterministic visual sequence; only the server-selected winner decides the outcome. */
+    fun runningNameIndex(now: Long): Int {
+        if (now >= endAt) return memberIds.indexOf(winnerId)
+        val elapsed = (now - startAt).coerceIn(0, duration).toDouble() / duration
+        val ticks = kotlin.math.floor((turns * memberIds.size + memberIds.indexOf(winnerId)) * (1 - (1 - elapsed).pow(3))).toInt()
+        return ticks % memberIds.size
+    }
     fun sliceCenter(index: Int): Double {
         if (weights.isEmpty()) return index * 360.0 / memberIds.size
         return (weights.take(index).sum() + weights[index] / 2.0 - weights.first() / 2.0) * 360 / weights.sum()
@@ -89,6 +96,9 @@ import kotlin.math.pow
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val lastChosenName: String = "",
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val selectionStyle: String = "wheel",
 ) {
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }

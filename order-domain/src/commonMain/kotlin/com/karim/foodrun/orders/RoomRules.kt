@@ -3,6 +3,7 @@ package com.karim.foodrun.orders
 object RoomRules {
     fun member(room: Room, id: String): Member = room.members.singleOrNull { it.id == id && !it.removed } ?: error("Membership has been removed. Ask the organizer to join again.")
     fun validateRoom(room: Room) {
+        require(room.selectionStyle in listOf("wheel", "names")) { "Invalid selection style." }
         room.paymentRoom?.validate()
         MenuValidation.label(room.name); MenuValidation.validate(room.restaurant)
         require(room.restaurantOptions.size <= 12) { "A restaurant poll supports up to 12 choices." }

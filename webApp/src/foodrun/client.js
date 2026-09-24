@@ -29,7 +29,7 @@ export async function request(hub, command, signal) {
   }
   return normalizeReply(reply);
 }
-export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true }; }
+export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true }; }
 export function watch(hub, payload, onReply, onStatus) {
   let socket, stopped = false, timer, retry = 1000;
   const connect = () => {

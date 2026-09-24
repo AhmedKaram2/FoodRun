@@ -32,9 +32,9 @@ internal class GroupTransport(private val context: Context) {
     private val subscriptions = mutableSetOf<GroupSubscription>()
     private var closed = false
 
-    fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) {
+    fun request(hub: HubPairing, body: String, callback: GroupReplyCallback, path: String = "command") {
         check(!closed)
-        val request = Request.Builder().url(endpoint(hub, "command"))
+        val request = Request.Builder().url(endpoint(hub, path))
             .post(body.toRequestBody("application/json".toMediaType())).build()
         client(hub).newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) = deliver(callback, "", context.getString(R.string.group_network_unavailable))

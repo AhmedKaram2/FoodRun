@@ -2,46 +2,30 @@ package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
-@Serializable data class AdminSettings(val registrationsEnabled: Boolean = true, val roomCreationEnabled: Boolean = true, val maintenanceMessage: String = "")
-@Serializable data class AdminUserView(
-    val id: String, val name: String, val phone: String, val discoverable: Boolean, val disabled: Boolean,
-    val language: String, val paymentMethod: String = "", val paymentHolder: String = "",
-    val paymentBank: String = "", val paymentIdentifier: String = "",
-    val blockedUntil: Long = 0, val blockReason: String = "", val removed: Boolean = false, val roomBlocks: Map<String, AccessBlock> = emptyMap(),
-    val profile: FoodProfile? = null,
-)
-@Serializable data class AdminWalletView(val memberId: String, val name: String, val totalMinor: Long, val paidMinor: Long, val balanceMinor: Long)
-@Serializable data class AdminRoomView(
-    val id: String, val code: String, val name: String, val phase: String, val orderNumber: Long,
-    val restaurant: String, val members: Int, val payer: String = "", val totalMinor: Long = 0,
-    val confirmedPaidMinor: Long = 0, val outstandingMinor: Long = 0, val currency: String = "AED", val updatedAt: Long,
-    val wallets: List<AdminWalletView> = emptyList(), val revision: Long = 0, val canDelete: Boolean = false,
-)
-@Serializable data class AdminDashboard(
-    val users: List<AdminUserView>, val rooms: List<AdminRoomView>, val archivedOrders: List<AdminRoomView>,
-    val restaurants: List<Restaurant>, val settings: AdminSettings, val activity: List<AdminAuditEvent> = emptyList(), val blockRequests: List<AdminBlockRequest> = emptyList(),
-)
-@Serializable data class AdminUserMutation(
-    val userId: String = "", val disabled: Boolean = false, val action: String = "status",
-    val durationHours: Int = 0, val reason: String = "", val confirmation: String = "", val scopeRoomId: String = "",
-    val email: String = "", val password: String = "", val name: String = "", val phone: String = "", val language: String = "en",
-    val profile: FoodProfile? = null,
-)
-@Serializable data class AdminBlockRequest(val id: String, val roomId: String, val roomName: String, val requesterId: String, val requesterName: String,
-    val userId: String, val userName: String, val reason: String, val durationHours: Int, val createdAt: Long, val status: String = "pending", val reviewedAt: Long = 0)
-@Serializable data class AdminBlockDecision(val requestId: String, val action: String)
-@Serializable data class AdminAuditEvent(val actorId: String, val action: String, val target: String, val at: Long)
-@Serializable data class AdminCleanupRequest(val scope: String = "closedRooms", val olderThanDays: Int = 30, val previewToken: String = "", val confirmation: String = "")
-@Serializable data class AdminCleanupPreview(val scope: String, val olderThanDays: Int, val count: Int, val targets: List<AdminRoomView>, val previewToken: String)
-@Serializable data class AdminCleanupResult(val removedCount: Int)
-@Serializable data class AdminRestaurantMutation(val action: String = "save", val restaurant: Restaurant? = null, val restaurantId: String = "")
-@Serializable data class RestaurantCatalogPayload(val restaurants: List<Restaurant>, val deletedRestaurantIds: Set<String>)
-@Serializable data class AdminRoomMutation(val roomId: String, val action: String, val expectedRevision: Long = 0, val confirmation: String = "")
 
 class AdminService(
     private val db: RoomDatabase, private val rooms: RoomService, private val clock: () -> Long = System::currentTimeMillis,
     private val identityProvider: IdentityProvider? = FirebaseIdentity.configured(),
 ) {
+    fun nativeRequest(request: NativeAdminRequest): NativeAdminReply {
+        // A hub session is exchanged for its refreshed Firebase identity on every request.
+        // The same verified-email and disabled-account checks apply to web and native.
+        val actor = authorize("Bearer " + rooms.nativeAdminToken(request.identityToken))
+        var preview: AdminCleanupPreview? = null
+        when(request.action) {
+            "access" -> return NativeAdminReply()
+            "dashboard" -> Unit
+            "user" -> mutateUser(orderJson.decodeFromString(request.payload), actor.userId)
+            "room" -> mutateRoom(orderJson.decodeFromString(request.payload), actor.userId)
+            "restaurant" -> mutateRestaurant(orderJson.decodeFromString(request.payload))
+            "settings" -> saveSettings(orderJson.decodeFromString(request.payload))
+            "block-request" -> reviewBlockRequest(orderJson.decodeFromString(request.payload), actor.userId)
+            "cleanup-preview" -> preview = cleanupPreview(orderJson.decodeFromString(request.payload))
+            "cleanup-delete" -> cleanup(orderJson.decodeFromString(request.payload), actor.userId)
+            else -> error("Unsupported admin action.")
+        }
+        return NativeAdminReply(dashboard = dashboard(), preview = preview)
+    }
     fun authorize(header: String?): CloudIdentity {
         require(header?.startsWith("Bearer ") == true) { "Sign in with the administrator account." }
         val identity = requireNotNull(identityProvider) { "Firebase identity is not configured." }.exchange(header.removePrefix("Bearer "))
@@ -101,7 +85,7 @@ class AdminService(
                     .let { orderJson.decodeFromString<FoodProfile>(it) }
                 val updated = if (change.action == "rename") profile.copy(name = change.name.trim().also(MenuValidation::label))
                     else requireNotNull(change.profile) { "Enter the user's profile details." }
-                        .copy(userId = profile.userId, name = change.profile.name.trim(), favoriteOrders = profile.favoriteOrders)
+                        .copy(userId = profile.userId, name = requireNotNull(change.profile).name.trim(), favoriteOrders = profile.favoriteOrders)
                         .normalized().also(FoodProfile::validate)
                 db.transaction {
                     ProfileUpdates(db, clock).save(updated)

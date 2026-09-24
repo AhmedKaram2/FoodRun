@@ -1,3 +1,6 @@
+import RunningNames from './RunningNames.jsx';
+import { useNotifications } from './useNotifications.js';
+import { NotificationCenter, NotificationActionCard } from './NotificationCenter.jsx';
 import { CreatePaymentRoom, PaymentReceipt, PaymentShareEditor, RecordPayment } from './PaymentRoom.jsx';
 import { roomFeeUpdate } from './roomFees.js';
 import RestaurantPollPrompt from './RestaurantPollPrompt.jsx';
@@ -6,6 +9,7 @@ import ReorderReview from './ReorderReview.jsx';
 import { lastRestaurantOrder, nextRestaurantHistoryRoom } from './reorder.js';
 import { paymentDraft, paymentAccount, uaePhone } from './paymentDetails.js';
 import PaymentFields from './PaymentFields.jsx';
+import { groupedOrderLines, restaurantOrderText } from './restaurantOrderText.js';
 import BlockedNotice from './BlockedNotice.jsx';
 import NativeGoogleSignIn from './NativeGoogleSignIn.jsx';
 import { roomInvitation } from './roomInvitation.js';
@@ -46,7 +50,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.4.3/FoodRun-Android-1.4.3.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.5.0/FoodRun-Android-1.5.0.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -166,26 +170,6 @@ function roomInviteLink(room, hub) {
   url.searchParams.set('hub', hub);
   return url.toString();
 }
-function displayQuantity(quantity, description) {
-  return /[\u0600-\u06ff]/.test(description) ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)]) : String(quantity);
-}
-function groupedOrderLines(room, receipts) {
-  const grouped = new Map();
-  receipts.flatMap(receipt => receipt.lines).forEach(line => {
-    const item = room.restaurant.menu.items.find(value => value.id === line.itemId);
-    const variant = item?.variants.find(value => value.id === line.variantId);
-    const options = room.restaurant.menu.optionGroups.flatMap(group => group.options).filter(value => (line.optionIds || []).includes(value.id));
-    const description = item && uiLanguage === 'ar' ? [localizedName(item), variant && localizedName(variant), ...options.map(localizedName)].filter(Boolean).join(' · ') : line.description;
-    const key = `${description}\u0000${line.notes || ''}`;
-    const previous = grouped.get(key) || { ...line, description, quantity: 0, amount: 0 };
-    grouped.set(key, { ...previous, quantity: previous.quantity + line.quantity, amount: previous.amount + line.amount });
-  });
-  return [...grouped.values()];
-}
-function combinedOrderText(room, receipts, expectedArrival = room.restaurantReference) {
-  const lines = groupedOrderLines(room, receipts).map(line => `${displayQuantity(line.quantity, line.description)} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`);
-  return [localizedName(room.restaurant), room.deliveryMode ? `${tx('Delivery', 'توصيل')}: ${room.destination || tx('Address to be confirmed', 'العنوان يحدد لاحقاً')}` : tx('Pickup', 'استلام من المطعم'), tf('Expected delivery / pickup: {time}', { time: expectedArrival?.trim() || t('To be confirmed by restaurant') }), '', ...lines].join('\n');
-}
 function receiptText(room, receipt) {
   const account = room.account ? `Pay to: ${room.account.holder} · ${room.account.bank}\n${room.account.identifier}` : 'Receiving account not shared yet';
   return [`Food Run · ${room.name} · order #${room.orderNumber}`, room.restaurant.name, receipt.name,
@@ -209,7 +193,10 @@ function Avatar({ profile, small = false }) {
     : <span className={`avatar initials ${small ? 'small' : ''}`}>{initials(profile?.name)}</span>;
 }
 
-function LiveSelectionWheel({ spin, members, serverTime, active }) {
+function LiveSelectionWheel(props) {
+  return props.style === 'names' ? <RunningNames {...props} /> : <WheelAnimation {...props} />;
+}
+function WheelAnimation({ spin, members, serverTime, active }) {
   const candidates = spin.memberIds.map(id => members.find(member => member.id === id)).filter(Boolean);
   const winnerIndex = spin.memberIds.indexOf(spin.winnerId);
   const finalRotation = spinRotation(spin, spin.startAt + spin.duration);
@@ -304,7 +291,7 @@ function AppDownloads({ compact = false }) {
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.4.3 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.5.0 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -540,7 +527,7 @@ function Page({ title, subtitle, onBack, actions, children }) {
 function Home({ data, setPage, openRoom, allowRoomCreation = true }) {
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
-  return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={async () => { try { if (!('Notification' in window)) return data.setNotice(tx('Notifications are unavailable in this browser. Room updates still appear here.', 'الإشعارات غير متاحة في هذا المتصفح. ستظهر تحديثات الغرفة هنا.')); const permission = await Notification.requestPermission(); data.setNotice(permission === 'granted' ? tx('Notifications enabled.', 'تم تفعيل الإشعارات.') : tx('Enable notifications in browser settings.', 'فعّل الإشعارات من إعدادات المتصفح.')); } catch { data.setNotice(t("Notifications are unavailable. Room updates still appear here.")); } }}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
+  return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}>{t("Payment room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={() => setPage(t("restaurants"))}>{t("Restaurants & menus")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
     <UserDashboard data={data} openRoom={openRoom} compact />
@@ -618,7 +605,7 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState({ room: '', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: false, destination: '', delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
+  const [form, setForm] = useState({ room: 'Mohre', selectionStyle: 'wheel', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: false, destination: "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5", delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
   const [pollIds, setPollIds] = useState([]);
@@ -646,7 +633,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         if (!chosen && !form.restaurantPoll) { const next = [...restaurants, restaurant]; setRestaurants(next); storeRestaurants(next); }
         reply = await data.send('CREATE', {
           name: profile.name.trim(), text: form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
-          destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
+          selectionStyle: form.selectionStyle, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
           fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
       }
@@ -662,6 +649,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         {!chosen && !form.restaurantPoll && <div className="form-grid two"><label>{t("Restaurant / order name")}<input value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} placeholder={t("Today’s food order")} required /></label><label>{t("Restaurant phone")}<input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+971…" required /></label></div>}
         {chosen && !form.restaurantPoll && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
         <label>{t("Room name")}<input value={form.room} enterKeyHint="next" onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required /><span className="field-help">{tx('Choose a restaurant to fill this in, or give your group a name.', 'اختر مطعماً لملء الاسم أو سمّ مجموعتك.')}</span></label>
+        <label>{tx('Selection animation', 'طريقة عرض الاختيار')}<select value={form.selectionStyle} onChange={e => setForm({ ...form, selectionStyle: e.target.value })}><option value="wheel">{tx('Wheel', 'العجلة')}</option><option value="names">{tx('Running names', 'الأسماء المتحركة')}</option></select></label>
         <div className="segmented delivery-choice" role="group" aria-label={tx('Order type', 'نوع الطلب')}><button type="button" aria-pressed={!form.deliveryMode} className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>{t("Pickup")}</button><button type="button" aria-pressed={form.deliveryMode} className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>{t("Delivery")}</button></div>
         {form.deliveryMode && <DeliveryRule />}
         {form.deliveryMode && <label>{tx("Delivery address · optional", "عنوان التوصيل · اختياري")}<input autoComplete="street-address" value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} maxLength={1000} /><span className="field-help">{tx("Leave blank and the selected orderer will arrange delivery with the restaurant.", "اتركه فارغاً وسيتولى الشخص المختار ترتيب التوصيل مع المطعم.")}</span></label>}
@@ -847,13 +835,15 @@ function FeeEditor({ room, data }) {
 
 function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArrival = room.restaurantReference, setExpectedArrival, canPlace = false, blocker = '' }) {
   const [copied, setCopied] = useState(false);
-  const orderText = combinedOrderText(room, receipts, expectedArrival);
+  const [copyLanguage, setCopyLanguage] = useState(() => ['en', 'ar'].includes(localStorage.getItem('foodrun-copy-language-v1')) ? localStorage.getItem('foodrun-copy-language-v1') : uiLanguage);
+  const orderText = restaurantOrderText(room, receipts, copyLanguage, expectedArrival);
+  const chooseCopyLanguage = value => { setCopyLanguage(value); setCopied(false); localStorage.setItem('foodrun-copy-language-v1', value); };
   const copy = async () => { await copyText(orderText); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const contact = room.restaurant.contact.phoneE164 || room.restaurant.contact.whatsappE164;
   const whatsAppNumber = (room.restaurant.contact.whatsappE164 || (/^\+9715\d{8}$/.test(contact || '') ? contact : '') || '').replace(/\D/g, '');
   const whatsApp = `https://wa.me/${whatsAppNumber}?text=${encodeURIComponent(orderText)}`;
   const requirement = blockerRequirement(blocker);
-  return <article className="card restaurant-order-card"><p className="eyebrow">{t("SELECTED TO ORDER")}</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>{t("Collects the final list, places the order, and confirms payments.")}</p></div></div>{setExpectedArrival && <label>{t('Expected delivery / pickup (optional)')}<input value={expectedArrival} onChange={event => setExpectedArrival(event.target.value)} placeholder={t('For example: 30 minutes')} maxLength={500} /></label>}<pre>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? t("✓ Copied — paste to restaurant") : finish ? tx('Copy list for restaurant', 'نسخ الطلب للمطعم') : tx('Copy restaurant-ready list', 'نسخ الطلب للمطعم')}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">{t("Share via WhatsApp")}</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>{t("Call restaurant")}</a>}</div><p className="fine">{t(whatsAppNumber ? 'Opens the restaurant chat with your order ready to send.' : 'No WhatsApp number is saved. Choose the restaurant chat after WhatsApp opens.')}</p>{setExpectedArrival && <><button className="primary wide" disabled={!canPlace || data.busy} onClick={() => data.send('PLACE', { text: expectedArrival.trim() }, room.id)}>{t('Order sent')}</button>{blocker && <p className="form-message send-blocker">{t(blocker)} {requirement && <a href={requirement.href}>{requirement.label}</a>}</p>}</>}</article>;
+  return <article className="card restaurant-order-card"><p className="eyebrow">{t("SELECTED TO ORDER")}</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>{t("Collects the final list, places the order, and confirms payments.")}</p></div></div>{setExpectedArrival && <label>{t('Expected delivery / pickup (optional)')}<input value={expectedArrival} onChange={event => setExpectedArrival(event.target.value)} placeholder={t('For example: 30 minutes')} maxLength={500} /></label>}<label className="copy-language">{t('Order list language')}<select value={copyLanguage} onChange={event => chooseCopyLanguage(event.target.value)} dir="ltr"><option value="en" lang="en">English</option><option value="ar" lang="ar">العربية</option></select></label><pre dir={copyLanguage === 'ar' ? 'rtl' : 'ltr'} lang={copyLanguage}>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? t("✓ Copied — paste to restaurant") : finish ? tx('Copy list for restaurant', 'نسخ الطلب للمطعم') : tx('Copy restaurant-ready list', 'نسخ الطلب للمطعم')}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">{t("Share via WhatsApp")}</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>{t("Call restaurant")}</a>}</div><p className="fine">{t(whatsAppNumber ? 'Opens the restaurant chat with your order ready to send.' : 'No WhatsApp number is saved. Choose the restaurant chat after WhatsApp opens.')}</p>{setExpectedArrival && <><button className="primary wide" disabled={!canPlace || data.busy} onClick={() => data.send('PLACE', { text: expectedArrival.trim() }, room.id)}>{t('Order sent')}</button>{blocker && <p className="form-message send-blocker">{t(blocker)} {requirement && <a href={requirement.href}>{requirement.label}</a>}</p>}</>}</article>;
 }
 
 function blockerRequirement(blocker = '') {
@@ -940,7 +930,7 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
 }
 
 function OrderSummary({ room, receipts, className = '' }) {
-  const lines = groupedOrderLines(room, receipts);
+  const lines = groupedOrderLines(room, receipts, uiLanguage);
   const total = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
   return <article className={`card order-summary ${className}`}>
     <div className="section-title compact"><div><p className="eyebrow">{t('ORDER SUMMARY')}</p><h2>{localizedName(room.restaurant)}</h2></div><strong className="order-summary-total">{money(total, room.restaurant.currency)}</strong></div>
@@ -1104,8 +1094,8 @@ function RoomScreen({ data, roomId, onBack }) {
         <RestaurantContactCard restaurant={room.restaurant} data={data} />
         {['PREPARING_SPIN','SPINNING','ACCEPTING'].includes(room.phase) && <article className="card selection-card">
           {room.phase === 'PREPARING_SPIN' && <><div className="spinner" /><h2>{t("Getting everyone in sync…")}</h2><p>{t("Every participating device is joining the live selection.")}</p></>}
-          {room.phase === 'SPINNING' && <><p className="eyebrow">{t("LIVE SELECTION")}</p><h2>{t("Who will order?")}</h2><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
-          {room.phase === 'ACCEPTING' && <><LiveSelectionWheel key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active={false} /><WinnerReveal winner={winner} selected={selected} me={me} room={room} data={data} /></>}
+          {room.phase === 'SPINNING' && <><p className="eyebrow">{t("LIVE SELECTION")}</p><h2>{t("Who will order?")}</h2><LiveSelectionWheel style={room.selectionStyle} key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
+          {room.phase === 'ACCEPTING' && <><LiveSelectionWheel style={room.selectionStyle} key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active={false} /><WinnerReveal winner={winner} selected={selected} me={me} room={room} data={data} /></>}
         </article>}
         {!me.approved && <article className="card notice-card"><h2>{t("Reconnect to update room access")}</h2><p>{t("Refresh the room. If access is still unavailable, update the room server.")}</p></article>}
         {me.approved && !me.guest && !me.participating && room.phase !== 'LOBBY' && <article className="card notice-card"><h2>{t("You’re in the room")}</h2><p>{t("You’re viewing this order. You can join when the next order opens.")}</p></article>}
@@ -1142,6 +1132,9 @@ function RoomScreen({ data, roomId, onBack }) {
 
 function FoodRunClient() {
   const data = useFoodRun();
+  const notifications = useNotifications({ ...data, language: uiLanguage });
+  const [notificationAction, setNotificationAction] = useState(null);
+  const notificationLink = useRef(new URLSearchParams(window.location.search));
   const [siteConfig, setSiteConfig] = useState({ registrationsEnabled: true, roomCreationEnabled: true, maintenanceMessage: '' });
   const inviteCode = useMemo(() => new URLSearchParams(window.location.search).get('room')?.replace(/\D/g, '').slice(0, 6) || '', []);
   const [page, setPage] = useState(window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : inviteCode ? 'join' : 'home');
@@ -1165,10 +1158,25 @@ function FoodRunClient() {
     return () => controller.abort();
   }, [data.hub]);
   const openRoom = id => {
+    setNotificationAction(null);
     localStorage.setItem(ACTIVE_ROOM_KEY, JSON.stringify({ userId: data.user?.uid, hub: data.hub, roomId: id }));
     window.history.replaceState({}, '', window.location.pathname);
     setRoomId(id); setPage('room');
   };
+  const openNotification = (item, action) => {
+    notifications.read(item.id);
+    openRoom(item.roomId);
+    setNotificationAction({ item, action });
+  };
+  useEffect(() => {
+    const id = notificationLink.current.get('notification');
+    const item = notifications.items.find(value => value.id === id);
+    if (!item || !data.sessions[item.roomId]) return;
+    const action = notificationLink.current.get('action') || 'open';
+    notificationLink.current = new URLSearchParams();
+    openNotification(item, action);
+  }, [notifications.items, data.sessions]);
+  useEffect(() => { setNotificationAction(null); }, [data.user?.uid, data.hub]);
   const closeRoom = () => { localStorage.removeItem(ACTIVE_ROOM_KEY); setRoomId(''); setPage('home'); };
   useEffect(() => {
     if (page === 'admin' || restoredRoom.current || inviteCode || !data.user || !data.hub) return;
@@ -1194,14 +1202,15 @@ function FoodRunClient() {
   const home = data.home;
   const profileMissing = !home.profile.name || !home.profile.phone;
   let content;
-  if (page === 'downloads') content = <Page title={t("Get Food Run")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
+  if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
+  else if (page === 'downloads') content = <Page title={t("Get Food Run")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
   else if (page === 'profile' || profileMissing) content = <ProfileScreen data={data} openRoom={openRoom} onBack={() => setPage('home')} />;
   else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} onBack={() => setPage('home')} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <>{alerts}{content}<footer><span>Food Run</span>{offlineAction}<button onClick={() => setPage(t("restaurants"))}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={() => signOut(auth)}>{t("Sign out")}</button></footer></>;
+  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Food Run</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => setPage(t("restaurants"))}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
 }
 
 export default function FoodRunApp() {

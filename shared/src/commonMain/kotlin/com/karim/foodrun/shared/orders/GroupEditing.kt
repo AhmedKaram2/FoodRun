@@ -12,6 +12,20 @@ internal fun GroupController.restaurantEditor(export: RestaurantExport?, forRoom
     draft[GroupFieldKey.ADDRESS] = r.contact.address ?: ""
     draft[GroupFieldKey.TAX_RATE] = Money.format((r.pricing.taxRateBasisPoints ?: 0).toLong(), "AED").substringAfter(' ')
     draft[GroupFieldKey.MINIMUM_ORDER] = Money.format(r.pricing.minimumOrderMinor, r.currency).substringAfter(' ')
+    draft[GroupFieldKey.RESTAURANT_NAME_AR] = r.nameAr
+    draft[GroupFieldKey.BRANCH_AR] = r.branchNameAr
+    draft[GroupFieldKey.EMIRATE] = r.emirate
+    draft[GroupFieldKey.EMIRATE_AR] = r.emirateAr
+    draft[GroupFieldKey.AREA] = r.area
+    draft[GroupFieldKey.AREA_AR] = r.areaAr
+    draft[GroupFieldKey.CUISINE] = r.cuisine
+    draft[GroupFieldKey.CUISINE_AR] = r.cuisineAr
+    draft[GroupFieldKey.RESTAURANT_NOTES] = r.notes
+    draft[GroupFieldKey.RESTAURANT_WHATSAPP] = r.contact.whatsappE164.orEmpty()
+    draft[GroupFieldKey.OPEN_ORDERING] = r.openOrdering.toString()
+    draft[GroupFieldKey.MEAL_BREAKFAST] = (MealType.BREAKFAST in r.mealTypes).toString()
+    draft[GroupFieldKey.MEAL_LUNCH] = (MealType.LUNCH in r.mealTypes).toString()
+    draft[GroupFieldKey.MEAL_DINNER] = (MealType.DINNER in r.mealTypes).toString()
     seedFees(r); page = GroupPage.RESTAURANT
 }
 internal fun GroupController.seedFees(r: Restaurant) {
@@ -44,11 +58,14 @@ internal fun GroupController.saveEditor() {
     val taxRate = if(export.restaurant.pricing.taxTreatment == TaxTreatment.ADDED) Money.parse(text(GroupFieldKey.TAX_RATE), "AED").also {
         require(it <= 10000) { "Tax rate must be between 0 and 100 percent." }
     }.toInt() else export.restaurant.pricing.taxRateBasisPoints
-    val r = export.restaurant.copy(name = text(GroupFieldKey.RESTAURANT_NAME).trim(), branchName = text(GroupFieldKey.BRANCH).trim(), currency = currency,
-        contact = export.restaurant.contact.copy(phoneE164 = text(GroupFieldKey.PHONE).trim().takeIf { it.isNotEmpty() }?.let(UaePhone::normalize), address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
+    val r = export.restaurant.copy(nameAr = text(GroupFieldKey.RESTAURANT_NAME_AR).trim(), branchNameAr = text(GroupFieldKey.BRANCH_AR).trim(), emirate = text(GroupFieldKey.EMIRATE).trim(), emirateAr = text(GroupFieldKey.EMIRATE_AR).trim(), area = text(GroupFieldKey.AREA).trim(), areaAr = text(GroupFieldKey.AREA_AR).trim(), cuisine = text(GroupFieldKey.CUISINE).trim(), cuisineAr = text(GroupFieldKey.CUISINE_AR).trim(), notes = text(GroupFieldKey.RESTAURANT_NOTES).trim(),
+        openOrdering = flag(GroupFieldKey.OPEN_ORDERING), mealTypes = listOfNotNull(MealType.BREAKFAST.takeIf { flag(GroupFieldKey.MEAL_BREAKFAST) }, MealType.LUNCH.takeIf { flag(GroupFieldKey.MEAL_LUNCH) }, MealType.DINNER.takeIf { flag(GroupFieldKey.MEAL_DINNER) }), name = text(GroupFieldKey.RESTAURANT_NAME).trim(), branchName = text(GroupFieldKey.BRANCH).trim(), currency = currency,
+        contact = export.restaurant.contact.copy(whatsappE164 = text(GroupFieldKey.RESTAURANT_WHATSAPP).trim().takeIf { it.isNotEmpty() }?.let(UaePhone::normalize), phoneE164 = text(GroupFieldKey.PHONE).trim().takeIf { it.isNotEmpty() }?.let(UaePhone::normalize), address = text(GroupFieldKey.ADDRESS).trim().ifEmpty { null }),
         pricing = export.restaurant.pricing.copy(defaultDeliveryFeeMinor = fees(currency).delivery, defaultServiceFeeMinor = fees(currency).service,
             taxRateBasisPoints = taxRate, minimumOrderMinor = Money.parse(text(GroupFieldKey.MINIMUM_ORDER).ifBlank { "0" }, currency)))
-    MenuValidation.validate(r); saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
+    MenuValidation.validate(r)
+    if(administration.editingRestaurant) { administration.saveRestaurant(r); return }
+    saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
     if(editingRoomOrder != null) command(CommandKind.UPDATE_RESTAURANT, restaurant = r, text = text(GroupFieldKey.REASON).ifBlank { "Restaurant details updated" })
     else { formDrafts.finishRestaurant(draft); page = GroupPage.LIBRARY }
 }

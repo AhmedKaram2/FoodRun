@@ -74,6 +74,9 @@ struct GroupCardContent: View {
                 Spacer(minLength: FoodSpacing.s0)
             }
             if !member && !card.detail.isEmpty { detail }
+            if !card.image.isEmpty, let marker = card.image.range(of: "base64,"), let data = Data(base64Encoded: String(card.image[marker.upperBound...])), let photo = UIImage(data: data) {
+                Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 600).accessibilityLabel(card.title)
+            }
             if !card.buttons.isEmpty {
                 if card.buttons.count > 1 { FoodDivider() }
                 ForEach(card.buttons, id: \.renderID) { button in
@@ -140,6 +143,6 @@ extension GroupCard {
     // Keep account and receipt details out of the identity while still invalidating
     // a row whenever its rendered content or actions change.
     var renderID: String {
-        "\(id):\(title):\(detail.hashValue):\(badge):\(buttons.map(\.renderID).joined(separator: "|"))"
+        "\(id):\(title):\(detail.hashValue):\(image.hashValue):\(badge):\(buttons.map(\.renderID).joined(separator: "|"))"
     }
 }

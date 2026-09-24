@@ -16,6 +16,8 @@ class GroupSettlementPresentationTest {
         Transfer("transfer", "member", amount, "Test payment", account, refund = refund, status = status)
 
     private class Device : GroupPlatform {
+        var copied = ""
+        var opened = ""
         override fun read(key: String) = ""
         override fun write(key: String, value: String) = true
         override fun now() = 0L
@@ -23,14 +25,15 @@ class GroupSettlementPresentationTest {
         override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) = error("Presentation must not send requests")
         override fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback) = object : GroupSubscription { override fun cancel() = Unit }
         override fun share(text: String, fileName: String) = Unit
-        override fun openLink(url: String) = Unit
+        override fun openLink(url: String) { opened = url }
+        override fun copyToClipboard(text: String) { copied = text }
         override fun importMenu(callback: GroupReplyCallback) = Unit
         override fun scanPairing(callback: GroupReplyCallback) = Unit
         override fun discover(callback: GroupReplyCallback) = Unit
     }
 
     /** Match the hub's privacy projection: only the payer sees every receipt. */
-    private fun controller(room: Room, member: String = "payer"): GroupController {
+    private fun controller(room: Room, member: String = "payer", device: Device = Device()): GroupController {
         val isPayer = room.payerId == member
         val canViewPrices = isPayer || room.ownerId == member && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)
         val isOrderer = room.orderingMembers.any { it.id == member }
@@ -39,7 +42,7 @@ class GroupSettlementPresentationTest {
             account = room.account.takeIf { isOrderer },
             transfers = room.transfers.filter { isOrderer && (isPayer || it.memberId == member) },
         )
-        return GroupController(Device()).apply {
+        return GroupController(device).apply {
             session = StoredSession(HubPairing("https://localhost:8443", "a".repeat(64)), room.id, "token", member, room.name)
             reply = RoomReply(room = visibleRoom, memberId = member, receipts = if (isOrderer) Billing.receipts(room).filter { isPayer || it.memberId == member } else emptyList())
             page = GroupPage.ROOM
@@ -47,6 +50,26 @@ class GroupSettlementPresentationTest {
     }
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
+
+    @Test fun copyAndWhatsAppLanguageDoNotChangeTheAppLanguage() {
+        val translated = restaurant.copy(nameAr = "المطعم", menu = restaurant.menu.copy(items = restaurant.menu.items.map { it.copy(nameAr = "فول") }))
+        val device = Device()
+        val c = controller(room().copy(restaurant = translated), device = device)
+        assertEquals("en", c.state.fields.single { it.key == GroupFieldKey.ORDER_COPY_LANGUAGE }.value)
+        c.update(GroupFieldKey.ORDER_COPY_LANGUAGE, "ar")
+        c.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        assertTrue(device.copied.startsWith("المطعم"))
+        assertTrue(device.copied.contains("٢ فول"))
+        assertEquals("en", c.library.language)
+        c.dispatch(GroupAction.SHARE_ORDER_WHATSAPP)
+        assertTrue(java.net.URLDecoder.decode(device.opened, "UTF-8").contains("٢ فول"))
+        c.library = c.library.copy(language = "ar")
+        c.update(GroupFieldKey.ORDER_COPY_LANGUAGE, "en")
+        c.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        assertTrue(device.copied.startsWith("Kitchen"))
+        assertTrue(device.copied.contains("2 Meal"))
+        assertEquals("ar", c.library.language)
+    }
 
     @Test fun roomOwnerCanOpenPricesForEveryMemberWithoutReceivingPayerActions() {
         for (phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)) {

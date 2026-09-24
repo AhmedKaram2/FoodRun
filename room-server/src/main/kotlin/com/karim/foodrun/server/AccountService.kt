@@ -23,7 +23,21 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         }
     }
     fun userId(token: String): String = session(token).userId
+    internal fun firebaseIdToken(token: String): String = identity(RoomService.hash(token), session(token)).idToken
     private fun profile(uid: String) = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: FoodProfile(userId = uid)
+    internal fun withSavedPayment(room: Room): Room {
+        if (room.account != null || room.phase !in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) return room
+        val payer = room.payerId ?: return room
+        val uid = db.record("member-user:${room.id}:$payer") ?: db.records("membership:").firstOrNull { (_, body) ->
+            val membership = orderJson.decodeFromString<AccountRoom>(body)
+            membership.roomId == room.id && membership.memberId == payer
+        }?.first?.removePrefix("membership:")?.substringBefore(':') ?: return room
+        val saved = profile(uid).payment ?: return room
+        val payment = runCatching {
+            saved.normalized().also { it.validate(); require(it.currency == room.restaurant.currency) }
+        }.getOrNull() ?: return room
+        return room.copy(account = payment.copy(version = 1), quoteRevision = room.quoteRevision + 1)
+    }
     internal fun updatePayment(roomId: String, memberId: String, payment: ReceivingAccount) {
         val uid = db.record("member-user:$roomId:$memberId") ?: return
         val current = profile(uid)

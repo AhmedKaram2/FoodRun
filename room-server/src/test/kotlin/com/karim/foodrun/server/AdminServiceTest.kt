@@ -1,6 +1,6 @@
 package com.karim.foodrun.server
 
-import com.karim.foodrun.orders.FoodProfile
+import com.karim.foodrun.orders.*
 import com.karim.foodrun.orders.orderJson
 import java.nio.file.Files
 import kotlin.test.*
@@ -18,6 +18,28 @@ class AdminServiceTest {
         override fun saveProfile(identity: CloudIdentity, profile: FoodProfile) = Unit
         override fun resetPassword(email: String) = Unit
         override fun saveHubRecord(identity: CloudIdentity, hubId: String, key: String, value: String) = Unit
+    }
+    @Test fun nativeSessionRequiresTheSameVerifiedAdminIdentityForEveryAction() {
+        val directory = Files.createTempDirectory("foodrun-native-admin").toFile()
+        RoomDatabase(directory).use { db ->
+            val provider = AdminIdentityProvider()
+            val rooms = RoomService(db, identityProvider = provider)
+            val admin = AdminService(db, rooms, identityProvider = provider)
+            val login = rooms.execute(RoomCommand(commandId = "native-admin-login", kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token")))
+            assertTrue(login.ok, login.error)
+            val session = login.identityToken
+            assertNotNull(admin.nativeRequest(NativeAdminRequest(session)).dashboard)
+            provider.identity = provider.identity.copy(email = "another@example.test")
+            assertFails { admin.nativeRequest(NativeAdminRequest(session, "settings", orderJson.encodeToString(AdminSettings(registrationsEnabled = false)))) }
+            assertTrue(admin.settings().registrationsEnabled)
+            provider.identity = provider.identity.copy(email = AdminService.ADMIN_EMAIL, emailVerified = false)
+            assertFails { admin.nativeRequest(NativeAdminRequest(session)) }
+            provider.identity = provider.identity.copy(emailVerified = true)
+            assertTrue(admin.nativeRequest(NativeAdminRequest(session, "access")).ok)
+            assertFails { admin.nativeRequest(NativeAdminRequest("invalid-session")) }
+        }
+        directory.deleteRecursively()
     }
     @Test fun everyAdminHttpRouteRejectsOtherAccountsAndLegacyLoginIsRemoved() {
         val directory = Files.createTempDirectory("foodrun-admin-routes").toFile()

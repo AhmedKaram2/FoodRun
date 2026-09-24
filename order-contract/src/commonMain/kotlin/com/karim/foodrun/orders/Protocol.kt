@@ -37,6 +37,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val selectionDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val visualSelectionDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val selectionStyle: String = "wheel",
 
 )
 @Serializable data class OrderProgress(

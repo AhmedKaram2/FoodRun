@@ -35,3 +35,10 @@ export function wheelLabel(name = '') {
   const characters = Array.from(name.trim());
   return characters.length > 14 ? `${characters.slice(0, 13).join('')}…` : characters.join('');
 }
+
+export function runningNameIndex(spin, now) {
+  if (now >= spin.startAt + spin.duration) return spin.memberIds.indexOf(spin.winnerId);
+  const progress = Math.max(0, Math.min(1, (now - spin.startAt) / spin.duration));
+  const steps = (spin.turns || 7) * spin.memberIds.length + spin.memberIds.indexOf(spin.winnerId);
+  return Math.floor(steps * (1 - (1 - progress) ** 3)) % spin.memberIds.length;
+}

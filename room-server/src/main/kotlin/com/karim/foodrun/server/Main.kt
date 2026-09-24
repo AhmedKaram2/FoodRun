@@ -77,6 +77,7 @@ fun main() {
 
 fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
     val nativeSignIn = NativeSignInBroker(service::validateFirebaseSignIn)
+    val pushSender = FirebasePush.configured()
     val origins = (System.getenv("FOODRUN_WEB_ORIGINS") ?: "http://localhost:5173,http://127.0.0.1:5173").split(',').filter { it.isNotBlank() }
     install(CORS) {
         origins.forEach { value -> val uri = java.net.URI(value.trim()); allowHost(uri.authority, schemes = listOf(uri.scheme)) }
@@ -97,6 +98,20 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
     }
     launch(Dispatchers.IO) {
         while (isActive) {
+            try {
+                if (pushSender != null) service.nextPush()?.let { delivery ->
+                    val result = try { pushSender.send(delivery.device, delivery.job.notification) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { PushResult.RETRY }
+                    service.finishPush(delivery, result)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { log.warn("Notification delivery will retry.") }
+            delay(500)
+        }
+    }
+    launch(Dispatchers.IO) {
+        while (isActive) {
             try { service.tick() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { log.error("Room maintenance failed; retrying. ${failure.javaClass.simpleName}") }
@@ -111,6 +126,17 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         }
     }
     routing {
+        post("/notifications") {
+            if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            val result = try {
+                val bytes = call.receiveChannel().readRemaining(10001).readByteArray()
+                require(bytes.size <= 10000)
+                val request = orderJson.decodeFromString<NotificationRequest>(bytes.toString(Charsets.UTF_8))
+                withContext(Dispatchers.IO) { service.notificationRequest(request, pushSender != null) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { NotificationReply(ok = false, error = "Notifications could not be updated. Sign in and try again.") }
+            call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
+        }
         get("/admin") {
             val bytes = Thread.currentThread().contextClassLoader.getResourceAsStream("web/index.html")?.use { it.readBytes() }
             if(bytes == null) call.respond(HttpStatusCode.NotFound) else call.respondBytes(bytes, ContentType.Text.Html)
@@ -127,6 +153,17 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         }
         get("/config") {
             call.respondText(orderJson.encodeToString(admin?.settings() ?: AdminSettings()), ContentType.Application.Json)
+        }
+        post("/admin/native") {
+            if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            val result = try {
+                val bytes = call.receiveChannel().readRemaining(2_500_001).readByteArray()
+                require(bytes.size <= 2_500_000) { "Admin request is too large." }
+                val request = orderJson.decodeFromString<NativeAdminRequest>(bytes.toString(Charsets.UTF_8))
+                withContext(Dispatchers.IO) { requireNotNull(admin).nativeRequest(request) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { NativeAdminReply(ok = false, error = failure.message ?: "Admin request failed.") }
+            call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
         }
         get("/admin/dashboard") {
             try {
@@ -201,6 +238,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         post("/command") {
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
             var selectionDetails = false
+            var visualSelectionDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
@@ -208,6 +246,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                 JsonInputValidation.validate(body)
                 val command = orderJson.decodeFromString<RoomCommand>(body)
                 selectionDetails = command.selectionDetails
+                visualSelectionDetails = command.visualSelectionDetails
                 withContext(Dispatchers.IO) { service.execute(command) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (invalid: IllegalArgumentException) { RoomReply(ok = false, error = "Invalid request. Check the supplied fields and menu format.", code = "VALIDATION") }
@@ -215,7 +254,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails)), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -241,7 +280,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                         log.error("Room subscription failed: ${failure.javaClass.simpleName}")
                         RoomReply(ok = false, error = "The hub is temporarily unavailable. Reconnect to resume.", code = "HUB_UNAVAILABLE")
                     }
-                    send(Frame.Text(orderJson.encodeToString(snapshot.forClient(request.selectionDetails))))
+                    send(Frame.Text(orderJson.encodeToString(snapshot.forClient(request.selectionDetails, request.visualSelectionDetails))))
                     if (!snapshot.ok) break
                     memberId = snapshot.memberId
                     lastVersion = service.eventVersion(request.kind, request.roomId)

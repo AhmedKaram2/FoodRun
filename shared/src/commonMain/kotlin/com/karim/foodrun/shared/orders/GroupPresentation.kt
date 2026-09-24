@@ -25,7 +25,7 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
     val lines = combined.map { (key, quantity) ->
         val (description, notes) = key
         val rawQuantity = quantity.toString()
-        val shownQuantity = if(description.any { it in '\u0600'..'\u06ff' }) {
+        val shownQuantity = if(language == "ar") {
             val arabic = "٠١٢٣٤٥٦٧٨٩"
             rawQuantity.map { if(it in '0'..'9') arabic[it - '0'] else it }.joinToString("")
         } else rawQuantity
@@ -42,6 +42,7 @@ internal class GroupPresentation(private val c: GroupController) {
     private var title = "Food Run"
     private var subtitle = "Good food. Great company."
     private val language get() = c.library.language
+    private val copyLanguage get() = c.text(GroupFieldKey.ORDER_COPY_LANGUAGE).takeIf { it in listOf("en", "ar") } ?: language
     private val ar get() = language == "ar"
     private fun ui(value: String) = GroupUiText.translate(value, ar)
     private fun tr(en: String, ar: String) = if(this.ar) GroupUiText.translate(en, true).takeIf { it != en } ?: ar else en
@@ -64,6 +65,12 @@ internal class GroupPresentation(private val c: GroupController) {
                 buttons = listOf(GroupButton(ui("Check access again"), GroupAction.REFRESH), GroupButton(ui("Back to my account"), GroupAction.BACK)))
         }
         when(c.page) {
+            GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY -> { title = tr("Menu editor", "تعديل القائمة"); append(c.menuEditor.content()) }
+            GroupPage.ADMIN, GroupPage.ADMIN_USER, GroupPage.ADMIN_CONFIRM -> { title = tr("Administration", "الإدارة"); append(c.administration.content()) }
+            GroupPage.PAYMENT_ROOM, GroupPage.PAYMENT_SHARE, GroupPage.RECORD_PAYMENT -> { title = tr("Payment room", "غرفة الدفع"); append(c.paymentRooms.form()) }
+            GroupPage.PAYMENT -> { title = tr("Your payment", "دفعتك"); accountCard(); append(GroupSettlementPresentation(c).settlement()) }
+            GroupPage.REORDER -> { title = tr("Review saved order", "راجع الطلب المحفوظ"); append(c.reorderContent()) }
+            GroupPage.NOTIFICATIONS -> { title = tr("Notifications", "الإشعارات"); append(c.notifications.inbox()) }
             GroupPage.BLOCK_REQUEST -> {
                 title = ui("Request a user block")
                 subtitle = ui("The admin reviews your request before any access is blocked.")
@@ -90,9 +97,10 @@ internal class GroupPresentation(private val c: GroupController) {
             GroupPage.RECEIPTS -> receipts()
             GroupPage.HISTORY -> history()
         }
+        if(c.page == GroupPage.ROOM) { cards.addAll(0, c.paymentRooms.roomCards()); c.notifications.actionCard()?.let { cards.add(0, it) } }
         val room = c.reply?.room
         val spin = room?.spin?.takeIf { c.page == GroupPage.ROOM && room.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) }
-        val wheel = spin?.let { GroupWheel(it.memberIds.map { id -> room.members.single { m -> m.id == id }.name }, it, c.serverOffset(), room.members.single { m -> m.id == it.winnerId }.name) }
+        val wheel = spin?.let { GroupWheel(it.memberIds.map { id -> room.members.single { m -> m.id == id }.name }, it, c.serverOffset(), room.members.single { m -> m.id == it.winnerId }.name, room.selectionStyle) }
         if (c.library.pending != null && !c.busy) buttons.add(0, GroupButton(tr("Retry saved request", "إعادة إرسال الطلب المحفوظ"), GroupAction.RETRY, primary = true))
         return GroupState(c.page, if(c.page in listOf(GroupPage.ROOM, GroupPage.ITEM)) title else ui(title), if(c.page == GroupPage.ITEM) subtitle else ui(subtitle), fields, cards, buttons, c.busy, c.online,
             ui(if (c.session == null) "Nearby or internet live rooms · Firebase account backup"
@@ -120,7 +128,9 @@ internal class GroupPresentation(private val c: GroupController) {
             return
         }
         button(tr("Create a room", "إنشاء غرفة"), GroupAction.CREATE, primary = true); button(tr("Join a room", "الانضمام إلى غرفة"), GroupAction.JOIN)
-        button(if(c.library.home == null) tr("Register / sign in", "تسجيل أو دخول") else tr("My profile", "ملفي الشخصي"), GroupAction.OPEN_PROFILE); button(tr("Enable notifications", "تفعيل الإشعارات"), GroupAction.ENABLE_ALERTS)
+        button(if(c.library.home == null) tr("Register / sign in", "تسجيل أو دخول") else tr("My profile", "ملفي الشخصي"), GroupAction.OPEN_PROFILE); button(tr("Notifications", "الإشعارات") + c.notifications.items.count { !it.read }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty(), GroupAction.OPEN_NOTIFICATIONS)
+        if(c.administration.allowed) button(tr("Administration", "الإدارة"), GroupAction.OPEN_ADMIN)
+        button(tr("Create payment room", "إنشاء غرفة دفع"), GroupAction.CREATE_PAYMENT_ROOM)
         button(tr("Quick Spin", "اختيار سريع"), GroupAction.QUICK_SPIN); button(tr("Restaurant library", "المطاعم والقوائم"), GroupAction.OPEN_LIBRARY)
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         card("about", tr("Your table, always here", "مجموعتك دائماً هنا"), tr("Join a room once. Return for tomorrow's order. Downloaded receipts stay with you offline.", "انضم مرة واحدة وعد للطلبات القادمة. تبقى الإيصالات المحفوظة متاحة دون إنترنت."))
@@ -200,7 +210,10 @@ internal class GroupPresentation(private val c: GroupController) {
             field(GroupFieldKey.ROOM_CODE, tr("Six-digit room code", "رمز الغرفة من ستة أرقام"))
             button("Request to join", GroupAction.JOIN_ROOM, primary = true); return
         }
-        if (!c.nextOrder) field(GroupFieldKey.ROOM_NAME, tr("Room name", "اسم الغرفة"))
+        if (!c.nextOrder) {
+            field(GroupFieldKey.ROOM_NAME, tr("Room name", "اسم الغرفة"))
+            fields += GroupField(GroupFieldKey.SELECTION_STYLE, tr("Selection animation", "طريقة عرض الاختيار"), c.text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, choices = listOf(GroupChoice("wheel", tr("Wheel", "العجلة")), GroupChoice("names", tr("Running names", "الأسماء المتحركة"))))
+        }
         if (c.selectedRestaurant == null) {
             field(GroupFieldKey.RESTAURANT_NAME, "Restaurant for an open order")
             button("Let everyone type their own items", GroupAction.USE_OPEN_ORDER)
@@ -296,8 +309,16 @@ internal class GroupPresentation(private val c: GroupController) {
     private fun restaurant() {
         val editingRoom = c.editingRoomOrder != null
         title = if(editingRoom) "Restaurant details" else "Build your menu"
-        subtitle = if(editingRoom) "Contact changes keep this order's progress. Menu or pricing changes reopen food selection and require confirmation again." else "Enter menu prices and how tax is charged. Import JSON for sizes and extras."
+        subtitle = if(editingRoom) "Contact changes keep this order's progress. Menu or pricing changes reopen food selection and require confirmation again." else "Enter menu prices, sizes, extras and tax details."
         field(GroupFieldKey.RESTAURANT_NAME, tr("Restaurant name", "اسم المطعم")); field(GroupFieldKey.BRANCH, tr("Branch", "الفرع"))
+        field(GroupFieldKey.RESTAURANT_NAME_AR, "اسم المطعم بالعربية"); field(GroupFieldKey.BRANCH_AR, "الفرع بالعربية")
+        field(GroupFieldKey.EMIRATE, tr("Emirate · English", "الإمارة · إنجليزي")); field(GroupFieldKey.EMIRATE_AR, "الإمارة بالعربية")
+        field(GroupFieldKey.AREA, tr("Area · English", "المنطقة · إنجليزي")); field(GroupFieldKey.AREA_AR, "المنطقة بالعربية")
+        field(GroupFieldKey.CUISINE, tr("Cuisine · English", "نوع الطعام · إنجليزي")); field(GroupFieldKey.CUISINE_AR, "نوع الطعام بالعربية")
+        field(GroupFieldKey.RESTAURANT_NOTES, tr("Restaurant notes", "ملاحظات المطعم"), multiline = true)
+        field(GroupFieldKey.OPEN_ORDERING, tr("Allow custom food items", "السماح بأصناف مخصصة"), toggle = true)
+        field(GroupFieldKey.MEAL_BREAKFAST, tr("Breakfast", "فطور"), toggle = true); field(GroupFieldKey.MEAL_LUNCH, tr("Lunch", "غداء"), toggle = true); field(GroupFieldKey.MEAL_DINNER, tr("Dinner", "عشاء"), toggle = true)
+        field(GroupFieldKey.RESTAURANT_WHATSAPP, tr("WhatsApp phone", "رقم واتساب"))
         card("room-currency", tr("Currency", "العملة"), "AED · UAE Dirham")
         field(GroupFieldKey.PHONE, tr("Restaurant phone", "رقم المطعم"))
         field(GroupFieldKey.ADDRESS, "Restaurant address"); field(GroupFieldKey.DELIVERY_FEE, tr("Default delivery fee", "رسوم التوصيل الافتراضية"))
@@ -313,10 +334,7 @@ internal class GroupPresentation(private val c: GroupController) {
             GroupButton(ui("Tax added to prices"), GroupAction.SELECT_TAX_TREATMENT, TaxTreatment.ADDED.name, enabled = tax != TaxTreatment.ADDED),
         ))
         if(tax == TaxTreatment.ADDED) field(GroupFieldKey.TAX_RATE, "Tax rate · percent")
-        field(GroupFieldKey.MENU_ITEM_NAME, "New item name")
-        field(GroupFieldKey.MENU_ITEM_PRICE, "New item price"); button("Add item", GroupAction.ADD_MENU_ITEM)
-        val previewCurrency = c.text(GroupFieldKey.CURRENCY).trim().uppercase().takeIf { it in Money.currencies } ?: c.editingRestaurant?.restaurant?.currency ?: "AED"
-        c.editingRestaurant?.restaurant?.menu?.items?.forEach { i -> card("menu-editor:${i.id}", i.name, Money.format(i.basePriceMinor, previewCurrency), actions = listOf(GroupButton(ui("Remove item"), GroupAction.REMOVE_MENU_ITEM, i.id, destructive = true))) }
+        button(tr("Edit categories, items, sizes and extras", "تعديل الأقسام والأصناف والأحجام والإضافات"), GroupAction.MENU_OPEN)
         button(if(editingRoom) "Save & update this order" else tr("Save restaurant", "حفظ المطعم"), GroupAction.SAVE_RESTAURANT, primary = true)
     }
     private fun room() {
@@ -324,6 +342,8 @@ internal class GroupPresentation(private val c: GroupController) {
         title = r.name; subtitle = "${tr("Order", "الطلب")} #${r.orderNumber} · ${stage(r.phase)} · ${r.restaurant.localizedName(language)}"
         val me = r.members.singleOrNull { it.id == c.me() } ?: return
         val owner = c.me() == r.ownerId; val payer = c.me() == r.payerId
+        if(payer) fields += GroupField(GroupFieldKey.ORDER_COPY_LANGUAGE, tr("Order list language", "لغة قائمة الطلب"), copyLanguage,
+            choices = listOf(GroupChoice("en", "English"), GroupChoice("ar", "العربية")))
         r.lastChosenMemberId?.let { previous ->
             card("last-chosen", tr("Last chosen", "آخر شخص تم اختياره"),
                 r.members.firstOrNull { it.id == previous }?.name ?: r.lastChosenName,
@@ -678,7 +698,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }
-        return restaurantReadyText(r, c.reply!!.receipts, language, c.text(GroupFieldKey.REFERENCE).ifBlank { r.restaurantReference })
+        return restaurantReadyText(r, c.reply!!.receipts, copyLanguage, c.text(GroupFieldKey.REFERENCE).ifBlank { r.restaurantReference })
     }
     private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
         account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }

@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+# Firebase distributes this client identifier in every installed Android app.
+# Server service-account keys and authentication tokens are never allowlisted.
+[[allowlists]]
+description = "Firebase Android public client API key"
+condition = "AND"
+paths = ['''(^|/)androidApp/google-services\.json$''']
+regexTarget = "line"
+regexes = ['''"current_key":\s*"AIza[0-9A-Za-z_-]+"''']

@@ -5,7 +5,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants } from '../src/foodrun/FoodRunApp.jsx';
 import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx';
-import { t } from '../src/foodrun/i18n.js';
+import { t, getLanguage } from '../src/foodrun/i18n.js';
+import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
 import { CreatePaymentRoom } from '../src/foodrun/PaymentRoom.jsx';
 
 let root, host;
@@ -204,6 +205,10 @@ export async function runReorderAudit() {
 export async function runCreateAudit() {
   commands.length = 0;
   await mountAudit();
+  assert([...host.querySelectorAll('input')].some(input => input.value === 'Mohre'), 'Mohre room default missing');
+  const selection = [...host.querySelectorAll('select')].find(node => [...node.options].some(option => option.value === 'names'));
+  assert(selection?.value === 'wheel', 'Current wheel must remain default');
+  setValue(selection, 'names'); await pause();
   assert(!measureAudit().overflow, 'Create Room overflows');
   button('Start a room poll').click(); await pause();
   assert(host.querySelector('[role=dialog]'), 'Poll selection did not open');
@@ -223,6 +228,7 @@ export async function runCreateAudit() {
   assert(host.querySelectorAll('.poll-chip').length === 3, 'Chosen restaurant summary missing');
   host.querySelector('.create-form').requestSubmit(); await pause();
   assert(commands.length === 1, 'Create should send once');
+  assert(commands[0].fields.selectionStyle === 'names', 'Selected animation was not sent');
   assert(JSON.stringify(commands[0].fields.restaurants.map(r => r.id)) === JSON.stringify(ids), 'Unselected restaurants entered the poll');
   assert(commands[0].fields.restaurant.id === ids[0], 'Initial choice is outside poll');
   host.querySelector('.poll-chip').click(); await pause();
@@ -293,6 +299,41 @@ export async function runOrderFlowAudit() {
   assert(host.querySelector('.payment-breakdown') && !host.querySelector('.payment-breakdown').open, 'Details are not optional');
   assert(host.querySelector('.payment-priority').textContent.includes('123456789012'), 'Chosen person payment details hidden');
   return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'ETA in message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
+}
+
+export async function runCopyLanguageAudit() {
+  commands.length = 0;
+  const websiteLanguage = document.documentElement.lang;
+  const restaurant = loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba');
+  const item = restaurant.menu.items.find(value => value.available && value.nameAr);
+  const account = { id: 'saved', holder: 'Chosen', bank: 'Aani', method: 'AANI', identifier: '+971501234567', currency: 'AED' };
+  const receipts = [{ memberId: 'me', name: 'Chosen', lines: [{ itemId: item.id, description: item.name, quantity: 2, amount: 600, notes: 'No salt' }], total: 600, paid: 0, balance: 600, currency: 'AED' }];
+  const options = { room: { account }, receipts, progress: { accountShared: true, canReview: true, reviewBlocker: '' } };
+  let copied = '';
+  const oldClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { copied = text; } } });
+  try {
+    await mountAudit('room', 'COLLECTING', options);
+    assert(!host.querySelector('.payer-account-editor'), 'Saved receiving details still require setup');
+    assert(!button('Order sent').disabled, 'Saved receiving details block placing the order');
+    for (const language of ['ar', 'en']) {
+      setValue(host.querySelector('.copy-language select'), language); await pause();
+      const preview = host.querySelector('.restaurant-order-card pre');
+      assert(preview.textContent.includes(language === 'ar' ? item.nameAr : item.name), 'Wrong copied item language');
+      assert(preview.dir === (language === 'ar' ? 'rtl' : 'ltr'), 'Copy preview direction is wrong');
+      host.querySelector('.restaurant-order-card .hero-actions button').click(); await pause();
+      assert(copied === preview.textContent && copied.includes('No salt'), 'Clipboard differs from preview or loses notes');
+      assert(new URL(host.querySelector('.restaurant-order-card a[href^="https://wa.me/"]').href).searchParams.get('text') === copied, 'WhatsApp uses another language');
+      assert(document.documentElement.lang === websiteLanguage, 'Copy language changed the website language');
+    }
+    await mountAudit('room', 'PLACED', options);
+    assert(host.querySelector('.copy-language select').value === 'en', 'Copy language choice was not remembered');
+    assert(commands.length === 0, 'Copying modified the order or asked to share payment details again');
+    assert(!measureAudit().overflow, 'Copy controls overflow');
+    return { passed: ['independent copy language', 'clipboard and WhatsApp match preview', 'notes preserved', 'language remembered', 'saved payment needs no confirmation'], ...measureAudit() };
+  } finally {
+    if (oldClipboard) Object.defineProperty(navigator, 'clipboard', oldClipboard); else delete navigator.clipboard;
+  }
 }
 
 export async function runOwnerBlockAudit() {
@@ -449,4 +490,30 @@ export async function runPaymentRoomAudit() {
   assert(!button('Edit share') && !host.innerText.includes(t('Record payment received')), 'Member received payer controls');
   assert(!button('Approve revised final bill'), 'Member must approve the bill again');
   return { passed:['direct creation','user selection','exact equal split','portrait receipt photo','payer share and payment controls','member-only wallet','no ordering steps'], ...measureAudit() };
+}
+
+export async function runNotificationAudit() {
+  const now = Date.now();
+  const item = { id: 'a'.repeat(40), roomId: 'audit-room', orderNumber: 1, kind: 'payment_sent', title: 'Payment sent', body: 'A member marked a payment sent.', transferId: 'transfer', createdAt: now, read: false, actions: [{ id: 'confirm', title: 'Review payment' }] };
+  const fixture = { ...data, online: { 'audit-room': true }, sessions: { 'audit-room': { memberId: 'me' } }, rooms: { 'audit-room': { room: { id: 'audit-room', orderNumber: 1, payerId: 'me', phase: 'FULFILLED', restaurantPaid: true, restaurant: { currency: 'AED' }, members: [{ id: 'member', name: 'Test member' }], transfers: [{ id: 'transfer', memberId: 'member', amount: 400, reference: 'Test transfer', status: 'declared', refund: false }] }, receipts: [] } } };
+  commands.length = 0;
+  await mountAudit('home');
+  let closed = false;
+  root.render(<NotificationActionCard selected={{ item, action: 'confirm' }} data={fixture} onClose={() => { closed = true; }} />); await pause();
+  assert(commands.length === 0, 'Opening a notification mutated a payment');
+  assert(host.textContent.includes('4.00') && host.textContent.includes('Test member'), 'Payment review details missing');
+  const confirm = [...host.querySelectorAll('button')].find(node => /Confirm payment received|تأكيد استلام الدفعة/.test(node.textContent));
+  assert(confirm, 'Confirm action missing'); confirm.click(); await pause();
+  assert(commands.length === 1 && commands[0].kind === 'CONFIRM_TRANSFER', 'Explicit confirmation did not send payment command');
+  assert(closed, 'Completed action did not close');
+  fixture.rooms['audit-room'].room.transfers[0].status = 'confirmed';
+  root.render(<NotificationActionCard selected={{ item, action: 'confirm' }} data={fixture} onClose={() => {}} />); await pause();
+  assert(![...host.querySelectorAll('button')].some(node => /Confirm payment received|تأكيد استلام الدفعة/.test(node.textContent)), 'Stale notification still has a confirm action');
+  root.render(<NotificationCenter notifications={{ items: [item], enabled: true, enable: () => {}, disable: () => {}, read: () => {} }} onOpen={() => {}} onBack={() => {}} />); await pause();
+  assert(!measureAudit().overflow, 'Notification inbox overflows');
+  const spin = { id: 'running-test', memberIds: ['me', 'member'], winnerId: 'member', startAt: now - 10000, duration: 6500, turns: 7 };
+  await mountAudit('room', 'ACCEPTING', { room: { selectionStyle: 'names', spin, payerId: null, members: [{ id: 'me', name: 'Audit User', approved: true, participating: true, eligible: true, ready: true }, { id: 'member', name: 'أحمد', approved: true, participating: true, eligible: true, ready: true }] } });
+  assert(host.querySelector('.running-names.finished .name-runner-selected')?.textContent === 'أحمد', 'Running names did not reveal the server winner');
+  assert(!measureAudit().overflow, 'Running names overflows');
+  return { passed: ['payment review before confirmation', 'explicit received action', 'stale action prevented', 'inbox layout', 'running names server winner', 'mobile layout'], language: getLanguage(), ...measureAudit() };
 }

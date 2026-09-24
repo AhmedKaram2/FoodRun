@@ -25,6 +25,7 @@ import kotlin.math.sin
 internal fun WheelCanvas(
     people: List<Person>,
     rotation: Double,
+    weights: List<Int> = emptyList(),
 ) {
     val context = LocalContext.current
     val paint = remember(context) {
@@ -64,10 +65,12 @@ internal fun WheelCanvas(
             )
         }
         val count = people.size.coerceAtLeast(1)
-        val slice = 360f / count
+        val shares = weights.takeIf { it.size == count } ?: List(count) { 1 }
+        val total = shares.sum()
         rotate(rotation.toFloat()) {
             people.forEachIndexed { index, person ->
-                val middle = -90f + index * slice
+                val slice = shares[index] * 360f / total
+                val middle = -90f + (shares.take(index).sum() + shares[index] / 2f - shares.first() / 2f) * 360f / total
                 val origin = center - Offset(innerRadius, innerRadius)
                 val wheelSize = Size(innerRadius * 2, innerRadius * 2)
                 drawArc(

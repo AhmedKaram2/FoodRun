@@ -363,3 +363,14 @@ html[dir=rtl] h1,html[dir=rtl] h2,html[dir=rtl] h3{letter-spacing:0;line-height:
   .payment-total-row { flex-wrap: wrap; }
   .payment-total-row label,.payment-total-row .secondary { flex-basis: 100%; }
 }
+.order-summary-total{font-size:1.55rem;color:var(--green);white-space:nowrap}
+.summary-items{list-style:none;padding:0;margin:1rem 0;display:grid;gap:0}
+.summary-items li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.8rem;align-items:start;padding:.85rem 0;border-bottom:1px solid var(--line)}
+.summary-items small{display:block;color:var(--muted);margin-top:.3rem}.summary-quantity{font-weight:900;color:var(--green);min-width:2.5rem}
+.orders-by-person{margin-top:1rem}.orders-by-person summary,.edit-receiving-details summary,.order-edit-options>summary{cursor:pointer;font-weight:800;padding:.6rem 0;min-height:44px}
+.person-order-summary{padding:.8rem 0;border-bottom:1px solid var(--line)}.person-order-summary>div{display:flex;justify-content:space-between;gap:1rem}.person-order-summary p{margin:.4rem 0;color:var(--muted)}
+.settlement-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem}.settlement-totals>span{display:grid;gap:.3rem;padding:.8rem;background:var(--cream);border-radius:12px}.settlement-totals small{color:var(--muted)}.settlement-totals b{font-size:1.2rem}
+.order-edit-options .card,.edit-receiving-details .card{border:0;box-shadow:none;padding:1rem 0 0}
+.payment-history-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem 1rem;padding:1rem 0;border-top:1px solid var(--line)}.payment-history-row h4,.payment-history-row p{margin:0}.payment-history-row small{grid-column:1;color:var(--muted)}.payment-history-row button{grid-column:2;grid-row:1/4;align-self:center}
+.profile-details>h2{margin-top:0}.profile-details .profile-grid{margin-top:1rem}.profile-shortcuts{position:relative}.admin-profile-photo{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}.admin-profile-photo img{width:64px;height:64px;border-radius:50%;object-fit:cover}.admin-profile-editor{padding:1rem;border:1px solid var(--line);border-radius:14px}
+@media(max-width:600px){.settlement-totals{grid-template-columns:1fr}.settlement-totals>span{display:flex;justify-content:space-between;gap:1rem}.payment-history-row{grid-template-columns:1fr}.payment-history-row button{grid-column:1;grid-row:auto}.summary-items li{gap:.5rem}.summary-items li>strong{font-size:.9rem}.order-summary-total{font-size:1.25rem}}

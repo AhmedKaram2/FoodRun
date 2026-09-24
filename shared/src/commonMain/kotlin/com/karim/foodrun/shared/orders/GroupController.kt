@@ -108,6 +108,7 @@ class GroupController(val platform: GroupPlatform) {
                 page = GroupPage.SETUP
             }
             GroupAction.OPEN_PROFILE -> { openProfile() }
+            GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
                 require(value in listOf("en", "ar")) { "Choose Arabic or English." }
                 replaceLibrary(library.copy(language = value))
@@ -124,7 +125,7 @@ class GroupController(val platform: GroupPlatform) {
             }
             GroupAction.SIGN_IN -> identity(IdentityAction.SIGN_IN)
             GroupAction.REGISTER -> identity(IdentityAction.REGISTER)
-            GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE)
+            GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE, returnPage = GroupPage.PROFILE)
             GroupAction.RESET_PASSWORD -> identity(IdentityAction.RESET_PASSWORD)
             GroupAction.SIGN_OUT -> identity(IdentityAction.SIGN_OUT)
             GroupAction.ENABLE_CLOUD -> identity(IdentityAction.ENABLE_CLOUD)
@@ -339,7 +340,7 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
-            GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
+            GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
             GroupPage.LIBRARY -> libraryReturnPage
             else -> GroupPage.HOME
@@ -394,7 +395,7 @@ class GroupController(val platform: GroupPlatform) {
         val outgoing = if (sameHub(library.identityHub, hub) && library.identityToken.isNotEmpty()) c.copy(identityToken = library.identityToken) else c
         replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
-        try { platform.request(hub, orderJson.encodeToString(outgoing), object : GroupReplyCallback {
+        try { platform.request(hub, encodeCommand(outgoing), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false
                 if (error.isNotBlank()) { online = false; this@GroupController.error = "$error Your request is saved. Retry to confirm its result."; publish(); return }
@@ -468,7 +469,7 @@ class GroupController(val platform: GroupPlatform) {
         val s = session ?: return
         watching?.cancel(); val epoch = ++generation
         val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = s.roomId, token = s.token)
-        watching = platform.watch(s.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+        watching = platform.watch(s.hub, encodeCommand(request), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 if (epoch != generation) return
                 if (error.isNotBlank()) { online = false; this@GroupController.error = error; publish(); return }
@@ -521,7 +522,7 @@ class GroupController(val platform: GroupPlatform) {
             identityToken = library.identityToken, roomId = session?.roomId ?: "", token = session?.token ?: "")
         busy = true; publish()
         // Passwords are deliberately never written into pending commands or secure storage.
-        platform.request(hub, orderJson.encodeToString(c), object : GroupReplyCallback {
+        platform.request(hub, encodeCommand(c), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false; draft.remove(GroupFieldKey.PASSWORD)
                 try {
@@ -576,7 +577,7 @@ class GroupController(val platform: GroupPlatform) {
         val hub = library.identityHub
         if (hub != null && library.identityToken.isNotEmpty()) {
             val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.HOME, identityToken = library.identityToken)
-            homeWatching = platform.watch(hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+            homeWatching = platform.watch(hub, encodeCommand(request), object : GroupReplyCallback {
                 override fun complete(body: String, error: String) {
                     if(epoch != homeGeneration || error.isNotEmpty()) return
                     try { val next = decodeReply(body); if (next.ok) next.home?.let { acceptHome(it, hub); watchSavedRooms(epoch); publish() } }
@@ -593,7 +594,7 @@ class GroupController(val platform: GroupPlatform) {
             if (saved.roomId == session?.roomId) return@forEach
             if (roomWatches.containsKey(saved.roomId)) return@forEach
             val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = saved.roomId, token = saved.token)
-            roomWatches[saved.roomId] = platform.watch(saved.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+            roomWatches[saved.roomId] = platform.watch(saved.hub, encodeCommand(request), object : GroupReplyCallback {
                 override fun complete(body: String, error: String) {
                     if(epoch != homeGeneration || error.isNotEmpty()) return
                     try {
@@ -608,7 +609,7 @@ class GroupController(val platform: GroupPlatform) {
                             if (room.phase == RoomPhase.COLLECTING && room.spin == null && room.payerId == saved.memberId)
                                 alert("selected:${room.id}:${room.orderNumber}", "You're selected!", room.name)
                             if (room.phase == RoomPhase.PREPARING_SPIN && saved.memberId !in room.preparedIds && room.orderingMembers.any { it.id == saved.memberId } && session?.roomId != saved.roomId) {
-                                platform.request(saved.hub, orderJson.encodeToString(request.copy(commandId = platform.uuid(), kind = CommandKind.ACK_SPIN, expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, text = room.preparationId)), object : GroupReplyCallback { override fun complete(body: String, error: String) {} })
+                                platform.request(saved.hub, encodeCommand(request.copy(commandId = platform.uuid(), kind = CommandKind.ACK_SPIN, expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, text = room.preparationId)), object : GroupReplyCallback { override fun complete(body: String, error: String) {} })
                             }
                             publish()
                         }
@@ -637,7 +638,7 @@ class GroupController(val platform: GroupPlatform) {
         val s = requireNotNull(session); val offset = reply?.historyNextOffset ?: -1
         require(offset >= 0) { "All available history is downloaded." }; busy = true
         val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = s.roomId, token = s.token, historyOffset = offset)
-        try { platform.request(s.hub, orderJson.encodeToString(request), object : GroupReplyCallback {
+        try { platform.request(s.hub, encodeCommand(request), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 busy = false
                 if(session?.roomId != s.roomId) return
@@ -659,6 +660,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null) publish() }
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

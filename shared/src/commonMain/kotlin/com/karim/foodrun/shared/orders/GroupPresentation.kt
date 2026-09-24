@@ -78,6 +78,7 @@ internal class GroupPresentation(private val c: GroupController) {
             GroupPage.PEOPLE -> people()
             GroupPage.CUSTOM_ITEM -> { title = if(c.editingCartLineId == null) "What would you like?" else "Change your item"; subtitle = "Add one item at a time. The selected person adds its price later."; field(GroupFieldKey.CUSTOM_NAME, tr("Food item", "الصنف")); field(GroupFieldKey.QUANTITY, tr("Quantity", "الكمية")); field(GroupFieldKey.NOTE, tr("Notes / extras", "ملاحظات وإضافات")); button(if(c.editingCartLineId == null) "Add to my order" else "Update my order", GroupAction.ADD_CUSTOM_ITEM, primary = true) }
             GroupPage.PRICE_ITEM -> { title = "Price this item"; subtitle = "Enter the price for one item; quantity is applied automatically."; field(GroupFieldKey.AMOUNT, "${ui("Unit price")} · ${c.room().restaurant.currency}"); button("Save price", GroupAction.SAVE_ITEM_PRICE, primary = true) }
+            GroupPage.PRICES -> { title = ui("Item prices"); itemPricingCards(c.room()) }
             GroupPage.QUICK_SPIN -> Unit
             GroupPage.CONNECT -> connect()
             GroupPage.SETUP -> setup()
@@ -137,7 +138,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     private fun profile() {
         title = if(c.library.home == null) tr("Your Food Run account", "حساب فود رن") else tr("Your profile", "ملفك الشخصي")
-        subtitle = tr("Use your existing Intrvioo account, or register here.", "استخدم حساب إنترفيوو أو سجل من هنا.")
+        subtitle = if(c.library.home == null) tr("Use your existing Intrvioo account, or register here.", "استخدم حساب إنترفيوو أو سجل من هنا.") else tr("Your details, wallet and payments.", "بياناتك ومحفظتك ومدفوعاتك.")
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         if(c.library.home == null) {
             field(GroupFieldKey.EMAIL, tr("Email", "البريد الإلكتروني")); field(GroupFieldKey.PASSWORD, tr("Password", "كلمة المرور"))
@@ -174,7 +175,7 @@ internal class GroupPresentation(private val c: GroupController) {
             button("Connect hub storage to my Firebase account", GroupAction.ENABLE_CLOUD)
             button(tr("Sign out", "تسجيل الخروج"), GroupAction.SIGN_OUT)
         }
-        card("profile-privacy", tr("Your receiving details", "بيانات استلام أموالك"), tr("Only you can read your cloud profile. Your receiving account is shared with participants when you are selected and choose to share it.", "ملفك السحابي خاص بك. تُشارك بيانات استلام الأموال عندما يتم اختيارك وتوافق على مشاركتها."))
+        card("profile-privacy", tr("Your receiving details", "بيانات استلام أموالك"), tr("Changes update your profile and all active rooms where you collect payments.", "تتحدث بيانات ملفك وكل الغرف الحالية التي تستلم فيها المدفوعات."))
     }
     private fun people() {
         title = tr("Invite your people", "ادعُ أصحابك"); subtitle = tr("People who signed in on this hub and enabled invitations.", "الأشخاص المسجلون في هذا الخادم والذين سمحوا بالدعوات.")
@@ -323,6 +324,11 @@ internal class GroupPresentation(private val c: GroupController) {
         title = r.name; subtitle = "${tr("Order", "الطلب")} #${r.orderNumber} · ${stage(r.phase)} · ${r.restaurant.localizedName(language)}"
         val me = r.members.singleOrNull { it.id == c.me() } ?: return
         val owner = c.me() == r.ownerId; val payer = c.me() == r.payerId
+        r.lastChosenMemberId?.let { previous ->
+            card("last-chosen", tr("Last chosen", "آخر شخص تم اختياره"),
+                r.members.firstOrNull { it.id == previous }?.name ?: r.lastChosenName,
+                if (r.phase == RoomPhase.LOBBY) tr("Next wheel: weight 20 for the last person, 80 for everyone else.", "العجلة القادمة: وزن آخر شخص ٢٠ ووزن كل شخص آخر ٨٠.") else "")
+        }
         if(!me.approved) {
             card("sync-membership", ui("Reconnect to update room access"), ui("Refresh the room. If access is still unavailable, update the room server."))
             button(tr("Refresh", "تحديث"), GroupAction.REFRESH); return
@@ -402,7 +408,7 @@ internal class GroupPresentation(private val c: GroupController) {
                     awaitingFood.isNotEmpty() -> "Waiting for food orders from ${awaitingFood.joinToString { it.name }}. Each person must submit their food or choose No food this time."
                     needsAccount -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to share a receiving account."
                     (owner || payer) && !progress?.reviewBlocker.isNullOrBlank() -> requireNotNull(progress).reviewBlocker
-                    owner || payer -> "Everyone has submitted. Send the order to the restaurant and record the expected arrival."
+                    owner || payer -> "Everyone has submitted. Send the order to the restaurant. Expected arrival is optional."
                     else -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to send the order to the restaurant."
                 }
                 card("order-next-step", tr("Next step", "الخطوة التالية"), nextStep)
@@ -415,7 +421,12 @@ internal class GroupPresentation(private val c: GroupController) {
                 button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
-                accountCard(); if(payer) itemPricingCards(r); append(GroupSettlementPresentation(c).settlement())
+                if(payer) {
+                    card("order-summary", r.restaurant.localizedName(language), restaurantReadyText(r, c.reply!!.receipts, language), Money.format(c.reply!!.receipts.sumOf { it.total }, r.restaurant.currency))
+                    button(tr("Edit item prices", "تعديل أسعار الأصناف"), GroupAction.OPEN_ORDER_PRICES)
+                    button(tr("Edit receiving details", "تعديل بيانات الاستلام"), GroupAction.OPEN_ACCOUNT)
+                }
+                accountCard(); append(GroupSettlementPresentation(c).settlement())
                 button("Order details", GroupAction.OPEN_RECEIPTS)
                 transferCards()
             }
@@ -517,7 +528,7 @@ internal class GroupPresentation(private val c: GroupController) {
         button(if(c.editingCartLineId == null) "Add to my order" else "Update my order", GroupAction.ADD_CART_ITEM, primary = true)
     }
     private fun accounts() {
-        title = "Receiving account"; subtitle = "Select a saved account or enter its details, then share it with this order to continue."
+        title = "Receiving account"; subtitle = tr("Changes update your profile and all active rooms where you collect payments.", "تتحدث بيانات ملفك وكل الغرف الحالية التي تستلم فيها المدفوعات.")
         if(c.library.accounts.isNotEmpty()) button("Add another account", GroupAction.NEW_ACCOUNT)
         c.library.accounts.forEach { a ->
             val selected = c.selectedAccount?.id == a.id
@@ -532,7 +543,7 @@ internal class GroupPresentation(private val c: GroupController) {
         if(c.reply?.room?.account?.let(c::accountMatchesDraft) == true) {
             subtitle = "This account is already shared with this order. Continue to ${if(c.reply?.room?.phase == RoomPhase.REVIEW) "review the totals" else "submit your food"}."
             button("Continue to order", GroupAction.BACK, primary = true)
-        } else button("Share account & continue", GroupAction.SHARE_ACCOUNT, primary = true)
+        } else button(tr("Save payment details", "حفظ بيانات الدفع"), GroupAction.SHARE_ACCOUNT, primary = true)
     }
     private fun receipts() {
         title = "Receipts"; subtitle = "Downloaded for offline access · Food Run breakdowns"
@@ -610,10 +621,10 @@ internal class GroupPresentation(private val c: GroupController) {
                 }
                 if (row.room.account != null) actions += GroupButton(ui("Copy payment details"), GroupAction.WALLET_COPY, target)
                 actions += GroupButton(ui("Order and payment details"), GroupAction.RESUME, row.room.id)
-                val account = row.room.account?.let { "${it.holder} · ${it.bank}\n${it.identifier}" }.orEmpty()
+                val account = row.room.account?.takeIf { !receive && !payer }?.let { "${it.holder} · ${it.bank}\n${it.identifier}" }.orEmpty()
                 card("${prefix}wallet:$value", person,
                     listOf("${row.room.name} · #${row.room.orderNumber} · ${row.room.restaurant.localizedName(language)}",
-                        receiptSummary(receipt), "${ui("Order")} ${receipt.totalText} · ${ui("Paid")} ${Money.format(receipt.paid, receipt.currency)}",
+                        "${ui("Order")} ${receipt.totalText} · ${ui("Paid")} ${Money.format(receipt.paid, receipt.currency)}",
                         account, status).filter { it.isNotBlank() }.joinToString("\n"), Money.format(kotlin.math.abs(receipt.balance), receipt.currency), actions)
 
             }

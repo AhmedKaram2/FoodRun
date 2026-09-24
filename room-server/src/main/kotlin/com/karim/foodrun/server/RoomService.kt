@@ -26,6 +26,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     init {
         // Admit members left waiting by older hubs without changing a locked order's participants.
         db.transaction {
+            CatalogMigrations.apply(db)
+            db.allRooms().filter { it.lastChosenMemberId == null }.forEach { room ->
+                val previous = room.payerId?.let { room } ?: generateSequence(0) { it + 50 }
+                    .map { db.history(room.id, it, 50) }.takeWhile { it.isNotEmpty() }
+                    .flatMap { it.asSequence() }.firstOrNull { it.payerId != null }
+                val chosen = previous?.payerId
+                if (chosen != null) db.save(room.copy(lastChosenMemberId = chosen,
+                    lastChosenName = previous.members.firstOrNull { it.id == chosen }?.name.orEmpty(), revision = room.revision + 1))
+            }
             db.allRooms().filter { room -> room.members.any { !it.approved && !it.removed } }.forEach { room ->
                 val members = room.members.map { if (!it.approved && !it.removed) admit(it, room.phase) else it }
                 val addedOrderers = members.any { member -> member.participating && !member.guest && room.members.any { it.id == member.id && !it.approved } }
@@ -71,7 +80,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
-            val digest = hash(orderJson.encodeToString(c))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -86,8 +95,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        if (c.kind == CommandKind.SHARE_ACCOUNT) accounts.updatePayment(result.id, actor, requireNotNull(result.account))
                         signalRoom(result.id)
-                        projection(result, actor)
+                        projection(requireNotNull(db.room(result.id)), actor)
                     }
                 }
                 if (c.identityToken.isNotEmpty() && reply.token.isNotEmpty()) accounts.link(c.identityToken, reply)
@@ -108,7 +118,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         db.transaction { db.spinningRooms().forEach { room ->
             if (room.phase == RoomPhase.PREPARING_SPIN) {
                 val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
-                if (candidates.isNotEmpty()) db.save(room.copy(phase = RoomPhase.SPINNING, spin = SpinRound(uuid(), candidates, candidates[random.nextInt(candidates.size)], clock() + 3000), revision = room.revision + 1)).also { signalRoom(room.id) }
+                if (candidates.isNotEmpty()) db.save(room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock()), revision = room.revision + 1)).also { signalRoom(room.id) }
             } else finalizeSpin(room)
         } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
@@ -116,7 +126,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun withPresence(room: Room): Room = room.copy(members = room.members.map { member -> member.copy(lastSeen = presence[member.id] ?: member.lastSeen) })
     private fun finalizeSpin(room: Room): Room {
         if (room.phase != RoomPhase.SPINNING || clock() < (room.spin?.endAt ?: Long.MAX_VALUE)) return room
-        return room.copy(phase = RoomPhase.ACCEPTING, revision = room.revision + 1, updatedAt = clock()).also {
+        val winner = requireNotNull(room.spin).winnerId
+        return room.copy(phase = RoomPhase.ACCEPTING, revision = room.revision + 1, updatedAt = clock(),
+            lastChosenMemberId = winner, lastChosenName = room.members.firstOrNull { it.id == winner }?.name.orEmpty()).also {
             db.save(it)
             signalRoom(it.id)
         }
@@ -253,6 +265,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             pastSpins = emptyList(), payerId = null, account = null, transfers = emptyList(), audit = emptyList(),
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
             restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false, paymentRoom = null,
+            lastChosenMemberId = null, lastChosenName = "",
         ) else room.copy(
             // Legacy clients use this field as a payment gate. All members are exempt:
             // selected-payer price changes apply directly without another approval cycle.

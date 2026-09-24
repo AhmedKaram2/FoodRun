@@ -5,7 +5,7 @@ export const WHEEL_PALETTE = [
 
 export function spinRotation(spin, now) {
   const winnerIndex = spin.memberIds.indexOf(spin.winnerId);
-  const target = ((-winnerIndex * 360 / spin.memberIds.length) % 360 + 360) % 360;
+  const target = ((-wheelSlice(winnerIndex, spin.memberIds.length, spin.weights).center) % 360 + 360) % 360;
   const progress = Math.min(1, Math.max(0, (now - spin.startAt) / spin.duration));
   return (spin.turns * 360 + target) * (1 - (1 - progress) ** 4);
 }
@@ -15,9 +15,17 @@ export function polarPoint(angle, radius, center = 200) {
   return [center + radius * Math.cos(radians), center + radius * Math.sin(radians)];
 }
 
-export function wheelSlicePath(index, count, radius = 172, center = 200) {
-  const slice = 360 / count;
-  const middle = -90 + index * slice;
+export function wheelSlice(index, count, weights = []) {
+  const values = weights.length === count ? weights : Array(count).fill(1);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const before = values.slice(0, index).reduce((sum, value) => sum + value, 0);
+  return { sweep: values[index] * 360 / total, center: (before + values[index] / 2 - values[0] / 2) * 360 / total };
+}
+
+export function wheelSlicePath(index, count, radius = 172, center = 200, weights = []) {
+  const geometry = wheelSlice(index, count, weights);
+  const slice = geometry.sweep;
+  const middle = -90 + geometry.center;
   const [startX, startY] = polarPoint(middle - slice / 2, radius, center);
   const [endX, endY] = polarPoint(middle + slice / 2, radius, center);
   return `M ${center} ${center} L ${startX} ${startY} A ${radius} ${radius} 0 ${slice > 180 ? 1 : 0} 1 ${endX} ${endY} Z`;

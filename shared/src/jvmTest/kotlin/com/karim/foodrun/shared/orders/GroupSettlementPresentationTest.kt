@@ -57,7 +57,11 @@ class GroupSettlementPresentationTest {
     @Test fun payerCanPlaceAfterEveryoneSubmitsWithoutQuoteConfirmations() {
         val r = room().copy(carts = listOf(room().carts.first(), MemberCart("member", submitted = true)))
         val ready = GroupSettlementPresentation(controller(r)).review()
+        val arrival = ready.fields.single { it.key == GroupFieldKey.REFERENCE }
+        assertEquals("", arrival.value)
+        assertTrue(arrival.label.contains("optional"))
         assertTrue(ready.action(GroupAction.PLACE).enabled)
+        assertEquals("Order sent", ready.action(GroupAction.PLACE).title)
         assertTrue(ready.buttons.single { it.primary }.action == GroupAction.PLACE)
         assertFalse(ready.buttons.any { it.action == GroupAction.CONFIRM_QUOTE })
     }
@@ -207,7 +211,7 @@ class GroupSettlementPresentationTest {
         assertTrue(payer.state.cards.single { it.id == "dashboard:wallet-direction:true" }.badge.contains("10.00"))
     }
 
-    @Test fun homeAndProfileShareBalancesAndHistoryAppearsBeforeProfileFields() {
+    @Test fun homeAndProfileShareBalancesAndProfileGroupsWalletAndHistoryAfterDetails() {
         val placed = room().copy(phase = RoomPhase.PLACED, account = account)
         val c = controller(placed, "member")
         val receipt = c.reply!!.receipts.single { it.memberId == "member" }
@@ -217,10 +221,11 @@ class GroupSettlementPresentationTest {
         val home = c.state.cards.single { it.id == "dashboard:wallet-summary" }
         c.page = GroupPage.PROFILE
         val profile = c.state
-        assertEquals(home.detail, profile.topCards.single { it.id == "profile-dashboard:wallet-summary" }.detail)
-        assertTrue(profile.topCards.any { it.id.endsWith(":8") && it.detail.contains("Paid") })
-        assertFalse(profile.sections.flatMap { it.cards }.any { it.id.startsWith("profile-dashboard:") })
-        assertEquals(2, profile.topCards.count { it.id.startsWith("profile-dashboard:payment-history:") })
+        assertEquals(home.detail, profile.sections.single { it.title == "Wallet" }.cards.single { it.id == "profile-dashboard:wallet-summary" }.detail)
+        assertTrue(profile.sections.single { it.title == "Payment history" }.cards.any { it.id.endsWith(":8") && it.detail.contains("Paid") })
+        assertTrue(profile.topCards.isEmpty())
+        assertTrue(profile.mainFields.any { it.key == GroupFieldKey.NAME })
+        assertEquals(2, profile.sections.flatMap { it.cards }.count { it.id.startsWith("profile-dashboard:payment-history:") })
     }
 
     @Test fun backgroundHistoryMergeKeepsOlderPaymentsAndHonorsDeletion() {

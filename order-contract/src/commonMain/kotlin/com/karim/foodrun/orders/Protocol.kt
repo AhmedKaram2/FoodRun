@@ -33,6 +33,10 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val paymentRoom: PaymentRoomRequest? = null,
+    // Older mobile clients decode replies strictly and cannot read the new selection fields.
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val selectionDetails: Boolean = false,
 
 )
 @Serializable data class OrderProgress(

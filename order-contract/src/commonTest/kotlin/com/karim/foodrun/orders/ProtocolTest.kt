@@ -12,6 +12,7 @@ class ProtocolTest {
         val encoded = orderJson.encodeToString(legacy)
         assertFalse(encoded.contains("expectedOrderNumber"))
         assertFalse(encoded.contains("paymentRoom"))
+        assertFalse(encoded.contains("selectionDetails"))
         assertEquals(0, orderJson.decodeFromString<RoomCommand>(encoded).expectedOrderNumber)
         assertTrue(orderJson.encodeToString(legacy.copy(expectedOrderNumber = 2)).contains("\"expectedOrderNumber\":2"))
     }

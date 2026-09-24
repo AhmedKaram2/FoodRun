@@ -49,7 +49,7 @@ internal fun GroupWheelContent(wheel: GroupWheel) {
         },
         contentAlignment = Alignment.Center,
     ) {
-        WheelCanvas(people = people, rotation = rotation)
+        WheelCanvas(people = people, rotation = rotation, weights = wheel.round.weights)
         WheelCenter()
         WheelPointer(angle = 0f, modifier = Modifier.align(Alignment.TopCenter))
     }

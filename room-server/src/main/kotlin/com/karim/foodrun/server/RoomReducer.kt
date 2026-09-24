@@ -3,6 +3,11 @@ package com.karim.foodrun.server
 import com.karim.foodrun.orders.*
 
 class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int) {
+    fun spin(room: Room, now: Long): SpinRound {
+        val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
+        val weights = PayerSelection.weights(candidates, room.lastChosenMemberId)
+        return SpinRound(id(), candidates, PayerSelection.choose(candidates, weights, randomIndex), now + 3000, weights = weights)
+    }
     fun apply(r: Room, actorId: String, c: RoomCommand, now: Long): Room {
         require(c.expectedOrderNumber > 0) { "Update Food Run before changing this order, then refresh the room and try again." }
         require(c.expectedOrderNumber == r.orderNumber) { "This request belongs to an earlier order. Refresh the room and review today's order before trying again." }
@@ -32,6 +37,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
                     restaurantOptions = options, restaurantVotes = listOf(RestaurantVote(r.ownerId, restaurant.id)),
                     restaurantPollOpen = options.size > 1,
+                    lastChosenMemberId = r.lastChosenMemberId ?: r.payerId,
+                    lastChosenName = r.members.firstOrNull { it.id == (r.lastChosenMemberId ?: r.payerId) }?.name ?: r.lastChosenName,
                 ).also(RoomRules::validateRoom)
             }
             // Retain old command names so an already-open client can finish a queued request.
@@ -95,12 +102,11 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 require(!r.restaurantPollOpen) { "Finish the restaurant poll before choosing the orderer." }
                 val selected = r.orderingMembers.singleOrNull { it.id == c.memberId }
                     ?: error("Choose someone who has joined this order.")
-                r.copy(phase = RoomPhase.COLLECTING, payerId = selected.id, spin = null, preparationId = "", preparedIds = emptyList())
+                r.copy(phase = RoomPhase.COLLECTING, payerId = selected.id, spin = null, preparationId = "", preparedIds = emptyList(), lastChosenMemberId = selected.id, lastChosenName = selected.name)
             }
             CommandKind.PREPARE_SPIN -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); RoomRules.spinReady(r)
-                val candidates = r.orderingMembers.filter { it.eligible }.map { it.id }
-                val spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000)
+                val spin = spin(r, now)
                 r.copy(phase = RoomPhase.SPINNING, preparationId = id(), preparedIds = emptyList(), spin = spin)
             }
             CommandKind.ABORT_PREPARE -> { owner(); phase(RoomPhase.PREPARING_SPIN); fresh(); reason(); r.copy(phase = RoomPhase.LOBBY, preparationId = "", preparedIds = emptyList()) }
@@ -108,9 +114,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 orderer(); phase(RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
                 require(c.text == r.preparationId) { "Spin preparation has changed." }
                 if (r.spin != null) r else {
-                    val candidates = r.orderingMembers.filter { it.eligible }.map { it.id }
-                    require(candidates.isNotEmpty())
-                    r.copy(phase = RoomPhase.SPINNING, spin = SpinRound(id(), candidates, candidates[randomIndex(candidates.size)], now + 3000))
+                    r.copy(phase = RoomPhase.SPINNING, spin = spin(r, now))
                 }
             }
             CommandKind.ACCEPT_DUTY -> {
@@ -122,11 +126,11 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(phase = RoomPhase.LOBBY, pastSpins = r.pastSpins + listOfNotNull(r.spin), spin = null, members = r.members.map { if (it.id == actorId) it.copy(eligible = false, ready = true) else it })
             }
             CommandKind.SHARE_ACCOUNT -> {
-                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh()
-                require(r.transfers.isEmpty()) { "An account with recorded transfers cannot be replaced." }
-                val account = requireNotNull(c.account); account.validate(); require(account.currency == r.restaurant.currency) { "Account currency must match the room." }
+                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
+                val account = requireNotNull(c.account).normalized(); account.validate(); require(account.currency == r.restaurant.currency) { "Account currency must match the room." }
                 if (r.account == account.copy(version = r.account?.version ?: account.version)) r
-                else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1), quoteRevision = r.quoteRevision + 1)
+                else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1),
+                    quoteRevision = r.quoteRevision + if (r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) 1 else 0)
             }
             CommandKind.CART -> {
                 orderer(); phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
@@ -228,8 +232,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PLACE -> {
                 payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); RoomRules.requirePlaceable(r)
-                require(c.text.isNotBlank() && c.text.length <= 500) { "Enter the restaurant confirmation/reference and ETA." }
-                r.copy(phase = RoomPhase.PLACED, restaurantReference = c.text)
+                require(c.text.length <= 500) { "Restaurant confirmation / ETA must be 500 characters or fewer." }
+                r.copy(phase = RoomPhase.PLACED, restaurantReference = c.text.trim())
             }
             CommandKind.UPDATE_PAYMENT_RECEIPT -> {
                 payer(); phase(RoomPhase.FULFILLED); fresh()

@@ -7,7 +7,7 @@ internal object GroupLayout {
     val roomUtilities = setOf(
         GroupAction.OPEN_BLOCK_REQUEST, GroupAction.SHARE_ROOM, GroupAction.OPEN_RECEIPTS, GroupAction.OPEN_HISTORY,
         GroupAction.SAVE_ROOM_RESTAURANT, GroupAction.SET_FEES, GroupAction.REOPEN,
-        GroupAction.CANCEL, GroupAction.ADJUST_BILL, GroupAction.OPEN_ACCOUNT, GroupAction.OPEN_LIBRARY, GroupAction.EDIT_ROOM_RESTAURANT,
+        GroupAction.CANCEL, GroupAction.ADJUST_BILL, GroupAction.OPEN_ACCOUNT, GroupAction.OPEN_LIBRARY, GroupAction.EDIT_ROOM_RESTAURANT, GroupAction.OPEN_ORDER_PRICES,
     )
     val roomExtraFields = setOf(
         GroupFieldKey.REASON, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
@@ -15,6 +15,19 @@ internal object GroupLayout {
     )
 
     fun sections(page: GroupPage, cards: List<GroupCard>): List<GroupSection> {
+        if (page == GroupPage.PROFILE) {
+            val groups = cards.groupBy {
+                when {
+                    it.id.startsWith("profile-dashboard:wallet") -> "Wallet"
+                    it.id.startsWith("profile-dashboard:payment-history") -> "Payment history"
+                    it.id.startsWith("favorite") -> "Favorite orders"
+                    it.id.startsWith("previous:") -> "Previous orders"
+                    else -> ""
+                }
+            }
+            return listOf("Wallet", "Payment history", "Favorite orders", "Previous orders", "")
+                .mapNotNull { title -> groups[title]?.let { GroupSection(title, it) } }
+        }
         if (page == GroupPage.LIBRARY) {
             val (restaurants, information) = cards.partition { it.id.startsWith("restaurant:") }
             return listOf(GroupSection("", information), GroupSection("Saved restaurants", restaurants))
@@ -28,6 +41,7 @@ internal object GroupLayout {
             else -> ""
         }, cards)).filter { it.cards.isNotEmpty() }
         fun category(card: GroupCard): String = when {
+            card.id == "order-summary" -> "Order summary"
             card.id.startsWith("menu:") -> "Choose your food"
             card.id.startsWith("cart:") || card.id == "estimate" -> "Your order"
             card.id == "account" || card.id == "restaurant-balance" || card.id == "my-payment-status" -> "Payment actions"
@@ -40,7 +54,7 @@ internal object GroupLayout {
             else -> "Order updates"
         }
         val grouped = cards.groupBy(::category)
-        return listOf("Payment actions", "Payment activity", "Restaurant order", "Wallet", "Order updates", "Choose your food", "Your order", "Totals & recipient", "At the table")
+        return listOf("Order summary", "Payment actions", "Wallet", "Payment activity", "Restaurant order", "Order updates", "Choose your food", "Your order", "Totals & recipient", "At the table")
             .mapNotNull { title -> grouped[title]?.let { GroupSection(title, it) } }
     }
 }

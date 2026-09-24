@@ -4,6 +4,38 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class OrderProgressTest {
+    @Test fun ordersCanBePlacedWithoutAnExpectedArrival(): Unit {
+        for (phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) {
+            for (arrival in listOf("", "   \n ")) RoomFixture().use { f ->
+                val member = f.join(); f.approve(member); f.start(member)
+                f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }
+                f.cart(f.owner, 2); f.cart(member, 1)
+                if (phase == RoomPhase.REVIEW) f.send(f.owner, CommandKind.REVIEW)
+                val before = f.state().room!!
+                assertEquals(phase, before.phase)
+                val placed = f.send(f.owner, CommandKind.PLACE) { it.copy(text = arrival) }.room!!
+                assertEquals(RoomPhase.PLACED, placed.phase)
+                assertEquals("", placed.restaurantReference)
+                assertEquals(before.carts, placed.carts)
+                f.restart()
+                assertEquals(RoomPhase.PLACED, f.state().room!!.phase)
+                assertEquals("", f.state().room!!.restaurantReference)
+            }
+        }
+    }
+
+    @Test fun optionalExpectedArrivalStillEnforcesTheLengthLimit(): Unit = RoomFixture().use { f ->
+        f.confirmedReview()
+        val rejected = f.service.execute(f.command(f.owner, CommandKind.PLACE).copy(text = "x".repeat(501)))
+        assertFalse(rejected.ok)
+        assertTrue(rejected.error.contains("length"))
+        assertEquals(RoomPhase.REVIEW, f.state().room!!.phase)
+        val arrival = "x".repeat(500)
+        val placed = f.send(f.owner, CommandKind.PLACE) { it.copy(text = arrival) }.room!!
+        assertEquals(RoomPhase.PLACED, placed.phase)
+        assertEquals(arrival, placed.restaurantReference)
+    }
+
     private fun RoomFixture.confirmedReview(): RoomReply {
         val member = join(); approve(member); start(member)
         send(owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = account) }

@@ -200,12 +200,14 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
         }
         post("/command") {
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            var selectionDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
                 val body = bytes.toString(Charsets.UTF_8)
                 JsonInputValidation.validate(body)
                 val command = orderJson.decodeFromString<RoomCommand>(body)
+                selectionDetails = command.selectionDetails
                 withContext(Dispatchers.IO) { service.execute(command) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (invalid: IllegalArgumentException) { RoomReply(ok = false, error = "Invalid request. Check the supplied fields and menu format.", code = "VALIDATION") }
@@ -213,7 +215,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -239,7 +241,7 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                         log.error("Room subscription failed: ${failure.javaClass.simpleName}")
                         RoomReply(ok = false, error = "The hub is temporarily unavailable. Reconnect to resume.", code = "HUB_UNAVAILABLE")
                     }
-                    send(Frame.Text(orderJson.encodeToString(snapshot)))
+                    send(Frame.Text(orderJson.encodeToString(snapshot.forClient(request.selectionDetails))))
                     if (!snapshot.ok) break
                     memberId = snapshot.memberId
                     lastVersion = service.eventVersion(request.kind, request.roomId)

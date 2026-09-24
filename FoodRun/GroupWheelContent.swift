@@ -26,7 +26,8 @@ struct GroupWheelContent: View {
                 rotation: wheel.round.rotation(now: reduceMotion && !ended ? wheel.round.startAt : now),
                 isSpinning: now >= wheel.round.startAt && !ended,
                 tick: ended || reduceMotion ? 0 : Int(now / 90),
-                winner: ended ? people.first { $0.name == wheel.winner } : nil
+                winner: ended ? people.first { $0.name == wheel.winner } : nil,
+                weights: wheel.round.weights.map { $0.doubleValue }
             )
             .onChange(of: ended, initial: true) { _, ended in finished = ended }
         }

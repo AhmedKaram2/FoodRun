@@ -12,6 +12,7 @@ import java.util.Base64
 /** Invites and account sessions are hub-local; profiles and room records persist in the existing Firebase project. */
 class AccountService(private val db: RoomDatabase, private val provider: IdentityProvider?, private val rooms: RoomService, private val clock: () -> Long) {
     private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
+    private var lastProfileSyncKey = ""
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
     private fun session(token: String): AccountSession {
         require(token.length in 32..128) { "Sign in to your Food Run account." }
@@ -23,6 +24,12 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     }
     fun userId(token: String): String = session(token).userId
     private fun profile(uid: String) = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: FoodProfile(userId = uid)
+    internal fun updatePayment(roomId: String, memberId: String, payment: ReceivingAccount) {
+        val uid = db.record("member-user:$roomId:$memberId") ?: return
+        val current = profile(uid)
+        val updated = current.copy(payment = payment.normalized())
+        rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
+    }
     private fun identity(hash: String, saved: AccountSession): CloudIdentity {
         if (saved.cloudExpires > clock()) return CloudIdentity(saved.userId, saved.idToken, saved.refreshToken)
         require(saved.refreshToken.isNotBlank()) { "Reconnect your Firebase account to save cloud changes." }
@@ -85,13 +92,16 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 require(settings.registrationsEnabled) { "New registration is temporarily disabled by the administrator." }
             }
             val pendingAdminName = db.record("admin:profile-name:${identity.userId}")
-            val savedProfile = (cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
+            val pendingProfile = db.record("profile-sync:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) }
+            val savedProfile = (pendingProfile ?: cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
                 if (it.phone.isBlank()) it else it.normalized()
             }.let { if (pendingAdminName == null) it else it.copy(name = pendingAdminName) }
             AccountRestrictions.requireAllowed(db, identity.userId, clock())
             if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
-            else if (pendingAdminName != null && runCatching { cloud().saveProfile(identity, savedProfile) }.isSuccess)
+            else if ((pendingProfile != null || pendingAdminName != null) && runCatching { cloud().saveProfile(identity, savedProfile) }.isSuccess) {
                 db.deleteRecord("admin:profile-name:${identity.userId}")
+                db.deleteRecord("profile-sync:${identity.userId}")
+            }
             db.putRecord("profile:${identity.userId}", orderJson.encodeToString(savedProfile))
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))
@@ -102,9 +112,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             IdentityAction.SAVE_PROFILE -> {
                 val updated = requireNotNull(request.profile).copy(userId = saved.userId).normalized()
                 updated.validate()
-                cloud().saveProfile(identity(RoomService.hash(c.identityToken), saved), updated)
-                db.putRecord("profile:${saved.userId}", orderJson.encodeToString(updated))
-                db.deleteRecord("admin:profile-name:${saved.userId}")
+                rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
                 home(c.identityToken)
             }
             IdentityAction.SIGN_OUT -> { db.deleteRecord("identity:${RoomService.hash(c.identityToken)}"); RoomReply() }
@@ -147,6 +155,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     }
     /** Called by a separate worker under the room-service lock; failures retain the durable outbox. */
     fun syncCloud() {
+        syncProfiles()
         if (db.cloudDurable) return
         val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) } ?: return
         val next = db.pendingCloud() ?: run { cloudStatus = "All room changes saved to Firebase"; return }
@@ -161,5 +170,23 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             db.finishCloud(next.first, next.second)
             cloudStatus = "Room changes saved to Firebase"
         } catch (_: Exception) { cloudStatus = "Saved on this hub · Firebase sync pending. Check connectivity, Firestore rules, and the cloud owner's session." }
+    }
+
+    private fun syncProfiles() {
+        val pending = db.records("profile-sync:")
+        if (pending.isEmpty()) return
+        val sessions = db.records("identity:").map { (key, body) -> key.removePrefix("identity:") to orderJson.decodeFromString<AccountSession>(body) }
+        val ordered = pending.sortedBy { it.first }
+        for ((key, body) in ordered.filter { it.first > lastProfileSyncKey } + ordered.filter { it.first <= lastProfileSyncKey }) {
+            val profile = orderJson.decodeFromString<FoodProfile>(body)
+            val session = sessions.firstOrNull { it.second.userId == profile.userId && it.second.expires > clock() } ?: continue
+            lastProfileSyncKey = key
+            runCatching {
+                cloud().saveProfile(identity(session.first, session.second), profile)
+                db.deleteRecord(key)
+            }
+            // Limit network work under the room lock; rotate so a failed profile cannot block others.
+            break
+        }
     }
 }

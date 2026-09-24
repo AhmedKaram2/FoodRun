@@ -1,3 +1,6 @@
+import PaymentFields from './PaymentFields.jsx';
+import { paymentDraft, paymentAccount, uaePhone } from './paymentDetails.js';
+import { photoData } from './client';
 import { canAccessAdmin } from './adminAccess';
 import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
@@ -107,10 +110,38 @@ export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy }) {
 function AdminUserCard({ person, self, rooms, mutate, busy }) {
   const [duration, setDuration] = useState('24'), [reason, setReason] = useState('');
   const [scopeRoomId, setScopeRoomId] = useState('');
-  const [name, setName] = useState(person.name || '');
-  useEffect(() => setName(person.name || ''), [person.name]);
+  const source = person.profile || { name: person.name || '', phone: person.phone || '', photo: '', language: person.language || 'en', discoverable: person.discoverable ?? true };
+  const draft = () => ({ ...source, ...paymentDraft(source.payment) });
+  const [form, setForm] = useState(draft);
+  const [editing, setEditing] = useState(false), [message, setMessage] = useState('');
+  useEffect(() => { setForm(draft()); }, [person]);
+  const set = (key, value) => setForm(old => ({ ...old, [key]: value }));
+  const save = async event => {
+    event.preventDefault(); setMessage('');
+    try {
+      const profile = { ...source, name: form.name.trim(), phone: uaePhone(form.phone, true), photo: form.photo,
+        discoverable: form.discoverable, language: form.language, payment: paymentAccount(form, source.payment, form.name) };
+      const result = await mutate('/admin/user', { userId: person.id, action: 'profile', profile });
+      if (result) { setEditing(false); setMessage(t('Profile and payment details saved.')); }
+    } catch (error) { setMessage(error.message); }
+  };
   return <article className="admin-person stack"><div className="section-title"><div><b>{person.name || t('Incomplete profile')}</b><small>{person.phone || person.id}</small></div><span className={`status ${person.disabled ? '' : 'live'}`}>{t(person.removed ? 'Removed' : person.disabled ? 'Blocked' : 'Active')}</span></div>
-    {!person.removed && <form className="admin-rename" onSubmit={event => { event.preventDefault(); const next = name.trim(); if (next && next !== person.name) mutate('/admin/user', { userId: person.id, action: 'rename', name: next }); }}><label>{t('User name')}<input required maxLength={160} value={name} onChange={event => setName(event.target.value)} /></label><button className="secondary" disabled={busy || !name.trim() || name.trim() === person.name}>{t('Save name')}</button></form>}
+    {!person.removed && <><button className="secondary" type="button" onClick={() => setEditing(!editing)}>{t(editing ? 'Close editor' : 'Edit user details')}</button>
+      {editing && <form className="stack admin-profile-editor" onSubmit={save}>
+        <div className="form-grid two">
+          <label>{t('Profile name')}<input required maxLength={160} value={form.name} onChange={e => set('name', e.target.value)} /></label>
+          <label>{t('UAE mobile number')}<input required type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} /></label>
+          <label>{t('Language')}<select value={form.language} onChange={e => set('language', e.target.value)}><option value="en">English</option><option value="ar">العربية</option></select></label>
+          <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t('Let people on this hub invite me')}</label>
+        </div>
+        <div className="admin-profile-photo">{form.photo && <img src={form.photo} alt={form.name} />}<label>{t('Choose photo')}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); } catch (error) { setMessage(error.message); } }} /></label>{form.photo && <button type="button" className="link" onClick={() => set('photo', '')}>{t('Remove photo')}</button>}</div>
+        <label>{t('Photo URL (optional)')}<input type="url" value={form.photo?.startsWith('data:') ? '' : form.photo || ''} onChange={e => set('photo', e.target.value)} placeholder="https://…" /></label>
+        <h3>{t('Receiving details')}</h3><PaymentFields form={form} set={set} name={form.name} />
+        <p className="field-help">{t('Changes update the user profile and their active rooms.')}</p>
+        <button className="primary" disabled={busy}>{t('Save user details')}</button>
+      </form>}
+    </>}
+    {message && <p role="status">{message}</p>}
     {person.disabled && <p className="admin-block-status">{person.blockedUntil ? `${t('Blocked until')} ${new Date(person.blockedUntil).toLocaleString()}` : t('Until unblocked by admin')}{person.blockReason && <> · {person.blockReason}</>}</p>}
     {Object.entries(person.roomBlocks || {}).map(([roomId, block]) => <div className="admin-block-status" key={roomId}>{rooms.find(room => room.id === roomId)?.name || roomId} · {block.until ? new Date(block.until).toLocaleString() : t('Until unblocked by admin')} · {block.reason}<button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'unblock', scopeRoomId: roomId })}>{t('Unblock now')}</button></div>)}
     {self ? <p>{t('Your administrator account')}</p> : person.removed ? <button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'restore' })}>{t('Restore Food Run access')}</button> : <>

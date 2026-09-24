@@ -56,7 +56,7 @@ object BuiltInRestaurants {
             item("Falafel", 3), item("Stuffed Falafel", 5), item("Romy Falafel", 7), item("Potato Falafel", 5),
             item("Eggplant Falafel", 5), item("Egg Falafel", 6), item("Alexandrian Falafel", 5), item("Mixed", 6),
             item("Saroukh", 7), item("Beans With Corn Oil", 3), item("Beans With Oil (Hot - Olive)", 5),
-            item("Alexandrian Fava Bean", 5), item("Beans With Sausage", 8), item("Beans With Sauce", 6),
+            item("Alexandrian Fava Bean", 4), item("Beans With Sausage", 8), item("Beans With Sauce", 6),
             item("Foul Ghee", 6), item("Beans With Egg", 6), item("Falafel Fava Bean", 6),
             item("Potato Fries", 5), item("Romy Potato", 6), item("Mashed Potato", 5),
             item("Romy Mashed Potato", 6), item("Mashed Potatoes With Egg", 6), item("Eggplant", 5),

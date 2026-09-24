@@ -61,13 +61,13 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val buttons = mutableListOf<GroupButton>()
         cards += walletCards()
         cards += GroupCard("review-next-step", tr("Ready for the restaurant", "جاهز للمطعم"),
-            if (payer) tr("Copy or share the order, then record the restaurant confirmation and expected arrival. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها سجّل تأكيد المطعم ومعاد الوصول. مش محتاج تأكيد تاني من الناس.")
+            if (payer) tr("Copy or share the order, then mark it as sent. You can add the expected arrival if known. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها أكّد إن الطلب اتبعت. ممكن تضيف معاد الوصول لو معروف. مش محتاج تأكيد تاني من الناس.")
             else tr("${name(r.payerId)} is sending the order to the restaurant.", "${name(r.payerId)} بيبعت الطلب للمطعم."))
         if (payer) {
             val blocker = placementBlocker()
-            fields += field(GroupFieldKey.REFERENCE, tr("Restaurant confirmation / ETA", "تأكيد المطعم ووقت الوصول المتوقع"))
+            fields += field(GroupFieldKey.REFERENCE, tr("Restaurant confirmation / ETA (optional)", "تأكيد المطعم ووقت الوصول المتوقع (اختياري)"))
             cards += GroupCard("review-total", tr("Total to pay the restaurant", "إجمالي المبلغ المطلوب للمطعم"), "${money(receipts.sumOf { it.total })}\nYour own food share is included. Other members reimburse their individual shares after restaurant payment.")
-            buttons += GroupButton(tr("Order sent · save expected arrival", "الطلب اتبعت · سجّل معاد الوصول"), GroupAction.PLACE,
+            buttons += GroupButton(tr("Order sent", "الطلب اتبعت"), GroupAction.PLACE,
                 primary = true, enabled = blocker.isEmpty())
             if (blocker.isNotEmpty()) cards += GroupCard("placement-blocked", tr("Before placing the order", "قبل إرسال الطلب"), blocker,
                 buttons = if (r.restaurant.contact.phoneE164.isNullOrBlank() && r.restaurant.contact.whatsappE164.isNullOrBlank() || r.restaurant.pricing.taxTreatment == TaxTreatment.UNSPECIFIED)

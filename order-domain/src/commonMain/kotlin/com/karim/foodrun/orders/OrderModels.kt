@@ -33,16 +33,25 @@ import kotlin.math.pow
     }
     fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(bank = "Aani", identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(identifier = identifier.filterNot { it.isWhitespace() }.uppercase(), currency = "AED")
 }
-@Serializable data class SpinRound(val id: String, val memberIds: List<String>, val winnerId: String, val startAt: Long, val duration: Long = 6500, val turns: Int = 7) {
+@Serializable data class SpinRound(val id: String, val memberIds: List<String>, val winnerId: String, val startAt: Long, val duration: Long = 6500, val turns: Int = 7,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val weights: List<Int> = emptyList(),
+) {
     init {
         require(memberIds.isNotEmpty() && memberIds.distinct().size == memberIds.size && winnerId in memberIds) { "Invalid spin candidates." }
         require(duration in 1..60_000 && turns in 1..100 && startAt in 0..Long.MAX_VALUE - duration) { "Invalid spin timing." }
+        require(weights.isEmpty() || weights.size == memberIds.size && weights.all { it in 1..100 }) { "Invalid spin weights." }
     }
     val endAt: Long get() = startAt + duration
     fun rotation(now: Long): Double {
-        val target = ((-memberIds.indexOf(winnerId) * 360.0 / memberIds.size) % 360 + 360) % 360
+        val target = ((-sliceCenter(memberIds.indexOf(winnerId))) % 360 + 360) % 360
         val progress = ((now - startAt).toDouble() / duration).coerceIn(0.0, 1.0)
         return (turns * 360 + target) * (1 - (1 - progress).pow(4))
+    }
+    fun sliceCenter(index: Int): Double {
+        if (weights.isEmpty()) return index * 360.0 / memberIds.size
+        return (weights.take(index).sum() + weights[index] / 2.0 - weights.first() / 2.0) * 360 / weights.sum()
     }
 }
 @Serializable enum class TransferStatus {
@@ -74,6 +83,12 @@ import kotlin.math.pow
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val paymentRoom: PaymentRoomDetails? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val lastChosenMemberId: String? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val lastChosenName: String = "",
 ) {
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }

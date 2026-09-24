@@ -4,7 +4,8 @@ import RestaurantPollPrompt from './RestaurantPollPrompt.jsx';
 import OrderPricingPanel from './OrderPricingPanel.jsx';
 import ReorderReview from './ReorderReview.jsx';
 import { lastRestaurantOrder, nextRestaurantHistoryRoom } from './reorder.js';
-import { paymentDraft, uaeIban } from './paymentDetails.js';
+import { paymentDraft, paymentAccount, uaePhone } from './paymentDetails.js';
+import PaymentFields from './PaymentFields.jsx';
 import BlockedNotice from './BlockedNotice.jsx';
 import NativeGoogleSignIn from './NativeGoogleSignIn.jsx';
 import { roomInvitation } from './roomInvitation.js';
@@ -27,7 +28,7 @@ import { auth, googleProvider } from '../firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { amount, hubAddress, money, photoData } from './client';
 import { useFoodRun } from './useFoodRun';
-import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlicePath } from './wheel';
+import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlice, wheelSlicePath } from './wheel';
 import builtInRestaurants from './builtInRestaurants.json';
 import { sharjahRestaurants } from './sharjahRestaurants';
 import { dubaiRestaurants } from './dubaiRestaurants';
@@ -79,13 +80,6 @@ function LanguageToggle() {
 
 function uid() { return crypto.randomUUID(); }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
-function uaePhone(value, mobileOnly = false) {
-  const digits = String(value || '').replace(/\D/g, '');
-  const local = digits.startsWith('00971') ? digits.slice(5) : digits.startsWith('971') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
-  const valid = mobileOnly ? /^5\d{8}$/.test(local) : /^(?:[2-9]\d{7}|5\d{8})$/.test(local);
-  if (!valid) throw Error(mobileOnly ? 'Enter a UAE mobile number, for example +971 50 123 4567.' : 'Enter a UAE phone number, for example +971 4 123 4567.');
-  return `+971${local}`;
-}
 function minorInput(value = 0, currency = 'AED') {
   const digits = ['KWD', 'BHD', 'OMR'].includes(currency) ? 3 : currency === 'JPY' ? 0 : 2;
   return (value / 10 ** digits).toFixed(digits);
@@ -175,7 +169,7 @@ function roomInviteLink(room, hub) {
 function displayQuantity(quantity, description) {
   return /[\u0600-\u06ff]/.test(description) ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)]) : String(quantity);
 }
-function combinedOrderText(room, receipts, expectedArrival = room.restaurantReference) {
+function groupedOrderLines(room, receipts) {
   const grouped = new Map();
   receipts.flatMap(receipt => receipt.lines).forEach(line => {
     const item = room.restaurant.menu.items.find(value => value.id === line.itemId);
@@ -183,10 +177,13 @@ function combinedOrderText(room, receipts, expectedArrival = room.restaurantRefe
     const options = room.restaurant.menu.optionGroups.flatMap(group => group.options).filter(value => (line.optionIds || []).includes(value.id));
     const description = item && uiLanguage === 'ar' ? [localizedName(item), variant && localizedName(variant), ...options.map(localizedName)].filter(Boolean).join(' · ') : line.description;
     const key = `${description}\u0000${line.notes || ''}`;
-    const previous = grouped.get(key) || { ...line, description, quantity: 0 };
-    grouped.set(key, { ...previous, quantity: previous.quantity + line.quantity });
+    const previous = grouped.get(key) || { ...line, description, quantity: 0, amount: 0 };
+    grouped.set(key, { ...previous, quantity: previous.quantity + line.quantity, amount: previous.amount + line.amount });
   });
-  const lines = [...grouped.values()].map(line => `${displayQuantity(line.quantity, line.description)} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`);
+  return [...grouped.values()];
+}
+function combinedOrderText(room, receipts, expectedArrival = room.restaurantReference) {
+  const lines = groupedOrderLines(room, receipts).map(line => `${displayQuantity(line.quantity, line.description)} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`);
   return [localizedName(room.restaurant), room.deliveryMode ? `${tx('Delivery', 'توصيل')}: ${room.destination || tx('Address to be confirmed', 'العنوان يحدد لاحقاً')}` : tx('Pickup', 'استلام من المطعم'), tf('Expected delivery / pickup: {time}', { time: expectedArrival?.trim() || t('To be confirmed by restaurant') }), '', ...lines].join('\n');
 }
 function receiptText(room, receipt) {
@@ -255,7 +252,6 @@ function LiveSelectionWheel({ spin, members, serverTime, active }) {
   }, [active, finalRotation, reduceMotion]);
 
   const count = candidates.length;
-  const slice = 360 / Math.max(count, 1);
   const labelSize = count <= 4 ? 18 : count <= 7 ? 15 : 12;
   return <div className={`live-wheel is-${motion.stage}`}>
     <svg viewBox="0 0 400 410" role="img" aria-label={motion.stage === 'finished' ? tf('{name} was selected', { name: candidates[winnerIndex]?.name || t('Someone') }) : tf('Selecting one of {count} people', { count })}>
@@ -269,11 +265,12 @@ function LiveSelectionWheel({ spin, members, serverTime, active }) {
       <g className="wheel-turntable" style={{ transform: `rotate(${motion.rotation}deg)` }}>
         {count === 1
           ? <circle className={`wheel-slice ${motion.stage === 'finished' ? 'selected' : ''}`} cx="200" cy="200" r="172" fill={WHEEL_PALETTE[0]} />
-          : candidates.map((candidate, index) => <path className={`wheel-slice ${motion.stage === 'finished' && index === winnerIndex ? 'selected' : ''}`} d={wheelSlicePath(index, count)} fill={WHEEL_PALETTE[index % WHEEL_PALETTE.length]} key={candidate.id} />)}
+          : candidates.map((candidate, index) => <path className={`wheel-slice ${motion.stage === 'finished' && index === winnerIndex ? 'selected' : ''}`} d={wheelSlicePath(index, count, 172, 200, spin.weights)} fill={WHEEL_PALETTE[index % WHEEL_PALETTE.length]} key={candidate.id} />)}
         {candidates.map((candidate, index) => {
-          const angle = -90 + index * slice;
+          const geometry = wheelSlice(index, count, spin.weights);
+          const angle = -90 + geometry.center;
           const [x, y] = polarPoint(angle, 113);
-          return <text className="wheel-person-name" x={x} y={y} fontSize={labelSize} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${angle + 180} ${x} ${y})`} key={candidate.id}>{wheelLabel(candidate.name)}</text>;
+          return <text className="wheel-person-name" x={x} y={y} fontSize={Math.min(labelSize, Math.max(7, geometry.sweep / 3))} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${angle + 180} ${x} ${y})`} key={candidate.id}>{wheelLabel(candidate.name)}</text>;
         })}
         <circle className="wheel-inner-outline" cx="200" cy="200" r="172" />
       </g>
@@ -432,7 +429,7 @@ function favoriteFromPrevious(choice) {
 function UserDashboard({ data, openRoom, compact = false }) {
   const dashboard = userDashboard(data);
   return <section className={`user-dashboard ${compact ? 'compact' : ''}`}>
-    <div className="section-title"><div><p className="eyebrow">{t("MY MONEY & ORDERS")}</p><h2>{t("Wallet dashboard")}</h2></div><span>{dashboard.entries.length}</span></div>
+    <div className="section-title"><div><p className="eyebrow">{t("MY MONEY & ORDERS")}</p><h2>{t("Wallet")}</h2></div><span>{dashboard.entries.length}</span></div>
     <div className="wallet-directions">{[
       { key: 'pay', title: t("I need to pay"), total: dashboard.toPay, entries: dashboard.payEntries, empty: tx('You have no payments due.', 'لا توجد مبالغ مستحقة عليك.') },
       { key: 'receive', title: t("I need to receive"), total: dashboard.toReceive, entries: dashboard.receiveEntries, empty: tx('No one owes you a payment.', 'لا توجد مبالغ مستحقة لك.') },
@@ -443,21 +440,21 @@ function UserDashboard({ data, openRoom, compact = false }) {
         <div className="wallet-person-heading"><span className="wallet-avatar" aria-hidden="true">{entry.person.slice(0, 1)}</span><h4>{entry.person}</h4><strong>{money(entry.amount, entry.currency)}</strong></div>
         <small>{entry.roomName}{entry.kind === 'refund' ? ` · ${tx('Refund to send', 'مبلغ مرتجع للإرسال')}` : ''}</small>
         <p>{localizedName(entry.room.restaurant)} · {tf('Order #{number}', { number: entry.room.orderNumber })}</p>
-        <p className="wallet-food-summary">{orderSummary(entry.receipt.lines)}</p><small>{t('Order')} {money(entry.receipt.total, entry.currency)} · {t('Paid')} {money(entry.receipt.paid, entry.currency)}</small>
+        <small>{t('Order')} {money(entry.receipt.total, entry.currency)} · {t('Paid')} {money(entry.receipt.paid, entry.currency)}</small>
         <PaymentActionLine room={entry.room} receipt={entry.receipt} memberId={entry.memberId} data={data} />
-        <PaymentDetails account={entry.room.account} data={data} />
+        {section.key === 'pay' && entry.kind !== 'refund' && <PaymentDetails account={entry.room.account} data={data} />}
         <button className="secondary wide" onClick={() => openRoom(entry.roomId)}>{t('Order and payment details')}</button>
       </article>)}
     </section>)}</div>
-    <section className="card payment-history"><h3>{t("Payment history")}</h3><p className="muted">{t("Order totals and confirmed payments, newest first.")}</p>
+    <section id="payment-history" className="card payment-history"><h3>{t("Payment history")}</h3><p className="muted">{t("Order totals and confirmed payments, newest first.")}</p>
       {!dashboard.paymentHistory.length && <p>{t("No payment history yet")}</p>}
-      {dashboard.paymentHistory.slice(0, compact ? 3 : 30).map(entry => <article className="wallet-person" key={entry.key}>
+      {dashboard.paymentHistory.slice(0, compact ? 3 : 30).map(entry => <article className="payment-history-row" key={entry.key}>
         <h4>{entry.restaurantName} · #{entry.number}</h4><small>{entry.roomName} · {new Date(entry.at).toLocaleDateString(uiLanguage === 'ar' ? 'ar-EG' : 'en-AE')}</small>
         <p>{t("Order")} {money(entry.receipt.total, entry.receipt.currency)} · {t("Paid")} {money(entry.receipt.paid, entry.receipt.currency)}</p>
         <button className="secondary" onClick={() => openRoom(entry.roomId)}>{t("Order and payment details")}</button>
       </article>)}
     </section>
-    {!compact && <div className="card order-dashboard"><h3>{t("Current orders")}</h3>{dashboard.currentOrders.map(({ room }) => <button className="order-dashboard-row" onClick={() => openRoom(room.id)} key={room.id}><span><b>{room.name} · #{room.orderNumber}</b><small>{t(phaseLabel[room.phase])} · {localizedName(room.restaurant)}</small></span><strong>{t("Open →")}</strong></button>)}</div>}
+    {!compact && dashboard.currentOrders.length > 0 && <div className="card order-dashboard"><h3>{t("Current orders")}</h3>{dashboard.currentOrders.map(({ room }) => <button className="order-dashboard-row" onClick={() => openRoom(room.id)} key={room.id}><span><b>{room.name} · #{room.orderNumber}</b><small>{t(phaseLabel[room.phase])} · {localizedName(room.restaurant)}</small></span><strong>{t("Open →")}</strong></button>)}</div>}
   </section>;
 }
 
@@ -469,21 +466,24 @@ function ProfileScreen({ data, onBack, openRoom }) {
     name: profile?.name || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
     discoverable: profile?.discoverable ?? true, ...paymentDraft(profile?.payment),
   });
-  const set = (key, value) => setForm(old => ({ ...old, [key]: value }));
+  const [dirty, setDirty] = useState(false);
+  const syncedProfile = useRef(profile);
+  useEffect(() => {
+    if (!dirty && syncedProfile.current !== profile) {
+      syncedProfile.current = profile;
+      setForm(old => { const payment = paymentDraft(profile?.payment); return { name: profile?.name || '', phone: profile?.phone || '', photo: profile?.photo || '', discoverable: profile?.discoverable ?? true, ...payment, ...(profile?.payment ? { iban: payment.iban || old.iban, aaniPhone: payment.aaniPhone || old.aaniPhone } : {}) }; });
+    }
+  }, [profile, dirty]);
+  const set = (key, value) => { setDirty(true); setForm(old => ({ ...old, [key]: value })); };
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      const identifier = form.method === 'AANI' ? form.aaniPhone : form.iban;
-      const payment = identifier.trim() ? {
-      id: profile?.payment?.id || crypto.randomUUID(), holder: form.holder.trim() || form.name.trim(),
-      bank: form.method === 'AANI' ? "Aani" : form.bank.trim(), identifier: form.method === 'AANI' ? uaePhone(identifier, true) : uaeIban(identifier),
-      currency: 'AED', version: profile?.payment?.version || 1, method: form.method,
-    } : null;
+      const payment = paymentAccount(form, profile?.payment, form.name);
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
         userId: '', name: form.name.trim(), phone: uaePhone(form.phone, true), photo: form.photo,
         payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
-      if (reply) onBack();
+      if (reply) { setDirty(false); setMessage(t("Profile and payment details saved.")); }
     } catch (error) { setMessage(error.message); }
   };
   const [previousLimit, setPreviousLimit] = useState(10);
@@ -503,10 +503,9 @@ function ProfileScreen({ data, onBack, openRoom }) {
     if (reply) setMessage(t("Favorite removed."));
   };
   return <Page title={t("Your profile")} subtitle={t("Your wallet, orders, favorites, and payment details in one place.")} onBack={onBack}>
-    <UserDashboard data={data} openRoom={openRoom} />
     {message && <p className="form-message" role="status">{message}</p>}
-    <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a><a className="secondary" href="#previous-orders">{tx('Previous orders', 'الطلبات السابقة')}</a><a className="secondary" href="#profile-details" onClick={() => { document.getElementById('profile-details').open = true; }}>{tx('Edit profile', 'تعديل الملف')}</a></nav>
-    <details id="profile-details" open={!profile?.name || !profile?.phone} className="profile-details"><summary>{tx('Profile and receiving details', 'الملف الشخصي وبيانات استلام الأموال')}</summary><form className="profile-grid" onSubmit={save}>
+    <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#profile-details">{t('Your details')}</a><a className="secondary" href="#profile-wallet">{t('Wallet')}</a><a className="secondary" href="#payment-history">{t('Payment history')}</a><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a></nav>
+    <section id="profile-details" className="profile-details"><h2>{t('Your details')}</h2><form className="profile-grid" onSubmit={save}>
       <section className="card profile-photo">
         <Avatar profile={{ name: form.name, photo: form.photo }} />
         <label className="upload">{t("Choose photo")}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); setMessage(''); } catch (error) { setMessage(error.message); } }} /></label>
@@ -519,14 +518,12 @@ function ProfileScreen({ data, onBack, openRoom }) {
         <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
       <section className="card stack payment-card">
-        <div><p className="eyebrow">{t("GET PAID BACK")}</p><h3>{t("Receiving details")}</h3><p className="muted">{t("Shared with room members only after you are selected and choose to share it.")}</p></div>
-        <div className="segmented"><button type="button" className={form.method === 'AANI' ? 'active' : ''} onClick={() => set('method', 'AANI')}>{t("Aani")}</button><button type="button" className={form.method === 'BANK' ? 'active' : ''} onClick={() => set('method', 'BANK')}>{t("Bank account")}</button></div>
-        <label>{t("Account holder")}<input value={form.holder} onChange={e => set('holder', e.target.value)} placeholder={form.name || t("Your name")} /></label>
-        {form.method === 'BANK' && <label>{t("Bank name")}<input value={form.bank} onChange={e => set('bank', e.target.value)} /></label>}
-        <label>{form.method === 'AANI' ? t("UAE mobile registered with Aani") : t("UAE IBAN")}<input dir="ltr" type={form.method === 'AANI' ? 'tel' : 'text'} value={form.method === 'AANI' ? form.aaniPhone : form.iban} onChange={e => set(form.method === 'AANI' ? 'aaniPhone' : 'iban', e.target.value)} placeholder={form.method === 'AANI' ? '050 123 4567' : 'AE…'} /></label>
+        <div><p className="eyebrow">{t("GET PAID BACK")}</p><h3>{t("Receiving details")}</h3><p className="muted">{t("Changes update your profile and all active rooms where you collect payments.")}</p></div>
+        <PaymentFields form={form} set={set} name={form.name} />
       </section>
       <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
-    </form></details>
+    </form></section>
+    <div id="profile-wallet"><UserDashboard data={data} openRoom={openRoom} /></div>
     <section id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><span>☆</span><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
     <section id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><span>🥡</span><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <button className="secondary wide" onClick={() => setPreviousLimit(value => value + 10)}>{t("Show more unique orders")}</button>}</section>
   </Page>;
@@ -856,7 +853,7 @@ function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArr
   const whatsAppNumber = (room.restaurant.contact.whatsappE164 || (/^\+9715\d{8}$/.test(contact || '') ? contact : '') || '').replace(/\D/g, '');
   const whatsApp = `https://wa.me/${whatsAppNumber}?text=${encodeURIComponent(orderText)}`;
   const requirement = blockerRequirement(blocker);
-  return <article className="card restaurant-order-card"><p className="eyebrow">{t("SELECTED TO ORDER")}</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>{t("Collects the final list, places the order, and confirms payments.")}</p></div></div>{setExpectedArrival && <label>{t('Expected delivery / pickup')}<input value={expectedArrival} onChange={event => setExpectedArrival(event.target.value)} placeholder={t('For example: 30 minutes')} maxLength={500} /></label>}<pre>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? t("✓ Copied — paste to restaurant") : finish ? tx('Copy list for restaurant', 'نسخ الطلب للمطعم') : tx('Copy restaurant-ready list', 'نسخ الطلب للمطعم')}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">{t("Share via WhatsApp")}</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>{t("Call restaurant")}</a>}</div><p className="fine">{t(whatsAppNumber ? 'Opens the restaurant chat with your order ready to send.' : 'No WhatsApp number is saved. Choose the restaurant chat after WhatsApp opens.')}</p>{setExpectedArrival && <><button className="primary wide" disabled={!canPlace || !expectedArrival.trim() || data.busy} onClick={() => data.send('PLACE', { text: expectedArrival.trim() }, room.id)}>{t('Order sent · save expected arrival')}</button>{blocker && <p className="form-message send-blocker">{t(blocker)} {requirement && <a href={requirement.href}>{requirement.label}</a>}</p>}</>}</article>;
+  return <article className="card restaurant-order-card"><p className="eyebrow">{t("SELECTED TO ORDER")}</p><div className="selected-payer"><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><div><h2>{room.members.find(member => member.id === room.payerId)?.name}</h2><p>{t("Collects the final list, places the order, and confirms payments.")}</p></div></div>{setExpectedArrival && <label>{t('Expected delivery / pickup (optional)')}<input value={expectedArrival} onChange={event => setExpectedArrival(event.target.value)} placeholder={t('For example: 30 minutes')} maxLength={500} /></label>}<pre>{orderText}</pre><div className="hero-actions"><button className="primary" type="button" onClick={copy}>{copied ? t("✓ Copied — paste to restaurant") : finish ? tx('Copy list for restaurant', 'نسخ الطلب للمطعم') : tx('Copy restaurant-ready list', 'نسخ الطلب للمطعم')}</button><a className="secondary action-link" href={whatsApp} target="_blank" rel="noreferrer">{t("Share via WhatsApp")}</a>{contact && <a className="secondary action-link" href={`tel:${contact.replace(/[^+\d]/g, '')}`}>{t("Call restaurant")}</a>}</div><p className="fine">{t(whatsAppNumber ? 'Opens the restaurant chat with your order ready to send.' : 'No WhatsApp number is saved. Choose the restaurant chat after WhatsApp opens.')}</p>{setExpectedArrival && <><button className="primary wide" disabled={!canPlace || data.busy} onClick={() => data.send('PLACE', { text: expectedArrival.trim() }, room.id)}>{t('Order sent')}</button>{blocker && <p className="form-message send-blocker">{t(blocker)} {requirement && <a href={requirement.href}>{requirement.label}</a>}</p>}</>}</article>;
 }
 
 function blockerRequirement(blocker = '') {
@@ -897,27 +894,21 @@ function PaymentDetails({ account, data }) {
 
 function PayerAccountEditor({ room, data }) {
   const profile = data.home.profile;
-  const [form, setForm] = useState(paymentDraft(profile.payment));
+  const [form, setForm] = useState(paymentDraft(room.account || profile.payment));
   const [message, setMessage] = useState('');
-  useEffect(() => setForm(paymentDraft(profile.payment)), [profile.payment]);
-  const set = (key, value) => setForm(old => ({ ...old, [key]: value }));
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setForm(paymentDraft(room.account || profile.payment)); }, [room.account, profile.payment, dirty]);
+  const set = (key, value) => { setDirty(true); setForm(old => ({ ...old, [key]: value })); };
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      const identifier = form.method === 'AANI' ? uaePhone(form.aaniPhone, true) : uaeIban(form.iban);
-      const account = {
-        id: profile.payment?.id || crypto.randomUUID(), holder: form.holder.trim() || profile.name,
-        bank: form.method === 'AANI' ? 'Aani' : form.bank.trim(), identifier,
-        currency: room.restaurant.currency, version: profile.payment?.version || 1, method: form.method,
-      };
-      const saved = await data.send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: { ...profile, payment: account } } });
-      if (!saved) return setMessage(t('Payment details were not saved. Please try again.'));
-      const shared = await data.send('SHARE_ACCOUNT', { account }, room.id);
-      if (shared) data.setNotice(tx('Payment details saved to your profile and shared with this room.', 'تم حفظ بيانات الدفع في ملفك ومشاركتها مع الغرفة.'));
-      else setMessage(t('Payment details were saved, but could not be shared. Please try again.'));
+      const account = paymentAccount(form, profile.payment, profile.name, true);
+      const saved = await data.send('SHARE_ACCOUNT', { account }, room.id);
+      if (saved) { setDirty(false); setMessage(t('Payment details updated in your profile and active rooms.')); }
+      else setMessage(t('Payment details were not saved. Please try again.'));
     } catch (error) { setMessage(error.message); }
   };
-  return <article id="payer-account" className="card payer-account-editor"><p className="eyebrow">{tx('GET PAID BACK', 'استلم حصتك')}</p><h2>{tx('Add and share your payment details', 'أضف وشارك بيانات الدفع')}</h2><p className="muted">{tx('Complete this here once. Food Run saves it to your profile and shares it with this room.', 'أكملها هنا مرة واحدة. سيحفظها فود رن في ملفك ويشاركها مع هذه الغرفة.')}</p><form className="stack" onSubmit={save}><div className="segmented"><button type="button" className={form.method === 'AANI' ? 'active' : ''} onClick={() => set('method', 'AANI')}>{t('Aani')}</button><button type="button" className={form.method === 'BANK' ? 'active' : ''} onClick={() => set('method', 'BANK')}>{t('Bank account')}</button></div><label>{t('Account holder')}<input value={form.holder} onChange={event => set('holder', event.target.value)} placeholder={profile.name} required /></label>{form.method === 'BANK' ? <><label>{t('Bank name')}<input value={form.bank} onChange={event => set('bank', event.target.value)} required /></label><label>{t('IBAN')}<input dir="ltr" value={form.iban} onChange={event => set('iban', event.target.value)} placeholder="AE07…" required /></label></> : <label>{t('Aani mobile number')}<input type="tel" dir="ltr" value={form.aaniPhone} onChange={event => set('aaniPhone', event.target.value)} placeholder="050 123 4567" required /></label>}{message && <p className="form-message" role="alert">{message}</p>}<button className="primary wide" disabled={data.busy}>{tx('Save to profile and continue', 'احفظ في الملف وتابع')}</button></form></article>;
+  return <article id="payer-account" className="card payer-account-editor"><h2>{t('Receiving details')}</h2><p className="muted">{t('Changes update your profile and all active rooms where you collect payments.')}</p><form className="stack" onSubmit={save}><PaymentFields form={form} set={set} name={profile.name} required />{message && <p className="form-message" role="status">{message}</p>}<button className="primary wide" disabled={data.busy}>{t('Save payment details')}</button></form></article>;
 }
 
 function PaymentActionLine({ room, receipt, memberId, data }) {
@@ -948,18 +939,33 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   </div>;
 }
 
+function OrderSummary({ room, receipts, className = '' }) {
+  const lines = groupedOrderLines(room, receipts);
+  const total = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
+  return <article className={`card order-summary ${className}`}>
+    <div className="section-title compact"><div><p className="eyebrow">{t('ORDER SUMMARY')}</p><h2>{localizedName(room.restaurant)}</h2></div><strong className="order-summary-total">{money(total, room.restaurant.currency)}</strong></div>
+    <p className="field-help">{t('Total includes delivery, fees and discounts.')}</p>
+    <ul className="summary-items">{lines.map((line, index) => <li key={index}><span className="summary-quantity">{line.quantity} ×</span><div><b>{line.description}</b>{line.notes && <small>{line.notes}</small>}</div><strong>{money(line.amount, room.restaurant.currency)}</strong></li>)}</ul>
+    {!lines.length && <p>{t('No food yet')}</p>}
+    <details className="orders-by-person"><summary>{t('Orders by person')}</summary>{receipts.map(receipt => <div className="person-order-summary" key={receipt.memberId}><div><b>{receipt.name}</b><strong>{money(receipt.total, receipt.currency)}</strong></div>{receipt.lines.map((line, index) => <p key={index}>{line.quantity} × {line.description}{line.notes ? ` — ${line.notes}` : ''}</p>)}</div>)}</details>
+  </article>;
+}
+
 function SettlementPanel({ room, reply, me, owner, payer, data }) {
   const currency = room.restaurant.currency;
   const total = reply.receipts.reduce((sum, receipt) => sum + receipt.total, 0);
   const [adjustment, setAdjustment] = useState({ value: '', reason: '' });
   const [message, setMessage] = useState('');
   return <>
-    {payer && (room.paymentRoom ? <PaymentShareEditor room={room} receipts={reply.receipts} data={data} /> : <OrderPricingPanel room={room} data={data} describeLine={line => cartLineDescription(room, line)} />)}
-    <article id="room-payment" className="card stack payment-priority"><p className="eyebrow">{payer ? t('ROOM WALLET') : t('PAY YOUR SHARE')}</p><h2>{payer ? t('Receive everyone’s share') : t('Your payment')}</h2>
+    {payer && !room.paymentRoom && <OrderSummary room={room} receipts={reply.receipts} />}
+    {payer && (room.paymentRoom ? <PaymentShareEditor room={room} receipts={reply.receipts} data={data} /> : <details className="card order-edit-options"><summary>{t('Edit item prices')}</summary><OrderPricingPanel room={room} data={data} describeLine={line => cartLineDescription(room, line)} /></details>)}
+    <article id="room-payment" className="card stack payment-priority"><p className="eyebrow">{payer ? t('ROOM WALLET') : t('PAY YOUR SHARE')}</p><h2>{payer ? t('Payments') : t('Your payment')}</h2>
+      {payer && <div className="settlement-totals"><span><small>{t('Your own share')}</small><b>{money(reply.receipts.find(receipt => receipt.memberId === me.id)?.total || 0, currency)}</b></span><span><small>{t('Received')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + receipt.paid, 0), currency)}</b></span><span><small>{t('Still to collect')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), currency)}</b></span></div>}
       {payer && !room.restaurantPaid && <button disabled={data.busy} className="primary wide" onClick={() => data.send('PAY_RESTAURANT', { amount: total }, room.id)}>{t('Mark restaurant paid')} · {money(total, currency)}</button>}
       {room.billRevision > 1 && <p className="field-help">{t('Updated totals apply automatically. No new approval is needed.')}</p>}
-      {reply.receipts.map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{money(Math.abs(receipt.balance), currency)}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} />{payer && room.paymentRoom && <RecordPayment room={room} receipt={receipt} data={data} />}</section>)}
+      {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} />{payer && room.paymentRoom && <RecordPayment room={room} receipt={receipt} data={data} />}</section>)}
       <PaymentDetails account={room.account} data={data} />
+      {payer && <details className="edit-receiving-details"><summary>{t('Edit receiving details')}</summary><PayerAccountEditor room={room} data={data} /></details>}
       <p className="fine">{t('Recording a payment tracks it in Food Run; it does not move money.')}</p>
     </article>
     {!room.paymentRoom && <article className="card placed-banner"><p className="eyebrow">{t('RESTAURANT STATUS')}</p><h2>{room.restaurantPaid ? t('Restaurant payment recorded') : t('Order announced as placed')}</h2><p>{room.restaurantReference}</p>{payer && room.phase === 'PLACED' && <button className="secondary wide" onClick={() => data.send('FULFILL', {}, room.id)}>{t('Food collected / delivered')}</button>}</article>}
@@ -1094,6 +1100,7 @@ function RoomScreen({ data, roomId, onBack }) {
     <fieldset disabled={data.busy} className="room-fieldset" aria-busy={data.busy}><div className="room-layout">
       <section className="room-main stack">
         {settling && <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} />}
+        {room.lastChosenMemberId && <article className="card last-chosen"><p className="eyebrow">{t('LAST CHOSEN')}</p><h2>{room.members.find(member => member.id === room.lastChosenMemberId)?.name || room.lastChosenName}</h2>{room.phase === 'LOBBY' && <p>{t('Next wheel: the last chosen person has weight 20; each other person has weight 80. Only eligible people join the wheel.')}</p>}</article>}
         <RestaurantContactCard restaurant={room.restaurant} data={data} />
         {['PREPARING_SPIN','SPINNING','ACCEPTING'].includes(room.phase) && <article className="card selection-card">
           {room.phase === 'PREPARING_SPIN' && <><div className="spinner" /><h2>{t("Getting everyone in sync…")}</h2><p>{t("Every participating device is joining the live selection.")}</p></>}
@@ -1106,12 +1113,13 @@ function RoomScreen({ data, roomId, onBack }) {
         {me.approved && !me.guest && me.participating && orderingOpen && <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} receipt={myReceipt} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />}
         {me.approved && room.phase === 'COLLECTING' && <>
 
-          {payer && <article className="card collected-orders"><p className="eyebrow">{tx("EVERYONE'S ORDERS", "طلبات الجميع")}</p><h2>{tx('Your restaurant order', 'الطلب الذي سترسله للمطعم')}</h2><p>{tx('You were selected to order and pay the full bill. Each person reimburses their share to you.', 'تم اختيارك للطلب ودفع الفاتورة كاملة. يسدد كل شخص حصته لك.')}</p>{reply.receipts.map(receipt => <ReceiptCard key={receipt.memberId} room={room} receipt={receipt} own={receipt.memberId === me.id} />)}</article>}
+          {payer && <OrderSummary room={room} receipts={reply.receipts} className="collected-orders" />}
           {payer && !room.account && <PayerAccountEditor room={room} data={data} />}
           {owner && !payer && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
 
 
         </>}
+        {payer && room.phase === 'REVIEW' && <OrderSummary room={room} receipts={reply.receipts} />}
         {room.phase === 'REVIEW' && <details className="card payment-breakdown"><summary>{t('Order details')}</summary>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}<PaymentDetails account={room.account} data={data} />{owner && !payer && <FeeEditor key={room.quoteRevision} room={room} data={data} />}</details>}
         {payer && ['COLLECTING','REVIEW'].includes(room.phase) && <><OrderPricingPanel room={room} data={data} describeLine={line => cartLineDescription(room, line)} /><FeeEditor key={`payer-fees:${room.quoteRevision}`} room={room} data={data} /><PaymentDetails account={room.account} data={data} /><RestaurantOrderCard room={room} receipts={reply.receipts} data={data} expectedArrival={reference} setExpectedArrival={setReference} canPlace={reply.progress?.canReview} blocker={reply.progress?.reviewBlocker} /></>}
         {['ARCHIVED','CANCELLED'].includes(room.phase) && <article className="card empty"><span>✓</span><h2>{room.phase === 'ARCHIVED' ? t("Order complete") : t("Order cancelled")}</h2><p>{t("The room, final receipts, restaurant, and prices stay saved for the next meal.")}</p>{owner && <button className="primary" onClick={startNextOrder}>{t("Start next order")}</button>}</article>}

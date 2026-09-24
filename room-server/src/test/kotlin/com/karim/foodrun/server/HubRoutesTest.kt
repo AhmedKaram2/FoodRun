@@ -11,6 +11,38 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.*
 
 class HubRoutesTest {
+    @Test fun selectionFieldsAreOnlySentToClientsThatUnderstandThem() = RoomFixture().use { f ->
+        val member = f.join(); f.approve(member); f.start(member)
+        val saved = f.state().room!!
+        testApplication {
+            application { hubRoutes(f.service) }
+            val socketClient = createClient { install(WebSockets) }
+            for (supported in listOf(false, true)) {
+                val command = f.command(f.owner, CommandKind.SNAPSHOT).copy(selectionDetails = supported)
+                val body = client.post("/command") { setBody(orderJson.encodeToString(command)) }.bodyAsText()
+                assertEquals(supported, body.contains("\"lastChosenMemberId\""))
+                assertEquals(supported, body.contains("\"weights\""))
+                val response = orderJson.decodeFromString<RoomReply>(body)
+                assertEquals(saved.spin!!.winnerId, response.room!!.spin!!.winnerId)
+                socketClient.webSocket("/events") {
+                    send(Frame.Text(orderJson.encodeToString(command)))
+                    val snapshot = (incoming.receive() as Frame.Text).readText()
+                    assertEquals(supported, snapshot.contains("\"lastChosenName\""))
+                    assertEquals(supported, snapshot.contains("\"weights\""))
+                    close()
+                }
+            }
+            assertEquals(saved.lastChosenMemberId, f.state().room!!.lastChosenMemberId)
+            val change = f.command(f.owner, CommandKind.SHARE_ACCOUNT).copy(account = f.account)
+            val first = client.post("/command") { setBody(orderJson.encodeToString(change)) }.bodyAsText()
+            val retry = client.post("/command") { setBody(orderJson.encodeToString(change.copy(selectionDetails = true))) }.bodyAsText()
+            val old = orderJson.decodeFromString<RoomReply>(first)
+            val current = orderJson.decodeFromString<RoomReply>(retry)
+            assertTrue(old.ok && current.ok)
+            assertEquals(old.room!!.revision, current.room!!.revision)
+        }
+    }
+
     @Test fun httpAndWebSocketClientsCommunicateThroughTheSameRoom() = RoomFixture().use { f ->
         testApplication {
             application { hubRoutes(f.service) }

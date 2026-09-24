@@ -6,6 +6,7 @@ struct WheelView: View {
     let isSpinning: Bool
     let tick: Int
     let winner: Person?
+    var weights: [Double] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -34,9 +35,11 @@ struct WheelView: View {
                 Canvas { context, canvasSize in
                     let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
                     let radius = canvasSize.width / 2
-                    let slice = 360.0 / Double(max(people.count, 1))
+                    let shares = weights.count == people.count ? weights : Array(repeating: 1.0, count: max(people.count, 1))
+                    let total = shares.reduce(0, +)
                     for (index, person) in people.enumerated() {
-                        let middle = -90 + Double(index) * slice
+                        let slice = shares[index] * 360 / total
+                        let middle = -90 + (shares.prefix(index).reduce(0, +) + shares[index] / 2 - shares[0] / 2) * 360 / total
                         var wedge = Path()
                         wedge.move(to: center)
                         wedge.addArc(center: center, radius: radius,

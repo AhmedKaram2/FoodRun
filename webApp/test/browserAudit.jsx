@@ -229,13 +229,22 @@ export async function runOrderFlowAudit() {
   assert(!measureAudit().overflow, 'Direct selection overflows');
   await mountAudit('room', 'COLLECTING', { room, contact: { whatsappE164: '+971501234567' }, receipts: [receipt('me'), receipt('other')], progress: { canReview: true, reviewBlocker: '' } });
   const eta = host.querySelector('.restaurant-order-card input');
+  assert(eta.closest('label').textContent === t('Expected delivery / pickup (optional)'), 'Expected arrival is not marked optional');
+  assert(!eta.required && eta.value === '', 'Expected arrival should start empty and optional');
+  assert(!button('Order sent').disabled, 'Missing expected arrival blocks submission');
+  button('Order sent').click(); await pause();
+  assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '', 'Placement without expected arrival failed');
+  setValue(eta, '   '); await pause();
+  assert(!button('Order sent').disabled, 'Whitespace expected arrival blocks submission');
+  button('Order sent').click(); await pause();
+  assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '', 'Whitespace expected arrival was not treated as empty');
   setValue(eta, '30 minutes'); await pause();
   const whatsapp = new URL(host.querySelector('a[href^="https://wa.me/"]').href);
   assert(whatsapp.pathname === '/971501234567', 'WhatsApp did not target the restaurant');
   assert(whatsapp.searchParams.get('text').includes('30 minutes'), 'Expected delivery is missing from message');
   assert(host.querySelector('.restaurant-phone').textContent.includes('+971'), 'Restaurant phone hidden');
   assert(button('Copy phone number'), 'Phone copy action missing');
-  button('Order sent · save expected arrival').click(); await pause();
+  button('Order sent').click(); await pause();
   assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '30 minutes', 'Direct placement missing');
   assert(!button('Confirm my total and recipient'), 'Redundant total confirmation remains');
   assert(!measureAudit().overflow, 'Restaurant order overflows');
@@ -250,7 +259,7 @@ export async function runOrderFlowAudit() {
   assert(commands.at(-1).kind === 'CONFIRM_TRANSFER' && commands.at(-1).fields.transferId === 'claim', 'Top confirmation action failed');
   assert(host.querySelector('.payment-breakdown') && !host.querySelector('.payment-breakdown').open, 'Details are not optional');
   assert(host.querySelector('.payment-priority').textContent.includes('123456789012'), 'Chosen person payment details hidden');
-  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'ETA in message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
+  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'ETA in message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
 }
 
 export async function runOwnerBlockAudit() {
@@ -311,7 +320,8 @@ export async function runPaymentProfileAudit() {
   assert(host.textContent.includes('History kitchen'),'Profile payment history missing');
   assert(button('Mark paid'),'Profile payment action missing');
   assert(host.querySelector('.payment-details').textContent.includes(t('Aani · UAE mobile number')),'Aani receiving details mislabeled');
-  host.querySelector('#profile-details').open=true;
+  assert(host.querySelector('#profile-details').tagName === 'SECTION', 'Profile details can still collapse');
+  assert(host.querySelector('#profile-details').compareDocumentPosition(host.querySelector('#profile-wallet')) & Node.DOCUMENT_POSITION_FOLLOWING, 'Wallet appears before profile details');
   let input=host.querySelector('.payment-card input[type=tel]');
   setValue(input,'0501234567');await pause();
   button('Bank account').click();await pause();
@@ -328,6 +338,45 @@ export async function runPaymentProfileAudit() {
   assert(commands.at(-1).fields.identity.profile.payment.identifier==='+971501234567','Aani mobile not normalized');
   assert(!measureAudit().overflow,'Profile payments overflow');
   return {passed:['Home/Profile same balance','Home/Profile payment history','profile direct payment','Aani mobile label','separate bank and phone drafts','IBAN normalization','Aani mobile normalization'], ...measureAudit()};
+}
+
+export async function runSummaryAndAdminProfileAudit() {
+  commands.length = 0;
+  const account = { id: 'account', holder: 'Audit User', bank: 'Aani', method: 'AANI', identifier: '+971501234567', currency: 'AED', version: 1 };
+  const receipt = (memberId, quantity, notes = '') => ({ memberId, name: memberId, lines: [{ description: 'Falafel', quantity, amount: quantity * 300, notes }], food: quantity * 300, delivery: 0, service: 0, tax: 0, discount: 0, total: quantity * 300, paid: 0, balance: quantity * 300, currency: 'AED' });
+  await mountAudit('room', 'PLACED', { room: { account, restaurantPaid: true, members: [{ id: 'me', name: 'Audit User', approved: true, participating: true }, { id: 'other', name: 'Other', approved: true, participating: true }] }, receipts: [receipt('me', 1), receipt('other', 2), receipt('third', 1, 'No salad')] });
+  const summary = host.querySelector('.order-summary');
+  assert(host.querySelector('.room-main').firstElementChild === summary, 'Chosen person does not see the summary first');
+  assert(summary.querySelectorAll('.summary-items li').length === 2, 'Identical items were not combined or notes were lost');
+  assert(summary.querySelector('.summary-quantity').textContent === '3 ×', 'Combined quantity is incorrect');
+  assert(summary.textContent.includes('No salad') && summary.textContent.includes('12.00'), 'Notes or full total missing');
+  assert(!host.querySelector('.order-edit-options').open, 'Price editing clutters the summary');
+  assert(!host.querySelector('.orders-by-person').open, 'Per-person detail clutters the summary');
+  host.querySelector('.edit-receiving-details').open = true;
+  const phone = host.querySelector('.edit-receiving-details input[type=tel]');
+  setValue(phone, '0509876543'); await pause();
+  host.querySelector('.edit-receiving-details form').requestSubmit(); await pause();
+  assert(commands.length === 1 && commands[0].kind === 'SHARE_ACCOUNT', 'Payment edit is not one atomic room/profile command');
+  assert(commands[0].fields.account.identifier === '+971509876543', 'Payment phone was not normalized');
+  assert(!measureAudit().overflow, 'Summary overflows');
+  const { AdminUsers } = await import('../src/foodrun/AdminApp.jsx');
+  const mutations = [];
+  root.render(<AdminUsers users={[{ id: 'target', name: 'Target User', phone: '+971501234567', profile: { userId: 'target', name: 'Target User', phone: '+971501234567', language: 'en', discoverable: true, photo: '', payment: account } }]} currentUserId="admin" rooms={[]} busy={false} mutate={async (path, body) => { mutations.push({ path, body }); return { ok: true }; }} />);
+  await pause(); button('Edit user details').click(); await pause();
+  const form = host.querySelector('.admin-profile-editor');
+  const input = label => [...form.querySelectorAll('label')].find(value => value.textContent === t(label)).querySelector('input');
+  setValue(input('Profile name'), 'Updated User'); setValue(input('UAE mobile number'), '0505555555'); await pause();
+  setValue(form.querySelector('select'), 'ar'); input('Let people on this hub invite me').click(); await pause();
+  button('Bank account').click(); await pause();
+  setValue(input('Bank name'), 'Test Bank'); setValue(input('UAE IBAN'), 'ae07 0331 2345 6789 0123 456'); await pause();
+  form.requestSubmit(); await pause();
+  const change = mutations.at(-1)?.body;
+  assert(change?.action === 'profile' && change.userId === 'target', 'Admin edit did not target the selected profile');
+  assert(change.profile.name === 'Updated User' && change.profile.phone === '+971505555555', 'Admin contact changes missing');
+  assert(change.profile.language === 'ar' && change.profile.discoverable === false, 'Admin profile settings missing');
+  assert(change.profile.payment.identifier === 'AE070331234567890123456', 'Admin IBAN not saved');
+  assert(!measureAudit().overflow, 'Admin editor overflows');
+  return { passed: ['summary first', 'combined quantities', 'separate preparation notes', 'total visible', 'secondary price and person details', 'atomic payment update', 'admin contact and profile settings', 'admin IBAN'], ...measureAudit() };
 }
 
 export async function runPaymentRoomAudit() {

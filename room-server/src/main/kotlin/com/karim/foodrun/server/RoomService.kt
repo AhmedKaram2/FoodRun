@@ -171,6 +171,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         return projection(room, person.id).copy(token = token)
     }
     @Synchronized internal fun nativeAdminToken(token: String): String = accounts.firebaseIdToken(token)
+    @Synchronized internal fun catalogContributor(identityToken: String, roomId: String, roomToken: String): String {
+        val userId = accounts.userId(identityToken)
+        if (roomId.isEmpty()) return userId
+        val actor = authenticate(roomId, roomToken)
+        val room = requireNotNull(db.room(roomId)) { "Room was not found." }
+        require(room.ownerId == actor) { "Only the room owner can add a restaurant from this room." }
+        require(db.record("member-user:$roomId:$actor") == userId) { "This room belongs to another account session." }
+        return userId
+    }
 
     private fun createPaymentRoom(c: RoomCommand): RoomReply {
         val uid = accounts.userId(c.identityToken)

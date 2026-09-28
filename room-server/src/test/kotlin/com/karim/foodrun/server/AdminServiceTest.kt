@@ -100,6 +100,55 @@ class AdminServiceTest {
         directory.deleteRecursively()
     }
 
+    @Test fun signedInDashboardUserCanPublishANewPricedRestaurantButCannotReplaceAnotherContribution() {
+        val directory = Files.createTempDirectory("foodrun-catalog-contribution").toFile()
+        RoomDatabase(directory).use { db ->
+            val provider = AdminIdentityProvider().apply { identity = identity.copy(userId = "contributor-1", email = "owner@example.test") }
+            val rooms = RoomService(db, identityProvider = provider)
+            val admin = AdminService(db, rooms, identityProvider = provider)
+            val firstLogin = rooms.execute(RoomCommand(commandId = "catalog-login-one", kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token")))
+            val restaurant = admin.catalog().first().copy(id = "community-kitchen", name = "Community Kitchen", branchName = "Downtown")
+            val result = admin.contributeRestaurant(CatalogRestaurantMutation(firstLogin.identityToken, restaurant = restaurant))
+            assertEquals(restaurant, result.restaurants.single { it.id == restaurant.id })
+            assertEquals("contributor-1", db.record("${AdminService.CONTRIBUTOR_PREFIX}${restaurant.id}"))
+
+            provider.identity = provider.identity.copy(userId = "contributor-2", email = "other@example.test")
+            val secondLogin = rooms.execute(RoomCommand(commandId = "catalog-login-two", kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token")))
+            assertFailsWith<IllegalArgumentException> {
+                admin.contributeRestaurant(CatalogRestaurantMutation(secondLogin.identityToken, restaurant = restaurant.copy(nameAr = "مطبخ المجتمع")))
+            }
+            assertFailsWith<IllegalArgumentException> {
+                admin.contributeRestaurant(CatalogRestaurantMutation(secondLogin.identityToken,
+                    restaurant = restaurant.copy(id = "empty-menu", name = "Empty Menu", menu = Menu(), openOrdering = true)))
+            }
+        }
+        directory.deleteRecursively()
+    }
+
+    @Test fun roomOwnerCanPublishFromTheRoomWithTheirLinkedSession() {
+        val directory = Files.createTempDirectory("foodrun-owner-catalog").toFile()
+        RoomDatabase(directory).use { db ->
+            val provider = AdminIdentityProvider().apply { identity = identity.copy(userId = "room-owner", email = "owner@example.test") }
+            val rooms = RoomService(db, identityProvider = provider)
+            val admin = AdminService(db, rooms, identityProvider = provider)
+            val login = rooms.execute(RoomCommand(commandId = "owner-catalog-login", kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token")))
+            val selected = admin.catalog().first()
+            val created = rooms.execute(RoomCommand(commandId = "owner-create-room", kind = CommandKind.CREATE,
+                identityToken = login.identityToken, name = "Owner", text = "Lunch", restaurant = selected, restaurants = listOf(selected)))
+            assertTrue(created.ok, created.error)
+            val restaurant = selected.copy(id = "owner-new-restaurant", name = "Owner New Restaurant")
+            val result = admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, created.token, restaurant))
+            assertTrue(result.restaurants.any { it.id == restaurant.id })
+            assertFailsWith<IllegalArgumentException> {
+                admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, "wrong-room-token", restaurant.copy(id = "rejected")))
+            }
+        }
+        directory.deleteRecursively()
+    }
+
     @Test fun adminIdentityControlsSettingsUsersAndRestaurantCatalog() {
         val directory = Files.createTempDirectory("foodrun-admin-test").toFile()
         RoomDatabase(directory).use { db ->

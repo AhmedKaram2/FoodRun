@@ -35,6 +35,9 @@ import kotlinx.serialization.Serializable
 @Serializable data class AdminCleanupPreview(val scope: String, val olderThanDays: Int, val count: Int, val targets: List<AdminRoomView>, val previewToken: String)
 @Serializable data class AdminCleanupResult(val removedCount: Int)
 @Serializable data class AdminRestaurantMutation(val action: String = "save", val restaurant: Restaurant? = null, val restaurantId: String = "")
+@Serializable data class CatalogRestaurantMutation(
+    val identityToken: String = "", val roomId: String = "", val roomToken: String = "", val restaurant: Restaurant,
+)
 @Serializable data class RestaurantCatalogPayload(val restaurants: List<Restaurant>, val deletedRestaurantIds: Set<String>)
 @Serializable data class AdminRoomMutation(val roomId: String, val action: String, val expectedRevision: Long = 0, val confirmation: String = "")
 

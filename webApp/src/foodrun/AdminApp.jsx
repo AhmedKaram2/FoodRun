@@ -5,8 +5,8 @@ import { canAccessAdmin } from './adminAccess';
 import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
 import { useState, useEffect } from 'react';
-import { money, amount } from './client';
-import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, clone, uid, minorInput, LanguageToggle } from './FoodRunApp';
+import { money } from './client';
+import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, clone, LanguageToggle } from './FoodRunApp';
 
 async function adminRequest(path, user, body) {
   if (!canAccessAdmin(user)) throw Error(t('This account cannot access administration.'));
@@ -66,17 +66,12 @@ function AdminRestaurants({ restaurants, save, remove, language }) {
   const [message, setMessage] = useState('');
   const [editing, setEditing] = useState(restaurants[0] ? clone(restaurants[0]) : blankRestaurant());
   useEffect(() => { const latest = restaurants.find(value => value.id === editing.id); if (latest) setEditing(clone(latest)); }, [restaurants]);
-  const addItem = () => {
-    let categories = editing.menu.categories;
-    if (!categories.length) categories = [{ id: uid(), name: "Sandwiches", nameAr: 'السندويشات', sortOrder: 0 }];
-    setEditing(old => ({ ...old, openOrdering: false, menu: { ...old.menu, categories, items: [...old.menu.items, { id: uid(), categoryId: categories[0].id, name: 'New item', nameAr: 'صنف جديد', description: '', descriptionAr: '', basePriceMinor: 0, available: true, variants: [], optionGroupIds: [] }] } }));
-  };
   return <div className="admin-restaurant-layout">
     <aside className="card admin-restaurant-list"><button type="button" className="primary wide" onClick={() => setEditing(blankRestaurant())}>{t("Add restaurant")}</button>{restaurants.map(restaurant => <button type="button" className={editing.id === restaurant.id ? 'active' : ''} onClick={() => setEditing(clone(restaurant))} key={restaurant.id}><b>{restaurant.name}</b><small>{restaurant.menu.items.length}{t("items")}</small></button>)}</aside>
     <section className="card stack">
       <div className="section-title compact"><h2>{t("Restaurant and menu")}</h2>{restaurants.some(value => value.id === editing.id) && <button type="button" className="link danger" onClick={() => remove(editing.id)}>{t("Delete restaurant")}</button>}</div>
       <div className="form-grid two"><label>{t("English name")}<input value={editing.name} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label><label>{t("Arabic name")}<input dir="rtl" value={editing.nameAr || ''} onChange={event => setEditing({ ...editing, nameAr: event.target.value })} /></label><label>{t("UAE phone")}<input value={editing.contact.phoneE164 || ''} onChange={event => setEditing({ ...editing, contact: { ...editing.contact, phoneE164: event.target.value || null } })} /></label><label>{t("Default delivery fee · AED")}<MenuMoneyInput value={editing.pricing.defaultDeliveryFeeMinor} onChange={value => setEditing({ ...editing, pricing: { ...editing.pricing, defaultDeliveryFeeMinor: value } })} label="Default delivery fee in AED" /></label></div>
-      <div className="section-title compact"><h3>{t("Menu prices")}</h3><button type="button" className="secondary" onClick={addItem}>{t("Add menu item")}</button></div>
+      <div className="section-title compact"><h3>{t("Menu prices")}</h3></div>
       {message && <p role="alert" className="form-message">{message}</p>}
       <MenuEditor menu={editing.menu} language={language} onChange={menu => setEditing(old => ({ ...old, menu }))} />
       <button type="button" className="primary wide" onClick={event => { const invalid = [...event.currentTarget.closest('section').querySelectorAll('input')].find(input => !input.checkValidity()); if (invalid) { let node = invalid.parentElement; while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; } invalid.reportValidity(); return; } try { save(normalizeRestaurant(editing)); setMessage(''); } catch (error) { setMessage(error.message); } }}>{t("Save restaurant and all prices")}</button>

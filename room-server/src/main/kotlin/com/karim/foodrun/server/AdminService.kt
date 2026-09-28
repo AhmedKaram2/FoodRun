@@ -42,6 +42,28 @@ class AdminService(
     fun catalog(): List<Restaurant> = synchronized(rooms) { catalogUnlocked() }
     fun catalogPayload(): RestaurantCatalogPayload = synchronized(rooms) { RestaurantCatalogPayload(catalogUnlocked(), deletedRestaurantIds(db)) }
     private fun catalogUnlocked(): List<Restaurant> = db.record(RESTAURANTS)?.let { orderJson.decodeFromString(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
+    fun contributeRestaurant(change: CatalogRestaurantMutation): RestaurantCatalogPayload = synchronized(rooms) {
+        val actorId = rooms.catalogContributor(change.identityToken, change.roomId, change.roomToken)
+        val saved = change.restaurant.also(MenuValidation::validate)
+        require(saved.menu.items.isNotEmpty()) { "Add at least one menu item and price before publishing." }
+        val current = catalogUnlocked()
+        require(current.none { it.id != saved.id && it.name.trim().equals(saved.name.trim(), ignoreCase = true) && it.branchName.trim().equals(saved.branchName.trim(), ignoreCase = true) }) {
+            "This restaurant and branch are already in the shared list."
+        }
+        val existing = current.firstOrNull { it.id == saved.id }
+        val contributionKey = "$CONTRIBUTOR_PREFIX${saved.id}"
+        if (existing != null) require(db.record(contributionKey) == actorId) { "Shared restaurants can only be edited by their contributor or an administrator." }
+        val next = current.filterNot { it.id == saved.id } + saved
+        require(next.size <= 100) { "Restaurant catalog limit reached." }
+        db.transaction {
+            db.putRecord(contributionKey, actorId)
+            db.putRecord(DELETED_RESTAURANTS, orderJson.encodeToString(deletedRestaurantIds(db) - saved.id))
+            db.putRecord(RESTAURANTS, orderJson.encodeToString(next))
+            audit(actorId, if (existing == null) "contribute-restaurant" else "update-contributed-restaurant", saved.id)
+        }
+        rooms.adminChanged()
+        RestaurantCatalogPayload(next.sortedBy { it.name }, deletedRestaurantIds(db))
+    }
     fun mutateRestaurant(change: AdminRestaurantMutation): List<Restaurant> = synchronized(rooms) {
         val current = catalogUnlocked()
         val next = when(change.action) {
@@ -54,7 +76,9 @@ class AdminService(
         db.transaction {
             db.putRecord(DELETED_RESTAURANTS, orderJson.encodeToString(deleted))
             db.putRecord(RESTAURANTS, orderJson.encodeToString(next))
+            if (change.action == "delete") db.deleteRecord("$CONTRIBUTOR_PREFIX${change.restaurantId}")
         }
+        rooms.adminChanged()
         next.sortedBy { it.name }
     }
     private fun audit(actorId: String, action: String, target: String) {
@@ -204,6 +228,7 @@ class AdminService(
         const val SETTINGS = "admin:settings"
         const val RESTAURANTS = "admin:restaurants"
         const val DELETED_RESTAURANTS = "admin:deleted-restaurants"
+        const val CONTRIBUTOR_PREFIX = "catalog:contributor:"
         fun deletedRestaurantIds(db: RoomDatabase): Set<String> = db.record(DELETED_RESTAURANTS)?.let { orderJson.decodeFromString(it) } ?: emptySet()
     }
 }

@@ -155,6 +155,19 @@ fun Application.hubRoutes(
             val body = if (call.request.queryParameters["includeDeleted"] == "true") orderJson.encodeToString(catalog) else orderJson.encodeToString(catalog.restaurants)
             call.respondText(body, ContentType.Application.Json)
         }
+        post("/catalog/restaurant") {
+            if (!allow(call.request.local.remoteHost, 60)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            try {
+                val bytes = call.receiveChannel().readRemaining(MenuValidation.MAX_BYTES.toLong() + 1).readByteArray()
+                require(bytes.size <= MenuValidation.MAX_BYTES) { "Restaurant menu is too large." }
+                val change = orderJson.decodeFromString<CatalogRestaurantMutation>(bytes.toString(Charsets.UTF_8))
+                val result = withContext(Dispatchers.IO) { requireNotNull(admin).contributeRestaurant(change) }
+                call.respondText(orderJson.encodeToString(result), ContentType.Application.Json)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Restaurant could not be saved.")}}", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            }
+        }
         get("/config") {
             call.respondText(orderJson.encodeToString(admin?.settings() ?: AdminSettings()), ContentType.Application.Json)
         }

@@ -15,12 +15,35 @@ export function MenuMoneyInput({ value, onChange, label }) {
 export default function MenuEditor({ menu, onChange, language = 'en' }) {
   const t = (en, ar) => language === 'ar' ? (translate(en, 'ar') === en ? ar : translate(en, 'ar')) : en;
   const id = () => crypto.randomUUID();
+  const [quick, setQuick] = useState({ name: '', nameAr: '', price: '', categoryId: menu.categories[0]?.id || '' });
+  const quickPrice = (() => { try { return amount(quick.price); } catch { return null; } })();
+  const addQuickItem = () => {
+    if (!quick.name.trim() || quickPrice == null) return;
+    const category = menu.categories.find(value => value.id === quick.categoryId) || menu.categories[0] || { id: id(), name: 'Menu', nameAr: 'القائمة', sortOrder: 0 };
+    onChange({
+      ...menu,
+      categories: menu.categories.some(value => value.id === category.id) ? menu.categories : [...menu.categories, category],
+      items: [...menu.items, { id: id(), categoryId: category.id, name: quick.name.trim(), nameAr: quick.nameAr.trim(), description: '', descriptionAr: '', basePriceMinor: quickPrice, available: true, variants: [], optionGroupIds: [] }],
+    });
+    setQuick({ name: '', nameAr: '', price: '', categoryId: category.id });
+  };
   const editItem = (itemId, fields) => onChange({ ...menu, items: menu.items.map(item => item.id === itemId ? { ...item, ...fields } : item) });
   const editGroup = (groupId, fields) => onChange({ ...menu, optionGroups: menu.optionGroups.map(group => group.id === groupId ? { ...group, ...fields } : group) });
   const bilingualFields = (value, change) => <div className="form-grid two"><label>{t('English name', 'الاسم بالإنجليزية')}<input value={value.name} required maxLength="160" onChange={e => change({ name: e.target.value })} /></label><label>{t('Arabic name', 'الاسم بالعربية')}<input dir="rtl" value={value.nameAr || ''} maxLength="160" onChange={e => change({ nameAr: e.target.value })} /></label></div>;
   return <section className="card stack menu-builder">
     <h2>{t('Menu, sizes and extras', 'القائمة والأحجام والإضافات')}</h2>
     <p className="muted">{t('Prices are in AED. Sizes replace the base price; extras are added to it.', 'الأسعار بالدرهم. سعر الحجم يحل محل السعر الأساسي وتضاف إليه أسعار الإضافات.')}</p>
+    <section className="quick-menu-add stack">
+      <div><p className="eyebrow">{t('QUICK ADD', 'إضافة سريعة')}</p><h3>{t('Add an item and price', 'أضف الصنف والسعر')}</h3></div>
+      <div className="quick-menu-fields">
+        <label>{t('Item name', 'اسم الصنف')}<input value={quick.name} maxLength="160" placeholder={t('Chicken sandwich', 'ساندويتش دجاج')} onChange={event => setQuick(old => ({ ...old, name: event.target.value }))} /></label>
+        <label>{t('Arabic name (optional)', 'الاسم بالعربية (اختياري)')}<input dir="rtl" value={quick.nameAr} maxLength="160" onChange={event => setQuick(old => ({ ...old, nameAr: event.target.value }))} /></label>
+        <label>{t('Price · AED', 'السعر · درهم')}<input inputMode="decimal" value={quick.price} placeholder="0.00" onChange={event => setQuick(old => ({ ...old, price: event.target.value }))} /></label>
+        {menu.categories.length > 0 && <label>{t('Category', 'القسم')}<select value={menu.categories.some(value => value.id === quick.categoryId) ? quick.categoryId : menu.categories[0].id} onChange={event => setQuick(old => ({ ...old, categoryId: event.target.value }))}>{menu.categories.map(category => <option value={category.id} key={category.id}>{language === 'ar' && category.nameAr ? category.nameAr : category.name}</option>)}</select></label>}
+        <button type="button" className="primary" disabled={!quick.name.trim() || quickPrice == null} onClick={addQuickItem}>{t('Add item', 'إضافة الصنف')}</button>
+      </div>
+      <small>{t('Add items one by one. You can open any item below later for sizes, descriptions, and extras.', 'أضف الأصناف واحداً تلو الآخر. يمكنك فتح أي صنف لاحقاً لإضافة الأحجام والوصف والإضافات.')}</small>
+    </section>
     {menu.categories.map(category => <details className="menu-category-editor" key={category.id}>
       <summary>{language === 'ar' && category.nameAr ? category.nameAr : category.name || t('New category', 'قسم جديد')} · {menu.items.filter(item => item.categoryId === category.id).length}</summary>
       {bilingualFields(category, fields => onChange({ ...menu, categories: menu.categories.map(value => value.id === category.id ? { ...value, ...fields } : value) }))}

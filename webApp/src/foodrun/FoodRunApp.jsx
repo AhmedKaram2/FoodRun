@@ -524,12 +524,12 @@ function Page({ title, subtitle, onBack, actions, children }) {
   </main>;
 }
 
-function Home({ data, setPage, openRoom, allowRoomCreation = true }) {
+function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restaurants'), allowRoomCreation = true }) {
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
   return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
-    <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}>{t("Payment room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={() => setPage(t("restaurants"))}>{t("Restaurants & menus")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+    <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}>{t("Payment room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={openRestaurants}>{t("Add restaurant & menu")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
     <UserDashboard data={data} openRoom={openRoom} compact />
     <AppDownloads />
     {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">{t("YOU’RE INVITED")}</p><h2>{t("Join the table")}</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">{t("Invitation")}</span><h3>{invite.roomName}</h3><p>{invite.invitedBy}{t("invited you to order #")}{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>{t("Join room")}</button></article>)}</div></section>}
@@ -1036,7 +1036,7 @@ function RoomManagement({ room, data, owner, payer }) {
   </details>;
 }
 
-function RoomScreen({ data, roomId, onBack }) {
+function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   const reply = data.rooms[roomId], session = data.sessions[roomId], room = reply?.room;
   const historyRequest = useRef('');
   const previousPhase = useRef(room?.phase);
@@ -1130,7 +1130,7 @@ function RoomScreen({ data, roomId, onBack }) {
         {owner && <BlockRequestForm room={room} data={data} />}
         {room.payerId && <section className="card payer-side"><p className="eyebrow">{t("ORDERING PERSON")}</p><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><h3>{room.members.find(member => member.id === room.payerId)?.name}</h3><p>{payer ? tx('You order, pay the full restaurant bill, and receive everyone’s share.', 'تطلب وتدفع فاتورة المطعم كاملة وتستلم حصص الآخرين.') : tx('Submit your food, then pay your share to the selected person.', 'ابعت طلبك، وبعدها ادفع حصتك للشخص اللي هيطلب.')}</p></section>}
         <section id="room-members" className="card"><div className="section-title compact"><div><p className="eyebrow">{t("AT THE TABLE")}</p><h3>{room.members.filter(member => !member.removed).length} {t("people")}</h3></div>{owner && room.phase === 'LOBBY' && <button className="icon-button" aria-label={t("Invite registered people")} onClick={() => setInviteOpen(!inviteOpen)}>＋</button>}</div>{room.members.filter(member => !member.removed).map(member => { const cart = room.carts.find(value => value.memberId === member.id); const canRemove = owner && member.id !== room.ownerId && (room.phase === 'LOBBY' || room.phase === 'COLLECTING' && member.id !== room.payerId && !cart?.submitted); return <div className="member" key={member.id}><span className="avatar initials small">{initials(member.name)}</span><span><b>{member.name}{member.id === me.id ? t(' · You') : ''}</b><small>{member.id === room.payerId ? t("Selected to order") : member.id === room.ownerId ? t("Organizer") : cart?.submitted ? t("Food submitted") : member.participating ? t("Joined automatically") : 'Skipping'}</small></span>{canRemove && <button className="member-remove" aria-label={tf('Remove {name} from room', { name: member.name })} title={t('Remove from room')} onClick={() => { const reason = window.prompt(tf('Why are you removing {name}?', { name: member.name })); if (reason?.trim()) data.send('REMOVE', { memberId: member.id, text: reason.trim() }, room.id); }}>×</button>}</div>; })}{inviteOpen && <div className="invite-list"><p>{t("Invite registered people")}</p>{data.home.people.map(person => <button className="person-button" key={person.userId} onClick={() => data.send('IDENTITY', { identity: { action: 'INVITE', userId: person.userId } }, room.id)}><span className="avatar initials small">{initials(person.name)}</span>{person.name}<b>{t("Invite")}</b></button>)}</div>}</section>
-        <section className="card room-tools"><p className="eyebrow">{t("ROOM TOOLS")}</p><button className="secondary wide" onClick={saveCurrentRestaurant}>{t("Save restaurant & prices")}</button>{payer && ['COLLECTING','REVIEW'].includes(room.phase) && data.home.profile.payment && <button className="secondary wide" onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{t("Use saved payment details")}</button>}{owner && ['LOBBY','COLLECTING','REVIEW','ACCEPTING'].includes(room.phase) && <button className="link danger wide" onClick={() => { const reason = window.prompt(t("Why are you cancelling this order?")); if (reason) data.send('CANCEL', { text: reason }, room.id); }}>{t("Cancel today’s order")}</button>}</section>
+        <section className="card room-tools"><p className="eyebrow">{t("ROOM TOOLS")}</p>{owner && <button className="primary wide" onClick={() => onAddRestaurant(room.id)}>{t("Add restaurant & menu for everyone")}</button>}<button className="secondary wide" onClick={saveCurrentRestaurant}>{t("Save restaurant & prices on this device")}</button>{payer && ['COLLECTING','REVIEW'].includes(room.phase) && data.home.profile.payment && <button className="secondary wide" onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{t("Use saved payment details")}</button>}{owner && ['LOBBY','COLLECTING','REVIEW','ACCEPTING'].includes(room.phase) && <button className="link danger wide" onClick={() => { const reason = window.prompt(t("Why are you cancelling this order?")); if (reason) data.send('CANCEL', { text: reason }, room.id); }}>{t("Cancel today’s order")}</button>}</section>
         {(owner || payer) && <RoomManagement key={`${room.id}:${room.orderNumber}:${room.restaurant.id}:${room.restaurant.pricing.taxTreatment}:${room.restaurant.pricing.taxRateBasisPoints}`} room={room} data={data} owner={owner} payer={payer} />}
         {selected && <section className="card winner-mini"><p className="eyebrow">{t("SELECTED")}</p><h3>{winner.name}</h3><p>{t("Sandwich entry remains open while the payer confirms.")}</p></section>}
       </aside>
@@ -1149,29 +1149,24 @@ function FoodRunClient() {
   const [page, setPage] = useState(window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : inviteCode ? 'join' : 'home');
   useEffect(() => { window.scrollTo({ top: 0 }); }, [page]);
   const [roomId, setRoomId] = useState('');
+  const [restaurantRoomId, setRestaurantRoomId] = useState('');
   const restoredRoom = useRef(false);
   useEffect(() => { fetch(`${PUBLIC_API_URL}/config`).then(response => response.ok ? response.json() : Promise.reject()).then(setSiteConfig).catch(() => {}); }, []);
   useEffect(() => {
-    if (!data.hub) return;
-    const controller = new AbortController();
-    fetch(`${data.hub}/catalog?includeDeleted=true`, { signal: controller.signal }).then(response => response.ok ? response.json() : Promise.reject()).then(catalog => {
-      if (controller.signal.aborted) return;
-      const values = Array.isArray(catalog) ? catalog : catalog.restaurants;
-      const deletedRestaurantIds = Array.isArray(catalog) ? [] : catalog.deletedRestaurantIds || [];
-      let previousIds = [];
-      try { previousIds = JSON.parse(localStorage.getItem(SERVER_CATALOG_KEY) || '[]'); } catch { previousIds = []; }
-      const merged = mergeRestaurantCatalog({ serverValues: values, bundledValues: BUNDLED_RESTAURANTS, currentValues: loadRestaurants(), previousManagedIds: previousIds, normalize: normalizeRestaurant, deletedRestaurantIds });
-      localStorage.setItem(SERVER_CATALOG_KEY, JSON.stringify(merged.managedIds));
-      storeRestaurants(merged.restaurants);
-    }).catch(() => {});
-    return () => controller.abort();
-  }, [data.hub]);
+    if (!data.home) return;
+    let previousIds = [];
+    try { previousIds = JSON.parse(localStorage.getItem(SERVER_CATALOG_KEY) || '[]'); } catch { previousIds = []; }
+    const merged = mergeRestaurantCatalog({ serverValues: data.home.restaurants || [], bundledValues: BUNDLED_RESTAURANTS, currentValues: loadRestaurants(), previousManagedIds: previousIds, normalize: normalizeRestaurant, deletedRestaurantIds: data.home.deletedRestaurantIds || [] });
+    localStorage.setItem(SERVER_CATALOG_KEY, JSON.stringify(merged.managedIds));
+    storeRestaurants(merged.restaurants);
+  }, [data.home?.restaurants, data.home?.deletedRestaurantIds]);
   const openRoom = id => {
     setNotificationAction(null);
     localStorage.setItem(ACTIVE_ROOM_KEY, JSON.stringify({ userId: data.user?.uid, hub: data.hub, roomId: id }));
     window.history.replaceState({}, '', window.location.pathname);
     setRoomId(id); setPage('room');
   };
+  const openRestaurants = (sourceRoomId = '') => { setRestaurantRoomId(sourceRoomId); setPage('restaurants'); };
   const openNotification = (item, action) => {
     notifications.read(item.id);
     openRoom(item.roomId);
@@ -1214,12 +1209,12 @@ function FoodRunClient() {
   if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
   else if (page === 'downloads') content = <Page title={t("Get Food Run")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
   else if (page === 'profile' || profileMissing) content = <ProfileScreen data={data} openRoom={openRoom} onBack={() => setPage('home')} />;
-  else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} onBack={() => setPage('home')} />;
+  else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} data={data} room={restaurantRoomId ? data.rooms[restaurantRoomId]?.room : null} onBack={() => { setPage(restaurantRoomId ? 'room' : 'home'); setRestaurantRoomId(''); }} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
-  else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} />;
-  else content = <Home data={data} setPage={setPage} openRoom={openRoom} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Food Run</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => setPage(t("restaurants"))}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
+  else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
+  else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
+  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Food Run</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
 }
 
 export default function FoodRunApp() {

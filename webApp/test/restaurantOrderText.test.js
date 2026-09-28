@@ -13,24 +13,28 @@ const receipts = [{ lines: [line, { ...line, quantity: 2, amount: 600 }, { ...li
 test('copy language controls names, sizes, extras and quantities without changing website language', () => {
   setLanguage('en');
   const arabic = restaurantOrderText(room, receipts, 'ar');
-  assert.ok(arabic.startsWith('المطعم'));
   assert.ok(arabic.includes('٣ فول · كبير · سلطة — No salt / بدون ملح'));
   assert.ok(arabic.includes('١ فول · كبير · سلطة — Extra lemon'));
   assert.ok(arabic.includes('٢ Custom food — Keep this note'));
-  assert.ok(arabic.includes('Office 12') && arabic.includes('30 minutes'));
+  assert.ok(arabic.startsWith('العنوان: Office 12'));
+  assert.ok(arabic.endsWith('إجمالي السندويشات: ٦'));
+  assert.ok(!arabic.includes('30 minutes') && !arabic.includes('المطعم'));
   assert.equal(t('Order sent'), 'Order sent');
   setLanguage('ar');
   const english = restaurantOrderText(room, receipts, 'en');
-  assert.ok(english.startsWith('Kitchen\nDelivery: Office 12'));
+  assert.ok(english.startsWith('Address: Office 12'));
   assert.ok(english.includes('3 Beans · Large · Salad — No salt / بدون ملح'));
+  assert.ok(english.endsWith('Total sandwiches: 6'));
+  assert.ok(!english.includes('Kitchen') && !english.includes('Expected delivery'));
   assert.notEqual(t('Order sent'), 'Order sent');
   setLanguage('en');
 });
 
-test('missing translations and custom notes remain readable and copy ETA is optional', () => {
+test('pickup uses the restaurant address and custom notes remain readable', () => {
   const fallback = { ...room, restaurant: { ...room.restaurant, nameAr: '' }, deliveryMode: false, restaurantReference: '' };
   const text = restaurantOrderText(fallback, [{ lines: [{ description: 'User item', quantity: 1, amount: 300, notes: 'User note' }] }], 'ar');
-  assert.ok(text.startsWith('Kitchen'));
+  assert.ok(text.startsWith('العنوان: العنوان يحدد لاحقاً'));
   assert.ok(text.includes('١ User item — User note'));
+  assert.ok(text.endsWith('إجمالي السندويشات: ١'));
   assert.ok(!text.includes('undefined'));
 });

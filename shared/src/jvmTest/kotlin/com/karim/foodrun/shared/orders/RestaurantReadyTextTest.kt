@@ -9,6 +9,7 @@ class RestaurantReadyTextTest {
         val room = Room(
             id = "room", code = "123456", ownerId = "owner", name = "Lunch",
             restaurant = Restaurant("restaurant", "مطعم البيت", openOrdering = true), payerId = "owner",
+            deliveryMode = true, destination = "Office 12",
         )
         fun receipt(id: String, lines: List<ReceiptLine>) = Receipt(
             memberId = id, name = id, lines = lines, food = 0, delivery = 0, service = 0,
@@ -19,7 +20,7 @@ class RestaurantReadyTextTest {
             receipt("two", listOf(ReceiptLine("فول", 1, 100), ReceiptLine("Water", 1, 100))),
         ))
 
-        assertEquals("مطعم البيت\nPickup\nExpected delivery / pickup: To be confirmed by restaurant\n\n2 فول\n4 طعمية — بدون سلطة\n1 Water", text)
+        assertEquals("Address: Office 12\n\n2 فول\n4 طعمية — بدون سلطة\n1 Water\nTotal sandwiches: 7", text)
     }
     @Test fun whatsappPrefersExplicitNumberAndUsesOnlyMobileFallback() {
         fun number(phone: String, whatsapp: String? = null) = restaurantWhatsAppNumber(

@@ -280,7 +280,9 @@ export async function runOrderFlowAudit() {
   setValue(eta, '30 minutes'); await pause();
   const whatsapp = new URL(host.querySelector('a[href^="https://wa.me/"]').href);
   assert(whatsapp.pathname === '/971501234567', 'WhatsApp did not target the restaurant');
-  assert(whatsapp.searchParams.get('text').includes('30 minutes'), 'Expected delivery is missing from message');
+  const sharedOrder = whatsapp.searchParams.get('text');
+  assert(sharedOrder.includes('Total sandwiches: 2'), 'Shared message is missing the total sandwich count');
+  assert(!sharedOrder.includes('30 minutes') && !sharedOrder.includes('Expected delivery'), 'Expected delivery leaked into shared message');
   assert(host.querySelector('.restaurant-phone').textContent.includes('+971'), 'Restaurant phone hidden');
   assert(button('Copy phone number'), 'Phone copy action missing');
   button('Order sent').click(); await pause();
@@ -298,7 +300,7 @@ export async function runOrderFlowAudit() {
   assert(commands.at(-1).kind === 'CONFIRM_TRANSFER' && commands.at(-1).fields.transferId === 'claim', 'Top confirmation action failed');
   assert(host.querySelector('.payment-breakdown') && !host.querySelector('.payment-breakdown').open, 'Details are not optional');
   assert(host.querySelector('.payment-priority').textContent.includes('123456789012'), 'Chosen person payment details hidden');
-  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'ETA in message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
+  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'compact restaurant message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
 }
 
 export async function runCopyLanguageAudit() {

@@ -16,7 +16,13 @@ internal fun restaurantWhatsAppNumber(restaurant: Restaurant): String {
     return phone.orEmpty().filter(Char::isDigit)
 }
 
-internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: String = "en", expectedArrival: String = room.restaurantReference): String {
+internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: String = "en"): String {
+    fun quantityText(quantity: Int): String {
+        val raw = quantity.toString()
+        if(language != "ar") return raw
+        val arabic = "٠١٢٣٤٥٦٧٨٩"
+        return raw.map { if(it in '0'..'9') arabic[it - '0'] else it }.joinToString("")
+    }
     val combined = linkedMapOf<Pair<String, String>, Int>()
     receipts.flatMap { it.lines }.forEach { line ->
         val key = localizedReceiptDescription(room, line, language) to line.notes
@@ -24,15 +30,14 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
     }
     val lines = combined.map { (key, quantity) ->
         val (description, notes) = key
-        val rawQuantity = quantity.toString()
-        val shownQuantity = if(language == "ar") {
-            val arabic = "٠١٢٣٤٥٦٧٨٩"
-            rawQuantity.map { if(it in '0'..'9') arabic[it - '0'] else it }.joinToString("")
-        } else rawQuantity
-        "$shownQuantity $description${if(notes.isNotBlank()) " — $notes" else ""}"
+        "${quantityText(quantity)} $description${if(notes.isNotBlank()) " — $notes" else ""}"
     }
-    return (listOf(room.restaurant.localizedName(language), if(room.deliveryMode) (if(language == "ar") "توصيل: ${room.destination}" else "Delivery: ${room.destination}") else if(language == "ar") "استلام من المطعم" else "Pickup",
-        (if(language == "ar") "وقت الوصول أو الاستلام المتوقع: " else "Expected delivery / pickup: ") + expectedArrival.ifBlank { if(language == "ar") "يحدده المطعم" else "To be confirmed by restaurant" }, "") + lines).joinToString("\n")
+    val address = (if(room.deliveryMode) room.destination else room.restaurant.contact.address.orEmpty()).trim()
+        .ifBlank { if(language == "ar") "العنوان يحدد لاحقاً" else "Address to be confirmed" }
+    val total = receipts.flatMap { it.lines }.sumOf { it.quantity }
+    val addressLine = if(language == "ar") "العنوان: $address" else "Address: $address"
+    val totalLine = if(language == "ar") "إجمالي السندويشات: ${quantityText(total)}" else "Total sandwiches: ${quantityText(total)}"
+    return (listOf(addressLine, "") + lines + totalLine).joinToString("\n")
 }
 
 internal class GroupPresentation(private val c: GroupController) {
@@ -698,7 +703,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }
-        return restaurantReadyText(r, c.reply!!.receipts, copyLanguage, c.text(GroupFieldKey.REFERENCE).ifBlank { r.restaurantReference })
+        return restaurantReadyText(r, c.reply!!.receipts, copyLanguage)
     }
     private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
         account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }

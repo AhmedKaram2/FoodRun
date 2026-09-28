@@ -11,8 +11,9 @@ class BilingualOrderTextTest {
         val room = Room("room", "123456", "member", "Lunch", restaurant,
             members = listOf(member), carts = listOf(MemberCart("member", lines = listOf(CartLine("line", falafel.id, 2)), submitted = true)))
         val text = restaurantReadyText(room, Billing.receipts(room), "ar")
-        assertTrue(text.startsWith("مطعم سلطان"))
+        assertTrue(text.startsWith("العنوان:"))
         assertTrue(text.contains("٢ طعمية"))
-        assertTrue(text.contains("استلام من المطعم"))
+        assertTrue(text.endsWith("إجمالي السندويشات: ٢"))
+        assertFalse(text.contains("وقت الوصول"))
     }
 }

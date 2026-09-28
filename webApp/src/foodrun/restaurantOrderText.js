@@ -1,5 +1,3 @@
-import { t, tf } from './i18n.js';
-
 const name = (value, language) => language === 'ar' && value?.nameAr ? value.nameAr : value?.name || '';
 
 export function groupedOrderLines(room, receipts, language = 'en') {
@@ -16,12 +14,17 @@ export function groupedOrderLines(room, receipts, language = 'en') {
   return [...grouped.values()];
 }
 
-export function restaurantOrderText(room, receipts, language = 'en', expectedArrival = room.restaurantReference) {
+export function restaurantOrderText(room, receipts, language = 'en') {
+  const quantityText = quantity => language === 'ar'
+    ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)])
+    : String(quantity);
   const lines = groupedOrderLines(room, receipts, language).map(line => {
-    const quantity = language === 'ar' ? String(line.quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)]) : String(line.quantity);
-    return `${quantity} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`;
+    return `${quantityText(line.quantity)} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`;
   });
-  return [name(room.restaurant, language), room.deliveryMode
-    ? `${t('Delivery', language)}: ${room.destination || t('Address to be confirmed', language)}` : t('Pickup', language),
-    tf('Expected delivery / pickup: {time}', { time: expectedArrival?.trim() || t('To be confirmed by restaurant', language) }, language), '', ...lines].join('\n');
+  const address = (room.deliveryMode ? room.destination : room.restaurant.contact?.address)?.trim()
+    || (language === 'ar' ? 'العنوان يحدد لاحقاً' : 'Address to be confirmed');
+  const total = receipts.flatMap(receipt => receipt.lines).reduce((sum, line) => sum + line.quantity, 0);
+  const addressLabel = language === 'ar' ? 'العنوان' : 'Address';
+  const totalLabel = language === 'ar' ? 'إجمالي السندويشات' : 'Total sandwiches';
+  return [`${addressLabel}: ${address}`, '', ...lines, `${totalLabel}: ${quantityText(total)}`].join('\n');
 }

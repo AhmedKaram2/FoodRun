@@ -836,7 +836,7 @@ function FeeEditor({ room, data }) {
 function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArrival = room.restaurantReference, setExpectedArrival, canPlace = false, blocker = '' }) {
   const [copied, setCopied] = useState(false);
   const [copyLanguage, setCopyLanguage] = useState(() => ['en', 'ar'].includes(localStorage.getItem('foodrun-copy-language-v1')) ? localStorage.getItem('foodrun-copy-language-v1') : uiLanguage);
-  const orderText = restaurantOrderText(room, receipts, copyLanguage, expectedArrival);
+  const orderText = restaurantOrderText(room, receipts, copyLanguage);
   const chooseCopyLanguage = value => { setCopyLanguage(value); setCopied(false); localStorage.setItem('foodrun-copy-language-v1', value); };
   const copy = async () => { await copyText(orderText); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const contact = room.restaurant.contact.phoneE164 || room.restaurant.contact.whatsappE164;

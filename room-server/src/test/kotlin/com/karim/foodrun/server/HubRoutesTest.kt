@@ -8,6 +8,8 @@ import io.ktor.http.*
 import io.ktor.server.testing.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.*
 
 class HubRoutesTest {
@@ -52,6 +54,38 @@ class HubRoutesTest {
                 send(Frame.Text(orderJson.encodeToString(f.command(member, CommandKind.SNAPSHOT))))
                 val initial = orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText())
                 assertTrue(initial.ok)
+                val change = client.post("/command") {
+                    contentType(ContentType.Application.Json)
+                    setBody(orderJson.encodeToString(f.command(f.owner, CommandKind.READY).copy(flag = true, eligible = true)))
+                }
+                assertTrue(orderJson.decodeFromString<RoomReply>(change.bodyAsText()).ok)
+                val update = withTimeout(5000) {
+                    var reply: RoomReply
+                    do { reply = orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText()) }
+                    while (reply.room!!.revision <= initial.room!!.revision)
+                    reply
+                }
+                assertTrue(update.room!!.members.single { it.id == f.owner.memberId }.ready)
+                close()
+            }
+        }
+    }
+
+    @Test fun unchangedRoomsDoNotResendFullSnapshotsAfterTheFormerRecoveryInterval() = RoomFixture().use { f ->
+        testApplication {
+            val socketClock = AtomicLong(0)
+            application { hubRoutes(f.service, socketClock = socketClock::get) }
+            val socketClient = createClient { install(WebSockets) }
+            socketClient.webSocket("/events") {
+                send(Frame.Text(orderJson.encodeToString(f.command(f.owner, CommandKind.SNAPSHOT))))
+                val initial = orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText())
+                assertTrue(initial.ok)
+
+                // Ktor ping frames keep the connection healthy. An idle room must not repeatedly
+                // resend its potentially multi-megabyte menu, history, and receipt-photo payload.
+                socketClock.set(31_000)
+                assertNull(withTimeoutOrNull(750) { incoming.receive() })
+
                 val change = client.post("/command") {
                     contentType(ContentType.Application.Json)
                     setBody(orderJson.encodeToString(f.command(f.owner, CommandKind.READY).copy(flag = true, eligible = true)))

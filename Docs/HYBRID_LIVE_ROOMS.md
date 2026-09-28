@@ -11,7 +11,7 @@ The app remembers the endpoint where each room was created. Nearby and internet 
 
 ## Cloud-use controls
 
-Nearby rooms send commands and live events directly over the local network. Firebase stores the shared identity/profile and receives asynchronous backup records. WebSocket snapshots are event driven: the server sends state when the room changes, plus a 30-second recovery heartbeat. Presence is refreshed every five seconds while a client is connected.
+Nearby rooms send commands and live events directly over the local network. Firebase stores the shared identity/profile and receives asynchronous backup records. WebSocket snapshots are event driven: the server sends the current state when a client connects and whenever the room changes. Protocol ping/pong frames keep idle connections healthy without repeatedly transferring full room, history, and receipt-photo payloads. Reconnecting always sends a fresh authoritative snapshot. Presence is refreshed every five seconds while a client is connected.
 
 ## Deploy the internet API
 

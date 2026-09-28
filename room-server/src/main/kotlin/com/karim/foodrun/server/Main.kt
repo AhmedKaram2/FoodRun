@@ -75,7 +75,11 @@ fun main() {
     }) { hubRoutes(service, admin) }.start(wait = true)
 }
 
-fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
+fun Application.hubRoutes(
+    service: RoomService,
+    admin: AdminService? = null,
+    socketClock: () -> Long = System::currentTimeMillis,
+) {
     val nativeSignIn = NativeSignInBroker(service::validateFirebaseSignIn)
     val pushSender = FirebasePush.configured()
     val origins = (System.getenv("FOODRUN_WEB_ORIGINS") ?: "http://localhost:5173,http://127.0.0.1:5173").split(',').filter { it.isNotBlank() }
@@ -263,17 +267,18 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
             val request = runCatching { val body = first.readText(); JsonInputValidation.validate(body); orderJson.decodeFromString<RoomCommand>(body) }.getOrNull() ?: return@webSocket
             if (request.kind !in listOf(CommandKind.SNAPSHOT, CommandKind.HOME) || request.protocolVersion != 1) return@webSocket
             var lastVersion = Long.MIN_VALUE
-            var lastSnapshotAt = 0L
             var lastPresenceAt = 0L
             var memberId = ""
             while (isActive) {
-                val now = System.currentTimeMillis()
+                val now = socketClock()
                 if (memberId.isNotEmpty() && now - lastPresenceAt >= 5_000) {
                     service.touch(memberId)
                     lastPresenceAt = now
                 }
                 val version = service.eventVersion(request.kind, request.roomId)
-                if (lastVersion == Long.MIN_VALUE || version != lastVersion || now - lastSnapshotAt >= 30_000) {
+                // Ping/pong keeps idle sockets alive. A timed resend would repeatedly transfer
+                // large static fields such as menus, history, and Base64 receipt photos.
+                if (lastVersion == Long.MIN_VALUE || version != lastVersion) {
                     val snapshot = try { withContext(Dispatchers.IO) { service.execute(request) } }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
@@ -284,7 +289,6 @@ fun Application.hubRoutes(service: RoomService, admin: AdminService? = null) {
                     if (!snapshot.ok) break
                     memberId = snapshot.memberId
                     lastVersion = service.eventVersion(request.kind, request.roomId)
-                    lastSnapshotAt = now
                     lastPresenceAt = now
                 }
                 delay(250)

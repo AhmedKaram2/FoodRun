@@ -555,5 +555,10 @@
   "Save on this device": "حفظ على هذا الجهاز",
   "Publishing…": "جاري النشر…",
   "Save changes for everyone": "حفظ التعديلات للجميع",
-  "Publish for everyone": "نشر للجميع"
+  "Publish for everyone": "نشر للجميع",
+  "Phone with country code": "رقم الهاتف مع رمز الدولة",
+  "WhatsApp with country code": "رقم واتساب مع رمز الدولة",
+  "IBAN": "رقم الآيبان",
+  "Choose a supported currency.": "اختر عملة مدعومة.",
+  "Aani payment rooms use AED. Choose AED or use a bank account.": "غرف الدفع عبر آني تستخدم الدرهم. اختر AED أو استخدم حساباً بنكياً."
 }

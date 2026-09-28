@@ -76,11 +76,11 @@ object MenuValidation {
         require(r.mealTypes.distinct().size == r.mealTypes.size) { "Restaurant meal types must be unique." }
         require(r.googleRating == null || r.googleRating in 4.0..5.0) { "Food Run only lists restaurants rated 4.0 or higher on Google." }
         require(r.googleRatingCount == null || r.googleRatingCount >= 0) { "Invalid Google rating count." }
-        require(r.currency == "AED") { "Restaurant menus and rooms use AED (Dirham)." }
+        Money.precision(r.currency)
         require(r.pricing.taxRateBasisPoints == null || r.pricing.taxRateBasisPoints in 0..10000) { "Invalid tax rate." }
         if (r.pricing.taxTreatment == TaxTreatment.ADDED) require(r.pricing.taxRateBasisPoints != null) { "Enter the restaurant's tax rate." }
         listOf(r.pricing.defaultDeliveryFeeMinor, r.pricing.defaultServiceFeeMinor, r.pricing.minimumOrderMinor).forEach(::price)
-        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach { UaePhone.normalize(it) }
+        listOfNotNull(r.contact.phoneE164, r.contact.whatsappE164).forEach { InternationalPhone.normalize(it) }
         require((r.contact.address?.length ?: 0) <= 1000)
         val m = r.menu
         require(m.items.size in (if (r.openOrdering) 0 else 1)..500 && m.categories.size in (if (r.openOrdering) 0 else 1)..100 && m.optionGroups.size <= 100) { "Menu needs 1–500 items and 1–100 categories." }
@@ -104,10 +104,10 @@ object MenuValidation {
 }
 
 object Money {
-    val currencies = listOf("AED", "USD", "EUR", "GBP", "SAR", "EGP", "KWD", "BHD", "OMR", "JPY")
+    val currencies = listOf("AED", "EGP", "USD", "EUR", "GBP", "SAR", "QAR", "KWD", "BHD", "OMR", "JOD", "IQD", "MAD", "TND", "TRY", "INR", "PKR", "BDT", "PHP", "CAD", "AUD", "NZD", "JPY", "CNY", "KRW", "ZAR")
     fun precision(currency: String): Int {
         require(currency in currencies) { "Unsupported currency." }
-        return when (currency) { "JPY" -> 0; "KWD", "BHD", "OMR" -> 3; else -> 2 }
+        return when (currency) { "JPY", "KRW" -> 0; "KWD", "BHD", "OMR", "JOD", "IQD", "TND" -> 3; else -> 2 }
     }
     fun factor(currency: String): Long = when (precision(currency)) { 0 -> 1; 3 -> 1000; else -> 100 }
     fun format(value: Long, currency: String): String {

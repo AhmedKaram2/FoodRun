@@ -128,6 +128,9 @@ class OrderDomainTest {
         assertEquals(1234, Money.parse("12.34", "AED"))
         assertEquals(12345, Money.parse("12.345", "KWD"))
         assertEquals(12, Money.parse("12", "JPY"))
+        assertEquals(1234, Money.parse("12.34", "EGP"))
+        assertEquals(12345, Money.parse("12.345", "JOD"))
+        assertEquals(12, Money.parse("12", "KRW"))
         assertEquals("KWD -12.345", Money.format(-12345, "KWD"))
         assertEquals("JPY 12", Money.format(12, "JPY"))
         assertFailsWith<IllegalArgumentException> { Money.parse("12.3", "JPY") }
@@ -139,7 +142,14 @@ class OrderDomainTest {
         ReceivingAccount("a", "Person", "Bank", "AE07 0331 2345 6789 0123 456", "AED").validate()
         assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "AE08 0331 2345 6789 0123 456", "AED").validate() }
         assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "１２３４５６７８", "AED").validate() }
-        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "GB82 WEST 1234 5698 7654 32", "GBP").validate() }
+        ReceivingAccount("a", "Person", "Bank", "GB82 WEST 1234 5698 7654 32", "GBP").validate()
+        assertFailsWith<IllegalArgumentException> { ReceivingAccount("a", "Person", "Bank", "GB83 WEST 1234 5698 7654 32", "GBP").validate() }
+    }
+    @Test fun internationalPhonesNormalizeToE164WhileUaeLocalNumbersStayCompatible() {
+        assertEquals("+201012345678", InternationalPhone.normalize("+20 10 1234 5678"))
+        assertEquals("+442079460018", InternationalPhone.normalize("0044 20 7946 0018"))
+        assertEquals("+971501234567", InternationalPhone.normalize("050 123 4567"))
+        assertFailsWith<IllegalArgumentException> { InternationalPhone.normalize("123") }
     }
     @Test fun spinIsStableAcrossClocksAndReconnections() {
         val spin = SpinRound("spin", listOf("a", "b", "c"), "b", 1000)

@@ -9,6 +9,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
     private var parent = ""
     private var groups = emptyList<String>()
     private val menu get() = requireNotNull(c.editingRestaurant).restaurant.menu
+    private val currency get() = c.text(GroupFieldKey.CURRENCY).ifBlank { requireNotNull(c.editingRestaurant).restaurant.currency }
     private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
     private fun set(menu: Menu) { val export = requireNotNull(c.editingRestaurant); c.editingRestaurant = export.copy(restaurant = export.restaurant.copy(menu = menu)) }
     private fun field(key: GroupFieldKey, en: String, ar: String, toggle: Boolean = false, multiline: Boolean = false, choices: List<GroupChoice> = emptyList()) = GroupField(key, tr(en, ar), c.text(key), multiline, toggle, choices = choices)
@@ -27,7 +28,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
         c.draft[GroupFieldKey.MENU_ENTITY_AR] = when(type) { "item" -> item?.nameAr; "group" -> group?.nameAr; "category" -> category?.nameAr; "variant" -> variant?.nameAr; else -> option?.nameAr }.orEmpty()
         c.draft[GroupFieldKey.MENU_ENTITY_DESCRIPTION] = item?.description.orEmpty()
         c.draft[GroupFieldKey.MENU_ENTITY_DESCRIPTION_AR] = item?.descriptionAr.orEmpty()
-        c.draft[GroupFieldKey.MENU_ENTITY_PRICE] = Money.format(when(type) { "item" -> item?.basePriceMinor; "variant" -> variant?.priceMinor; else -> option?.priceDeltaMinor } ?: 0, "AED").substringAfter(' ')
+        c.draft[GroupFieldKey.MENU_ENTITY_PRICE] = Money.format(when(type) { "item" -> item?.basePriceMinor; "variant" -> variant?.priceMinor; else -> option?.priceDeltaMinor } ?: 0, currency).substringAfter(' ')
         c.draft[GroupFieldKey.MENU_ENTITY_CATEGORY] = item?.categoryId ?: menu.categories.firstOrNull()?.id.orEmpty()
         c.draft[GroupFieldKey.MENU_ENTITY_AVAILABLE] = (item?.available ?: true).toString()
         c.draft[GroupFieldKey.MENU_ENTITY_MIN] = (group?.minSelections ?: 0).toString()
@@ -42,7 +43,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
         val ar = c.text(GroupFieldKey.MENU_ENTITY_AR).trim()
         if(ar.isNotEmpty()) MenuValidation.label(ar)
         if(id.isEmpty()) id = c.platform.uuid()
-        fun price() = Money.parse(c.text(GroupFieldKey.MENU_ENTITY_PRICE), "AED")
+        fun price() = Money.parse(c.text(GroupFieldKey.MENU_ENTITY_PRICE), currency)
         when(type) {
             "category" -> {
                 val value = MenuCategory(id, name, c.text(GroupFieldKey.MENU_ENTITY_SORT).toIntOrNull() ?: error("Enter a whole-number sort position."), ar)
@@ -89,7 +90,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
     fun content(): GroupFlowContent {
         if(c.page == GroupPage.MENU_EDITOR) return GroupFlowContent(cards =
             menu.categories.sortedBy { it.sortOrder }.map { row("category", it.id, it.localizedName(c.library.language)) } +
-            menu.items.map { row("item", it.id, it.localizedName(c.library.language), Money.format(it.basePriceMinor, "AED")) } +
+            menu.items.map { row("item", it.id, it.localizedName(c.library.language), Money.format(it.basePriceMinor, currency)) } +
             menu.optionGroups.map { row("group", it.id, it.localizedName(c.library.language), "${it.minSelections}–${it.maxSelections}") },
             buttons = listOf(button("Add category", "إضافة قسم", "category|"), button("Add item", "إضافة صنف", "item|"), button("Add extras group", "إضافة مجموعة إضافات", "group|")))
         val fields = mutableListOf(field(GroupFieldKey.MENU_ENTITY_NAME, "Name · English", "الاسم · إنجليزي"), field(GroupFieldKey.MENU_ENTITY_AR, "Name · Arabic", "الاسم · عربي"))
@@ -101,18 +102,18 @@ internal class GroupMenuEditor(private val c: GroupController) {
                 fields += field(GroupFieldKey.MENU_ENTITY_DESCRIPTION, "Description · English", "الوصف · إنجليزي", multiline = true)
                 fields += field(GroupFieldKey.MENU_ENTITY_DESCRIPTION_AR, "Description · Arabic", "الوصف · عربي", multiline = true)
                 fields += field(GroupFieldKey.MENU_ENTITY_AVAILABLE, "Available", "متاح", toggle = true)
-                fields += field(GroupFieldKey.MENU_ENTITY_PRICE, "Base price · AED", "السعر الأساسي · درهم")
+                fields += field(GroupFieldKey.MENU_ENTITY_PRICE, "Base price · $currency", "السعر الأساسي · $currency")
                 cards += menu.optionGroups.map { group -> GroupCard("attach:${group.id}", group.localizedName(c.library.language), buttons = listOf(GroupButton(if(group.id in groups) tr("✓ Included · remove", "✓ مضمنة · إزالة") else tr("Include extras", "تضمين الإضافات"), GroupAction.MENU_TOGGLE_GROUP, group.id))) }
-                cards += menu.items.firstOrNull { it.id == id }?.variants.orEmpty().map { row("variant", it.id, it.localizedName(c.library.language), Money.format(it.priceMinor, "AED"), id) }
+                cards += menu.items.firstOrNull { it.id == id }?.variants.orEmpty().map { row("variant", it.id, it.localizedName(c.library.language), Money.format(it.priceMinor, currency), id) }
                 if(id.isNotEmpty()) buttons += button("Add size", "إضافة حجم", "variant||$id")
             }
             "group" -> {
                 fields += field(GroupFieldKey.MENU_ENTITY_MIN, "Minimum selections", "أقل عدد اختيارات")
                 fields += field(GroupFieldKey.MENU_ENTITY_MAX, "Maximum selections", "أقصى عدد اختيارات")
-                cards += menu.optionGroups.firstOrNull { it.id == id }?.options.orEmpty().map { row("option", it.id, it.localizedName(c.library.language), Money.format(it.priceDeltaMinor, "AED"), id) }
+                cards += menu.optionGroups.firstOrNull { it.id == id }?.options.orEmpty().map { row("option", it.id, it.localizedName(c.library.language), Money.format(it.priceDeltaMinor, currency), id) }
                 if(id.isNotEmpty()) buttons += button("Add extra", "إضافة اختيار", "option||$id")
             }
-            else -> fields += field(GroupFieldKey.MENU_ENTITY_PRICE, if(type == "variant") "Size price · AED" else "Extra price · AED", if(type == "variant") "سعر الحجم · درهم" else "سعر الإضافة · درهم")
+            else -> fields += field(GroupFieldKey.MENU_ENTITY_PRICE, if(type == "variant") "Size price · $currency" else "Extra price · $currency", if(type == "variant") "سعر الحجم · $currency" else "سعر الإضافة · $currency")
         }
         buttons += GroupButton(tr("Save menu entry", "حفظ بيانات القائمة"), GroupAction.MENU_SAVE, primary = true)
         return GroupFlowContent(fields, cards, buttons)

@@ -160,13 +160,13 @@ internal class GroupPresentation(private val c: GroupController) {
             button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
             button(tr("Sign in", "تسجيل الدخول"), GroupAction.SIGN_IN, primary = true); button(tr("Reset password", "إعادة تعيين كلمة المرور"), GroupAction.RESET_PASSWORD)
         }
-        field(GroupFieldKey.NAME, tr("Profile name", "الاسم في الملف الشخصي")); field(GroupFieldKey.PROFILE_PHONE, tr("Phone · with country code", "رقم الهاتف الإماراتي"))
+        field(GroupFieldKey.NAME, tr("Profile name", "الاسم في الملف الشخصي")); field(GroupFieldKey.PROFILE_PHONE, tr("Phone · with country code", "رقم الهاتف مع رمز الدولة"))
         field(GroupFieldKey.PHOTO, tr("Profile photo", "صورة الملف الشخصي"))
         field(GroupFieldKey.DISCOVERABLE, tr("Allow people on this hub to invite me", "السماح لمستخدمي الخادم بدعوتي"), toggle = true)
         field(GroupFieldKey.AANI, tr("Receive payments with Aani", "استلام الدفعات عبر آني"), toggle = true)
         field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder · optional", "صاحب الحساب · اختياري"))
         if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name · optional", "اسم البنك · اختياري"))
-        field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("UAE IBAN · optional"))
+        field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("IBAN · optional"))
         if(c.library.home == null) button(tr("Create account", "إنشاء حساب"), GroupAction.REGISTER)
         else {
             button(tr("Save profile", "حفظ الملف الشخصي"), GroupAction.SAVE_PROFILE, primary = true)
@@ -323,9 +323,9 @@ internal class GroupPresentation(private val c: GroupController) {
         field(GroupFieldKey.RESTAURANT_NOTES, tr("Restaurant notes", "ملاحظات المطعم"), multiline = true)
         field(GroupFieldKey.OPEN_ORDERING, tr("Allow custom food items", "السماح بأصناف مخصصة"), toggle = true)
         field(GroupFieldKey.MEAL_BREAKFAST, tr("Breakfast", "فطور"), toggle = true); field(GroupFieldKey.MEAL_LUNCH, tr("Lunch", "غداء"), toggle = true); field(GroupFieldKey.MEAL_DINNER, tr("Dinner", "عشاء"), toggle = true)
-        field(GroupFieldKey.RESTAURANT_WHATSAPP, tr("WhatsApp phone", "رقم واتساب"))
-        card("room-currency", tr("Currency", "العملة"), "AED · UAE Dirham")
-        field(GroupFieldKey.PHONE, tr("Restaurant phone", "رقم المطعم"))
+        field(GroupFieldKey.RESTAURANT_WHATSAPP, tr("WhatsApp with country code", "واتساب مع رمز الدولة"))
+        choiceField(GroupFieldKey.CURRENCY, tr("Currency", "العملة"), Money.currencies.map { GroupChoice(it, it) })
+        field(GroupFieldKey.PHONE, tr("Phone with country code", "الهاتف مع رمز الدولة"))
         field(GroupFieldKey.ADDRESS, "Restaurant address"); field(GroupFieldKey.DELIVERY_FEE, tr("Default delivery fee", "رسوم التوصيل الافتراضية"))
         field(GroupFieldKey.SERVICE_FEE, tr("Default service fee", "رسوم الخدمة الافتراضية"))
         field(GroupFieldKey.MINIMUM_ORDER, "Minimum food order")
@@ -574,7 +574,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 GroupButton(ui("Delete saved account"), GroupAction.DELETE_ACCOUNT, a.id, destructive = true),
             ))
         }
-        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("UAE IBAN"))
+        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("IBAN"))
         button("Save on this device", GroupAction.SAVE_ACCOUNT)
         if(c.reply?.room?.account?.let(c::accountMatchesDraft) == true) {
             subtitle = "This account is already shared with this order. Continue to ${if(c.reply?.room?.phase == RoomPhase.REVIEW) "review the totals" else "submit your food"}."
@@ -618,16 +618,18 @@ internal class GroupPresentation(private val c: GroupController) {
             SnapshotRow(session, reply, room, reply.receipts.firstOrNull { it.memberId == session.memberId })
         }
         val payableRows = rows.filter { it.room.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) && it.room.payerId != null }
-        var toPay = 0L; var toReceive = 0L
+        val toPay = mutableMapOf<String, Long>(); val toReceive = mutableMapOf<String, Long>()
+        fun add(target: MutableMap<String, Long>, receipt: Receipt, amount: Long) { target[receipt.currency] = (target[receipt.currency] ?: 0) + amount }
         payableRows.forEach { row ->
             if (row.room.payerId == row.session.memberId) {
                 row.reply.receipts.filterNot { it.memberId == row.session.memberId }.forEach { receipt ->
-                    if (receipt.balance > 0) toReceive += receipt.balance else toPay += -receipt.balance
+                    if (receipt.balance > 0) add(toReceive, receipt, receipt.balance) else add(toPay, receipt, -receipt.balance)
                 }
-            } else row.receipt?.let { if (it.balance > 0) toPay += it.balance else toReceive += -it.balance }
+            } else row.receipt?.let { if (it.balance > 0) add(toPay, it, it.balance) else add(toReceive, it, -it.balance) }
         }
+        fun totals(values: Map<String, Long>) = if(values.isEmpty()) Money.format(0, "AED") else values.entries.joinToString(" · ") { Money.format(it.value, it.key) }
         card("${prefix}wallet-summary", tr("Wallet dashboard", "لوحة المحفظة"),
-            tr("You need to pay ${Money.format(toPay, "AED")} · You need to receive ${Money.format(toReceive, "AED")}", "عليك دفع ${Money.format(toPay, "AED")} · لك لدى الآخرين ${Money.format(toReceive, "AED")}"),
+            tr("You need to pay ${totals(toPay)} · You need to receive ${totals(toReceive)}", "عليك دفع ${totals(toPay)} · لك لدى الآخرين ${totals(toReceive)}"),
             tr("${payableRows.count { it.receipt != null }} active balances", "${payableRows.count { it.receipt != null }} أرصدة حالية"))
         data class BalanceRow(val row: SnapshotRow, val receipt: Receipt, val person: String, val receive: Boolean)
         val balances = payableRows.flatMap { row ->
@@ -640,7 +642,7 @@ internal class GroupPresentation(private val c: GroupController) {
         listOf(false, true).forEach { receive ->
             val entries = balances.filter { it.receive == receive }
             card("${prefix}wallet-direction:$receive", if(receive) tr("I need to receive", "مبالغ أحتاج إلى استلامها") else tr("I need to pay", "مبالغ يجب علي دفعها"),
-                if(entries.isEmpty()) tr("No outstanding payments", "لا توجد دفعات مستحقة") else tr("Payments by person", "الدفعات حسب الشخص"), Money.format(if(receive) toReceive else toPay, "AED"))
+                if(entries.isEmpty()) tr("No outstanding payments", "لا توجد دفعات مستحقة") else tr("Payments by person", "الدفعات حسب الشخص"), totals(if(receive) toReceive else toPay))
             entries.forEach { (row, receipt, person, _) ->
                 val pending = row.room.transfers.firstOrNull { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
                 val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: ""

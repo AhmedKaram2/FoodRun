@@ -13,8 +13,9 @@ internal class GroupPaymentRooms(private val c: GroupController) {
     private fun field(key: GroupFieldKey, en: String, ar: String, multiline: Boolean = false) = GroupField(key, tr(en, ar), c.text(key), multiline)
     private fun profile() = requireNotNull(c.library.home?.profile) { "Sign in first." }
     private fun people(): List<FoodPerson> = listOf(FoodPerson(profile().userId, profile().name)) + c.library.home!!.people.filterNot { it.userId == profile().userId }
-    private fun amount(key: GroupFieldKey) = Money.parse(c.text(key).ifBlank { "0" }, "AED")
-    private fun display(amount: Long) = Money.format(amount, "AED").substringAfter(' ')
+    private fun currency() = if(mode == "create") c.text(GroupFieldKey.PAYMENT_CURRENCY).ifBlank { "AED" } else c.room().restaurant.currency
+    private fun amount(key: GroupFieldKey) = Money.parse(c.text(key).ifBlank { "0" }, currency())
+    private fun display(amount: Long) = Money.format(amount, currency()).substringAfter(' ')
     fun create() {
         profile(); requireNotNull(c.library.identityHub)
         mode = "create"; shares.clear(); editing = ""
@@ -24,6 +25,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
         c.draft[GroupFieldKey.PAYMENT_DETAILS] = ""
         c.draft[GroupFieldKey.RECEIPT_PHOTO] = ""
         c.draft[GroupFieldKey.PAYMENT_TOTAL] = ""
+        c.draft[GroupFieldKey.PAYMENT_CURRENCY] = profile().payment?.currency ?: "AED"
         c.page = GroupPage.PAYMENT_ROOM
     }
     fun editReceipt() {
@@ -59,15 +61,18 @@ internal class GroupPaymentRooms(private val c: GroupController) {
     private fun current() { require(c.online && c.room().id == boundRoom && c.room().orderNumber == boundOrder) { "Refresh the current order first." } }
     fun save() {
         val details = PaymentRoomDetails(c.text(GroupFieldKey.PAYMENT_DETAILS).trim(), c.text(GroupFieldKey.RECEIPT_PHOTO)).also { it.validate() }
-        if(mode == "receipt") { current(); c.command(CommandKind.UPDATE_PAYMENT_RECEIPT, paymentRoom = PaymentRoomRequest(details, emptyList())); return }
+        if(mode == "receipt") { current(); c.command(CommandKind.UPDATE_PAYMENT_RECEIPT, paymentRoom = PaymentRoomRequest(details, emptyList(), currency())); return }
         val total = amount(GroupFieldKey.PAYMENT_TOTAL)
         require(shares.size in 2..30) { "Choose yourself and 1–29 other people." }
         require(total > 0 && shares.values.sumOf { it.amount } == total) { "The shares must add up to the receipt total." }
-        val account = requireNotNull(profile().payment) { "Add your receiving details in your profile first." }.normalized().also { it.validate() }
+        val selectedCurrency = currency(); Money.precision(selectedCurrency)
+        val account = requireNotNull(profile().payment) { "Add your receiving details in your profile first." }.let {
+            if(it.method == PaymentMethod.AANI) it else it.copy(currency = selectedCurrency)
+        }.normalized().also { it.validate(); require(it.currency == selectedCurrency) { "Aani payment rooms use AED. Choose AED or use a bank account." } }
         c.replaceLibrary(c.library.copy(selectedHub = c.library.identityHub))
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.CREATE_PAYMENT_ROOM,
             text = c.text(GroupFieldKey.PAYMENT_ROOM_NAME).trim(), name = c.text(GroupFieldKey.PAYMENT_RESTAURANT).trim(), amount = total,
-            account = account, paymentRoom = PaymentRoomRequest(details, shares.values.toList())))
+            account = account, paymentRoom = PaymentRoomRequest(details, shares.values.toList(), selectedCurrency)))
     }
     fun record(id: String) {
         require(c.room().payerId == c.me() && c.room().phase == RoomPhase.FULFILLED)
@@ -82,23 +87,23 @@ internal class GroupPaymentRooms(private val c: GroupController) {
     fun back() { c.page = if(c.page == GroupPage.PAYMENT_SHARE && mode == "create") GroupPage.PAYMENT_ROOM else if(mode == "create" && c.page == GroupPage.PAYMENT_ROOM) GroupPage.HOME else GroupPage.ROOM }
     fun form(): GroupFlowContent {
         if(c.page == GroupPage.RECORD_PAYMENT) return GroupFlowContent(
-            fields = listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Amount received · AED", "المبلغ المستلم · درهم"), field(GroupFieldKey.REFERENCE, "Reference / cash note", "مرجع التحويل أو ملاحظة النقد")),
+            fields = listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Amount received · ${currency()}", "المبلغ المستلم · ${currency()}"), field(GroupFieldKey.REFERENCE, "Reference / cash note", "مرجع التحويل أو ملاحظة النقد")),
             cards = listOf(GroupCard("received-check", c.room().members.single { it.id == editing }.name, tr("Confirm only after checking the money reached you. This records a payment and does not transfer money.", "أكد بعد التحقق من وصول الأموال إليك. هذا يسجل الدفع ولا يحول الأموال."))),
             buttons = listOf(GroupButton(tr("Confirm payment received", "تأكيد استلام الدفعة"), GroupAction.SAVE_RECORDED_PAYMENT, primary = true, enabled = c.online)))
         if(c.page == GroupPage.PAYMENT_SHARE) return GroupFlowContent(fields = listOf(
-            field(GroupFieldKey.PAYMENT_DESCRIPTION, "Person's order", "طلب الشخص", true), field(GroupFieldKey.PAYMENT_SHARE, "Share · AED", "الحصة · درهم")) +
-            if(mode == "create" && editing != profile().userId) listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Already received · AED", "المستلم بالفعل · درهم")) else emptyList(),
+            field(GroupFieldKey.PAYMENT_DESCRIPTION, "Person's order", "طلب الشخص", true), field(GroupFieldKey.PAYMENT_SHARE, "Share · ${currency()}", "الحصة · ${currency()}")) +
+            if(mode == "create" && editing != profile().userId) listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Already received · ${currency()}", "المستلم بالفعل · ${currency()}")) else emptyList(),
             buttons = listOf(GroupButton(tr("Save share", "حفظ الحصة"), GroupAction.SAVE_PAYMENT_SHARE, primary = true)))
         val fields = mutableListOf<GroupField>()
-        if(mode == "create") fields += listOf(field(GroupFieldKey.PAYMENT_ROOM_NAME, "Room name", "اسم الغرفة"), field(GroupFieldKey.PAYMENT_RESTAURANT, "Restaurant", "المطعم"), field(GroupFieldKey.PAYMENT_TOTAL, "Receipt total · AED", "إجمالي الإيصال · درهم"))
+        if(mode == "create") fields += listOf(field(GroupFieldKey.PAYMENT_ROOM_NAME, "Room name", "اسم الغرفة"), field(GroupFieldKey.PAYMENT_RESTAURANT, "Restaurant", "المطعم"), GroupField(GroupFieldKey.PAYMENT_CURRENCY, tr("Currency", "العملة"), currency(), choices = Money.currencies.map { GroupChoice(it, it) }), field(GroupFieldKey.PAYMENT_TOTAL, "Receipt total · ${currency()}", "إجمالي الإيصال · ${currency()}"))
         fields += field(GroupFieldKey.PAYMENT_DETAILS, "Order details", "تفاصيل الطلب", true)
         fields += field(GroupFieldKey.RECEIPT_PHOTO, "Receipt photo (optional)", "صورة الإيصال (اختياري)")
         val cards = mutableListOf<GroupCard>()
         if(mode == "create") {
-            cards += GroupCard("payment-shares-total", tr("Assigned shares", "الحصص المحددة"), Money.format(shares.values.sumOf { it.amount }, "AED"))
+            cards += GroupCard("payment-shares-total", tr("Assigned shares", "الحصص المحددة"), Money.format(shares.values.sumOf { it.amount }, currency()))
             people().forEach { person ->
                 val share = shares[person.userId]
-                cards += GroupCard("share:${person.userId}", person.name, share?.let { "${it.description}\n${Money.format(it.amount, "AED")}" }.orEmpty(),
+                cards += GroupCard("share:${person.userId}", person.name, share?.let { "${it.description}\n${Money.format(it.amount, currency())}" }.orEmpty(),
                     buttons = listOf(GroupButton(if(share == null) tr("Add person", "إضافة الشخص") else tr("Edit share", "تعديل الحصة"), GroupAction.EDIT_PAYMENT_SHARE, person.userId)) +
                         if(share != null && person.userId != profile().userId) listOf(GroupButton(tr("Remove", "إزالة"), GroupAction.REMOVE_PAYMENT_SHARE, person.userId)) else emptyList())
             }

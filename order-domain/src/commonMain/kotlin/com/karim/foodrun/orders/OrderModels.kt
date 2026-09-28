@@ -15,15 +15,16 @@ import kotlin.math.pow
 @Serializable data class ReceivingAccount(val id: String, val holder: String, val bank: String, val identifier: String, val currency: String = "AED", val version: Long = 1, val method: PaymentMethod = PaymentMethod.BANK) {
     fun validate() {
         MenuValidation.label(id); MenuValidation.label(holder)
-        require(currency == "AED") { "Food Run uses AED (Dirham) for payments." }
+        Money.precision(currency)
         require(version > 0) { "Invalid account version." }
         if (method == PaymentMethod.AANI) {
+            require(currency == "AED") { "Aani receiving accounts use AED." }
             UaePhone.normalize(identifier, mobileOnly = true)
             return
         }
         MenuValidation.label(bank)
         val v = identifier.filterNot { it.isWhitespace() }.uppercase()
-        require(Regex("AE[0-9]{21}").matches(v)) { "Enter a UAE IBAN starting with AE and containing 23 characters." }
+        require(Regex("[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}").matches(v)) { "Enter a valid IBAN with 15 to 34 characters." }
         var remainder = 0
         (v.drop(4) + v.take(4)).forEach { c ->
             val n = if (c in 'A'..'Z') (c.code - 55).toString() else c.toString()
@@ -31,7 +32,7 @@ import kotlin.math.pow
         }
         require(remainder == 1) { "IBAN checksum is invalid." }
     }
-    fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(bank = "Aani", identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(identifier = identifier.filterNot { it.isWhitespace() }.uppercase(), currency = "AED")
+    fun normalized(): ReceivingAccount = if (method == PaymentMethod.AANI) copy(bank = "Aani", identifier = UaePhone.normalize(identifier, mobileOnly = true), currency = "AED") else copy(identifier = identifier.filterNot { it.isWhitespace() }.uppercase(), currency = currency.uppercase())
 }
 @Serializable data class SpinRound(val id: String, val memberIds: List<String>, val winnerId: String, val startAt: Long, val duration: Long = 6500, val turns: Int = 7,
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)

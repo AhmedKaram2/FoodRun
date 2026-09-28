@@ -643,5 +643,10 @@
   "Language": "اللغة",
   "LAST CHOSEN": "آخر شخص تم اختياره",
   "Next wheel: the last chosen person has weight 20; each other person has weight 80. Only eligible people join the wheel.": "في العجلة القادمة، وزن آخر شخص تم اختياره ٢٠ ووزن كل شخص آخر ٨٠. تشمل العجلة المؤهلين فقط.",
-  "Order list language": "لغة قائمة الطلب"
+  "Order list language": "لغة قائمة الطلب",
+  "Phone with country code": "رقم التليفون مع كود الدولة",
+  "WhatsApp with country code": "رقم واتساب مع كود الدولة",
+  "IBAN": "رقم الآيبان",
+  "Choose a supported currency.": "اختار عملة مدعومة.",
+  "Aani payment rooms use AED. Choose AED or use a bank account.": "غرف الدفع بآني بتستخدم الدرهم. اختار AED أو استخدم حساب بنكي."
 }

@@ -7,20 +7,22 @@ export function splitEqually(total, userIds) {
   const base = Math.floor(total / sorted.length), remainder = total % sorted.length;
   return Object.fromEntries(sorted.map((id, index) => [id, base + (index < remainder ? 1 : 0)]));
 }
-export function paymentRoomPayload({ name, restaurant, details, photo, total, people, shares, account, ownerId }) {
+export function paymentRoomPayload({ name, restaurant, details, photo, total, people, shares, account, ownerId, currency = 'AED' }) {
   if (!name.trim() || !details.trim()) throw Error(t('Enter a room name and order details.'));
   if (!account) throw Error(t('Add your receiving details in your profile first.'));
   if (people.length < 2 || people.length > 30 || !people.some(person => person.userId === ownerId) || new Set(people.map(p => p.userId)).size !== people.length) throw Error(t('Choose yourself and 1–29 different people.'));
   const values = people.map(person => {
     const draft = shares[person.userId] || {};
-    const value = amount(draft.amount || '0', 'AED'), received = amount(draft.received || '0', 'AED');
+    const value = amount(draft.amount || '0', currency), received = amount(draft.received || '0', currency);
     if (received > value || person.userId === ownerId && received !== 0) throw Error(t('Received payments must not exceed a person’s share.'));
     return { userId: person.userId, description: draft.description?.trim() || t('Food order'), amount: value, received };
   });
-  const receiptTotal = amount(total, 'AED');
+  const receiptTotal = amount(total, currency);
   if (receiptTotal <= 0 || values.reduce((sum, share) => sum + share.amount, 0) !== receiptTotal) throw Error(t('The shares must add up to the receipt total.'));
-  return { text: name.trim(), name: restaurant.trim() || name.trim(), amount: receiptTotal, account,
-    paymentRoom: { details: { orderDetails: details.trim(), receiptPhoto: photo }, shares: values } };
+  const receivingAccount = account.method === 'BANK' && account.currency !== currency ? { ...account, currency } : account;
+  if (receivingAccount.method === 'AANI' && currency !== 'AED') throw Error(t('Aani payment rooms use AED. Choose AED or use a bank account.'));
+  return { text: name.trim(), name: restaurant.trim() || name.trim(), amount: receiptTotal, account: receivingAccount,
+    paymentRoom: { details: { orderDetails: details.trim(), receiptPhoto: photo }, shares: values, currency } };
 }
 export async function receiptPhotoData(file) {
   if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) throw Error(t('Choose a JPEG, PNG or WebP image under 10 MB.'));

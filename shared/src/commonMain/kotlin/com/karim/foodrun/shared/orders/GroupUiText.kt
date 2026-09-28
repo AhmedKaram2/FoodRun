@@ -954,5 +954,9 @@ internal object GroupUiText {
         "Your total, paid, and remaining" to "إجماليك واللي دفعته والمتبقي",
         "Your vote" to "صوتك",
         "Your wallet, orders, favorites, and payment details in one place." to "محفظتك وطلباتك ومفضلاتك وبيانات الدفع في مكان واحد.",
+        "Phone with country code" to "رقم الهاتف مع رمز الدولة",
+        "WhatsApp with country code" to "رقم واتساب مع رمز الدولة",
+        "IBAN" to "رقم الآيبان",
+        "IBAN · optional" to "رقم الآيبان · اختياري",
     )
 }

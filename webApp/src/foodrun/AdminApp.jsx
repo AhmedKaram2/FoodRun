@@ -1,12 +1,12 @@
 import PaymentFields from './PaymentFields.jsx';
-import { paymentDraft, paymentAccount, uaePhone } from './paymentDetails.js';
-import { photoData } from './client';
+import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
+import { photoData, CURRENCIES } from './client';
 import { canAccessAdmin } from './adminAccess';
 import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
 import { useState, useEffect } from 'react';
 import { money } from './client';
-import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, clone, LanguageToggle } from './FoodRunApp';
+import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, changeRestaurantCurrency, clone, LanguageToggle } from './FoodRunApp';
 
 async function adminRequest(path, user, body) {
   if (!canAccessAdmin(user)) throw Error(t('This account cannot access administration.'));
@@ -34,13 +34,13 @@ export default function AdminApp({ language, user, onBack }) {
   const mutate = async (path, body) => { setBusy(true); try { const result = await adminRequest(path, user, body); await refresh(); return result; } catch (error) { setMessage(error.message); return null; } finally { setBusy(false); } };
   const saveRestaurant = restaurant => mutate('/admin/restaurant', { action: 'save', restaurant });
   if (!dashboard) return <div className="splash"><div className="brand-mark">FR</div><p role="status">{message || t("Loading admin data…")}</p>{message && <button className="secondary" onClick={refresh}>{t("Retry")}</button>}<button className="link" onClick={onBack}>{t("Home")}</button></div>;
-  const totals = dashboard.rooms.reduce((sum, room) => sum + room.totalMinor, 0);
+  const totals = Object.entries(dashboard.rooms.reduce((values, room) => ({ ...values, [room.currency]: (values[room.currency] || 0) + room.totalMinor }), {}));
   return <main className="admin-shell">
     <header className="admin-topbar"><div><span className="brand-mark">FR</span><b>{t("Food Run Admin")}</b></div><div><LanguageToggle /><button className="secondary" onClick={() => refresh()}>{t("Refresh")}</button><button className="link" onClick={onBack}>{t("Home")}</button></div></header>
     <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{t(value[0].toUpperCase() + value.slice(1))}</button>)}</nav>
     {message && <div className="banner error">{message}</div>}
     <fieldset disabled={busy} className="admin-content room-fieldset">
-      {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small><b>{money(totals, 'AED')}</b></article></div><div className="card"><h2>{t("Current activity")}</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
+      {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small>{totals.length ? totals.map(([currency, total]) => <b key={currency}>{money(total, currency)}</b>) : <b>{money(0, 'AED')}</b>}</article></div><div className="card"><h2>{t("Current activity")}</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
       {tab === 'users' && <AdminUsers users={dashboard.users} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} />}
       {tab === 'rooms' && <div className="card"><h2>{t("Live and saved rooms")}</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
         const confirmation = window.prompt(t('Delete this room and its history? Enter the room code:') + ' ' + room.code);
@@ -70,10 +70,10 @@ function AdminRestaurants({ restaurants, save, remove, language }) {
     <aside className="card admin-restaurant-list"><button type="button" className="primary wide" onClick={() => setEditing(blankRestaurant())}>{t("Add restaurant")}</button>{restaurants.map(restaurant => <button type="button" className={editing.id === restaurant.id ? 'active' : ''} onClick={() => setEditing(clone(restaurant))} key={restaurant.id}><b>{restaurant.name}</b><small>{restaurant.menu.items.length}{t("items")}</small></button>)}</aside>
     <section className="card stack">
       <div className="section-title compact"><h2>{t("Restaurant and menu")}</h2>{restaurants.some(value => value.id === editing.id) && <button type="button" className="link danger" onClick={() => remove(editing.id)}>{t("Delete restaurant")}</button>}</div>
-      <div className="form-grid two"><label>{t("English name")}<input value={editing.name} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label><label>{t("Arabic name")}<input dir="rtl" value={editing.nameAr || ''} onChange={event => setEditing({ ...editing, nameAr: event.target.value })} /></label><label>{t("UAE phone")}<input value={editing.contact.phoneE164 || ''} onChange={event => setEditing({ ...editing, contact: { ...editing.contact, phoneE164: event.target.value || null } })} /></label><label>{t("Default delivery fee · AED")}<MenuMoneyInput value={editing.pricing.defaultDeliveryFeeMinor} onChange={value => setEditing({ ...editing, pricing: { ...editing.pricing, defaultDeliveryFeeMinor: value } })} label="Default delivery fee in AED" /></label></div>
+      <div className="form-grid two"><label>{t("English name")}<input value={editing.name} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label><label>{t("Arabic name")}<input dir="rtl" value={editing.nameAr || ''} onChange={event => setEditing({ ...editing, nameAr: event.target.value })} /></label><label>{t("Phone with country code")}<input placeholder="+20 10 1234 5678" value={editing.contact.phoneE164 || ''} onChange={event => setEditing({ ...editing, contact: { ...editing.contact, phoneE164: event.target.value || null } })} /></label><label>{t("Currency")}<select value={editing.currency} onChange={event => setEditing(changeRestaurantCurrency(editing, event.target.value))}>{CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}</select></label><label>{t(`Default delivery fee · ${editing.currency}`)}<MenuMoneyInput currency={editing.currency} value={editing.pricing.defaultDeliveryFeeMinor} onChange={value => setEditing({ ...editing, pricing: { ...editing.pricing, defaultDeliveryFeeMinor: value } })} label={`Default delivery fee in ${editing.currency}`} /></label></div>
       <div className="section-title compact"><h3>{t("Menu prices")}</h3></div>
       {message && <p role="alert" className="form-message">{message}</p>}
-      <MenuEditor menu={editing.menu} language={language} onChange={menu => setEditing(old => ({ ...old, menu }))} />
+      <MenuEditor menu={editing.menu} language={language} currency={editing.currency} onChange={menu => setEditing(old => ({ ...old, menu }))} />
       <button type="button" className="primary wide" onClick={event => { const invalid = [...event.currentTarget.closest('section').querySelectorAll('input')].find(input => !input.checkValidity()); if (invalid) { let node = invalid.parentElement; while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; } invalid.reportValidity(); return; } try { save(normalizeRestaurant(editing)); setMessage(''); } catch (error) { setMessage(error.message); } }}>{t("Save restaurant and all prices")}</button>
     </section>
   </div>;
@@ -94,7 +94,7 @@ export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy }) {
     }}><p>{t('Create an email account. Share the temporary password privately; the user can reset it from sign-in.')}</p><div className="form-grid two">
       <label>{t('Name')}<input required maxLength={160} value={create.name} onChange={e => setCreate({ ...create, name: e.target.value })} /></label>
       <label>{t('Email')}<input type="email" required autoComplete="off" value={create.email} onChange={e => setCreate({ ...create, email: e.target.value })} /></label>
-      <label>{t('UAE phone')}<input type="tel" required value={create.phone} onChange={e => setCreate({ ...create, phone: e.target.value })} /></label>
+      <label>{t('Phone with country code')}<input type="tel" placeholder="+20 10 1234 5678" required value={create.phone} onChange={e => setCreate({ ...create, phone: e.target.value })} /></label>
       <label>{t('Temporary password')}<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={create.password} onChange={e => setCreate({ ...create, password: e.target.value })} /></label>
     </div><button className="primary" disabled={busy}>{t('Create user')}</button></form></details>
     <section className="card stack"><h2>{t('Users')}</h2><label>{t('Search users')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
@@ -114,7 +114,7 @@ function AdminUserCard({ person, self, rooms, mutate, busy }) {
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      const profile = { ...source, name: form.name.trim(), phone: uaePhone(form.phone, true), photo: form.photo,
+      const profile = { ...source, name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
         discoverable: form.discoverable, language: form.language, payment: paymentAccount(form, source.payment, form.name) };
       const result = await mutate('/admin/user', { userId: person.id, action: 'profile', profile });
       if (result) { setEditing(false); setMessage(t('Profile and payment details saved.')); }
@@ -125,7 +125,7 @@ function AdminUserCard({ person, self, rooms, mutate, busy }) {
       {editing && <form className="stack admin-profile-editor" onSubmit={save}>
         <div className="form-grid two">
           <label>{t('Profile name')}<input required maxLength={160} value={form.name} onChange={e => set('name', e.target.value)} /></label>
-          <label>{t('UAE mobile number')}<input required type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} /></label>
+          <label>{t('Phone with country code')}<input required type="tel" placeholder="+20 10 1234 5678" value={form.phone} onChange={e => set('phone', e.target.value)} /></label>
           <label>{t('Language')}<select value={form.language} onChange={e => set('language', e.target.value)}><option value="en">English</option><option value="ar">العربية</option></select></label>
           <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t('Let people on this hub invite me')}</label>
         </div>

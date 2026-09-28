@@ -1,10 +1,16 @@
 import { t } from './i18n.js';
+export const CURRENCIES = ['AED', 'EGP', 'USD', 'EUR', 'GBP', 'SAR', 'QAR', 'KWD', 'BHD', 'OMR', 'JOD', 'IQD', 'MAD', 'TND', 'TRY', 'INR', 'PKR', 'BDT', 'PHP', 'CAD', 'AUD', 'NZD', 'JPY', 'CNY', 'KRW', 'ZAR'];
+export function currencyDigits(currency = 'AED') {
+  if (!CURRENCIES.includes(currency)) throw Error(t('Unsupported currency.'));
+  return ['KWD', 'BHD', 'OMR', 'JOD', 'IQD', 'TND'].includes(currency) ? 3 : ['JPY', 'KRW'].includes(currency) ? 0 : 2;
+}
+export function minorInput(value = 0, currency = 'AED') { const digits = currencyDigits(currency); return (value / 10 ** digits).toFixed(digits); }
 export function money(value = 0, currency = 'AED') {
-  const digits = ['KWD', 'BHD', 'OMR'].includes(currency) ? 3 : currency === 'JPY' ? 0 : 2;
+  const digits = currencyDigits(currency);
   return `${currency} ${(value / 10 ** digits).toFixed(digits)}`;
 }
 export function amount(text, currency = 'AED') {
-  const digits = ['KWD', 'BHD', 'OMR'].includes(currency) ? 3 : currency === 'JPY' ? 0 : 2;
+  const digits = currencyDigits(currency);
   if (!new RegExp(`^\\d{1,9}${digits ? `(\\.\\d{1,${digits}})?` : ''}$`).test(String(text))) throw Error(t("Enter a valid price using digits and a decimal point."));
   const [whole, fraction = ''] = String(text).split('.');
   const result = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, '0'));

@@ -23,6 +23,17 @@ object UaePhone {
         return "+971$local"
     }
 }
+object InternationalPhone {
+    fun normalize(value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.startsWith("0") && !trimmed.startsWith("00")) return UaePhone.normalize(trimmed)
+        val digits = trimmed.filter(Char::isDigit).let { if (it.startsWith("00")) it.drop(2) else it }
+        require(digits.length in 7..15 && digits.firstOrNull() in '1'..'9') {
+            "Enter a phone number with country code, for example +20 10 1234 5678."
+        }
+        return "+$digits"
+    }
+}
 @Serializable data class FoodProfile(
     val userId: String = "", val name: String = "", val phone: String = "", val photo: String = "",
     val payment: ReceivingAccount? = null, val discoverable: Boolean = true, val language: String = "en",
@@ -30,7 +41,7 @@ object UaePhone {
 ) {
     fun validate() {
         MenuValidation.label(name)
-        UaePhone.normalize(phone, mobileOnly = true)
+        InternationalPhone.normalize(phone)
         require(photo.isEmpty() || photo.length <= 180_000 && (
             photo.matches(Regex("data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+")) ||
             photo.length <= 2000 && photo.startsWith("https://") && photo.none { it.isWhitespace() }
@@ -40,7 +51,7 @@ object UaePhone {
         require(favoriteOrders.size <= 30 && favoriteOrders.map { it.id }.distinct().size == favoriteOrders.size) { "Save up to 30 distinct favorite orders." }
         favoriteOrders.forEach(FavoriteOrder::validate)
     }
-    fun normalized(): FoodProfile = copy(phone = UaePhone.normalize(phone, mobileOnly = true), payment = payment?.normalized())
+    fun normalized(): FoodProfile = copy(phone = InternationalPhone.normalize(phone), payment = payment?.normalized())
 }
 @Serializable data class FavoriteOrderLine(
     val itemId: String = "", val quantity: Int, val variantId: String? = null,

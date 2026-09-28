@@ -186,6 +186,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         AccountRestrictions.requireRoomAllowed(db, uid, "", clock())
         val request = requireNotNull(c.paymentRoom) { "Enter the payment room details." }
         request.details.validate()
+        Money.precision(request.currency)
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
         require(settings.roomCreationEnabled && db.activeRoomCount() < 100) { "New room creation is currently unavailable." }
         MenuValidation.label(c.text)
@@ -198,12 +199,14 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             share.userId to accounts.paymentRoomProfile(share.userId).also { require(share.userId == uid || it.discoverable) { "This person is not available in the users list." } }
         }
         require(c.amount > 0 && request.shares.sumOf { it.amount } == c.amount) { "The shares must add up to the receipt total." }
-        val account = requireNotNull(c.account) { "Add your receiving details in your profile first." }.normalized().also { it.validate() }
+        val account = requireNotNull(c.account) { "Add your receiving details in your profile first." }.let {
+            if (it.method == PaymentMethod.AANI) it else it.copy(currency = request.currency)
+        }.normalized().also { it.validate(); require(it.currency == request.currency) { "Receiving account currency must match the room currency." } }
         val ids = profiles.keys.associateWith { uuid() }
         val ownerId = ids.getValue(uid)
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
-        val room = Room(uuid(), code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, openOrdering = true),
+        val room = Room(uuid(), code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, currency = request.currency, openOrdering = true),
             phase = RoomPhase.FULFILLED, payerId = ownerId, account = account, restaurantPaid = true,
             restaurantReference = "Already ordered and paid by ${profiles.getValue(uid).name}",
             members = profiles.map { (userId, profile) -> Member(ids.getValue(userId), profile.name, approved = true, ready = true) },

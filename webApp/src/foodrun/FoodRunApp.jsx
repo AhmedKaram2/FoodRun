@@ -7,7 +7,7 @@ import RestaurantPollPrompt from './RestaurantPollPrompt.jsx';
 import OrderPricingPanel from './OrderPricingPanel.jsx';
 import ReorderReview from './ReorderReview.jsx';
 import { lastRestaurantOrder, nextRestaurantHistoryRoom } from './reorder.js';
-import { paymentDraft, paymentAccount, uaePhone } from './paymentDetails.js';
+import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
 import PaymentFields from './PaymentFields.jsx';
 import { groupedOrderLines, restaurantOrderText } from './restaurantOrderText.js';
 import BlockedNotice from './BlockedNotice.jsx';
@@ -30,7 +30,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import { QRCodeSVG } from 'qrcode.react';
-import { amount, hubAddress, money, photoData } from './client';
+import { amount, hubAddress, money, photoData, CURRENCIES, currencyDigits, minorInput } from './client';
 import { useFoodRun } from './useFoodRun';
 import { polarPoint, spinRotation, WHEEL_PALETTE, wheelLabel, wheelSlice, wheelSlicePath } from './wheel';
 import builtInRestaurants from './builtInRestaurants.json';
@@ -84,10 +84,6 @@ function LanguageToggle() {
 
 function uid() { return crypto.randomUUID(); }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
-function minorInput(value = 0, currency = 'AED') {
-  const digits = ['KWD', 'BHD', 'OMR'].includes(currency) ? 3 : currency === 'JPY' ? 0 : 2;
-  return (value / 10 ** digits).toFixed(digits);
-}
 function blankRestaurant() {
   return {
     id: uid(), name: '', branchName: '', currency: 'AED',
@@ -97,10 +93,20 @@ function blankRestaurant() {
     emirate: '', emirateAr: '', area: '', areaAr: '', cuisine: '', cuisineAr: '', mealTypes: [], googleRating: null, googleRatingCount: null, googleRatingVerifiedOn: '',
   };
 }
+function changeRestaurantCurrency(restaurant, currency) {
+  const scale = value => Math.round((value || 0) * 10 ** currencyDigits(currency) / 10 ** currencyDigits(restaurant.currency));
+  return { ...restaurant, currency,
+    pricing: { ...restaurant.pricing, defaultDeliveryFeeMinor: scale(restaurant.pricing.defaultDeliveryFeeMinor), defaultServiceFeeMinor: scale(restaurant.pricing.defaultServiceFeeMinor), minimumOrderMinor: scale(restaurant.pricing.minimumOrderMinor) },
+    menu: { ...restaurant.menu,
+      items: restaurant.menu.items.map(item => ({ ...item, basePriceMinor: scale(item.basePriceMinor), variants: item.variants.map(variant => ({ ...variant, priceMinor: scale(variant.priceMinor) })) })),
+      optionGroups: restaurant.menu.optionGroups.map(group => ({ ...group, options: group.options.map(option => ({ ...option, priceDeltaMinor: scale(option.priceDeltaMinor) })) })),
+    },
+  };
+}
 function normalizeRestaurant(value) {
   if (!value || typeof value !== 'object' || !String(value.id || '').trim() || !String(value.name || '').trim()) throw Error(t("Restaurant ID and name are required."));
   const currency = String(value.currency || 'AED').toUpperCase();
-  if (currency !== 'AED') throw Error(t("Restaurant menus and rooms use AED (Dirham)."));
+  if (!CURRENCIES.includes(currency)) throw Error(t("Choose a supported currency."));
   const menu = value.menu || {};
   const categories = Array.isArray(menu.categories) ? menu.categories : [];
   const optionGroups = Array.isArray(menu.optionGroups) ? menu.optionGroups : [];
@@ -114,8 +120,8 @@ function normalizeRestaurant(value) {
     mealTypes: [...new Set((Array.isArray(value.mealTypes) ? value.mealTypes : []).filter(meal => ['breakfast','lunch','dinner'].includes(meal)))],
     googleRating: value.googleRating == null ? null : Number(value.googleRating), googleRatingCount: value.googleRatingCount == null ? null : Number(value.googleRatingCount), googleRatingVerifiedOn: String(value.googleRatingVerifiedOn || ''),
     contact: { address: null, ...(value.contact || {}),
-      phoneE164: value.contact?.phoneE164 ? uaePhone(value.contact.phoneE164) : null,
-      whatsappE164: value.contact?.whatsappE164 ? uaePhone(value.contact.whatsappE164, true) : null },
+      phoneE164: value.contact?.phoneE164 ? internationalPhone(value.contact.phoneE164) : null,
+      whatsappE164: value.contact?.whatsappE164 ? internationalPhone(value.contact.whatsappE164) : null },
     pricing: { ...defaults.pricing, ...(value.pricing || {}) },
     menu: { categories, optionGroups: optionGroups.map(group => ({ minSelections: 0, maxSelections: 1, ...group })), items: items.map(item => ({ variants: [], optionGroupIds: [], available: true, ...item })) },
     openOrdering: Boolean(value.openOrdering || items.length === 0),
@@ -415,13 +421,14 @@ function favoriteFromPrevious(choice) {
 
 function UserDashboard({ data, openRoom, compact = false }) {
   const dashboard = userDashboard(data);
+  const totalsByCurrency = entries => Object.entries(entries.reduce((totals, entry) => ({ ...totals, [entry.currency]: (totals[entry.currency] || 0) + entry.amount }), {}));
   return <section className={`user-dashboard ${compact ? 'compact' : ''}`}>
     <div className="section-title"><div><p className="eyebrow">{t("MY MONEY & ORDERS")}</p><h2>{t("Wallet")}</h2></div><span>{dashboard.entries.length}</span></div>
     <div className="wallet-directions">{[
       { key: 'pay', title: t("I need to pay"), total: dashboard.toPay, entries: dashboard.payEntries, empty: tx('You have no payments due.', 'لا توجد مبالغ مستحقة عليك.') },
       { key: 'receive', title: t("I need to receive"), total: dashboard.toReceive, entries: dashboard.receiveEntries, empty: tx('No one owes you a payment.', 'لا توجد مبالغ مستحقة لك.') },
     ].map(section => <section className={`card wallet-direction ${section.key}`} key={section.key} aria-label={section.title}>
-      <div className="wallet-direction-heading"><h3>{section.title}</h3><strong>{money(section.total, 'AED')}</strong></div>
+      <div className="wallet-direction-heading"><h3>{section.title}</h3><span>{totalsByCurrency(section.entries).map(([currency, total]) => <strong key={currency}>{money(total, currency)}</strong>)}</span></div>
       {!section.entries.length && <p className="muted">{section.empty}</p>}
       {section.entries.map(entry => <article className="wallet-person" key={`${entry.roomId}:${entry.personId}`}>
         <div className="wallet-person-heading"><span className="wallet-avatar" aria-hidden="true">{entry.person.slice(0, 1)}</span><h4>{entry.person}</h4><strong>{money(entry.amount, entry.currency)}</strong></div>
@@ -467,7 +474,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
     try {
       const payment = paymentAccount(form, profile?.payment, form.name);
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
-        userId: '', name: form.name.trim(), phone: uaePhone(form.phone, true), photo: form.photo,
+        userId: '', name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
         payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
       if (reply) { setDirty(false); setMessage(t("Profile and payment details saved.")); }
@@ -501,7 +508,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
       <section className="card stack">
         <h3>{t("About you")}</h3>
         <label>{t("Profile name")}<input value={form.name} onChange={e => set('name', e.target.value)} required maxLength="160" /></label>
-        <label>{t("UAE mobile number")}<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="050 123 4567" /></label>
+        <label>{t("Phone with country code")}<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+20 10 1234 5678" /></label>
         <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
       <section className="card stack payment-card">
@@ -840,7 +847,7 @@ function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArr
   const chooseCopyLanguage = value => { setCopyLanguage(value); setCopied(false); localStorage.setItem('foodrun-copy-language-v1', value); };
   const copy = async () => { await copyText(orderText); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const contact = room.restaurant.contact.phoneE164 || room.restaurant.contact.whatsappE164;
-  const whatsAppNumber = (room.restaurant.contact.whatsappE164 || (/^\+9715\d{8}$/.test(contact || '') ? contact : '') || '').replace(/\D/g, '');
+  const whatsAppNumber = (room.restaurant.contact.whatsappE164 || contact || '').replace(/\D/g, '');
   const whatsApp = `https://wa.me/${whatsAppNumber}?text=${encodeURIComponent(orderText)}`;
   const requirement = blockerRequirement(blocker);
   const restaurantTotal = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
@@ -893,7 +900,7 @@ function PayerAccountEditor({ room, data }) {
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      const account = paymentAccount(form, profile.payment, profile.name, true);
+      const account = paymentAccount(form, profile.payment, profile.name, true, room.restaurant.currency);
       const saved = await data.send('SHARE_ACCOUNT', { account }, room.id);
       if (saved) { setDirty(false); setMessage(t('Payment details updated in your profile and active rooms.')); }
       else setMessage(t('Payment details were not saved. Please try again.'));
@@ -1013,7 +1020,7 @@ function RoomManagement({ room, data, owner, payer }) {
       const taxRateBasisPoints = tax === 'added' ? amount(rate, 'AED') : null;
       if (taxRateBasisPoints > 10000) throw Error(tx('Tax must be between 0 and 100%.', 'يجب أن تكون الضريبة بين ٠ و١٠٠٪.'));
       return run('UPDATE_RESTAURANT', { restaurant: { ...room.restaurant,
-        contact: { ...room.restaurant.contact, phoneE164: uaePhone(contact) },
+        contact: { ...room.restaurant.contact, phoneE164: internationalPhone(contact) },
         pricing: { ...room.restaurant.pricing, taxTreatment: tax, taxRateBasisPoints, minimumOrderMinor: amount(minimum, room.restaurant.currency) },
       } });
     } catch (error) { setMessage(error.message); }
@@ -1028,7 +1035,7 @@ function RoomManagement({ room, data, owner, payer }) {
         <label>{tx('Restaurant phone', 'رقم المطعم')}<input type="tel" value={contact} onChange={event => setContact(event.target.value)} /></label>
         <label>{tx('Tax treatment', 'الضريبة')}<select value={tax} onChange={event => setTax(event.target.value)}><option value="included">{tx('Included in prices', 'مشمولة في الأسعار')}</option><option value="added">{tx('Added to bill', 'تضاف إلى الفاتورة')}</option><option value="unspecified">{tx('Confirm later', 'التأكيد لاحقاً')}</option></select></label>
         {tax === 'added' && <label>{tx('Tax rate %', 'نسبة الضريبة ٪')}<input inputMode="decimal" value={rate} onChange={event => setRate(event.target.value)} /></label>}
-        <label>{tx('Minimum order (AED)', 'الحد الأدنى للطلب (درهم)')}<input inputMode="decimal" value={minimum} onChange={event => setMinimum(event.target.value)} /></label>
+        <label>{tx(`Minimum order (${room.restaurant.currency})`, `الحد الأدنى للطلب (${room.restaurant.currency})`)}<input inputMode="decimal" value={minimum} onChange={event => setMinimum(event.target.value)} /></label>
         <button className="secondary" onClick={saveRestaurant}>{tx('Update restaurant details', 'تحديث بيانات المطعم')}</button>
       </>}
       {owner && room.phase === 'LOBBY' && room.members.filter(member => member.approved && !member.removed && !member.guest && member.id !== room.ownerId).map(member => <div className="saved-order-row" key={member.id}><b>{member.name}</b><span className="saved-order-buttons"><button className="secondary" onClick={() => run('HANDOVER', { memberId: member.id })}>{tx('Make organizer', 'تعيين منظماً')}</button><button className="link danger" onClick={() => run('REMOVE', { memberId: member.id })}>{tx('Remove', 'إزالة')}</button></span></div>)}
@@ -1229,4 +1236,4 @@ export default function FoodRunApp() {
   return <Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>{new URLSearchParams(window.location.search).has('nativeSignIn') ? <NativeGoogleSignIn /> : <FoodRunClient />}</Suspense>;
 }
 
-export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };
+export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };

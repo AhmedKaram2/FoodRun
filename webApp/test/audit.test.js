@@ -2,9 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from '../src/foodrun/orderHistory.js';
 import { mergeRoomReply } from '../src/foodrun/roomState.js';
-import { request, normalizeReply } from '../src/foodrun/client.js';
+import { request, normalizeReply, amount, money } from '../src/foodrun/client.js';
 const line = { itemId: 'meal', quantity: 2, optionIds: ['a', 'b'], notes: 'بدون بصل' };
 const receipt = { memberId: 'me', lines: [line], balance: 1200, currency: 'AED', name: 'Me' };
+test('world currencies use their correct minor-unit precision', () => {
+  assert.equal(amount('12.34', 'EGP'), 1234);
+  assert.equal(amount('12.345', 'JOD'), 12345);
+  assert.equal(money(12, 'KRW'), 'KRW 12');
+  assert.throws(() => amount('1.2', 'KRW'));
+});
 test('restaurant polls contain only the explicitly chosen restaurants', async () => {
   const { selectedPollRestaurants } = await import('../src/foodrun/restaurantPoll.js');
   const restaurants = Array.from({ length: 15 }, (_, index) => ({ id: String(index), currency: 'AED' }));
@@ -272,13 +278,16 @@ test('optional delivery address retains automatic delivery mode without requirin
 });
 
 test('bank IBAN and Aani phone drafts are separate and IBAN is validated', async () => {
-  const { paymentDraft, uaeIban } = await import('../src/foodrun/paymentDetails.js');
+  const { paymentDraft, uaeIban, internationalPhone } = await import('../src/foodrun/paymentDetails.js');
   const bank = paymentDraft({ method: 'BANK', identifier: 'AE070331234567890123456', bank: 'Bank' });
   assert.equal(bank.aaniPhone, ''); assert.equal(bank.iban, 'AE070331234567890123456');
   const aani = paymentDraft({ method: 'AANI', identifier: '+971501234567', bank: 'Aani' });
   assert.equal(aani.iban, ''); assert.equal(aani.bank, ''); assert.equal(aani.aaniPhone, '+971501234567');
   assert.equal(uaeIban('ae07 0331 2345 6789 0123 456'), bank.iban);
-  for (const invalid of ['0501234567', '+971501234567', 'AE080331234567890123456', 'GB82WEST12345698765432']) assert.throws(() => uaeIban(invalid));
+  assert.equal(uaeIban('GB82 WEST 1234 5698 7654 32'), 'GB82WEST12345698765432');
+  assert.equal(internationalPhone('+20 10 1234 5678'), '+201012345678');
+  assert.equal(internationalPhone('0044 20 7946 0018'), '+442079460018');
+  for (const invalid of ['0501234567', '+971501234567', 'AE080331234567890123456', 'GB83WEST12345698765432']) assert.throws(() => uaeIban(invalid));
 });
 
 test('payment history retains repeated orders separately and shares the current wallet source', () => {

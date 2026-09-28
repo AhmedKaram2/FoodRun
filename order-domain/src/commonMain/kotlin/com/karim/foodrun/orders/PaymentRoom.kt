@@ -13,4 +13,4 @@ import kotlinx.serialization.Serializable
     }
 }
 @Serializable data class PaymentShare(val userId: String, val description: String, val amount: Long, val received: Long = 0)
-@Serializable data class PaymentRoomRequest(val details: PaymentRoomDetails, val shares: List<PaymentShare>)
+@Serializable data class PaymentRoomRequest(val details: PaymentRoomDetails, val shares: List<PaymentShare>, val currency: String = "AED")

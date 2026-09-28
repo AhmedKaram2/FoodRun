@@ -13,6 +13,13 @@ test('payment room carries final shares, prior receipts and the existing receivi
   assert.deepEqual(result.paymentRoom.shares[1], { userId: 'b', amount: 2001, received: 500, description: 'Meal' });
   assert.equal(result.account, draft.account);
 });
+test('payment rooms use the selected currency and adapt bank receiving details', () => {
+  const result = paymentRoomPayload({ ...draft, currency: 'EGP', account: { holder: 'Payer', method: 'BANK', currency: 'AED' } });
+  assert.equal(result.paymentRoom.currency, 'EGP');
+  assert.equal(result.account.currency, 'EGP');
+  assert.equal(result.amount, 3001);
+  assert.throws(() => paymentRoomPayload({ ...draft, currency: 'EGP', account: { holder: 'Payer', method: 'AANI', currency: 'AED' } }));
+});
 test('receipt mismatch, duplicate people, overpayment and missing account fail before sending', () => {
   assert.throws(() => paymentRoomPayload({ ...draft, total: '30.00' }));
   assert.throws(() => paymentRoomPayload({ ...draft, people: [draft.people[0], draft.people[0]] }));

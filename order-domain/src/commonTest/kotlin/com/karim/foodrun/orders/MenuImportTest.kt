@@ -41,6 +41,7 @@ class MenuImportTest {
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(contact = RestaurantContact("-----"))) }
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(contact = RestaurantContact(whatsappE164 = "+ (12)"))) }
         MenuValidation.validate(restaurant.copy(contact = RestaurantContact("+971 (50) 123-4567")))
+        MenuValidation.validate(restaurant.copy(currency = "EGP", contact = RestaurantContact("+20 10 1234 5678")))
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(menu = restaurant.menu.copy(items = restaurant.menu.items.map { it.copy(basePriceMinor = -1) }))) }
         assertFailsWith<IllegalArgumentException> { MenuValidation.validate(restaurant.copy(menu = restaurant.menu.copy(optionGroups = listOf(OptionGroup("g", "Extras", minSelections = 2, options = listOf(MenuOption("o", "Extra", 0))))))) }
     }

@@ -134,6 +134,21 @@ class GroupSettlementPresentationTest {
         assertFalse(paid.fields.any { it.key == GroupFieldKey.AMOUNT }, "A payer with no refund must not see a payment amount field after paying.")
     }
 
+    @Test fun selectedPayersRestaurantActionsStayTogetherAcrossOrderStages() {
+        val ready = controller(confirmed(room())).state
+        val readyActions = ready.cards.single { it.id == "contact" }.buttons.map { it.action }
+        assertTrue(readyActions.containsAll(listOf(GroupAction.SHARE_ORDER_WHATSAPP, GroupAction.SHARE_RESTAURANT_ORDER, GroupAction.PLACE)))
+        assertFalse(ready.buttons.any { it.action == GroupAction.PLACE })
+
+        val placed = controller(confirmed(room()).copy(phase = RoomPhase.PLACED)).state
+        assertTrue(placed.cards.single { it.id == "contact" }.buttons.any { it.action == GroupAction.PAY_RESTAURANT })
+        assertFalse(placed.buttons.any { it.action == GroupAction.PAY_RESTAURANT })
+
+        val paid = controller(confirmed(room()).copy(phase = RoomPhase.PLACED, restaurantPaid = true)).state
+        assertTrue(paid.cards.single { it.id == "contact" }.buttons.any { it.action == GroupAction.FULFILL })
+        assertFalse(paid.buttons.any { it.action == GroupAction.FULFILL })
+    }
+
     @Test fun pendingTransferWaitsForPayerAndCannotBeDeclaredAgain() {
         val r = confirmed(room()).copy(phase = RoomPhase.PLACED, restaurantPaid = true, transfers = listOf(transfer()))
         val member = GroupSettlementPresentation(controller(r, "member")).settlement()

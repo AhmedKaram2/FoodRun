@@ -347,6 +347,7 @@ internal class GroupPresentation(private val c: GroupController) {
         title = r.name; subtitle = "${tr("Order", "الطلب")} #${r.orderNumber} · ${stage(r.phase)} · ${r.restaurant.localizedName(language)}"
         val me = r.members.singleOrNull { it.id == c.me() } ?: return
         val owner = c.me() == r.ownerId; val payer = c.me() == r.payerId
+        val restaurantStageActions = mutableListOf<GroupButton>()
         if(payer) fields += GroupField(GroupFieldKey.ORDER_COPY_LANGUAGE, tr("Order list language", "لغة قائمة الطلب"), copyLanguage,
             choices = listOf(GroupChoice("en", "English"), GroupChoice("ar", "العربية")))
         r.lastChosenMemberId?.let { previous ->
@@ -437,12 +438,19 @@ internal class GroupPresentation(private val c: GroupController) {
                     else -> "Waiting for ${r.members.single { it.id == r.payerId }.name} to send the order to the restaurant."
                 }
                 card("order-next-step", tr("Next step", "الخطوة التالية"), nextStep)
-                if(payer) append(GroupSettlementPresentation(c).review())
+                if(payer) {
+                    val review = GroupSettlementPresentation(c).review()
+                    restaurantStageActions += review.buttons.filter { it.action == GroupAction.PLACE }
+                    append(review.copy(buttons = review.buttons.filterNot { it.action == GroupAction.PLACE }))
+                }
                 if(owner || payer) { feeFields(); button("Update fees and reopen", GroupAction.SET_FEES); button("Reopen ordering", GroupAction.REOPEN) }
                 if(owner) button("Cancel today's order", GroupAction.CANCEL)
             }
             RoomPhase.REVIEW -> {
-                accountCard(); if(owner || payer) itemPricingCards(r); append(GroupSettlementPresentation(c).review())
+                accountCard(); if(owner || payer) itemPricingCards(r)
+                val review = GroupSettlementPresentation(c).review()
+                if(payer) restaurantStageActions += review.buttons.filter { it.action == GroupAction.PLACE }
+                append(review.copy(buttons = review.buttons.filterNot { it.action == GroupAction.PLACE }))
                 button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
@@ -451,7 +459,10 @@ internal class GroupPresentation(private val c: GroupController) {
                     button(tr("Edit receiving details", "تعديل بيانات الاستلام"), GroupAction.OPEN_ACCOUNT)
                 }
                 if(owner || payer) button(tr("Edit item prices", "تعديل أسعار الأصناف"), GroupAction.OPEN_ORDER_PRICES)
-                accountCard(); append(GroupSettlementPresentation(c).settlement())
+                accountCard()
+                val settlement = GroupSettlementPresentation(c).settlement()
+                if(payer) restaurantStageActions += settlement.buttons.filter { it.action in listOf(GroupAction.PAY_RESTAURANT, GroupAction.FULFILL) }
+                append(settlement.copy(buttons = settlement.buttons.filterNot { it.action in listOf(GroupAction.PAY_RESTAURANT, GroupAction.FULFILL) }))
                 button("Order details", GroupAction.OPEN_RECEIPTS)
                 transferCards()
             }
@@ -461,7 +472,7 @@ internal class GroupPresentation(private val c: GroupController) {
         card("contact", r.restaurant.localizedName(language), "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = (if(payer) listOf(
             GroupButton(tr("Share order via WhatsApp", "مشاركة الطلب عبر واتساب"), GroupAction.SHARE_ORDER_WHATSAPP, primary = r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)),
             GroupButton(tr("Copy restaurant-ready list", "نسخ قائمة الطلب للمطعم"), GroupAction.SHARE_RESTAURANT_ORDER),
-        ) else emptyList()) + listOf(
+        ) + restaurantStageActions else emptyList()) + listOf(
             GroupButton(ui("Copy phone number"), GroupAction.COPY_RESTAURANT_PHONE, enabled = contact.isNotBlank()),
             GroupButton(tr("Call restaurant", "الاتصال بالمطعم"), GroupAction.CALL_RESTAURANT, enabled = contact.isNotBlank()),
         ))

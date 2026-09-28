@@ -289,6 +289,12 @@ export async function runOrderFlowAudit() {
   assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '30 minutes', 'Direct placement missing');
   assert(!button('Confirm my total and recipient'), 'Redundant total confirmation remains');
   assert(!measureAudit().overflow, 'Restaurant order overflows');
+  await mountAudit('room', 'PLACED', { room: { ...room, restaurantPaid: false }, contact: { whatsappE164: '+971501234567' }, receipts: [receipt('me'), receipt('other')] });
+  const restaurantActions = host.querySelector('#restaurant-actions');
+  assert(restaurantActions && restaurantActions.textContent.includes(t('Share via WhatsApp')) && restaurantActions.textContent.includes(t('Mark restaurant paid')), 'Selected payer restaurant actions are separated');
+  assert(!host.querySelector('#room-payment').textContent.includes(t('Mark restaurant paid')), 'Restaurant payment action is duplicated in the wallet');
+  await mountAudit('room', 'PLACED', { room: { ...room, restaurantPaid: true }, contact: { whatsappE164: '+971501234567' }, receipts: [receipt('me'), receipt('other')] });
+  assert(host.querySelector('#restaurant-actions').textContent.includes(t('Food collected / delivered')), 'Next restaurant action is not kept in the same card');
   await mountAudit('home', 'PLACED', { room, memberId: 'other', receipts: [receipt('other')] });
   assert(host.textContent.includes('123456789012'), 'Wallet payment details are hidden');
   button('Mark paid').closest('form').requestSubmit(); await pause();
@@ -300,7 +306,7 @@ export async function runOrderFlowAudit() {
   assert(commands.at(-1).kind === 'CONFIRM_TRANSFER' && commands.at(-1).fields.transferId === 'claim', 'Top confirmation action failed');
   assert(host.querySelector('.payment-breakdown') && !host.querySelector('.payment-breakdown').open, 'Details are not optional');
   assert(host.querySelector('.payment-priority').textContent.includes('123456789012'), 'Chosen person payment details hidden');
-  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'compact restaurant message', 'direct placement', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
+  return { passed: ['known person without wheel', 'restaurant phone and copy', 'correct WhatsApp recipient', 'optional ETA label', 'blank and whitespace ETA submission', 'compact restaurant message', 'direct placement', 'grouped payer restaurant actions', 'wallet mark paid', 'top payment confirmation', 'visible receiving details', 'optional breakdown'], ...measureAudit() };
 }
 
 export async function runCopyLanguageAudit() {

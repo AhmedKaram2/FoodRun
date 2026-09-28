@@ -139,7 +139,7 @@ class GroupFlowIntegrationTest {
             assertFalse(c.state.buttons.any { it.action == GroupAction.SUBMIT_CART })
         }
         assertNull(host.state.primaryAction, "The selected person handles sending the order")
-        assertTrue(payer.state.buttons.single { it.action == GroupAction.PLACE }.enabled)
+        assertTrue(payer.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
         payer.dispatch(GroupAction.REVIEW); bus.drain(); bus.sync()
         assertEquals(RoomPhase.REVIEW, payer.room().phase)
         payer.dispatch(GroupAction.CONFIRM_QUOTE); bus.drain(); bus.sync()
@@ -201,13 +201,12 @@ class GroupFlowIntegrationTest {
         val (host, _) = bus.phone(); val (member, _) = bus.phone()
         create(host, bus); join(member, "Hassan", host, bus); review(host, member, bus)
         host.update(GroupFieldKey.REASON, "Change food"); host.dispatch(GroupAction.REOPEN); bus.drain(); bus.sync()
-        assertEquals(GroupAction.PLACE, host.state.primaryAction?.action)
+        assertTrue(host.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
         host.dispatch(GroupAction.OPEN_ITEM, "water"); host.dispatch(GroupAction.ADD_CART_ITEM); bus.drain(); bus.sync()
         assertEquals(GroupAction.SUBMIT_CART, host.state.primaryAction?.action)
-        assertFalse(host.state.buttons.single { it.action == GroupAction.PLACE }.enabled)
+        assertFalse(host.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
         host.dispatch(GroupAction.SUBMIT_CART); bus.drain(); bus.sync()
-        assertEquals(GroupAction.PLACE, host.state.primaryAction?.action)
-        assertTrue(host.state.primaryAction!!.enabled)
+        assertTrue(host.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
     }
 
     @Test fun noFoodOrdersShowAnExplanationInsteadOfAnEnabledReviewAction() = Bus().use { bus ->
@@ -219,7 +218,7 @@ class GroupFlowIntegrationTest {
         host.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "AE070331234567890123456")
         host.dispatch(GroupAction.SHARE_ACCOUNT); bus.drain(); bus.sync()
         listOf(host, member).forEach { it.dispatch(GroupAction.SUBMIT_CART); bus.drain(); bus.sync() }
-        assertFalse(host.state.primaryAction!!.enabled)
+        assertFalse(host.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
         assertTrue(host.state.cards.single { it.id == "order-next-step" }.detail.contains("No food was ordered"))
     }
 
@@ -233,7 +232,7 @@ class GroupFlowIntegrationTest {
         listOf(host, payer).forEach { it.dispatch(GroupAction.SUBMIT_CART); bus.drain(); bus.sync() }
         assertTrue(host.reply!!.receipts.single().lines.isEmpty(), "Other members' food stays private")
         assertNull(host.state.primaryAction)
-        assertTrue(payer.state.primaryAction!!.enabled, "The selected person can send the complete food order")
+        assertTrue(payer.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled, "The selected person can send the complete food order")
         payer.update(GroupFieldKey.REFERENCE, "Arrives in 30 minutes")
         payer.dispatch(GroupAction.PLACE); bus.drain(); bus.sync()
         assertEquals(RoomPhase.PLACED, payer.room().phase)
@@ -658,8 +657,7 @@ class GroupFlowIntegrationTest {
         assertTrue(account.detail.contains("AE070331234567890123456")); assertTrue(account.title.contains("Karim"))
         assertTrue(member.state.buttons.none { it.action == GroupAction.CONFIRM_QUOTE })
         assertTrue(host.state.cards.single { it.id == "review-total" }.detail.contains("AED 80.00"))
-        assertEquals(GroupAction.PLACE, host.state.primaryAction?.action)
-        assertTrue(host.state.primaryAction!!.enabled)
+        assertTrue(host.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled)
     }
     @Test fun aRefundRecipientCanRejectAFalseClaimFromTheReceiptsScreen(): Unit = Bus().use { bus ->
         val (host, _) = bus.phone(); val (member, _) = bus.phone()

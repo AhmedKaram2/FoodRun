@@ -41,7 +41,8 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                         else -> tr("Still owes ${money(receipt.balance)}", "المتبقي عليه ${money(receipt.balance)}")
                     }
                     GroupCard("wallet:${receipt.memberId}", receipt.name,
-                        "Order ${money(receipt.total)} · confirmed ${money(receipt.paid)}${claim?.let { "\n${money(it.amount)} awaiting confirmation" } ?: ""}", status)
+                        "Order ${money(receipt.total)} · confirmed ${money(receipt.paid)}${claim?.let { "\n${money(it.amount)} awaiting confirmation" } ?: ""}", status,
+                        buttons = c.paymentReminderButtons(r, me, receipt))
                 }
         }
         val own = receipts.firstOrNull { it.memberId == me } ?: return emptyList()

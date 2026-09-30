@@ -5,9 +5,13 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 
-class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null) {
+class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null, emailEnabled: Boolean = false) {
     private val accounts = AccountService(db, identityProvider, this, clock)
-    private val notifications = NotificationService(db, clock)
+    private val emails = EmailService(db, clock, emailEnabled)
+    private val notifications = NotificationService(db, clock, emails)
+    internal fun emailInvitation(invitation: FoodInvitation) = emails.invitation(invitation)
+    @Synchronized internal fun nextEmail(dailyLimit: Int): EmailDelivery? = db.transaction { emails.pending(dailyLimit) }
+    @Synchronized internal fun finishEmail(delivery: EmailDelivery, result: EmailResult) = db.transaction { emails.delivered(delivery, result) }
     @Synchronized fun notificationRequest(request: NotificationRequest, pushAvailable: Boolean): NotificationReply =
         db.transaction { notifications.request(accounts.userId(request.identityToken), request, pushAvailable) }
     @Synchronized internal fun nextPush(): PushDelivery? = db.transaction { notifications.pending() }
@@ -96,6 +100,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                     CommandKind.CREATE -> create(c)
                     CommandKind.JOIN -> join(c)
                     CommandKind.REQUEST_BLOCK -> requestBlock(c)
+                    CommandKind.REMIND_PAYMENT -> {
+                        val actor = authenticate(c.roomId, c.token)
+                        val room = requireNotNull(db.room(c.roomId))
+                        emails.remind(room, actor, c)
+                        projection(room, actor).copy(code = "REMINDER_QUEUED")
+                    }
                     else -> {
                         val actor = authenticate(c.roomId, c.token)
                         presence[actor] = clock()

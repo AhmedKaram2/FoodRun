@@ -54,7 +54,7 @@ class FirebaseIdentity(private val apiKey: String, private val project: String) 
         val r = auth(if (register) "signUp" else "signInWithPassword", buildJsonObject {
             put("email", email); put("password", password); put("returnSecureToken", true)
         })
-        return CloudIdentity(r.string("localId"), r.string("idToken"), r.string("refreshToken"), r.string("displayName"))
+        return exchange(r.string("idToken")).copy(refreshToken = r.string("refreshToken"))
     }
     override fun exchange(idToken: String): CloudIdentity {
         require(idToken.length in 100..16000) { "Sign in with Firebase first." }

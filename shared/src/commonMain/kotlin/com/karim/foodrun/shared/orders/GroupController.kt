@@ -12,6 +12,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
     internal var error = ""
+    internal val paymentReminderTimes = mutableMapOf<String, Long>()
     internal var accessBlock: AccessBlock? = null
     internal var blockClockOffset = 0L
     internal var previousOrderLimit = 10
@@ -290,7 +291,7 @@ class GroupController(val platform: GroupPlatform) {
                 platform.openLink("https://wa.me/$number?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
             }
             GroupAction.COPY_RESTAURANT_PHONE -> platform.copyToClipboard(room().restaurant.contact.phoneE164 ?: room().restaurant.contact.whatsappE164 ?: error("Restaurant phone is unavailable."))
-            GroupAction.WALLET_PAY, GroupAction.WALLET_REFUND, GroupAction.WALLET_CONFIRM, GroupAction.WALLET_REJECT, GroupAction.WALLET_COPY -> walletAction(action, value)
+            GroupAction.WALLET_PAY, GroupAction.WALLET_REFUND, GroupAction.WALLET_CONFIRM, GroupAction.WALLET_REJECT, GroupAction.WALLET_COPY, GroupAction.WALLET_REMIND_PAYMENT -> walletAction(action, value)
             GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share(roomInvitation(room(), roomInviteLink(s.hub, room().code), library.language), "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
             GroupAction.COPY_PAYMENT_DETAILS -> platform.copyToClipboard(requireNotNull(room().account) { "Payment details are not shared yet." }.identifier)
@@ -428,6 +429,7 @@ class GroupController(val platform: GroupPlatform) {
         val pending = room.transfers.firstOrNull { it.memberId == memberId && it.status == TransferStatus.DECLARED }
         val payer = room.payerId == saved.memberId
         val kind = when (action) {
+            GroupAction.WALLET_REMIND_PAYMENT -> { require(PaymentReminderRules.eligible(room, saved.memberId, receipt)); CommandKind.REMIND_PAYMENT }
             GroupAction.WALLET_PAY -> { require(!payer && memberId == saved.memberId && receipt.balance > 0 && pending == null && room.restaurantPaid); CommandKind.DECLARE_TRANSFER }
             GroupAction.WALLET_REFUND -> { require(payer && receipt.balance < 0 && pending == null && room.restaurantPaid); CommandKind.DECLARE_REFUND }
             GroupAction.WALLET_CONFIRM, GroupAction.WALLET_REJECT -> {
@@ -472,6 +474,9 @@ class GroupController(val platform: GroupPlatform) {
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = if(c.kind == CommandKind.CREATE_PAYMENT_ROOM) library.displayName else c.name)
                     }
                     accept(next, sentAt); replaceLibrary(library.copy(pending = null, pendingHub = null))
+                    if (c.kind == CommandKind.REMIND_PAYMENT && next.code == "REMINDER_QUEUED") {
+                        paymentReminderTimes["${c.roomId}:${c.expectedOrderNumber}:${c.memberId}"] = platform.now()
+                    }
                     if (c.kind == CommandKind.UPDATE_RESTAURANT && editingRoomOrder != null) {
                         formDrafts.finishRestaurant(draft); editingRoomOrder = null
                     }

@@ -650,6 +650,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 val target = "${row.room.id}|${receipt.memberId}"
                 val payer = row.room.payerId == row.session.memberId
                 val actions = mutableListOf<GroupButton>()
+                actions += c.paymentReminderButtons(row.room, row.session.memberId, receipt, wallet = true)
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
                     actions += GroupButton(ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)

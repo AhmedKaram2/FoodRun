@@ -128,6 +128,10 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.FULFILL -> command(CommandKind.FULFILL)
         GroupAction.DECLARE_TRANSFER -> command(CommandKind.DECLARE_TRANSFER, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency), text = text(GroupFieldKey.REFERENCE))
         GroupAction.CONFIRM_TRANSFER -> command(CommandKind.CONFIRM_TRANSFER, transferId = value)
+        GroupAction.REMIND_PAYMENT -> {
+            require(PaymentReminderRules.eligible(r, me(), reply!!.receipts.single { it.memberId == value }))
+            command(CommandKind.REMIND_PAYMENT, memberId = value)
+        }
         GroupAction.REJECT_TRANSFER -> command(CommandKind.REJECT_TRANSFER, transferId = value, text = reason)
         GroupAction.DECLARE_REFUND -> command(CommandKind.DECLARE_REFUND, memberId = value, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency), text = text(GroupFieldKey.REFERENCE))
         GroupAction.CONFIRM_REFUND -> command(CommandKind.CONFIRM_REFUND, transferId = value)

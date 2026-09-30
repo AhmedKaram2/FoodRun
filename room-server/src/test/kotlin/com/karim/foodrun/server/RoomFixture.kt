@@ -6,12 +6,12 @@ import java.security.SecureRandom
 import java.util.UUID
 import kotlin.test.*
 
-internal class RoomFixture(private val identityProvider: IdentityProvider? = null, private val durableFactory: (() -> DurableStore)? = null) : AutoCloseable {
+internal class RoomFixture(private val identityProvider: IdentityProvider? = null, private val durableFactory: (() -> DurableStore)? = null, private val emailEnabled: Boolean = false) : AutoCloseable {
     val directory = Files.createTempDirectory("foodrun-test-").toFile()
     var now = 100_000L
     var db = RoomDatabase(directory, durableFactory?.invoke())
     private val random = object : SecureRandom() { override fun nextInt(bound: Int): Int = if (bound == 900000) super.nextInt(bound) else 0 }
-    var service = RoomService(db, { now }, random, identityProvider)
+    var service = RoomService(db, { now }, random, identityProvider, emailEnabled)
     val restaurant = Restaurant("restaurant", "Test Kitchen", contact = RestaurantContact("+971501234567"), menu = Menu(categories = listOf(MenuCategory("main", "Main")), items = listOf(MenuItem("meal", "main", "Meal", basePriceMinor = 100))))
     val account = ReceivingAccount("account", "Owner", "Test Bank", "AE070331234567890123456")
     private val ownerIdentity = if (identityProvider == null) "" else execute(RoomCommand(commandId = id(), kind = CommandKind.IDENTITY,
@@ -68,6 +68,6 @@ internal class RoomFixture(private val identityProvider: IdentityProvider? = nul
         return member
     }
     fun pay() = send(owner, CommandKind.PAY_RESTAURANT) { it.copy(amount = state().receipts.sumOf { r -> r.total }) }
-    fun restart(clearCache: Boolean = false) { db.close(); if (clearCache) directory.deleteRecursively(); db = RoomDatabase(directory, durableFactory?.invoke()); service = RoomService(db, { now }, random, identityProvider) }
+    fun restart(clearCache: Boolean = false) { db.close(); if (clearCache) directory.deleteRecursively(); db = RoomDatabase(directory, durableFactory?.invoke()); service = RoomService(db, { now }, random, identityProvider, emailEnabled) }
     override fun close() { db.close(); directory.deleteRecursively() }
 }

@@ -10,7 +10,7 @@ internal enum class PushResult { SENT, INVALID_TOKEN, RETRY }
 internal fun interface PushSender { fun send(device: PushDevice, notification: FoodNotification): PushResult }
 
 /** Inbox and outbox are committed with the room mutation; network delivery happens after commit. */
-internal class NotificationService(private val db: RoomDatabase, private val clock: () -> Long) {
+internal class NotificationService(private val db: RoomDatabase, private val clock: () -> Long, private val emails: EmailService? = null) {
     fun request(uid: String, request: NotificationRequest, pushAvailable: Boolean): NotificationReply {
         require(request.notificationId.length <= 100 && request.token.length <= 4096 && request.installationId.length <= 100)
         when (request.action) {
@@ -70,6 +70,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         val item = FoodNotification(id, room.id, room.orderNumber, kind, if(ar) title.second else title.first,
             if(ar) body.second else body.first, actions.map { action -> NotificationAction(action, labels.getValue(action).let { if(ar) it.second else it.first }) }, transferId, clock())
         db.putRecord(key, orderJson.encodeToString(item))
+        emails?.notification(uid, room, item)
         val targets = devices().filter { it.second.userId == uid && it.second.updatedAt > clock() - 90L * 86_400_000 }.map { it.first }
         if (targets.isNotEmpty()) db.putRecord("push-job:$id", orderJson.encodeToString(PushJob(uid, item, targets)))
         db.records("notification:$uid:").map { it.first to orderJson.decodeFromString<FoodNotification>(it.second) }

@@ -2,6 +2,7 @@ import RunningNames from './RunningNames.jsx';
 import { useNotifications } from './useNotifications.js';
 import { NotificationCenter, NotificationActionCard } from './NotificationCenter.jsx';
 import { CreatePaymentRoom, PaymentReceipt, PaymentShareEditor, RecordPayment } from './PaymentRoom.jsx';
+import { PaymentReminderButton } from './PaymentReminderButton.jsx';
 import { roomFeeUpdate } from './roomFees.js';
 import RestaurantPollPrompt from './RestaurantPollPrompt.jsx';
 import OrderPricingPanel from './OrderPricingPanel.jsx';
@@ -928,6 +929,7 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
     } catch (failure) { setError(failure.message); }
   };
   return <div className="payment-actions stack">
+    <PaymentReminderButton room={room} receipt={receipt} memberId={memberId} data={data} />
     {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference} · {t('Awaiting confirmation')}</p>}
     {canConfirm && <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => data.send(pending.refund ? 'CONFIRM_REFUND' : 'CONFIRM_TRANSFER', { transferId: pending.id }, room.id)}>{t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => data.send('REJECT_TRANSFER', { transferId: pending.id, text: 'Payment was not received or the details do not match.' }, room.id)}>{t('Not received')}</button></div>}
     {canDeclare && <form className="stack" onSubmit={submit}><div className="form-grid two"><label>{t('Amount sent')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Payment note (optional)')}<input value={reference} onChange={event => setReference(event.target.value)} maxLength={160} placeholder={t('Bank transfer or cash')} /></label></div><button className="primary wide" disabled={data.busy}>{payer ? t('Mark refund sent') : t('Mark paid')}</button></form>}

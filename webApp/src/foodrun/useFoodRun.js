@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { reminderKey } from './paymentReminders.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -32,6 +33,7 @@ export function useFoodRun() {
   const [hubRevision, setHubRevision] = useState(0);
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
+  const [paymentReminderTimes, setPaymentReminderTimes] = useState({});
   const [sessionScope, setSessionScope] = useState('');
   const [offlineReceipts, setOfflineReceipts] = useState([]);
   const [identityToken, setIdentityToken] = useState(''), [sessions, setSessions] = useState({});
@@ -148,6 +150,11 @@ export function useFoodRun() {
       const reply = await request(hub, payload);
       if (epoch !== alive.current) return null;
       savePending(null); accept(reply, olderPage);
+      if (payload.kind === 'REMIND_PAYMENT' && reply.code === 'REMINDER_QUEUED') {
+        const key = reminderKey({ id: payload.roomId, orderNumber: payload.expectedOrderNumber }, payload.memberId);
+        setPaymentReminderTimes(old => ({ ...old, [key]: Date.now() }));
+        setNotice(t('Email reminder queued'));
+      }
       return reply;
     } catch (e) {
       if (epoch !== alive.current) return null;
@@ -180,5 +187,5 @@ export function useFoodRun() {
     try { await clearReceiptArchive(user.uid, hub); setOfflineReceipts([]); }
     catch { setError(t("Could not remove downloaded receipts. Check browser storage permissions.")); }
   };
-  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts };
+  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes };
 }

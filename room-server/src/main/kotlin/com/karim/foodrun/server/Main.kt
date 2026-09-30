@@ -66,13 +66,35 @@ fun main() {
     File(directory, "pairing.txt").writeText(pairing)
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
     val db = RoomDatabase(directory, FirestoreStore.configured())
-    val service = RoomService(db, identityProvider = FirebaseIdentity.configured())
+    val emailSender = GmailEmailSender.configured()
+    val service = RoomService(db, identityProvider = FirebaseIdentity.configured(), emailEnabled = emailSender != null)
     val admin = AdminService(db, service)
     Runtime.getRuntime().addShutdownHook(Thread { discoveries.forEach { it.close() }; db.close() })
     embeddedServer(Netty, configure = {
         if (proxyMode) connector { this.port = port; this.host = "0.0.0.0" }
         else sslConnector(keyStore, "foodrun", { password.toCharArray() }, { password.toCharArray() }) { this.port = port; this.host = "0.0.0.0" }
-    }) { hubRoutes(service, admin) }.start(wait = true)
+    }) {
+        hubRoutes(service, admin)
+        if (emailSender != null) {
+            val dailyLimit = System.getenv("FOODRUN_EMAIL_DAILY_LIMIT")?.toInt() ?: 100
+            require(dailyLimit in 1..450) { "FOODRUN_EMAIL_DAILY_LIMIT must be between 1 and 450." }
+            launch(Dispatchers.IO) {
+                while (isActive) {
+                    try {
+                        service.nextEmail(dailyLimit)?.let { delivery ->
+                            val result = try { emailSender.send(delivery) }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { EmailResult.RETRY }
+                            service.finishEmail(delivery, result)
+                            if (result != EmailResult.SENT) log.warn("Email delivery did not complete; result=$result")
+                        }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { log.warn("Email delivery will retry when storage is available.") }
+                    delay(2_000)
+                }
+            }
+        }
+    }.start(wait = true)
 }
 
 fun Application.hubRoutes(

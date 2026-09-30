@@ -18,11 +18,17 @@ class GroupSettlementPresentationTest {
     private class Device : GroupPlatform {
         var copied = ""
         var opened = ""
+        var requestBody = ""
+        var response: RoomReply? = null
         override fun read(key: String) = ""
         override fun write(key: String, value: String) = true
         override fun now() = 0L
         override fun uuid() = "test-command-123456789"
-        override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) = error("Presentation must not send requests")
+        override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) {
+            val reply = response ?: error("Presentation must not send requests")
+            requestBody = body
+            callback.complete(orderJson.encodeToString(reply), "")
+        }
         override fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback) = object : GroupSubscription { override fun cancel() = Unit }
         override fun share(text: String, fileName: String) = Unit
         override fun openLink(url: String) { opened = url }
@@ -50,6 +56,38 @@ class GroupSettlementPresentationTest {
     }
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
+
+    @Test fun paymentReminderIsOnlyOfferedForCollectibleUnpaidBalances() {
+        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true)
+        val payer = controller(due).apply { online = true }
+        val button = GroupSettlementPresentation(payer).settlement().action(GroupAction.REMIND_PAYMENT)
+        assertEquals("member", button.value); assertTrue(button.enabled)
+        for (r in listOf(due.copy(restaurantPaid = false), due.copy(phase = RoomPhase.ARCHIVED),
+            due.copy(transfers = listOf(transfer())), due.copy(transfers = listOf(transfer(status = TransferStatus.CONFIRMED))))) {
+            val actions = GroupSettlementPresentation(controller(r)).settlement().cards.flatMap { it.buttons }
+            assertFalse(actions.any { it.action == GroupAction.REMIND_PAYMENT })
+        }
+        assertFalse(GroupSettlementPresentation(controller(due.copy(ownerId = "member"), "member")).settlement().cards.flatMap { it.buttons }.any { it.action == GroupAction.REMIND_PAYMENT })
+    }
+
+    @Test fun reminderActionSendsTargetAndAcknowledgesQueueInBothLanguages() {
+        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true)
+        val device = Device()
+        val c = controller(due, device = device).apply {
+            online = true
+            library = library.copy(sessions = listOf(session!!), selectedHub = session!!.hub)
+        }
+        device.response = c.reply!!.copy(code = "REMINDER_QUEUED")
+        c.dispatch(GroupAction.REMIND_PAYMENT, "member")
+        val command = orderJson.decodeFromString<RoomCommand>(device.requestBody)
+        assertEquals(CommandKind.REMIND_PAYMENT, command.kind)
+        assertEquals("member", command.memberId)
+        assertEquals(due.orderNumber, command.expectedOrderNumber)
+        val queued = GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT)
+        assertEquals("Email reminder queued", queued.title); assertFalse(queued.enabled)
+        c.library = c.library.copy(language = "ar")
+        assertEquals("تذكير الإيميل في انتظار الإرسال", GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).title)
+    }
 
     @Test fun copyAndWhatsAppLanguageDoNotChangeTheAppLanguage() {
         val translated = restaurant.copy(nameAr = "المطعم", menu = restaurant.menu.copy(items = restaurant.menu.items.map { it.copy(nameAr = "فول") }))

@@ -136,6 +136,7 @@ class AdminService(
                 db.transaction {
                     db.revokeUserSessions(change.userId)
                     db.deleteRecord("profile:${change.userId}")
+                    db.deleteRecord("email-contact:${change.userId}")
                     db.records("invitation:${change.userId}:").forEach { db.deleteRecord(it.first) }
                     db.putRecord("admin:restriction:${change.userId}", orderJson.encodeToString(AccountRestriction(reason = change.reason.trim(), removed = true)))
                     audit(actorId, "remove-foodrun-user", change.userId)

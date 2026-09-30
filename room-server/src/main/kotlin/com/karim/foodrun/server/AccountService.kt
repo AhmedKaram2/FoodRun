@@ -117,6 +117,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 db.deleteRecord("profile-sync:${identity.userId}")
             }
             db.putRecord("profile:${identity.userId}", orderJson.encodeToString(savedProfile))
+            EmailContacts.capture(db, identity, clock())
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))
             return home(token).copy(identityToken = token)
@@ -137,6 +138,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 require(db.record("profile:${request.userId}") != null && profile(request.userId).discoverable) { "This person is not available for invitations on this hub." }
                 val invitation = FoodInvitation("${room.id}-${room.orderNumber}", request.userId, room.id, room.name, profile(saved.userId).name, room.orderNumber)
                 db.putRecord("invitation:${request.userId}:${invitation.id}", orderJson.encodeToString(invitation))
+                rooms.emailInvitation(invitation)
                 home(c.identityToken)
             }
             IdentityAction.ACCEPT_INVITE -> {

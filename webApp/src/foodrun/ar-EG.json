@@ -1,4 +1,9 @@
 {
+  "Send payment reminder": "ابعت تذكير بالدفع بالإيميل",
+  "Email reminder queued": "تذكير الإيميل في انتظار الإرسال",
+  "Email reminders are not available on this server yet.": "تذكيرات الإيميل لسه مش متفعلة.",
+  "A reminder was already queued for this person. Please wait 24 hours before sending another.": "التذكير اتسجل للشخص ده بالفعل. استنى ٢٤ ساعة قبل ما تبعت تاني.",
+  "This member needs to sign in again with a verified email before receiving reminders.": "الشخص ده محتاج يدخل تاني بإيميل متأكد منه عشان يستقبل التذكيرات.",
   "Welcome back": "نورت تاني",
   "Sign in": "تسجيل الدخول",
   "Create account": "اعمل حساب",

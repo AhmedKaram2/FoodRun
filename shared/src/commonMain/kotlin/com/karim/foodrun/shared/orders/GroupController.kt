@@ -43,6 +43,8 @@ class GroupController(val platform: GroupPlatform) {
     internal var pricingTarget: Pair<String, String>? = null
     private var homeWatching: GroupSubscription? = null
     private val roomWatches = mutableMapOf<String, GroupSubscription>()
+    private val roomWatchTokens = mutableMapOf<String, String>()
+    private val roomLoads = mutableMapOf<String, String>()
     private var homeGeneration = 0
     private var generation = 0
     private var offset: Long = 0
@@ -402,6 +404,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     internal fun resume(s: StoredSession) {
+        roomWatches.remove(s.roomId)?.cancel(); roomWatchTokens.remove(s.roomId)
         watching?.cancel(); generation++; session = s; reply = library.snapshots[s.roomId]; online = false
         reply?.room?.let(::seedRoomDrafts)
         page = GroupPage.ROOM; startWatching()
@@ -526,9 +529,10 @@ class GroupController(val platform: GroupPlatform) {
     private fun startWatching() {
         if (!active) return
         val s = session ?: return
-        watching?.cancel(); val epoch = ++generation
+        watching?.cancel(); watching = null; val epoch = ++generation
         val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = s.roomId, token = s.token)
-        watching = platform.watch(s.hub, encodeCommand(request), object : GroupReplyCallback {
+        val live = ongoingSession(s)
+        val callback = object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 if (epoch != generation) return
                 if (error.isNotBlank()) { online = false; this@GroupController.error = error; publish(); return }
@@ -538,6 +542,8 @@ class GroupController(val platform: GroupPlatform) {
                         accept(next, platform.now())
                         if (this@GroupController.error.startsWith("Connection paused") || this@GroupController.error.startsWith("Hub unavailable")) this@GroupController.error = ""
                         val r = reply?.room ?: return
+                        if (!r.phase.ongoing) { watching?.cancel(); watching = null }
+                        else if (!live) { startWatching(); return }
                         if (r.phase == RoomPhase.PREPARING_SPIN && r.orderingMembers.any { it.id == me() } && me() !in r.preparedIds && !busy && library.pending == null) {
                             command(CommandKind.ACK_SPIN, text = r.preparationId)
                         }
@@ -545,7 +551,9 @@ class GroupController(val platform: GroupPlatform) {
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Could not synchronize this room." }
                 publish()
             }
-        })
+        }
+        if (live) watching = platform.watch(s.hub, encodeCommand(request), callback)
+        else platform.request(s.hub, encodeCommand(request), callback)
     }
     private fun openProfile() {
         library.home?.profile?.let { profile ->
@@ -615,6 +623,7 @@ class GroupController(val platform: GroupPlatform) {
         if(!notifications.deviceEnabled || id.startsWith("invite:")) platform.notify(title, body)
     }
     private fun acceptHome(home: HomePayload, hub: HubPairing) {
+        val wasOngoing = session?.let(::ongoingSession)
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
         home.deletedRoomIds.forEach { id -> roomWatches.remove(id)?.cancel() }
         if(session?.roomId in home.deletedRoomIds) { watching?.cancel(); watching = null; generation++; session = null; reply = null; page = GroupPage.HOME }
@@ -625,12 +634,14 @@ class GroupController(val platform: GroupPlatform) {
             restaurants = catalog.restaurants,
             managedRestaurantIds = catalog.managedIds)
         if (updated != library) replaceLibrary(updated)
+        if (session != null && wasOngoing != ongoingSession(requireNotNull(session))) startWatching()
         notifications.refresh(); notifications.register(false); administration.checkAccess()
         home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Food Run and tap Join on your home screen.") }
     }
     private fun stopHomeWatching() {
         homeGeneration++; homeWatching?.cancel(); homeWatching = null
         roomWatches.values.forEach { it.cancel() }; roomWatches.clear()
+        roomWatchTokens.clear(); roomLoads.clear()
     }
     private fun startHomeWatching() {
         if (!active) return
@@ -648,19 +659,54 @@ class GroupController(val platform: GroupPlatform) {
         }
         watchSavedRooms(epoch)
     }
+    private fun ongoingSession(saved: StoredSession): Boolean {
+        val summary = library.home?.rooms?.firstOrNull { it.roomId == saved.roomId && sameHub(saved.hub, library.identityHub) }
+        val cached = library.snapshots[saved.roomId]?.room
+        return if (summary?.phase != null && (cached == null || summary.orderNumber >= cached.orderNumber)) requireNotNull(summary.phase).ongoing
+        else cached?.phase?.ongoing ?: true
+    }
     private fun watchSavedRooms(epoch: Int) {
+        val desired = library.sessions.filter { it.roomId != session?.roomId && ongoingSession(it) }.associateBy { it.roomId }
+        roomWatches.keys.toList().filter { id -> desired[id]?.token != roomWatchTokens[id] }.forEach { id ->
+            roomWatches.remove(id)?.cancel(); roomWatchTokens.remove(id)
+        }
         library.sessions.forEach { saved ->
             // The room currently open on screen already has its authoritative subscription.
             // A second subscription would duplicate writes and can race the visible state.
             if (saved.roomId == session?.roomId) return@forEach
+            if (!ongoingSession(saved)) {
+                val summary = library.home?.rooms?.firstOrNull { it.roomId == saved.roomId }
+                val key = "${saved.token}:${summary?.orderNumber}:${summary?.phase}"
+                if (roomLoads[saved.roomId] == key) return@forEach
+                roomLoads[saved.roomId] = key
+                val cached = library.snapshots[saved.roomId]
+                if (cached?.memberId == saved.memberId && cached.room?.phase == summary?.phase && cached.room?.orderNumber == summary?.orderNumber) return@forEach
+                val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = saved.roomId, token = saved.token)
+                platform.request(saved.hub, encodeCommand(request), object : GroupReplyCallback {
+                    override fun complete(body: String, error: String) {
+                        if (epoch != homeGeneration || roomLoads[saved.roomId] != key) return
+                        try {
+                            require(error.isEmpty())
+                            val next = decodeReply(body); val room = requireNotNull(next.room)
+                            require(next.ok && room.id == saved.roomId && next.memberId == saved.memberId)
+                            replaceLibrary(library.copy(snapshots = library.snapshots + (room.id to mergePaymentHistory(library.snapshots[room.id], next).copy(token = ""))))
+                            publish()
+                        } catch (_: Exception) { roomLoads.remove(saved.roomId) }
+                    }
+                })
+                return@forEach
+            }
+            roomLoads.remove(saved.roomId)
             if (roomWatches.containsKey(saved.roomId)) return@forEach
             val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.SNAPSHOT, roomId = saved.roomId, token = saved.token)
+            roomWatchTokens[saved.roomId] = saved.token
             roomWatches[saved.roomId] = platform.watch(saved.hub, encodeCommand(request), object : GroupReplyCallback {
                 override fun complete(body: String, error: String) {
-                    if(epoch != homeGeneration || error.isNotEmpty()) return
+                    if(epoch != homeGeneration || error.isNotEmpty() || library.sessions.none { it.roomId == saved.roomId && it.token == saved.token }) return
                     try {
                         val next = decodeReply(body); val room = next.room ?: return
                         if (!next.ok || next.memberId != saved.memberId || room.id != saved.roomId) return
+                        if (!room.phase.ongoing) { roomWatches.remove(room.id)?.cancel(); roomWatchTokens.remove(room.id) }
                         if ((library.snapshots[room.id]?.room?.revision ?: 0) <= room.revision) {
                             if (library.snapshots[room.id]?.room?.revision != room.revision || library.snapshots[room.id]?.deletedHistoryNumbers != next.deletedHistoryNumbers)
                                 replaceLibrary(library.copy(snapshots = library.snapshots + (room.id to mergePaymentHistory(library.snapshots[room.id], next).copy(token = ""))))
@@ -721,7 +767,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

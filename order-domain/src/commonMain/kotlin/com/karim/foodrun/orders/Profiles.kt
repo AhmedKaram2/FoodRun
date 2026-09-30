@@ -99,7 +99,14 @@ fun Receipt.orderSelectionKey(restaurantKey: String): String = selectionKey(rest
 fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
 @Serializable data class FoodPerson(val userId: String, val name: String, val photo: String = "")
 @Serializable data class FoodInvitation(val id: String, val userId: String, val roomId: String, val roomName: String, val invitedBy: String, val orderNumber: Long)
-@Serializable data class AccountRoom(val roomId: String, val roomName: String, val memberId: String, val token: String)
+@Serializable data class AccountRoom(val roomId: String, val roomName: String, val memberId: String, val token: String,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val phase: RoomPhase? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val orderNumber: Long = 0,
+)
 @Serializable data class AccessBlock(val until: Long = 0, val reason: String = "", val durationHours: Int = 0, val removed: Boolean = false, val roomId: String = "")
 @Serializable data class HomePayload(
     val profile: FoodProfile, val people: List<FoodPerson> = emptyList(),

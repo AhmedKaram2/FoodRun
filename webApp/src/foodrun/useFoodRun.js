@@ -5,6 +5,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
 import { mergeRoomReply } from './roomState';
+import { roomConnections } from './roomConnections';
 import { readReceiptArchive, saveReceiptArchive, clearReceiptArchive, clearUserReceiptArchives } from './offlineReceipts';
 
 const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
@@ -101,12 +102,17 @@ export function useFoodRun() {
     if (!user || !hub || sessionScope !== sessionStorageKey(user.uid, hub)) return;
     localStorage.setItem(sessionStorageKey(user.uid, hub), JSON.stringify(sessions));
   }, [user, hub, sessions, sessionScope]);
-  const sessionKey = Object.values(sessions).map(s => `${s.roomId}:${s.token}`).sort().join('|');
+  const connections = useRef(null);
+  const sessionKey = Object.values(sessions).map(s => `${s.roomId}:${s.token}:${s.memberId}:${s.phase}:${s.orderNumber}`).sort().join('|');
   useEffect(() => {
     if (!hub || !user || !identityToken || sessionScope !== sessionStorageKey(user.uid, hub)) return;
     const epoch = alive.current;
     let stopped = false;
-    const stops = Object.values(sessions).map(session => watch(hub, command('SNAPSHOT', { roomId: session.roomId, token: session.token }), reply => {
+    const manager = roomConnections({
+      getSnapshot: id => roomRef.current[id],
+      watch: (session, receive, status) => watch(hub, command('SNAPSHOT', { roomId: session.roomId, token: session.token }), receive, status),
+      load: (session, signal) => request(hub, command('SNAPSHOT', { roomId: session.roomId, token: session.token }), signal),
+      onReply: (session, reply) => {
       if (stopped || epoch !== alive.current) return;
       const r = reply.room;
       if (!r || r.id !== session.roomId || reply.memberId !== session.memberId) return;
@@ -123,11 +129,12 @@ export function useFoodRun() {
       if (r.phase === 'PREPARING_SPIN' && !r.preparedIds.includes(session.memberId) && r.members.some(m => m.id === session.memberId && m.approved && m.participating && !m.guest)) {
         request(hub, command('ACK_SPIN', { roomId: r.id, token: session.token, expectedOrderNumber: r.orderNumber, text: r.preparationId })).catch(e => setError(e.message));
       }
-    }, (connected, reason, statusReply) => { if (!stopped && epoch === alive.current) { readBlock(statusReply); setOnline(old => ({ ...old, [session.roomId]: connected })); if(reason) setError(reason); } }));
-    return () => { stopped = true; stops.forEach(stop => stop()); };
-    // sessionKey describes the membership credentials; object replacement must not reconnect every second.
+    }, onStatus: (session, connected, reason, statusReply) => { if (!stopped && epoch === alive.current) { readBlock(statusReply); setOnline(old => ({ ...old, [session.roomId]: connected })); if(reason) setError(reason); } } });
+    connections.current = manager; manager.sync(sessions);
+    return () => { stopped = true; manager.close(); if (connections.current === manager) connections.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hub, user?.uid, identityToken, sessionScope, sessionKey, alert]);
+  }, [hub, user?.uid, identityToken, sessionScope, alert]);
+  useEffect(() => { connections.current?.sync(sessions); }, [sessionKey]);
   useEffect(() => { roomRef.current = {}; }, [hub, user?.uid]);
   const pendingKey = user && hub ? `foodrun-pending:${user.uid}:${hub}` : '';
   const savePending = payload => {

@@ -35,7 +35,7 @@ export async function request(hub, command, signal) {
   }
   return normalizeReply(reply);
 }
-export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true }; }
+export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true, liveRoomDetails: true }; }
 export function watch(hub, payload, onReply, onStatus) {
   let socket, stopped = false, timer, retry = 1000;
   const connect = () => {
@@ -47,6 +47,7 @@ export function watch(hub, payload, onReply, onStatus) {
         const reply = JSON.parse(event.data);
         if (!reply.ok) { onStatus(false, reply.error, reply); stopped = true; socket.close(); return; }
         retry = 1000; onStatus(true, ''); onReply(normalizeReply(reply));
+        if (['ARCHIVED', 'CANCELLED'].includes(reply.room?.phase)) { stopped = true; socket.close(); }
       } catch { onStatus(false, 'The hub returned an unreadable update.'); }
     };
     socket.onclose = () => { onStatus(false, ''); if (!stopped) { timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 30000); } };

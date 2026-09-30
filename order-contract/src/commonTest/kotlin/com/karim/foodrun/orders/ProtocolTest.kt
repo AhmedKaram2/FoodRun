@@ -13,6 +13,7 @@ class ProtocolTest {
         assertFalse(encoded.contains("expectedOrderNumber"))
         assertFalse(encoded.contains("paymentRoom"))
         assertFalse(encoded.contains("selectionDetails"))
+        assertFalse(encoded.contains("liveRoomDetails"))
         assertEquals(0, orderJson.decodeFromString<RoomCommand>(encoded).expectedOrderNumber)
         assertTrue(orderJson.encodeToString(legacy.copy(expectedOrderNumber = 2)).contains("\"expectedOrderNumber\":2"))
     }

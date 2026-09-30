@@ -93,7 +93,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)

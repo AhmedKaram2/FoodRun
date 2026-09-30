@@ -281,6 +281,7 @@ fun Application.hubRoutes(
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
             var selectionDetails = false
             var visualSelectionDetails = false
+            var liveRoomDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
@@ -289,6 +290,7 @@ fun Application.hubRoutes(
                 val command = orderJson.decodeFromString<RoomCommand>(body)
                 selectionDetails = command.selectionDetails
                 visualSelectionDetails = command.visualSelectionDetails
+                liveRoomDetails = command.liveRoomDetails
                 withContext(Dispatchers.IO) { service.execute(command) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (invalid: IllegalArgumentException) { RoomReply(ok = false, error = "Invalid request. Check the supplied fields and menu format.", code = "VALIDATION") }
@@ -296,7 +298,7 @@ fun Application.hubRoutes(
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails)), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -307,6 +309,7 @@ fun Application.hubRoutes(
             var lastVersion = Long.MIN_VALUE
             var lastPresenceAt = 0L
             var memberId = ""
+            var lastHome: HomePayload? = null
             while (isActive) {
                 val now = socketClock()
                 if (memberId.isNotEmpty() && now - lastPresenceAt >= 5_000) {
@@ -323,10 +326,17 @@ fun Application.hubRoutes(
                         log.error("Room subscription failed: ${failure.javaClass.simpleName}")
                         RoomReply(ok = false, error = "The hub is temporarily unavailable. Reconnect to resume.", code = "HUB_UNAVAILABLE")
                     }
-                    send(Frame.Text(orderJson.encodeToString(snapshot.forClient(request.selectionDetails, request.visualSelectionDetails))))
+                    // Room edits signal HOME globally. Do not resend the whole catalog when
+                    // this user's home payload did not actually change.
+                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails)
+                    if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome) {
+                        send(Frame.Text(orderJson.encodeToString(projected)))
+                        lastHome = projected.home
+                    }
                     if (!snapshot.ok) break
+                    if (request.liveRoomDetails && snapshot.room?.phase?.ongoing == false) break
                     memberId = snapshot.memberId
-                    lastVersion = service.eventVersion(request.kind, request.roomId)
+                    lastVersion = version
                     lastPresenceAt = now
                 }
                 delay(250)

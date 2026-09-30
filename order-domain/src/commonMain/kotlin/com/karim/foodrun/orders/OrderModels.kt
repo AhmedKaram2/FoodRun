@@ -5,6 +5,7 @@ import kotlinx.serialization.SerialName
 import kotlin.math.pow
 
 @Serializable enum class RoomPhase { LOBBY, PREPARING_SPIN, SPINNING, ACCEPTING, COLLECTING, REVIEW, PLACED, FULFILLED, ARCHIVED, CANCELLED }
+val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != RoomPhase.CANCELLED
 @Serializable data class Member(
     val id: String, val name: String, val approved: Boolean = false, val guest: Boolean = false,
     val eligible: Boolean = false, val ready: Boolean = false, val participating: Boolean = true, val lastSeen: Long = 0, val removed: Boolean = false, val latePayerApproved: Boolean = false,

@@ -13,6 +13,10 @@ The app remembers the endpoint where each room was created. Nearby and internet 
 
 Nearby rooms send commands and live events directly over the local network. Firebase stores the shared identity/profile and receives asynchronous backup records. WebSocket snapshots are event driven: the server sends the current state when a client connects and whenever the room changes. Protocol ping/pong frames keep idle connections healthy without repeatedly transferring full room, history, and receipt-photo payloads. Reconnecting always sends a fresh authoritative snapshot. Presence is refreshed every five seconds while a client is connected.
 
+Live room subscriptions follow the order lifecycle. `ARCHIVED` and `CANCELLED` rooms retain membership and history access but no live socket in updated clients. Their history is fetched once over HTTP and reused from the current cache. `FULFILLED` remains live because payments and refunds may still need settlement. Home updates advertise room phase and order number to clients opting in with `liveRoomDetails`, allowing a new order to reconnect automatically. Changing one room does not reconnect the other room subscriptions.
+
+The server omits this new metadata for older strict mobile decoders. It closes completed-room sockets only for clients declaring support, avoiding a reconnect loop in older installations. Those installations receive the home-payload deduplication improvement immediately but need an app update for subscription pruning. Global room events no longer resend an identical home payload and restaurant catalog to every connected user.
+
 ## Deploy the internet API
 
 Build the website and server image:

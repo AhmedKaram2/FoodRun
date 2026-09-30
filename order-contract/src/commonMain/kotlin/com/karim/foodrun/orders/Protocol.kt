@@ -42,6 +42,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     val visualSelectionDetails: Boolean = false,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val liveRoomDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val selectionStyle: String = "wheel",
 
 )

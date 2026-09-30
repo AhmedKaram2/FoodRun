@@ -83,6 +83,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                     renewed
                 }
             }
+            .map { member -> val room = requireNotNull(db.room(member.roomId)); member.copy(phase = room.phase, orderNumber = room.orderNumber) }
             .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
         val invitations = db.records("invitation:$uid:").map { orderJson.decodeFromString<FoodInvitation>(it.second) }
             .filter { db.room(it.roomId)?.let { room -> room.orderNumber == it.orderNumber && room.phase == RoomPhase.LOBBY } == true }

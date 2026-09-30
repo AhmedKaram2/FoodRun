@@ -1,7 +1,7 @@
 import { t } from './i18n.js';
 import { reminderKey } from './paymentReminders.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
 import { mergeRoomReply } from './roomState';
@@ -22,6 +22,11 @@ export function useFoodRun() {
   const [joinBlock, setJoinBlock] = useState(null);
   const [roomBlocks, setRoomBlocks] = useState({});
   const readBlock = reply => {
+    if (reply?.code === 'REAUTH_REQUIRED') {
+      setNotice(t('Please sign in again to reconnect your FoodRun account.'));
+      signOut(auth).catch(() => setError(t('Please sign out and sign in again.')));
+      return;
+    }
     if (reply?.accessBlock) {
       const block = { ...reply.accessBlock, serverTime: reply.serverTime || Date.now(), receivedAt: Date.now() };
       setAccessBlock(block); setRoomBlocks(old => ({ ...old, [block.roomId || '*']: block }));

@@ -25,9 +25,19 @@ object UaePhone {
 }
 object InternationalPhone {
     fun normalize(value: String): String {
-        val trimmed = value.trim()
+        val trimmed = value.trim().map { c -> when (c) {
+            in '٠'..'٩' -> '0' + (c - '٠')
+            in '۰'..'۹' -> '0' + (c - '۰')
+            else -> c
+        } }.joinToString("")
         if (trimmed.startsWith("0") && !trimmed.startsWith("00")) return UaePhone.normalize(trimmed)
         val digits = trimmed.filter(Char::isDigit).let { if (it.startsWith("00")) it.drop(2) else it }
+        // Legacy UAE profiles may contain just the national number, without 0 or +971.
+        // An explicit international prefix always takes precedence.
+        if (!trimmed.startsWith("+") && !trimmed.startsWith("00") &&
+            (digits.length == 9 && digits.startsWith('5') || digits.length == 8 && digits.firstOrNull() in '2'..'9')) {
+            return UaePhone.normalize(digits)
+        }
         require(digits.length in 7..15 && digits.firstOrNull() in '1'..'9') {
             "Enter a phone number with country code, for example +20 10 1234 5678."
         }

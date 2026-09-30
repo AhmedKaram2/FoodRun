@@ -149,6 +149,12 @@ class OrderDomainTest {
         assertEquals("+201012345678", InternationalPhone.normalize("+20 10 1234 5678"))
         assertEquals("+442079460018", InternationalPhone.normalize("0044 20 7946 0018"))
         assertEquals("+971501234567", InternationalPhone.normalize("050 123 4567"))
+        assertEquals("+971501234567", InternationalPhone.normalize("501234567"))
+        assertEquals("+97141234567", InternationalPhone.normalize("4 123 4567"))
+        assertEquals("+971501234567", InternationalPhone.normalize("٥٠١٢٣٤٥٦٧"))
+        assertEquals("+971501234567", InternationalPhone.normalize("۰۵۰۱۲۳۴۵۶۷"))
+        assertEquals("+501234567", InternationalPhone.normalize("+501234567"))
+        assertEquals("+501234567", InternationalPhone.normalize("00501234567"))
         assertFailsWith<IllegalArgumentException> { InternationalPhone.normalize("123") }
     }
     @Test fun spinIsStableAcrossClocksAndReconnections() {

@@ -23,6 +23,36 @@ class ProfileSyncTest {
     private fun signIn(f: RoomFixture) = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
         identity = IdentityRequest(IdentityAction.SIGN_IN, email = "$userId@example.test", password = "fixture-password")))
     private fun profile(f: RoomFixture) = orderJson.decodeFromString<FoodProfile>(f.db.record("profile:$userId")!!)
+    @Test fun malformedImportedPhoneDoesNotBlockLoginAndCanBeCorrected() {
+        val provider = Identity()
+        RoomFixture(provider).use { f ->
+            val source = profile(f).copy(name = "Existing user", phone = "123", payment = aani)
+            provider.profiles[userId] = source
+            val signedIn = signIn(f)
+            assertEquals("", signedIn.home!!.profile.phone)
+            assertEquals(source.name, signedIn.home!!.profile.name)
+            assertEquals(aani, signedIn.home!!.profile.payment)
+            assertEquals(source, provider.profiles[userId]) // Preserve source until the user corrects it.
+            val updated = signedIn.home!!.profile.copy(phone = "501234567")
+            val saved = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = signedIn.identityToken,
+                identity = IdentityRequest(IdentityAction.SAVE_PROFILE, profile = updated)))
+            assertEquals("+971501234567", saved.home!!.profile.phone)
+            f.service.syncCloud()
+            assertEquals("+971501234567", signIn(f).home!!.profile.phone)
+        }
+    }
+    @Test fun googleSignInRepairsMissingUaePrefixAndPreservesInternationalPhones() {
+        val provider = Identity()
+        RoomFixture(provider).use { f ->
+            for ((raw, expected) in listOf("501234567" to "+971501234567", "050 123 4567" to "+971501234567",
+                "٥٠١٢٣٤٥٦٧" to "+971501234567", "+20 10 1234 5678" to "+201012345678", "" to "", "invalid" to "")) {
+                provider.profiles[userId] = profile(f).copy(phone = raw)
+                val reply = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
+                    identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = userId)))
+                assertEquals(expected, reply.home!!.profile.phone)
+            }
+        }
+    }
     private fun linkedCopy(f: RoomFixture, id: String, phase: RoomPhase = RoomPhase.PLACED, payerId: String? = f.owner.memberId): Room {
         val copy = f.state().room!!.copy(id = id, code = id.takeLast(6), phase = phase, payerId = payerId)
         f.db.save(copy)

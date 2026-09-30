@@ -16,7 +16,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
     private fun session(token: String): AccountSession {
         require(token.length in 32..128) { "Sign in to your Food Run account." }
-        val saved = db.record("identity:${RoomService.hash(token)}") ?: error("Sign in again to reconnect your account.")
+        val saved = db.record("identity:${RoomService.hash(token)}") ?: throw SignInRequired()
         return orderJson.decodeFromString<AccountSession>(saved).also {
             require(it.expires > clock()) { "Your account session expired. Sign in again." }
             AccountRestrictions.requireAllowed(db, it.userId, clock())
@@ -70,17 +70,26 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         db.putRecord("member-user:${room.id}:$memberId", uid)
     }
     fun linked(token: String, roomId: String): AccountRoom? = db.record("membership:${userId(token)}:$roomId")?.let { orderJson.decodeFromString(it) }
-    fun home(token: String): RoomReply {
+    fun home(token: String): RoomReply = db.transaction {
         val uid = userId(token)
         val memberships = db.records("membership:$uid:").map { orderJson.decodeFromString<AccountRoom>(it.second) }
             .filter { m -> db.room(m.roomId)?.members?.any { it.id == m.memberId && !it.removed } == true }
+            .map { member ->
+                if (db.session(RoomService.hash(member.token)) == (member.roomId to member.memberId)) member
+                else {
+                    val renewed = member.copy(token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes)))
+                    db.addSession(RoomService.hash(renewed.token), renewed.roomId, renewed.memberId)
+                    db.putRecord("membership:$uid:${renewed.roomId}", orderJson.encodeToString(renewed))
+                    renewed
+                }
+            }
             .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
         val invitations = db.records("invitation:$uid:").map { orderJson.decodeFromString<FoodInvitation>(it.second) }
             .filter { db.room(it.roomId)?.let { room -> room.orderNumber == it.orderNumber && room.phase == RoomPhase.LOBBY } == true }
         val people = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
             .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() && AccountRestrictions.current(db, it.userId, clock())?.removed != true }.take(100).map { FoodPerson(it.userId, it.name) }
         val restaurants = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
-        return RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db), db.records("admin:deleted-room:").map { it.first.removePrefix("admin:deleted-room:") }.toSet(),
+        RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db), db.records("admin:deleted-room:").map { it.first.removePrefix("admin:deleted-room:") }.toSet(),
             buildMap {
                 AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
                 memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }
@@ -108,7 +117,9 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             val pendingAdminName = db.record("admin:profile-name:${identity.userId}")
             val pendingProfile = db.record("profile-sync:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) }
             val savedProfile = (pendingProfile ?: cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
-                if (it.phone.isBlank()) it else it.normalized()
+                // Imported profile data must not prevent authentication. An unrepairable phone
+                // opens profile completion; strict validation still applies when the user saves.
+                it.copy(phone = runCatching { InternationalPhone.normalize(it.phone) }.getOrDefault(""))
             }.let { if (pendingAdminName == null) it else it.copy(name = pendingAdminName) }
             AccountRestrictions.requireAllowed(db, identity.userId, clock())
             if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
@@ -122,6 +133,10 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))
             return home(token).copy(identityToken = token)
         }
+        if (request.action == IdentityAction.SIGN_OUT) {
+            db.deleteRecord("identity:${RoomService.hash(c.identityToken)}")
+            return RoomReply()
+        }
         val saved = session(c.identityToken)
         return when(request.action) {
             IdentityAction.SAVE_PROFILE -> {
@@ -130,7 +145,6 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
                 home(c.identityToken)
             }
-            IdentityAction.SIGN_OUT -> { db.deleteRecord("identity:${RoomService.hash(c.identityToken)}"); RoomReply() }
             IdentityAction.INVITE -> {
                 val snapshot = rooms.snapshot(c.roomId, c.token)
                 val room = requireNotNull(snapshot.room)

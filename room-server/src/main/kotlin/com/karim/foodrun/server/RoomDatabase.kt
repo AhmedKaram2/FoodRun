@@ -152,6 +152,9 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
         commandIds.forEach { id -> connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use { it.setString(1, encrypt(orderJson.encodeToString(RoomReply(ok = false, code = "REMOVED", error = "This room was deleted by the administrator.")))); it.setString(2, id); it.executeUpdate() } }
         enqueueCloud("room-$roomId", "{\"deleted\":true}")
      } }
+    internal fun deleteSessionBatch(): Int = transaction {
+        connection.createStatement().use { it.executeUpdate("DELETE FROM sessions WHERE hash IN (SELECT hash FROM sessions LIMIT 50)") }
+    }
     fun revokeUserSessions(userId: String) { transaction {
         val memberships = records("membership:$userId:")
         memberships.forEach { (_, body) ->

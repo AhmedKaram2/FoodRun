@@ -31,7 +31,7 @@ export async function request(hub, command, signal) {
   const reply = await response.json().catch(() => null);
   if (!response.ok || !reply?.ok) {
     const definitive = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status) || response.ok && reply?.code && reply.code !== 'HUB_UNAVAILABLE';
-    throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive, accessBlock: reply?.accessBlock, serverTime: reply?.serverTime });
+    throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive, code: reply?.code, accessBlock: reply?.accessBlock, serverTime: reply?.serverTime });
   }
   return normalizeReply(reply);
 }

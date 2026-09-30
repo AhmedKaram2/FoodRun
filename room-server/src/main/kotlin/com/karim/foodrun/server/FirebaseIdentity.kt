@@ -23,7 +23,7 @@ interface IdentityProvider {
 }
 data class CloudIdentity(val userId: String, val idToken: String, val refreshToken: String = "", val name: String = "", val email: String = "", val emailVerified: Boolean = false)
 
-class FirebaseIdentity(private val apiKey: String, private val project: String) : IdentityProvider {
+class FirebaseIdentity(private val apiKey: String, private val project: String, private val validAfter: Long = 0L) : IdentityProvider {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build()
     private val json = Json { ignoreUnknownKeys = true }
     init { require(project.matches(Regex("[a-z0-9-]+")) && apiKey.isNotBlank()) }
@@ -60,6 +60,7 @@ class FirebaseIdentity(private val apiKey: String, private val project: String) 
         require(idToken.length in 100..16000) { "Sign in with Firebase first." }
         val user = auth("lookup", buildJsonObject { put("idToken", idToken) })["users"]?.jsonArray?.singleOrNull()?.jsonObject
             ?: error("Firebase account not found.")
+        SessionReset.requireFreshLogin(idToken, validAfter)
         return CloudIdentity(user.string("localId"), idToken, name = user.string("displayName"), email = user.string("email"), emailVerified = user["emailVerified"]?.jsonPrimitive?.booleanOrNull == true)
     }
     override fun refresh(refreshToken: String): CloudIdentity {
@@ -103,7 +104,7 @@ class FirebaseIdentity(private val apiKey: String, private val project: String) 
             }
             val key = System.getenv("FOODRUN_FIREBASE_API_KEY") ?: props.getProperty("apiKey", "")
             val project = System.getenv("FOODRUN_FIREBASE_PROJECT_ID") ?: props.getProperty("projectId", "")
-            return if (key.isBlank() || project.isBlank()) null else FirebaseIdentity(key, project)
+            return if (key.isBlank() || project.isBlank()) null else FirebaseIdentity(key, project, SessionReset.cutoff())
         }
     }
 }

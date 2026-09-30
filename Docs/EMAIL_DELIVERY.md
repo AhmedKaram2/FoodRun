@@ -16,6 +16,16 @@ On Firebase sign-in the server saves the email returned by Firebase account look
 
 Previously registered users acquire this record on their **next sign-in** after deployment. This does not import all users from the shared Intrvioo Firebase project. No additional Gmail permissions are requested from FoodRun users.
 
+### Require a fresh FoodRun login
+
+Set `FOODRUN_AUTH_VALID_AFTER` on Render to a fixed Unix timestamp in **seconds** and deploy. Before serving requests, the server deletes existing account and room sessions in bounded durable batches, then records completion so ordinary restarts do not repeat the reset. Memberships, profiles, orders, bills, and command deduplication records remain intact. Signing in creates replacement room tokens for the same memberships.
+
+Keep this value configured: verified Firebase tokens must have `auth_time` at or after the cutoff; refreshing an older token does not bypass the requirement. This restriction applies only to FoodRun, without revoking access to other applications in the shared Firebase project. The website signs out when it receives `REAUTH_REQUIRED`; older mobile clients can use Sign out, then sign in again. A future reset uses a newer cutoff.
+
+Saved profile phone numbers are repaired on sign-in when recognizable as UAE local numbers. If a saved number cannot be normalized, sign-in succeeds with an empty phone so the user can correct it in their profile. Profile saves still validate the number.
+
+For website releases, include the existing `zai` and `ziina` Netlify functions explicitly. They belong to the Intrvioo deployment and are not stored in this repository. Deploying only `dist` without the functions removes those endpoints; verify them on a preview before promoting it.
+
 ## Why Gmail API
 
 [Render Free blocks SMTP ports 25, 465 and 587](https://render.com/docs/free). Delivery uses the [Gmail API over HTTPS](https://developers.google.com/workspace/gmail/api/guides/sending) and an OAuth refresh token for the sender. A Gmail password or app password cannot enable this integration. The existing Firebase service account cannot impersonate a personal Gmail mailbox.

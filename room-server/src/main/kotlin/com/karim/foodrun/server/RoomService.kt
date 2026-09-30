@@ -126,6 +126,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
         }
     } catch (e: AccountBlockedException) { RoomReply(ok = false, error = e.message.orEmpty(), code = if(e.block.removed) "ACCOUNT_BLOCKED" else "ROOM_BLOCKED", accessBlock = e.block, serverTime = clock()) }
+      catch (e: SignInRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REAUTH_REQUIRED", serverTime = clock()) }
       catch (e: IllegalArgumentException) { RoomReply(ok = false, error = e.message ?: "Invalid request.", code = "VALIDATION", serverTime = clock()) }
       catch (e: IllegalStateException) { RoomReply(ok = false, error = e.message ?: "Action unavailable.", code = "STATE", serverTime = clock()) }
 

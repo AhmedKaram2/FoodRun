@@ -7,10 +7,13 @@ export function uaePhone(value, mobileOnly = false) {
   return `+971${local}`;
 }
 export function internationalPhone(value) {
-  const raw = String(value || '').trim();
+  const raw = String(value || '').trim()
+    .replace(/[٠-٩]/g, digit => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, digit => String(digit.charCodeAt(0) - 0x06f0));
   if (/^0(?!0)/.test(raw)) return uaePhone(raw);
   let digits = raw.replace(/\D/g, '');
   if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!raw.startsWith('+') && !raw.startsWith('00') && /^(?:5\d{8}|[2-9]\d{7})$/.test(digits)) return uaePhone(digits);
   if (!/^[1-9]\d{6,14}$/.test(digits)) throw Error('Enter a phone number with country code, for example +20 10 1234 5678.');
   return `+${digits}`;
 }

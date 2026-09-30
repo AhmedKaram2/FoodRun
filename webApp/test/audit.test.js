@@ -68,6 +68,8 @@ test('HTTP validation messages are retained and network/server failures remain r
     await assert.rejects(request('https://example.invalid', {}), error => error.definitive && error.message === 'Choose a valid menu item');
     globalThis.fetch = async () => new Response('Unavailable', { status: 503 });
     await assert.rejects(request('https://example.invalid', {}), error => !error.definitive);
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, code: 'REAUTH_REQUIRED', error: 'Sign in again' }), { status: 200 });
+    await assert.rejects(request('https://example.invalid', {}), error => error.definitive && error.code === 'REAUTH_REQUIRED');
   } finally { globalThis.fetch = original; }
 });
 
@@ -287,6 +289,11 @@ test('bank IBAN and Aani phone drafts are separate and IBAN is validated', async
   assert.equal(uaeIban('GB82 WEST 1234 5698 7654 32'), 'GB82WEST12345698765432');
   assert.equal(internationalPhone('+20 10 1234 5678'), '+201012345678');
   assert.equal(internationalPhone('0044 20 7946 0018'), '+442079460018');
+  for (const local of ['501234567', '050 123 4567', '٥٠١٢٣٤٥٦٧', '۰۵۰۱۲۳۴۵۶۷']) assert.equal(internationalPhone(local), '+971501234567');
+  assert.equal(internationalPhone('4 123 4567'), '+97141234567');
+  assert.equal(internationalPhone('+501234567'), '+501234567');
+  assert.equal(internationalPhone('00501234567'), '+501234567');
+  assert.throws(() => internationalPhone('123'));
   for (const invalid of ['0501234567', '+971501234567', 'AE080331234567890123456', 'GB83WEST12345698765432']) assert.throws(() => uaeIban(invalid));
 });
 

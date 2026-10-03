@@ -48,12 +48,6 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 if (chosen != null) db.save(room.copy(lastChosenMemberId = chosen,
                     lastChosenName = previous.members.firstOrNull { it.id == chosen }?.name.orEmpty(), revision = room.revision + 1))
             }
-            db.allRooms().filter { room -> room.members.any { !it.approved && !it.removed } }.forEach { room ->
-                val members = room.members.map { if (!it.approved && !it.removed) admit(it, room.phase) else it }
-                val addedOrderers = members.any { member -> member.participating && !member.guest && room.members.any { it.id == member.id && !it.approved } }
-                db.save(room.copy(members = members, revision = room.revision + 1,
-                    quoteRevision = room.quoteRevision + if (addedOrderers) 1 else 0, updatedAt = clock()))
-            }
             db.allRooms().filter { it.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW) }.forEach { room ->
                 val repaired = recoverTaxResetSubmissions(room, db::recordedReply)
                 if (repaired != room) db.save(repaired.copy(updatedAt = clock()))
@@ -74,7 +68,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     private fun signalHome() { homeEvents = ++eventSequence }
     @Synchronized fun execute(c: RoomCommand): RoomReply = try {
-        require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160) { "Invalid request identifier." }
+        require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160 && c.accountId.length <= 160) { "Invalid request identifier." }
         require(c.name.length <= 160 && c.text.length <= 500 && c.destination.length <= 1000 && c.expectedNames.size <= 30) { "Request fields exceed the supported length." }
         require(c.restaurants.size <= 12) { "A restaurant poll supports up to 12 choices." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
@@ -93,7 +87,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -116,7 +110,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         requireLoadable(result)
                         db.save(result)
                         notifications.changed(room, result, actor, c)
-                        if (c.kind == CommandKind.SHARE_ACCOUNT) accounts.updatePayment(result.id, actor, requireNotNull(result.account))
+                        if (c.kind == CommandKind.SHARE_ACCOUNT) accounts.updatePayment(result.id, actor, requireNotNull(result.account), result.receivingAccounts)
                         signalRoom(result.id)
                         projection(requireNotNull(db.room(result.id)), actor)
                     }
@@ -218,7 +212,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
         val room = Room(uuid(), code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, currency = request.currency, openOrdering = true),
-            phase = RoomPhase.FULFILLED, payerId = ownerId, account = account, restaurantPaid = true,
+            phase = RoomPhase.FULFILLED, payerId = ownerId, account = account, accounts = c.accounts.orEmpty().filterNot { it.id == account.id }.map { it.normalized() }, restaurantPaid = true,
             restaurantReference = "Already ordered and paid by ${profiles.getValue(uid).name}",
             members = profiles.map { (userId, profile) -> Member(ids.getValue(userId), profile.name, approved = true, ready = true) },
             carts = request.shares.map { share -> MemberCart(ids.getValue(share.userId), submitted = true,
@@ -248,9 +242,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 return projection(room, saved.memberId).copy(token = saved.token)
         }
         require(room.paymentRoom == null) { "Payment rooms are private to the people selected by the organizer." }
-        require(room.activeMembers.count { it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
+        require(room.members.count { !it.removed && it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
-        val person = admit(Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock()), room.phase)
+        val requested = Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock())
+        val person = if (room.phase == RoomPhase.LOBBY && room.pastSpins.isEmpty()) admit(requested, room.phase) else requested.copy(participating = false)
         val next = room.copy(members = room.members + person, revision = room.revision + 1,
             quoteRevision = room.quoteRevision + if (person.participating) 1 else 0, updatedAt = clock()); requireLoadable(next); db.save(next)
         signalRoom(next.id)
@@ -304,7 +299,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val visible = if (!authorized) room.copy(
             restaurant = Restaurant("pending", "Waiting for organizer approval"), expectedNames = emptyList(),
             destination = "", fees = FeePolicy(), members = listOf(member), carts = emptyList(), spin = null,
-            pastSpins = emptyList(), payerId = null, account = null, transfers = emptyList(), audit = emptyList(),
+            pastSpins = emptyList(), payerId = null, account = null, accounts = emptyList(), transfers = emptyList(), audit = emptyList(),
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
             restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false, paymentRoom = null,
             lastChosenMemberId = null, lastChosenName = "",
@@ -317,6 +312,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             // Owners need current item lines to price orders. Other members retain their own lines only.
             carts = room.carts.map { if (canViewPrices || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },
             account = room.account.takeIf { orderer },
+            accounts = room.accounts.takeIf { orderer }.orEmpty(),
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },
         )

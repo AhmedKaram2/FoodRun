@@ -23,6 +23,58 @@ class ProfileSyncTest {
     private fun signIn(f: RoomFixture) = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
         identity = IdentityRequest(IdentityAction.SIGN_IN, email = "$userId@example.test", password = "fixture-password")))
     private fun profile(f: RoomFixture) = orderJson.decodeFromString<FoodProfile>(f.db.record("profile:$userId")!!)
+    private fun saveMethods(f: RoomFixture, token: String, value: FoodProfile, capable: Boolean = true) = f.execute(RoomCommand(
+        commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = token, multiplePaymentDetails = capable,
+        identity = IdentityRequest(IdentityAction.SAVE_PROFILE, profile = value.copy(name = value.name.ifBlank { "Owner" }, phone = "+971501234567")),
+    ))
+
+    @Test fun multipleMethodsSyncRoomsAndPartialPaymentsRetainTheChosenRecipient() = RoomFixture(Identity()).use { f ->
+        val member = f.placed(); f.pay()
+        val token = signIn(f).identityToken
+        saveMethods(f, token, profile(f).copy(payment = f.account, paymentAccounts = listOf(aani)))
+        assertEquals(setOf(f.account.id, aani.id), f.state(member).room!!.receivingAccounts.map { it.id }.toSet())
+        val rejected = f.service.execute(f.command(member, CommandKind.DECLARE_TRANSFER).copy(amount = 1000, text = "Sent", accountId = "foreign-account"))
+        assertFalse(rejected.ok)
+        assertTrue(f.state().room!!.transfers.isEmpty())
+        val first = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 1000, text = "Aani sent", accountId = aani.id) }.room!!.transfers.single()
+        assertEquals(aani, first.recipient)
+        val edited = aani.copy(identifier = "+971509999999")
+        saveMethods(f, token, profile(f).copy(payment = f.account, paymentAccounts = listOf(edited)))
+        assertEquals(first, f.state().room!!.transfers.single())
+        f.send(f.owner, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = first.id) }
+        assertEquals(2000, f.state(member).receipts.single().balance)
+        val second = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 2000, text = "Bank sent", accountId = f.account.id) }.room!!.transfers.last()
+        assertEquals(f.account.id, second.recipient.id)
+        f.send(f.owner, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = second.id) }
+        f.restart()
+        assertEquals(0, f.state(member).receipts.single().balance)
+        assertEquals(edited.identifier, f.state(member).room!!.receivingAccounts.single { it.id == aani.id }.identifier)
+        assertEquals(first.recipient, f.state().room!!.transfers.first().recipient)
+    }
+
+    @Test fun legacyClientsSeeOneMethodAndCannotEraseAdditionalSavedMethods() = RoomFixture(Identity()).use { f ->
+        f.placed()
+        val token = signIn(f).identityToken
+        val saved = saveMethods(f, token, profile(f).copy(payment = aani, paymentAccounts = listOf(f.account)))
+        val legacy = saved.forClient(false)
+        assertEquals(aani, legacy.home!!.profile.payment)
+        assertTrue(legacy.home!!.profile.paymentAccounts.isEmpty())
+        assertTrue(f.state().forClient(false).room!!.accounts.isEmpty())
+        assertFalse(orderJson.encodeToString(legacy).contains("paymentAccounts"))
+        assertFalse(orderJson.encodeToString(f.state().forClient(false)).contains("\"accounts\""))
+        saveMethods(f, token, legacy.home!!.profile.copy(name = "Renamed"), capable = false)
+        assertEquals(setOf(aani.id, f.account.id), profile(f).receivingAccounts.map { it.id }.toSet())
+        val removed = saveMethods(f, token, profile(f).copy(paymentAccounts = emptyList()))
+        assertEquals(listOf(aani), removed.home!!.profile.receivingAccounts)
+        assertEquals(listOf(aani.id), f.state().room!!.receivingAccounts.map { it.id })
+        val raw = profile(f)
+        val before = f.state().room!!
+        val bad = f.service.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = token,
+            multiplePaymentDetails = true, identity = IdentityRequest(IdentityAction.SAVE_PROFILE,
+                profile = raw.copy(paymentAccounts = (1..10).map { f.account.copy(id = "bank-$it") }))))
+        assertFalse(bad.ok)
+        assertEquals(raw, profile(f)); assertEquals(before, f.state().room)
+    }
     @Test fun malformedImportedPhoneDoesNotBlockLoginAndCanBeCorrected() {
         val provider = Identity()
         RoomFixture(provider).use { f ->
@@ -192,8 +244,9 @@ class ProfileSyncTest {
             provider.offline = false
             f.service.syncCloud()
             assertNull(f.db.record("profile-sync:$userId"))
-            assertEquals(updated, provider.profiles[userId])
-            assertEquals(updated, signIn(f).home!!.profile)
+            assertEquals(saved.home!!.profile, provider.profiles[userId])
+            assertEquals(saved.home!!.profile, signIn(f).home!!.profile)
+            assertTrue(saved.home!!.profile.receivingAccounts.any { it.id == f.account.id })
         }
     }
 

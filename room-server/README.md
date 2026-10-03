@@ -41,7 +41,7 @@ The hub prints:
 - Its certificate fingerprint.
 - The location of `pairing.png`, a QR image for the phones.
 
-Open `pairing.png` on the computer. In Food Run, discover the hub or scan/paste its pairing information and verify the displayed fingerprint against the computer. Then create a room or enter its six-digit join code. Anyone with the invitation link or room code joins immediately, without organizer approval. A room code identifies the room; it is separate from trusting the hub certificate.
+Open `pairing.png` on the computer. In Food Run, discover the hub or scan/paste its pairing information and verify the displayed fingerprint against the computer. Then create a room or enter its six-digit join code. Joining is automatic before selection. After selection starts, new joiners wait for approval from the room creator or selected person. Pending requests remain pending after a hub restart. A room code identifies the room; it is separate from trusting the hub certificate.
 
 Both phones and the computer need a reachable local network. Permit the Java/hub process to receive **TCP port 8443** on the trusted private network. Bonjour discovery uses **UDP 5353**; scanning the QR or entering the address can replace discovery. Guest-network device isolation, some VPNs and a blocked firewall can prevent actual connections even with the correct QR code.
 

@@ -3,12 +3,17 @@ import { Page } from './FoodRunApp.jsx';
 import { amount, money, minorInput, CURRENCIES } from './client.js';
 import { paymentRoomPayload, receiptPhotoData, splitEqually } from './paymentRoom.js';
 import { t, tf } from './i18n.js';
+import { profilePaymentAccounts } from './paymentDetails.js';
+import PaymentMethodsEditor from './PaymentMethodsEditor.jsx';
 
 export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
   const owner = { userId: data.user.uid, name: data.home.profile.name };
   const [selected, setSelected] = useState([]), [search, setSearch] = useState(''), [shares, setShares] = useState({});
   const [form, setForm] = useState({ name: '', restaurant: '', details: '', photo: '', total: '', currency: data.home.profile.payment?.currency || 'AED' });
   const [error, setError] = useState(''), [uploading, setUploading] = useState(false), [saving, setSaving] = useState(false);
+  const [accountChoice, setAccountChoice] = useState('');
+  const methods = profilePaymentAccounts(data.home.profile).filter(account => account.method === 'BANK' || form.currency === 'AED');
+  const account = methods.find(method => method.id === accountChoice) || methods[0];
   const people = [owner, ...data.home.people.filter(person => selected.includes(person.userId) && person.userId !== owner.userId)];
   const updateShare = (id, field, value) => setShares(old => ({ ...old, [id]: { ...old[id], [field]: value } }));
   const upload = async event => {
@@ -20,7 +25,7 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
     event.preventDefault(); if (saving || uploading || data.busy) return;
     setSaving(true); setError('');
     try {
-      const payload = paymentRoomPayload({ ...form, people, shares, account: data.home.profile.payment, ownerId: owner.userId });
+      const payload = paymentRoomPayload({ ...form, people, shares, account, accounts: methods, ownerId: owner.userId });
       const reply = await data.send('CREATE_PAYMENT_ROOM', payload);
       if (reply?.room) openRoom(reply.room.id);
     } catch (e) { setError(e.message); } finally { setSaving(false); }
@@ -92,12 +97,15 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
           <div><dt>{t(remaining < 0 ? 'Over the total' : 'Left to split')}</dt><dd><bdi>{remaining === null ? '—' : money(Math.abs(remaining), form.currency)}</bdi></dd></div>
         </dl>
         <p className={`payment-balance-note${balanced ? ' is-balanced' : ''}`} role="status">{t(balanced ? 'Shares match the receipt' : remaining < 0 ? 'Reduce the shares to match your receipt.' : 'Assign everyone’s share to match the receipt.')}</p>
-        {!data.home.profile.payment && <div className="payment-profile-note"><p>{t('Add your receiving details in your profile first.')}</p><button className="secondary" type="button" onClick={openProfile}>{t('Profile')}</button></div>}
+        <div className="section-title compact"><b>{t('Payment')}</b><a className="secondary" href="#payment-create-methods">{t(account ? 'Edit' : 'Add payment method')}</a></div>
+        {methods.length > 0 && <label>{t('Payment method')}<select value={account.id} onChange={event => setAccountChoice(event.target.value)}>{methods.map(method => <option value={method.id} key={method.id}>{t(method.method === 'AANI' ? 'Aani' : 'Bank account')} · {method.identifier}</option>)}</select></label>}
+        {!account && <p className="payment-profile-note">{t('Add your receiving details in your profile first.')}</p>}
         <p className="payment-summary-help">{t('Creating this room records that you already paid the restaurant. It does not move money.')}</p>
         {error && <p className="form-message" role="alert">{error}</p>}
-        <button className="primary wide" disabled={uploading || !data.home.profile.payment}>{t(saving || data.busy ? 'Creating room…' : 'Create payment room')}</button>
+        <button className="primary wide" disabled={uploading || !account}>{t(saving || data.busy ? 'Creating room…' : 'Create payment room')}</button>
       </aside>
     </fieldset></form>
+    <PaymentMethodsEditor data={data} id="payment-create-methods" />
   </Page></div>;
 }
 

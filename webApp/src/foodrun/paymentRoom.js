@@ -7,7 +7,7 @@ export function splitEqually(total, userIds) {
   const base = Math.floor(total / sorted.length), remainder = total % sorted.length;
   return Object.fromEntries(sorted.map((id, index) => [id, base + (index < remainder ? 1 : 0)]));
 }
-export function paymentRoomPayload({ name, restaurant, details, photo, total, people, shares, account, ownerId, currency = 'AED' }) {
+export function paymentRoomPayload({ name, restaurant, details, photo, total, people, shares, account, accounts = [], ownerId, currency = 'AED' }) {
   if (!name.trim() || !details.trim()) throw Error(t('Enter a room name and order details.'));
   if (!account) throw Error(t('Add your receiving details in your profile first.'));
   if (people.length < 2 || people.length > 30 || !people.some(person => person.userId === ownerId) || new Set(people.map(p => p.userId)).size !== people.length) throw Error(t('Choose yourself and 1–29 different people.'));
@@ -22,6 +22,7 @@ export function paymentRoomPayload({ name, restaurant, details, photo, total, pe
   const receivingAccount = account.method === 'BANK' && account.currency !== currency ? { ...account, currency } : account;
   if (receivingAccount.method === 'AANI' && currency !== 'AED') throw Error(t('Aani payment rooms use AED. Choose AED or use a bank account.'));
   return { text: name.trim(), name: restaurant.trim() || name.trim(), amount: receiptTotal, account: receivingAccount,
+    accounts: accounts.filter(method => method.method === 'BANK' || currency === 'AED').map(method => ({ ...method, currency })),
     paymentRoom: { details: { orderDetails: details.trim(), receiptPhoto: photo }, shares: values, currency } };
 }
 export async function receiptPhotoData(file) {

@@ -14,7 +14,7 @@ export function groupedOrderLines(room, receipts, language = 'en') {
   return [...grouped.values()];
 }
 
-export function restaurantOrderText(room, receipts, language = 'en') {
+export function restaurantOrderText(room, receipts, language = 'ar') {
   const quantityText = quantity => language === 'ar'
     ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)])
     : String(quantity);

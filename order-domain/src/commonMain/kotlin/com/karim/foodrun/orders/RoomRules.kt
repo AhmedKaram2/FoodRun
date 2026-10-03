@@ -5,6 +5,8 @@ object RoomRules {
     fun validateRoom(room: Room) {
         require(room.selectionStyle in listOf("wheel", "names")) { "Invalid selection style." }
         room.paymentRoom?.validate()
+        require(room.accounts.size <= 10 && room.accounts.map { it.id }.distinct().size == room.accounts.size && room.receivingAccounts.size <= 10) { "Share up to 10 distinct payment methods." }
+        room.receivingAccounts.forEach { it.validate(); require(it.currency == room.restaurant.currency) { "Account currency must match the room." } }
         MenuValidation.label(room.name); MenuValidation.validate(room.restaurant)
         require(room.restaurantOptions.size <= 12) { "A restaurant poll supports up to 12 choices." }
         require(room.restaurantOptions.map { it.id }.distinct().size == room.restaurantOptions.size) { "Restaurant poll choices must be unique." }

@@ -8,5 +8,5 @@ export function roomInvitation(room, link, language = 'en') {
   return [`Food Run · ${room.name}`, restaurant,
     tf('Order #{number}', { number: room.orderNumber }, language),
     tf('Room code: {code}', { code: room.code }, language),
-    t('Join directly using the link or code. No approval needed.', language), link].join('\n');
+    t('Join using the link or code. After selection, the room creator or selected person must approve new joiners.', language), link].join('\n');
 }

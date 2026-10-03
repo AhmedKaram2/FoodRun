@@ -11,7 +11,8 @@ test('invitations include restaurant, order, code and link in English and Arabic
     assert.ok(text.includes(language === 'ar' ? 'طلب رقم 3' : 'Order #3'));
     assert.ok(text.includes('123456'));
     assert.equal(text.split(link).length, 2);
-    assert.ok(text.includes(language === 'ar' ? 'من غير موافقة' : 'No approval needed'));
+    assert.ok(text.includes(language === 'ar' ? 'بعد الاختيار' : 'After selection'));
+    assert.ok(text.includes(language === 'ar' ? 'يوافق' : 'must approve'));
   }
 });
 test('open polls show the choices rather than announcing a selected restaurant', () => {

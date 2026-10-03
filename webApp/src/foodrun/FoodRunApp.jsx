@@ -8,8 +8,8 @@ import RestaurantPollPrompt from './RestaurantPollPrompt.jsx';
 import OrderPricingPanel from './OrderPricingPanel.jsx';
 import ReorderReview from './ReorderReview.jsx';
 import { lastRestaurantOrder, nextRestaurantHistoryRoom } from './reorder.js';
-import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
-import PaymentFields from './PaymentFields.jsx';
+import { internationalPhone, roomPaymentAccounts } from './paymentDetails.js';
+import PaymentMethodsEditor from './PaymentMethodsEditor.jsx';
 import { groupedOrderLines, restaurantOrderText } from './restaurantOrderText.js';
 import BlockedNotice from './BlockedNotice.jsx';
 import NativeGoogleSignIn from './NativeGoogleSignIn.jsx';
@@ -66,7 +66,7 @@ const LEGACY_RESTAURANT_METADATA = {
   'builtin-bait-al-waleema': { emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Al Majaz', areaAr: 'المجاز', cuisine: 'Egyptian', cuisineAr: 'مصري', mealTypes: ['lunch','dinner'] },
 };
 const BUNDLED_RESTAURANTS = [...builtInRestaurants.map(value => ({ ...value, ...(LEGACY_RESTAURANT_METADATA[value.id] || {}) })), ...sharjahRestaurants, ...dubaiRestaurants];
-let uiLanguage = localStorage.getItem(LANGUAGE_KEY) === 'ar' ? 'ar' : 'en';
+let uiLanguage = localStorage.getItem(LANGUAGE_KEY) === 'en' ? 'en' : 'ar';
 let updateLanguage = () => {};
 
 function tx(english, arabic) { return uiLanguage === 'ar' ? (t(english, 'ar') === english ? arabic : t(english, 'ar')) : english; }
@@ -437,7 +437,7 @@ function UserDashboard({ data, openRoom, compact = false }) {
         <p>{localizedName(entry.room.restaurant)} · {tf('Order #{number}', { number: entry.room.orderNumber })}</p>
         <small>{t('Order')} {money(entry.receipt.total, entry.currency)} · {t('Paid')} {money(entry.receipt.paid, entry.currency)}</small>
         <PaymentActionLine room={entry.room} receipt={entry.receipt} memberId={entry.memberId} data={data} />
-        {section.key === 'pay' && entry.kind !== 'refund' && <PaymentDetails account={entry.room.account} data={data} />}
+        {section.key === 'pay' && entry.kind !== 'refund' && <PaymentDetails account={entry.room.account} accounts={entry.room.accounts} data={data} />}
         <button className="secondary wide" onClick={() => openRoom(entry.roomId)}>{t('Order and payment details')}</button>
       </article>)}
     </section>)}</div>
@@ -459,24 +459,23 @@ function ProfileScreen({ data, onBack, openRoom }) {
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({
     name: profile?.name || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
-    discoverable: profile?.discoverable ?? true, ...paymentDraft(profile?.payment),
+    discoverable: profile?.discoverable ?? true,
   });
   const [dirty, setDirty] = useState(false);
   const syncedProfile = useRef(profile);
   useEffect(() => {
     if (!dirty && syncedProfile.current !== profile) {
       syncedProfile.current = profile;
-      setForm(old => { const payment = paymentDraft(profile?.payment); return { name: profile?.name || '', phone: profile?.phone || '', photo: profile?.photo || '', discoverable: profile?.discoverable ?? true, ...payment, ...(profile?.payment ? { iban: payment.iban || old.iban, aaniPhone: payment.aaniPhone || old.aaniPhone } : {}) }; });
+      setForm({ name: profile?.name || '', phone: profile?.phone || '', photo: profile?.photo || '', discoverable: profile?.discoverable ?? true });
     }
   }, [profile, dirty]);
   const set = (key, value) => { setDirty(true); setForm(old => ({ ...old, [key]: value })); };
   const save = async event => {
     event.preventDefault(); setMessage('');
     try {
-      const payment = paymentAccount(form, profile?.payment, form.name);
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
-        userId: '', name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
-        payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
+        ...profile, userId: '', name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
+        payment: profile.payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
       if (reply) { setDirty(false); setMessage(t("Profile and payment details saved.")); }
     } catch (error) { setMessage(error.message); }
@@ -512,12 +511,9 @@ function ProfileScreen({ data, onBack, openRoom }) {
         <label>{t("Phone with country code")}<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+20 10 1234 5678" /></label>
         <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
-      <section className="card stack payment-card">
-        <div><p className="eyebrow">{t("GET PAID BACK")}</p><h3>{t("Receiving details")}</h3><p className="muted">{t("Changes update your profile and all active rooms where you collect payments.")}</p></div>
-        <PaymentFields form={form} set={set} name={form.name} />
-      </section>
       <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
     </form></section>
+    <PaymentMethodsEditor data={data} id="profile-payment" />
     <div id="profile-wallet"><UserDashboard data={data} openRoom={openRoom} /></div>
     <section id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><span>☆</span><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
     <section id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><span>🥡</span><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <button className="secondary wide" onClick={() => setPreviousLimit(value => value + 10)}>{t("Show more unique orders")}</button>}</section>
@@ -613,7 +609,7 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState({ room: 'Mohre', selectionStyle: 'wheel', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: false, destination: "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5", delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
+  const [form, setForm] = useState({ room: 'Mohre', selectionStyle: 'wheel', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: true, destination: "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5", delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
   const [pollIds, setPollIds] = useState([]);
@@ -843,7 +839,7 @@ function FeeEditor({ room, data }) {
 
 function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArrival = room.restaurantReference, setExpectedArrival, canPlace = false, blocker = '', settlementActions = false }) {
   const [copied, setCopied] = useState(false);
-  const [copyLanguage, setCopyLanguage] = useState(() => ['en', 'ar'].includes(localStorage.getItem('foodrun-copy-language-v1')) ? localStorage.getItem('foodrun-copy-language-v1') : uiLanguage);
+  const [copyLanguage, setCopyLanguage] = useState(() => ['en', 'ar'].includes(localStorage.getItem('foodrun-copy-language-v1')) ? localStorage.getItem('foodrun-copy-language-v1') : 'ar');
   const orderText = restaurantOrderText(room, receipts, copyLanguage);
   const chooseCopyLanguage = value => { setCopyLanguage(value); setCopied(false); localStorage.setItem('foodrun-copy-language-v1', value); };
   const copy = async () => { await copyText(orderText); setCopied(true); setTimeout(() => setCopied(false), 2500); };
@@ -886,28 +882,10 @@ function WalletPanel({ room, receipts, me, payer }) {
   </article>;
 }
 
-function PaymentDetails({ account, data }) {
-  if (!account) return null;
-  return <div className="pay-to payment-details"><span>{t(account.method === "AANI" ? "Aani · UAE mobile number" : "Bank transfer · IBAN")}</span><b>{account.holder} · {account.bank}</b><code dir="ltr">{account.identifier}</code><button type="button" className="secondary" onClick={() => copyText(account.identifier).then(() => data.setNotice(t("Payment details copied."))).catch(error => data.setNotice(error.message))}>{t("Copy payment details")}</button></div>;
-}
-
-function PayerAccountEditor({ room, data }) {
-  const profile = data.home.profile;
-  const [form, setForm] = useState(paymentDraft(room.account || profile.payment));
-  const [message, setMessage] = useState('');
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => { if (!dirty) setForm(paymentDraft(room.account || profile.payment)); }, [room.account, profile.payment, dirty]);
-  const set = (key, value) => { setDirty(true); setForm(old => ({ ...old, [key]: value })); };
-  const save = async event => {
-    event.preventDefault(); setMessage('');
-    try {
-      const account = paymentAccount(form, profile.payment, profile.name, true, room.restaurant.currency);
-      const saved = await data.send('SHARE_ACCOUNT', { account }, room.id);
-      if (saved) { setDirty(false); setMessage(t('Payment details updated in your profile and active rooms.')); }
-      else setMessage(t('Payment details were not saved. Please try again.'));
-    } catch (error) { setMessage(error.message); }
-  };
-  return <article id="payer-account" className="card payer-account-editor"><h2>{t('Receiving details')}</h2><p className="muted">{t('Changes update your profile and all active rooms where you collect payments.')}</p><form className="stack" onSubmit={save}><PaymentFields form={form} set={set} name={profile.name} required />{message && <p className="form-message" role="status">{message}</p>}<button className="primary wide" disabled={data.busy}>{t('Save payment details')}</button></form></article>;
+function PaymentDetails({ account, accounts = [], data }) {
+  const methods = roomPaymentAccounts({ account, accounts });
+  if (!methods.length) return null;
+  return <div className="stack">{methods.map(method => <div className="pay-to payment-details" key={method.id}><span>{t(method.method === "AANI" ? "Aani · UAE mobile number" : "Bank transfer · IBAN")}</span><b>{method.holder} · {method.bank}</b><code dir="ltr">{method.identifier}</code><button type="button" className="secondary" onClick={() => copyText(method.identifier).then(() => data.setNotice(t("Payment details copied."))).catch(error => data.setNotice(error.message))}>{t("Copy payment details")}</button></div>)}</div>;
 }
 
 function PaymentActionLine({ room, receipt, memberId, data }) {
@@ -915,6 +893,9 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   const pending = room.transfers.find(value => value.memberId === receipt.memberId && String(value.status).toLowerCase() === 'declared');
   const [value, setValue] = useState(minorInput(Math.abs(receipt.balance), receipt.currency));
   const [reference, setReference] = useState('');
+  const [accountChoice, setAccountChoice] = useState('');
+  const methods = roomPaymentAccounts(room);
+  const accountId = methods.some(method => method.id === accountChoice) ? accountChoice : room.account?.id || '';
   const [error, setError] = useState('');
   useEffect(() => setValue(minorInput(Math.abs(receipt.balance), receipt.currency)), [receipt.balance, receipt.currency]);
   if (receipt.memberId === room.payerId) return <p className="field-help">{t("Your own share")} · {money(receipt.total, receipt.currency)}</p>;
@@ -925,14 +906,14 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
     try {
       const paid = amount(value, receipt.currency);
       if (paid <= 0 || paid > Math.abs(receipt.balance)) throw Error(t('Amount exceeds the remaining balance.'));
-      await data.send(payer ? 'DECLARE_REFUND' : 'DECLARE_TRANSFER', { amount: paid, text: reference.trim() || (payer ? 'Refund sent' : 'Payment sent'), ...(payer ? { memberId: receipt.memberId } : {}) }, room.id);
+      await data.send(payer ? 'DECLARE_REFUND' : 'DECLARE_TRANSFER', { amount: paid, accountId, text: reference.trim() || (payer ? 'Refund sent' : 'Payment sent'), ...(payer ? { memberId: receipt.memberId } : {}) }, room.id);
     } catch (failure) { setError(failure.message); }
   };
   return <div className="payment-actions stack">
     <PaymentReminderButton room={room} receipt={receipt} memberId={memberId} data={data} />
-    {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference} · {t('Awaiting confirmation')}</p>}
+    {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference} · {pending.recipient?.bank} · <bdi>{pending.recipient?.identifier}</bdi> · {t('Awaiting confirmation')}</p>}
     {canConfirm && <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => data.send(pending.refund ? 'CONFIRM_REFUND' : 'CONFIRM_TRANSFER', { transferId: pending.id }, room.id)}>{t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => data.send('REJECT_TRANSFER', { transferId: pending.id, text: 'Payment was not received or the details do not match.' }, room.id)}>{t('Not received')}</button></div>}
-    {canDeclare && <form className="stack" onSubmit={submit}><div className="form-grid two"><label>{t('Amount sent')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Payment note (optional)')}<input value={reference} onChange={event => setReference(event.target.value)} maxLength={160} placeholder={t('Bank transfer or cash')} /></label></div><button className="primary wide" disabled={data.busy}>{payer ? t('Mark refund sent') : t('Mark paid')}</button></form>}
+    {canDeclare && <form className="stack" onSubmit={submit}>{!payer && methods.length > 1 && <label>{t('Payment method')}<select value={accountId} onChange={event => setAccountChoice(event.target.value)}>{methods.map(method => <option key={method.id} value={method.id}>{t(method.method === 'AANI' ? 'Aani' : 'Bank account')} · {method.bank} · {method.identifier}</option>)}</select></label>}<div className="form-grid two"><label>{t('Amount sent')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Payment note (optional)')}<input value={reference} onChange={event => setReference(event.target.value)} maxLength={160} placeholder={t('Bank transfer or cash')} /></label></div><button className="primary wide" disabled={data.busy}>{payer ? t('Mark refund sent') : t('Mark paid')}</button></form>}
     {!room.restaurantPaid && receipt.balance !== 0 && <p className="field-help">{t('Waiting for restaurant payment to be recorded.')}</p>}
     {payer && receipt.balance > 0 && !pending && room.restaurantPaid && <p className="field-help">{t('Waiting for payment')}</p>}
     {error && <p role="alert" className="form-message">{error}</p>}
@@ -963,8 +944,7 @@ function SettlementPanel({ room, reply, me, owner, payer, data }) {
       {payer && <div className="settlement-totals"><span><small>{t('Your own share')}</small><b>{money(reply.receipts.find(receipt => receipt.memberId === me.id)?.total || 0, currency)}</b></span><span><small>{t('Received')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + receipt.paid, 0), currency)}</b></span><span><small>{t('Still to collect')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), currency)}</b></span></div>}
       {room.billRevision > 1 && <p className="field-help">{t('Updated totals apply automatically. No new approval is needed.')}</p>}
       {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} />{payer && room.paymentRoom && <RecordPayment room={room} receipt={receipt} data={data} />}</section>)}
-      <PaymentDetails account={room.account} data={data} />
-      {payer && <details className="edit-receiving-details"><summary>{t('Edit receiving details')}</summary><PayerAccountEditor room={room} data={data} /></details>}
+      {payer ? <PaymentMethodsEditor room={room} data={data} /> : <PaymentDetails account={room.account} accounts={room.accounts} data={data} />}
       <p className="fine">{t('Recording a payment tracks it in Food Run; it does not move money.')}</p>
     </article>
     {!room.paymentRoom && <article className="card placed-banner"><p className="eyebrow">{t('RESTAURANT STATUS')}</p><h2>{room.restaurantPaid ? t('Restaurant payment recorded') : t('Order announced as placed')}</h2><p>{room.restaurantReference}</p></article>}
@@ -1098,6 +1078,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
     if (saved) data.setNotice(t("Favorite order saved."));
   };
   const startNextOrder = () => data.send('NEXT_ORDER', { restaurant: room.restaurant, restaurants: room.restaurantOptions || [room.restaurant], expectedNames: [], flag: room.deliveryMode, destination: room.destination, deadline: 0, fees: room.fees }, room.id);
+  if (!me.approved) return <Page title={room.name} onBack={onBack}><article className="card notice-card"><h2>{t('Waiting for approval')}</h2><p>{t('The room creator or selected person must approve your join request. You will enter automatically after approval.')}</p></article></Page>;
   if (room.paymentRoom) return <Page title={room.name} subtitle={t('Payment room · split and settle an existing bill')} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t('● Live') : t('Offline')}</span>}>
     <fieldset disabled={data.busy} className="room-fieldset stack"><PaymentReceipt room={room} data={data} payer={payer} />
       {settling ? <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} /> : <article className="card stack"><h2>{t('Payment room completed')}</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}</article>}
@@ -1115,22 +1096,15 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
           {room.phase === 'SPINNING' && <><p className="eyebrow">{t("LIVE SELECTION")}</p><h2>{t("Who will order?")}</h2><LiveSelectionWheel style={room.selectionStyle} key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active /></>}
           {room.phase === 'ACCEPTING' && <><LiveSelectionWheel style={room.selectionStyle} key={room.spin.id} spin={room.spin} members={room.members} serverTime={reply.serverTime} active={false} /><WinnerReveal winner={winner} selected={selected} me={me} room={room} data={data} /></>}
         </article>}
-        {!me.approved && <article className="card notice-card"><h2>{t("Reconnect to update room access")}</h2><p>{t("Refresh the room. If access is still unavailable, update the room server.")}</p></article>}
         {me.approved && !me.guest && !me.participating && room.phase !== 'LOBBY' && <article className="card notice-card"><h2>{t("You’re in the room")}</h2><p>{t("You’re viewing this order. You can join when the next order opens.")}</p></article>}
-        {me.approved && room.phase === 'LOBBY' && <><article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("WHO’S IN?")}</p><h2>{t("Join today’s order")}</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? t("Skip this order") : t("Join this order")}</button></div>}<p className="muted">{t("You join and become ready automatically. Add your food now; no approval is needed.")}</p>{owner && !room.restaurantPollOpen && <div className="stack"><div className="segmented"><button type="button" className={payerMode === 'wheel' ? 'active' : ''} onClick={() => setPayerMode('wheel')}>{t('Use the wheel')}</button><button type="button" className={payerMode === 'direct' ? 'active' : ''} onClick={() => setPayerMode('direct')}>{t('Choose person directly')}</button></div>{payerMode === 'direct' ? <><label>{t('Ordering person')}<select value={selectedPayerId} onChange={event => setPayerChoice(event.target.value)}>{orderingMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><button className="primary wide" disabled={!selectedPayerId} onClick={() => data.send('SELECT_PAYER', { memberId: selectedPayerId }, room.id)}>{t('Choose person directly')}</button></> : <button className="primary wide" disabled={!orderingMembers.length} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>{t('Spin to choose the payer')}</button>}</div>}</article>{room.restaurantPollOpen && <RestaurantPoll room={room} me={me} owner={owner} data={data} />}</>}
+        {me.approved && room.phase === 'LOBBY' && <><article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("WHO’S IN?")}</p><h2>{t("Join today’s order")}</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? t("Skip this order") : t("Join this order")}</button></div>}<p className="muted">{t('Joining is automatic before selection. After selection, the room creator or selected person approves new joiners.')}</p>{owner && !room.restaurantPollOpen && <div className="stack"><div className="segmented"><button type="button" className={payerMode === 'wheel' ? 'active' : ''} onClick={() => setPayerMode('wheel')}>{t('Use the wheel')}</button><button type="button" className={payerMode === 'direct' ? 'active' : ''} onClick={() => setPayerMode('direct')}>{t('Choose person directly')}</button></div>{payerMode === 'direct' ? <><label>{t('Ordering person')}<select value={selectedPayerId} onChange={event => setPayerChoice(event.target.value)}>{orderingMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><button className="primary wide" disabled={!selectedPayerId} onClick={() => data.send('SELECT_PAYER', { memberId: selectedPayerId }, room.id)}>{t('Choose person directly')}</button></> : <button className="primary wide" disabled={!orderingMembers.length} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>{t('Spin to choose the payer')}</button>}</div>}</article>{room.restaurantPollOpen && <RestaurantPoll room={room} me={me} owner={owner} data={data} />}</>}
         {me.approved && !me.guest && me.participating && orderingOpen && <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} receipt={myReceipt} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />}
-        {me.approved && room.phase === 'COLLECTING' && <>
-
-          {payer && <OrderSummary room={room} receipts={reply.receipts} className="collected-orders" />}
-          {payer && !room.account && <PayerAccountEditor room={room} data={data} />}
-          {owner && !payer && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
-
-
-        </>}
+        {payer && room.phase === 'COLLECTING' && <OrderSummary room={room} receipts={reply.receipts} className="collected-orders" />}
+        {owner && !payer && room.phase === 'COLLECTING' && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
         {payer && room.phase === 'REVIEW' && <OrderSummary room={room} receipts={reply.receipts} />}
-        {room.phase === 'REVIEW' && <details className="card payment-breakdown"><summary>{t('Order details')}</summary>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}<PaymentDetails account={room.account} data={data} />{owner && !payer && <FeeEditor key={room.quoteRevision} room={room} data={data} />}</details>}
+        {room.phase === 'REVIEW' && <details className="card payment-breakdown"><summary>{t('Order details')}</summary>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}<PaymentDetails account={room.account} accounts={room.accounts} data={data} />{owner && !payer && <FeeEditor key={room.quoteRevision} room={room} data={data} />}</details>}
         {(owner || payer) && ['COLLECTING','REVIEW'].includes(room.phase) && <OrderPricingPanel room={room} data={data} describeLine={line => cartLineDescription(room, line)} />}
-        {payer && ['COLLECTING','REVIEW'].includes(room.phase) && <><FeeEditor key={`payer-fees:${room.quoteRevision}`} room={room} data={data} /><PaymentDetails account={room.account} data={data} /><RestaurantOrderCard room={room} receipts={reply.receipts} data={data} expectedArrival={reference} setExpectedArrival={setReference} canPlace={reply.progress?.canReview} blocker={reply.progress?.reviewBlocker} /></>}
+        {payer && ['COLLECTING','REVIEW'].includes(room.phase) && <><FeeEditor key={`payer-fees:${room.quoteRevision}`} room={room} data={data} /><PaymentMethodsEditor room={room} data={data} /><RestaurantOrderCard room={room} receipts={reply.receipts} data={data} expectedArrival={reference} setExpectedArrival={setReference} canPlace={reply.progress?.canReview} blocker={reply.progress?.reviewBlocker} /></>}
         {['ARCHIVED','CANCELLED'].includes(room.phase) && <article className="card empty"><span>✓</span><h2>{room.phase === 'ARCHIVED' ? t("Order complete") : t("Order cancelled")}</h2><p>{t("The room, final receipts, restaurant, and prices stay saved for the next meal.")}</p>{owner && <button className="primary" onClick={startNextOrder}>{t("Start next order")}</button>}</article>}
         {(roomHistoryChoices.length > 0 || reply.historyNextOffset >= 0) && <details className="card history-card"><summary>{t("My unique previous orders ·")}{roomHistoryChoices.length}</summary>{roomHistoryChoices.map(choice => <div className="past-order" key={choice.key}><div><b>{choice.order.restaurantName} · {orderSummary(choice.receipt.lines)}</b><small>{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) + ' · ' : ''}{new Date(choice.order.completedAt).toLocaleString()}</small></div><ReceiptCard room={{ ...room, payerId: null, account: choice.order.account, orderNumber: choice.order.number, restaurant: { ...room.restaurant, name: choice.order.restaurantName } }} receipt={choice.receipt} own /><button className="link" onClick={() => copyText(receiptText({ ...room, orderNumber: choice.order.number, account: choice.order.account, restaurant: { ...room.restaurant, name: choice.order.restaurantName } }, choice.receipt))}>{t("Copy receipt")}</button><div className="hero-actions"><button className="secondary" disabled={!choice.restaurantId || favorites.some(value => favoriteKey(value) === choice.key)} onClick={() => saveFavorite(choice)}>{favorites.some(value => favoriteKey(value) === choice.key) ? t("★ Favorite") : t("☆ Save as favorite")}</button></div></div>)}{reply.historyNextOffset >= 0 && <button className="secondary wide" disabled={data.busy} onClick={() => data.loadOlderHistory(room.id)}>{t("Load older orders")}</button>}</details>}
       </section>
@@ -1138,7 +1112,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
         <RoomInviteCard room={room} hub={data.hub} />
         {owner && <BlockRequestForm room={room} data={data} />}
         {room.payerId && <section className="card payer-side"><p className="eyebrow">{t("ORDERING PERSON")}</p><span className="avatar initials">{initials(room.members.find(member => member.id === room.payerId)?.name)}</span><h3>{room.members.find(member => member.id === room.payerId)?.name}</h3><p>{payer ? tx('You order, pay the full restaurant bill, and receive everyone’s share.', 'تطلب وتدفع فاتورة المطعم كاملة وتستلم حصص الآخرين.') : tx('Submit your food, then pay your share to the selected person.', 'ابعت طلبك، وبعدها ادفع حصتك للشخص اللي هيطلب.')}</p></section>}
-        <section id="room-members" className="card"><div className="section-title compact"><div><p className="eyebrow">{t("AT THE TABLE")}</p><h3>{room.members.filter(member => !member.removed).length} {t("people")}</h3></div>{owner && room.phase === 'LOBBY' && <button className="icon-button" aria-label={t("Invite registered people")} onClick={() => setInviteOpen(!inviteOpen)}>＋</button>}</div>{room.members.filter(member => !member.removed).map(member => { const cart = room.carts.find(value => value.memberId === member.id); const canRemove = owner && member.id !== room.ownerId && (room.phase === 'LOBBY' || room.phase === 'COLLECTING' && member.id !== room.payerId && !cart?.submitted); return <div className="member" key={member.id}><span className="avatar initials small">{initials(member.name)}</span><span><b>{member.name}{member.id === me.id ? t(' · You') : ''}</b><small>{member.id === room.payerId ? t("Selected to order") : member.id === room.ownerId ? t("Organizer") : cart?.submitted ? t("Food submitted") : member.participating ? t("Joined automatically") : 'Skipping'}</small></span>{canRemove && <button className="member-remove" aria-label={tf('Remove {name} from room', { name: member.name })} title={t('Remove from room')} onClick={() => { const reason = window.prompt(tf('Why are you removing {name}?', { name: member.name })); if (reason?.trim()) data.send('REMOVE', { memberId: member.id, text: reason.trim() }, room.id); }}>×</button>}</div>; })}{inviteOpen && <div className="invite-list"><p>{t("Invite registered people")}</p>{data.home.people.map(person => <button className="person-button" key={person.userId} onClick={() => data.send('IDENTITY', { identity: { action: 'INVITE', userId: person.userId } }, room.id)}><span className="avatar initials small">{initials(person.name)}</span>{person.name}<b>{t("Invite")}</b></button>)}</div>}</section>
+        <section id="room-members" className="card"><div className="section-title compact"><div><p className="eyebrow">{t("AT THE TABLE")}</p><h3>{room.members.filter(member => !member.removed).length} {t("people")}</h3></div>{owner && room.phase === 'LOBBY' && <button className="icon-button" aria-label={t("Invite registered people")} onClick={() => setInviteOpen(!inviteOpen)}>＋</button>}</div>{room.members.filter(member => !member.removed).map(member => { const cart = room.carts.find(value => value.memberId === member.id); const canRemove = owner && member.id !== room.ownerId && (room.phase === 'LOBBY' || room.phase === 'COLLECTING' && member.id !== room.payerId && !cart?.submitted); return <div className="member" key={member.id}><span className="avatar initials small">{initials(member.name)}</span><span><b>{member.name}{member.id === me.id ? t(' · You') : ''}</b><small>{member.approved === false ? t("Waiting for approval") : member.id === room.payerId ? t("Selected to order") : member.id === room.ownerId ? t("Organizer") : cart?.submitted ? t("Food submitted") : member.participating ? t("Joined automatically") : 'Skipping'}</small></span>{!member.approved && (owner || payer || ['SPINNING', 'ACCEPTING'].includes(room.phase) && winner?.id === me.id) && <span className="join-request-actions"><button className="secondary" onClick={() => data.send('APPROVE_LATE_JOIN', { memberId: member.id }, room.id)}>{t('Approve')}</button><button className="link danger" onClick={() => data.send('REMOVE', { memberId: member.id, text: 'Join request declined' }, room.id)}>{t('Decline')}</button></span>}{canRemove && member.approved && <button className="member-remove" aria-label={tf('Remove {name} from room', { name: member.name })} title={t('Remove from room')} onClick={() => { const reason = window.prompt(tf('Why are you removing {name}?', { name: member.name })); if (reason?.trim()) data.send('REMOVE', { memberId: member.id, text: reason.trim() }, room.id); }}>×</button>}</div>; })}{inviteOpen && <div className="invite-list"><p>{t("Invite registered people")}</p>{data.home.people.map(person => <button className="person-button" key={person.userId} onClick={() => data.send('IDENTITY', { identity: { action: 'INVITE', userId: person.userId } }, room.id)}><span className="avatar initials small">{initials(person.name)}</span>{person.name}<b>{t("Invite")}</b></button>)}</div>}</section>
         <section className="card room-tools"><p className="eyebrow">{t("ROOM TOOLS")}</p>{owner && <button className="primary wide" onClick={() => onAddRestaurant(room.id)}>{t("Add restaurant & menu for everyone")}</button>}<button className="secondary wide" onClick={saveCurrentRestaurant}>{t("Save restaurant & prices on this device")}</button>{payer && ['COLLECTING','REVIEW'].includes(room.phase) && data.home.profile.payment && <button className="secondary wide" onClick={() => data.send('SHARE_ACCOUNT', { account: { ...data.home.profile.payment, currency: room.restaurant.currency } }, room.id)}>{t("Use saved payment details")}</button>}{owner && ['LOBBY','COLLECTING','REVIEW','ACCEPTING'].includes(room.phase) && <button className="link danger wide" onClick={() => { const reason = window.prompt(t("Why are you cancelling this order?")); if (reason) data.send('CANCEL', { text: reason }, room.id); }}>{t("Cancel today’s order")}</button>}</section>
         {(owner || payer) && <RoomManagement key={`${room.id}:${room.orderNumber}:${room.restaurant.id}:${room.restaurant.pricing.taxTreatment}:${room.restaurant.pricing.taxRateBasisPoints}`} room={room} data={data} owner={owner} payer={payer} />}
         {selected && <section className="card winner-mini"><p className="eyebrow">{t("SELECTED")}</p><h3>{winner.name}</h3><p>{t("Sandwich entry remains open while the payer confirms.")}</p></section>}

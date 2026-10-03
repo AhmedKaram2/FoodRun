@@ -562,5 +562,21 @@
   "WhatsApp with country code": "رقم واتساب مع رمز الدولة",
   "IBAN": "رقم الآيبان",
   "Choose a supported currency.": "اختر عملة مدعومة.",
-  "Aani payment rooms use AED. Choose AED or use a bank account.": "غرف الدفع عبر آني تستخدم الدرهم. اختر AED أو استخدم حساباً بنكياً."
+  "Aani payment rooms use AED. Choose AED or use a bank account.": "غرف الدفع عبر آني تستخدم الدرهم. اختر AED أو استخدم حساباً بنكياً.",
+  "Payment": "الدفع",
+  "Default": "الافتراضي",
+  "Use this method": "استخدم هذه الطريقة",
+  "Add payment method": "إضافة طريقة دفع",
+  "Edit payment method": "تعديل طريقة الدفع",
+  "Payment method": "طريقة الدفع",
+  "Payment methods saved.": "تم حفظ طرق الدفع.",
+  "Save multiple receiving methods. Members can choose how to pay you.": "احفظ أكثر من طريقة لاستلام الأموال، ويمكن للأعضاء اختيار طريقة الدفع لك.",
+  "Save up to 10 distinct payment methods.": "يمكنك حفظ ١٠ طرق دفع مختلفة كحد أقصى.",
+  "Decline": "رفض",
+  "The room creator or selected person must approve your join request. You will enter automatically after approval.": "يجب أن يوافق منشئ الغرفة أو الشخص المختار على طلب انضمامك. ستدخل تلقائياً بعد الموافقة.",
+  "Joining is automatic before selection. After selection, the room creator or selected person approves new joiners.": "الانضمام تلقائي قبل الاختيار. بعد الاختيار، يجب أن يوافق منشئ الغرفة أو الشخص المختار على المنضمين الجدد.",
+  "Wait for the organizer or selected person to approve your join request.": "انتظر موافقة المنظم أو الشخص المختار على طلب انضمامك.",
+  "Only the organizer or selected person can approve join requests.": "يمكن للمنظم أو الشخص المختار فقط الموافقة على طلبات الانضمام.",
+  "Choose a payment method shared in this room.": "اختر طريقة دفع متاحة في هذه الغرفة.",
+  "Join using the link or code. After selection, the room creator or selected person must approve new joiners.": "انضم بالرابط أو الكود. بعد الاختيار، يجب أن يوافق منشئ الغرفة أو الشخص المختار على المنضمين الجدد."
 }

@@ -35,7 +35,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
   Object.assign(room, options.room || {});
   const roomData = { ...data, sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
     rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
-  const props = { data: screen === 'room' || options.room ? roomData : options.data || data, onBack: () => {}, openRoom: () => {}, setPage: () => {} };
+  const props = { data: options.data || (screen === 'room' || options.room ? roomData : data), onBack: () => {}, openRoom: () => {}, setPage: () => {} };
   if (options.send) roomData.send = options.send;
   if (options.liveCart || options.liveCommands) roomData.send = async (kind, fields) => {
     commands.push({ kind, fields });
@@ -524,4 +524,52 @@ export async function runNotificationAudit() {
   assert(host.querySelector('.running-names.finished .name-runner-selected')?.textContent === 'أحمد', 'Running names did not reveal the server winner');
   assert(!measureAudit().overflow, 'Running names overflows');
   return { passed: ['payment review before confirmation', 'explicit received action', 'stale action prevented', 'inbox layout', 'running names server winner', 'mobile layout'], language: getLanguage(), ...measureAudit() };
+}
+
+export async function runDefaultsJoinPaymentAudit() {
+  const bank = { id: 'bank', method: 'BANK', holder: 'Audit User', bank: 'Test Bank', identifier: 'AE070331234567890123456', currency: 'AED', version: 1 };
+  const aani = { id: 'aani', method: 'AANI', holder: 'Audit User', bank: 'Aani', identifier: '+971500000001', currency: 'AED', version: 1 };
+  commands.length = 0;
+  await mountAudit('create');
+  assert(host.querySelector('.delivery-choice button.active')?.textContent === t('Delivery'), 'Delivery is not the creation default');
+  localStorage.removeItem('foodrun-copy-language-v1');
+  await mountAudit('room', 'COLLECTING');
+  assert(host.querySelector('.copy-language select')?.value === 'ar', 'Order text did not default to Arabic');
+  const me = { id: 'me', name: 'Audit User', approved: true, participating: true };
+  const late = { id: 'late', name: 'Late joiner', approved: false, participating: false };
+  await mountAudit('room', 'COLLECTING', { room: { members: [me, late] } });
+  const approve = host.querySelector('.join-request-actions .secondary');
+  assert(approve, 'Creator approval button missing');
+  approve.click(); await pause();
+  assert(commands.at(-1)?.kind === 'APPROVE_LATE_JOIN' && commands.at(-1).fields.memberId === late.id, 'Approve did not target the late joiner');
+  await mountAudit('room', 'COLLECTING', { room: { ownerId: 'other', payerId: 'me', members: [me, late] } });
+  assert(host.querySelector('.join-request-actions .secondary'), 'Selected payer approval button missing');
+  await mountAudit('room', 'COLLECTING', { memberId: 'late', room: { members: [me, late] } });
+  assert(host.textContent.includes(t('Waiting for approval')), 'Pending joiner has no waiting notice');
+  assert(!host.querySelector('.room-layout, .member-order-panel, .join-request-actions, .payment-methods-editor'), 'Pending joiner sees protected controls');
+  await mountAudit('room', 'FULFILLED', { room: { account: bank, accounts: [aani], restaurantPaid: true } });
+  const editor = host.querySelector('.payment-methods-editor');
+  assert(editor && editor.querySelector('h2').textContent === t('Payment'), 'Inline Payment heading missing');
+  assert([...editor.querySelector('.section-title .hero-actions').children].some(node => node.textContent === t('Edit')), 'Edit is not beside Payment');
+  assert(editor.querySelectorAll('.saved-payment-method').length === 2, 'Multiple receiving methods missing');
+  assert(!measureAudit().overflow, 'Payment methods overflow on mobile');
+  editor.querySelector('.section-title .hero-actions button').click(); await pause();
+  assert(host.querySelector('.payment-method-form input'), 'Quick Edit did not open receiving fields');
+  button('Cancel').click(); await pause();
+  button('Add payment method').click(); await pause();
+  const phone = host.querySelector('.payment-method-form input[type=tel]');
+  assert(phone && phone.value === '', 'Add method reused an existing identifier');
+  setValue(phone, '0509999999'); await pause();
+  host.querySelector('.payment-method-form').requestSubmit(); await pause();
+  assert(commands.at(-1)?.fields.identity?.profile.paymentAccounts.length === 3, 'Adding a method overwrote existing methods');
+  const member = { id: 'friend', name: 'Friend', approved: true, participating: true };
+  const receipt = { memberId: member.id, name: member.name, total: 300, paid: 0, balance: 300, food: 300, currency: 'AED', lines: [{ description: 'Food', quantity: 1, amount: 300 }] };
+  await mountAudit('room', 'FULFILLED', { memberId: member.id, room: { account: bank, accounts: [aani], members: [me, member], restaurantPaid: true }, receipts: [receipt] });
+  const methods = host.querySelector('.payment-actions select');
+  assert(methods?.options.length === 2, 'Member cannot choose between shared methods');
+  setValue(methods, aani.id); await pause();
+  host.querySelector('.payment-actions form').requestSubmit(); await pause();
+  assert(commands.at(-1)?.kind === 'DECLARE_TRANSFER' && commands.at(-1).fields.accountId === aani.id, 'Member payment did not include the selected receiving method');
+  assert(!measureAudit().overflow, 'Member payment controls overflow');
+  return { language: getLanguage(), width: innerWidth, passed: ['delivery default', 'Arabic order text default', 'creator approval', 'selected payer approval', 'pending join privacy', 'inline Edit and Add', 'multiple methods', 'method-specific payment'], overflow: measureAudit().overflow };
 }

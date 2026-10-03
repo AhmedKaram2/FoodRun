@@ -12,9 +12,10 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
         require(c.expectedOrderNumber > 0) { "Update Food Run before changing this order, then refresh the room and try again." }
         require(c.expectedOrderNumber == r.orderNumber) { "This request belongs to an earlier order. Refresh the room and review today's order before trying again." }
         val actor = RoomRules.member(r, actorId)
-        require(actor.approved) { "Refresh the room to sync membership." }
+        require(actor.approved) { "Wait for the organizer or selected person to approve your join request." }
         fun owner() { require(actorId == r.ownerId) { "Only the organizer can do this." } }
         fun payer() { require(actorId == r.payerId) { "Only the selected payer can do this." } }
+        fun joinApprover() { require(actorId == r.ownerId || actorId == r.payerId || r.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) && actorId == r.spin?.winnerId) { "Only the organizer or selected person can approve join requests." } }
         fun orderer() { require(!actor.guest && actor.participating) { "View-only guests cannot order or pay." } }
         fun phase(vararg phases: RoomPhase) { require(r.phase in phases) { "This action is unavailable at this order stage. Refresh the room." } }
         fun fresh() { require(c.expectedRevision == r.revision) { "The room changed. Review the latest details and retry." } }
@@ -41,29 +42,40 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     lastChosenName = r.members.firstOrNull { it.id == (r.lastChosenMemberId ?: r.payerId) }?.name ?: r.lastChosenName,
                 ).also(RoomRules::validateRoom)
             }
-            // Retain old command names so an already-open client can finish a queued request.
             CommandKind.APPROVE_LATE_JOIN, CommandKind.APPROVE -> {
-                if (c.kind == CommandKind.APPROVE) owner() else payer()
-                fresh()
-                require(RoomRules.member(r, c.memberId).approved) { "Refresh the room to sync membership." }
-                r
+                joinApprover(); fresh()
+                val target = RoomRules.member(r, c.memberId)
+                if (target.approved) r else {
+                    val participates = !target.guest && r.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING, RoomPhase.REVIEW)
+                    r.copy(
+                        members = r.members.map { if (it.id == target.id) it.copy(approved = true, participating = participates, ready = participates, eligible = participates && r.phase == RoomPhase.LOBBY, latePayerApproved = participates && r.phase != RoomPhase.LOBBY) else it },
+                        phase = if (participates && r.phase == RoomPhase.REVIEW) RoomPhase.COLLECTING else r.phase,
+                        quoteRevision = r.quoteRevision + if (participates) 1 else 0,
+                    )
+                }
             }
             CommandKind.REMOVE -> {
-                owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh(); reason()
-                require(c.memberId != r.ownerId) { "Hand over ownership before leaving." }
-                if (c.memberId.isEmpty()) r.copy(expectedNames = r.expectedNames.filterNot { it == c.name })
-                else {
-                    val target = RoomRules.member(r, c.memberId)
-                    require(target.id != r.payerId) { "Choose another ordering person before removing this member." }
-                    val cart = r.carts.singleOrNull { it.memberId == target.id }
-                    require(r.phase == RoomPhase.LOBBY || cart?.submitted != true) { "This member already submitted an order and cannot be removed from today's bill." }
-                    r.copy(
-                        members = r.members.map { if (it.id == target.id) it.copy(removed = true) else it },
-                        expectedNames = r.expectedNames.filterNot { it.equals(target.name, true) },
-                        carts = r.carts.filterNot { it.memberId == target.id },
-                        restaurantVotes = r.restaurantVotes.filterNot { it.memberId == target.id },
-                        quoteRevision = r.quoteRevision + if (cart == null) 0 else 1,
-                    )
+                val requested = r.members.singleOrNull { it.id == c.memberId && !it.removed && !it.approved }
+                if (requested != null) {
+                    joinApprover(); fresh(); reason()
+                    r.copy(members = r.members.map { if (it.id == requested.id) it.copy(removed = true) else it })
+                } else {
+                    owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh(); reason()
+                    require(c.memberId != r.ownerId) { "Hand over ownership before leaving." }
+                    if (c.memberId.isEmpty()) r.copy(expectedNames = r.expectedNames.filterNot { it == c.name })
+                    else {
+                        val target = RoomRules.member(r, c.memberId)
+                        require(target.id != r.payerId) { "Choose another ordering person before removing this member." }
+                        val cart = r.carts.singleOrNull { it.memberId == target.id }
+                        require(r.phase == RoomPhase.LOBBY || cart?.submitted != true) { "This member already submitted an order and cannot be removed from today's bill." }
+                        r.copy(
+                            members = r.members.map { if (it.id == target.id) it.copy(removed = true) else it },
+                            expectedNames = r.expectedNames.filterNot { it.equals(target.name, true) },
+                            carts = r.carts.filterNot { it.memberId == target.id },
+                            restaurantVotes = r.restaurantVotes.filterNot { it.memberId == target.id },
+                            quoteRevision = r.quoteRevision + if (cart == null) 0 else 1,
+                        )
+                    }
                 }
             }
             CommandKind.PARTICIPATE -> {
@@ -128,9 +140,11 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             CommandKind.SHARE_ACCOUNT -> {
                 payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
                 val account = requireNotNull(c.account).normalized(); account.validate(); require(account.currency == r.restaurant.currency) { "Account currency must match the room." }
-                if (r.account == account.copy(version = r.account?.version ?: account.version)) r
-                else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1),
-                    quoteRevision = r.quoteRevision + if (r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) 1 else 0)
+                val methods = (listOf(account) + (c.accounts ?: r.receivingAccounts).filterNot { it.id == account.id }).map { it.normalized() }
+                val alternatives = methods.filterNot { it.id == account.id }
+                if (r.account == account.copy(version = r.account?.version ?: account.version) && r.accounts == alternatives) r
+                else r.copy(account = account.copy(version = (r.account?.version ?: 0) + 1), accounts = alternatives,
+                    quoteRevision = r.quoteRevision + if (r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) 1 else 0).also(RoomRules::validateRoom)
             }
             CommandKind.CART -> {
                 orderer(); phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
@@ -276,7 +290,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 val receipt = Billing.receipts(r).singleOrNull { it.memberId == target } ?: error("No receipt exists for this member.")
                 require(c.amount > 0 && c.amount <= if (refund) -receipt.balance else receipt.balance) { "Amount exceeds the remaining balance." }
                 require(c.text.isNotBlank() && c.text.length <= 160) { "Enter a transfer reference or cash note." }
-                val transfer = Transfer(id(), target, c.amount, c.text, requireNotNull(r.account), refund, createdAt = now)
+                val recipient = if (c.accountId.isBlank()) requireNotNull(r.account) else r.receivingAccounts.singleOrNull { it.id == c.accountId } ?: error("Choose a payment method shared in this room.")
+                val transfer = Transfer(id(), target, c.amount, c.text, recipient, refund, createdAt = now)
                 r.copy(transfers = r.transfers + transfer)
             }
             CommandKind.CONFIRM_TRANSFER, CommandKind.REJECT_TRANSFER, CommandKind.CONFIRM_REFUND -> {

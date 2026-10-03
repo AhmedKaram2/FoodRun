@@ -101,7 +101,11 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val selectionStyle: String = "wheel",
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val accounts: List<ReceivingAccount> = emptyList(),
 ) {
+    val receivingAccounts: List<ReceivingAccount> get() = (listOfNotNull(account) + accounts).distinctBy { it.id }
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }
 }

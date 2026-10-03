@@ -10,6 +10,14 @@ const room = { restaurant: { name: 'Kitchen', nameAr: 'المطعم', menu: {
 const line = { itemId: 'meal', variantId: 'size', optionIds: ['extra'], description: 'Beans · Large · Salad', quantity: 1, amount: 300, notes: 'No salt / بدون ملح' };
 const receipts = [{ lines: [line, { ...line, quantity: 2, amount: 600 }, { ...line, notes: 'Extra lemon' }, { description: 'Custom food', quantity: 2, amount: 400, notes: 'Keep this note' }] }];
 
+test('restaurant order text defaults to Arabic even when the website is English', () => {
+  setLanguage('en');
+  const text = restaurantOrderText(room, receipts);
+  assert.ok(text.startsWith('العنوان:'));
+  assert.ok(text.includes('٣ فول · كبير · سلطة'));
+  assert.equal(t('Order sent'), 'Order sent');
+});
+
 test('copy language controls names, sizes, extras and quantities without changing website language', () => {
   setLanguage('en');
   const arabic = restaurantOrderText(room, receipts, 'ar');

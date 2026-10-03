@@ -356,7 +356,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 if (r.phase == RoomPhase.LOBBY) tr("Next wheel: weight 20 for the last person, 80 for everyone else.", "العجلة القادمة: وزن آخر شخص ٢٠ ووزن كل شخص آخر ٨٠.") else "")
         }
         if(!me.approved) {
-            card("sync-membership", ui("Reconnect to update room access"), ui("Refresh the room. If access is still unavailable, update the room server."))
+            card("pending-join", tr("Waiting for approval", "في انتظار الموافقة"), tr("The organizer or selected person must approve your join request.", "يجب أن يوافق المنظم أو الشخص المختار على طلب انضمامك."))
             button(tr("Refresh", "تحديث"), GroupAction.REFRESH); return
         }
         if(!me.guest && !me.participating && r.phase != RoomPhase.LOBBY) {
@@ -368,11 +368,16 @@ internal class GroupPresentation(private val c: GroupController) {
         if (!c.online) card("offline", "Your saved order is available", "Reconnect to the same local hub to make changes. Cached payment status may have changed.", actions = listOf(GroupButton("Reconnect", GroupAction.REFRESH)))
         r.members.filterNot { it.removed }.forEach { m ->
             val actions = mutableListOf<GroupButton>()
+            val joinApprover = owner || payer || r.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) && r.spin?.winnerId == me.id
+            if (!m.approved && joinApprover) {
+                actions += GroupButton(tr("Approve", "موافقة"), GroupAction.APPROVE_LATE_JOIN, m.id)
+                actions += GroupButton(tr("Decline", "رفض"), GroupAction.REMOVE, m.id, destructive = true)
+            }
             val submitted = r.carts.any { it.memberId == m.id && it.submitted }
             val canRemove = owner && m.id != r.ownerId && (r.phase == RoomPhase.LOBBY || r.phase == RoomPhase.COLLECTING && m.id != r.payerId && !submitted)
-            if(canRemove) actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true)
+            if(canRemove && m.approved) actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true)
             if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY && m.approved && !m.guest) actions += GroupButton(ui("Make organizer"), GroupAction.HANDOVER, m.id)
-            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.guest && !m.participating) "Skipping this order" else if(m.eligible) "Joined · Can be selected" else "Joined", actions)
+            card("member:${m.id}", m.name, listOf(if(m.id == r.ownerId) "Organizer" else if(m.id == r.payerId) "Payer" else if(m.guest) "Watching" else "Member", if(c.serverNow() - m.lastSeen < 15000) "Connected" else "Away").joinToString(" · "), if(!m.approved) tr("Waiting for approval", "في انتظار الموافقة") else if(!m.guest && !m.participating) "Skipping this order" else if(m.eligible) "Joined · Can be selected" else "Joined", actions)
         }
         if(owner) r.expectedNames.filter { name -> r.orderingMembers.none { it.name.equals(name.trim(), true) } }.forEach { card("invite:$it", it, "Expected · not participating today", actions = if(r.phase == RoomPhase.LOBBY) listOf(GroupButton(ui("Remove invitation"), GroupAction.REMOVE, "invite:$it")) else emptyList()) }
         if(owner && r.activeMembers.any { it.id != c.me() && !it.guest }) button("Request a user block", GroupAction.OPEN_BLOCK_REQUEST)

@@ -48,7 +48,11 @@ object InternationalPhone {
     val userId: String = "", val name: String = "", val phone: String = "", val photo: String = "",
     val payment: ReceivingAccount? = null, val discoverable: Boolean = true, val language: String = "en",
     val favoriteOrders: List<FavoriteOrder> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val paymentAccounts: List<ReceivingAccount> = emptyList(),
 ) {
+    val receivingAccounts: List<ReceivingAccount> get() = (listOfNotNull(payment) + paymentAccounts).distinctBy { it.id }
     fun validate() {
         MenuValidation.label(name)
         InternationalPhone.normalize(phone)
@@ -57,11 +61,13 @@ object InternationalPhone {
             photo.length <= 2000 && photo.startsWith("https://") && photo.none { it.isWhitespace() }
         )) { "Use an HTTPS photo URL or a small JPEG, PNG or WebP photo." }
         payment?.validate()
+        require(paymentAccounts.size <= 10 && paymentAccounts.map { it.id }.distinct().size == paymentAccounts.size && receivingAccounts.size <= 10) { "Save up to 10 distinct payment methods." }
+        paymentAccounts.forEach(ReceivingAccount::validate)
         require(language in listOf("en", "ar")) { "Choose Arabic or English." }
         require(favoriteOrders.size <= 30 && favoriteOrders.map { it.id }.distinct().size == favoriteOrders.size) { "Save up to 30 distinct favorite orders." }
         favoriteOrders.forEach(FavoriteOrder::validate)
     }
-    fun normalized(): FoodProfile = copy(phone = InternationalPhone.normalize(phone), payment = payment?.normalized())
+    fun normalized(): FoodProfile = copy(phone = InternationalPhone.normalize(phone), payment = payment?.normalized(), paymentAccounts = paymentAccounts.filterNot { it.id == payment?.id }.map { it.normalized() })
 }
 @Serializable data class FavoriteOrderLine(
     val itemId: String = "", val quantity: Int, val variantId: String? = null,

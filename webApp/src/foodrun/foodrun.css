@@ -389,3 +389,9 @@ html[dir=rtl] h1,html[dir=rtl] h2,html[dir=rtl] h3{letter-spacing:0;line-height:
 .running-names.finished { border-color: #66ad7a; background: linear-gradient(155deg, #f0faef, #dbefdc); }
 @keyframes name-arrive { from { transform: translateY(12px); opacity: .6; } to { transform: translateY(0); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .name-runner-selected { animation: none; } }
+
+.payment-methods-editor .section-title { flex-wrap: wrap; gap: .6rem; }
+.saved-payment-method { padding: .9rem; border: 1px solid var(--line, #d9e4dd); border-radius: 14px; min-width: 0; }
+.saved-payment-method code, .payment-actions bdi { overflow-wrap: anywhere; }
+.join-request-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-inline-start: auto; }
+.payment-methods-editor .hero-actions { flex-wrap: wrap; }

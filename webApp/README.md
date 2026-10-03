@@ -10,4 +10,6 @@ This is the browser client for Food Run. It reuses the existing Intrvioo Firebas
 
 The web client connects to `POST /command` and `GET /events` on the selected Food Run server. A nearby hub keeps live updates on the LAN; a public HTTPS API lets users join from any network.
 
+New rooms default to delivery. The website and restaurant order list default to Arabic, with English available and saved language choices respected. After selection, the room creator or selected person approves new join requests. The Payment section has inline Edit and Add controls for up to 10 receiving methods; members choose a shared method when marking payments sent.
+
 Before enabling cloud room backup, deploy the included `firestore.rules` to the existing Firebase project. The added `foodrunHubs` rule only allows the owning authenticated user to read and write their backup records.

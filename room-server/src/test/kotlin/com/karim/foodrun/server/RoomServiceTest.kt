@@ -223,8 +223,8 @@ class RoomServiceTest {
         f.db.save(raw.copy(members = raw.members.map { if (it.id == guest.memberId) it.copy(approved = true) else it }))
         val pendingState = f.state(pending)
         assertTrue(pendingState.receipts.isEmpty()); assertNull(pendingState.room!!.account)
-        assertTrue(pendingState.room!!.carts.all { it.lines.isEmpty() }); assertEquals(f.restaurant.name, pendingState.room!!.restaurant.name)
-        assertTrue(pendingState.room!!.members.single { it.id == pending.memberId }.approved)
+        assertTrue(pendingState.room!!.carts.isEmpty()); assertEquals("pending", pendingState.room!!.restaurant.id)
+        assertFalse(pendingState.room!!.members.single { it.id == pending.memberId }.approved)
         val guestState = f.state(guest)
         assertTrue(guestState.receipts.isEmpty()); assertNull(guestState.room!!.account)
         assertTrue(guestState.room!!.carts.all { it.lines.isEmpty() }); assertTrue(guestState.room!!.audit.isEmpty())
@@ -347,10 +347,12 @@ class RoomServiceTest {
         assertFalse(sqlite.contains(f.account.identifier)); assertFalse(sqlite.contains(f.owner.token))
         assertEquals(f.account.identifier, f.state().room!!.account!!.identifier)
     }
-    @Test fun lateJoinEntersCollectingWithoutPayerOrOrganizerApproval(): Unit = RoomFixture().use { f ->
+    @Test fun lateJoinEntersCollectingAfterOrganizerApproval(): Unit = RoomFixture().use { f ->
         val member = f.join(); f.start(member)
         val late = f.join("Late member")
-        assertTrue(late.room!!.orderingMembers.any { it.id == late.memberId && it.ready })
+        assertFalse(late.room!!.members.single { it.id == late.memberId }.approved)
+        f.approve(late)
+        assertTrue(f.state(late).room!!.orderingMembers.any { it.id == late.memberId && it.ready })
         f.cart(late, 2)
         assertEquals(2, f.state(late).room!!.carts.single { it.memberId == late.memberId }.lines.single().quantity)
     }

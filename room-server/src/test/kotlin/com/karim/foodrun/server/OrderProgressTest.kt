@@ -176,8 +176,7 @@ class OrderProgressTest {
     @Test fun newViewersCannotReviewOrSeePaymentDetails(): Unit = RoomFixture().use { f ->
         f.placed()
         val pending = f.join("Pending")
-        assertFalse(f.state(pending).progress!!.canReview)
-        assertFalse(f.state(pending).progress!!.canArchive)
+        assertNull(f.state(pending).progress)
         assertNull(f.state(pending).room!!.account)
     }
 }

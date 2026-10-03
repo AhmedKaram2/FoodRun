@@ -44,9 +44,25 @@ export const uaeIban = iban;
 
 export function paymentDraft(account) {
   return {
+    currency: account?.currency || 'AED',
     method: account?.method || 'AANI', holder: account?.holder || '',
     bank: account?.method === 'AANI' ? '' : account?.bank || '',
     iban: account && account.method !== 'AANI' ? account.identifier : '',
     aaniPhone: account?.method === 'AANI' ? account.identifier : '',
   };
+}
+
+export function profilePaymentAccounts(profile) {
+  return uniquePaymentAccounts([profile?.payment, ...(profile?.paymentAccounts || [])]);
+}
+export function roomPaymentAccounts(room) {
+  return uniquePaymentAccounts([room?.account, ...(room?.accounts || [])]);
+}
+function uniquePaymentAccounts(values) {
+  return values.filter((value, index) => value && values.findIndex(other => other?.id === value.id) === index);
+}
+export function profileWithPaymentAccount(profile, account) {
+  const paymentAccounts = [account, ...profilePaymentAccounts(profile).filter(value => value.id !== account.id)];
+  if (paymentAccounts.length > 10) throw Error('Save up to 10 distinct payment methods.');
+  return { ...profile, payment: account, paymentAccounts };
 }

@@ -32,16 +32,18 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             val membership = orderJson.decodeFromString<AccountRoom>(body)
             membership.roomId == room.id && membership.memberId == payer
         }?.first?.removePrefix("membership:")?.substringBefore(':') ?: return room
-        val saved = profile(uid).payment ?: return room
-        val payment = runCatching {
+        val methods = profile(uid).receivingAccounts.mapNotNull { saved -> runCatching {
             saved.normalized().also { it.validate(); require(it.currency == room.restaurant.currency) }
-        }.getOrNull() ?: return room
-        return room.copy(account = payment.copy(version = 1), quoteRevision = room.quoteRevision + 1)
+        }.getOrNull() }
+        val payment = methods.firstOrNull() ?: return room
+        return room.copy(account = payment.copy(version = 1), accounts = methods.drop(1), quoteRevision = room.quoteRevision + 1)
     }
-    internal fun updatePayment(roomId: String, memberId: String, payment: ReceivingAccount) {
+    internal fun updatePayment(roomId: String, memberId: String, payment: ReceivingAccount, methods: List<ReceivingAccount>) {
         val uid = db.record("member-user:$roomId:$memberId") ?: return
         val current = profile(uid)
-        val updated = current.copy(payment = payment.normalized())
+        val updated = current.copy(payment = payment.normalized(), paymentAccounts = (methods + current.receivingAccounts).distinctBy { it.id }.filterNot { it.id == payment.id })
+        require(updated.receivingAccounts.size <= 10) { "Save up to 10 distinct payment methods." }
+        updated.receivingAccounts.forEach(ReceivingAccount::validate)
         rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
     }
     private fun identity(hash: String, saved: AccountSession): CloudIdentity {
@@ -141,7 +143,11 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val saved = session(c.identityToken)
         return when(request.action) {
             IdentityAction.SAVE_PROFILE -> {
-                val updated = requireNotNull(request.profile).copy(userId = saved.userId).normalized()
+                val incoming = requireNotNull(request.profile)
+                val updated = incoming.copy(userId = saved.userId,
+                    paymentAccounts = if (c.multiplePaymentDetails) incoming.paymentAccounts else
+                        (listOfNotNull(incoming.payment) + profile(saved.userId).let { if (incoming.payment == null) it.paymentAccounts else it.receivingAccounts }).distinctBy { it.id },
+                ).normalized()
                 updated.validate()
                 rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
                 home(c.identityToken)

@@ -16,16 +16,19 @@ internal class ProfileUpdates(private val db: RoomDatabase, private val clock: (
             if (name != member.name) require(room.members.none { it.id != member.id && !it.removed && it.name.equals(name, true) }) {
                 "Another member in ${room.name} already uses this name."
             }
-            val account = if (room.payerId == member.id && (profile.payment != null || previous?.payment != null)) profile.payment?.let { payment ->
+            val syncPayment = room.payerId == member.id && (profile.receivingAccounts.isNotEmpty() || previous?.receivingAccounts?.isNotEmpty() == true)
+            val methods = if (syncPayment) profile.receivingAccounts.filter { it.currency == room.restaurant.currency } else room.receivingAccounts
+            val account = if (syncPayment) methods.firstOrNull()?.let { payment ->
                 val candidate = payment.copy(version = room.account?.version ?: 1)
                 if (candidate == room.account) room.account else candidate.copy(version = (room.account?.version ?: 0) + 1)
             } else room.account
-            if (name == member.name && account == room.account) return@mapNotNull null
+            val alternatives = methods.filterNot { it.id == account?.id }
+            if (name == member.name && account == room.account && alternatives == room.accounts) return@mapNotNull null
             room.copy(
                 members = room.members.map { if (it.id == member.id) it.copy(name = name) else it },
                 lastChosenName = if (room.lastChosenMemberId == member.id) name else room.lastChosenName,
-                account = account,
-                quoteRevision = room.quoteRevision + if (account != room.account && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) 1 else 0,
+                account = account, accounts = alternatives,
+                quoteRevision = room.quoteRevision + if ((account != room.account || alternatives != room.accounts) && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) 1 else 0,
                 revision = room.revision + 1, updatedAt = clock(),
             )
         }

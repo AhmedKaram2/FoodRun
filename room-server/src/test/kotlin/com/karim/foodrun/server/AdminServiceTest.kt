@@ -142,9 +142,37 @@ class AdminServiceTest {
             val restaurant = selected.copy(id = "owner-new-restaurant", name = "Owner New Restaurant")
             val result = admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, created.token, restaurant))
             assertTrue(result.restaurants.any { it.id == restaurant.id })
+            val edited = selected.copy(nameAr = "مطعم الغرفة")
+            assertEquals(edited, admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, created.token, edited))
+                .restaurants.single { it.id == selected.id })
+            assertFailsWith<IllegalArgumentException> {
+                val unrelated = admin.catalog().first { it.id != selected.id && it.id != restaurant.id }
+                admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, created.token, unrelated.copy(nameAr = "غير مسموح")))
+            }
             assertFailsWith<IllegalArgumentException> {
                 admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, created.room!!.id, "wrong-room-token", restaurant.copy(id = "rejected")))
             }
+        }
+        directory.deleteRecursively()
+    }
+
+    @Test fun verifiedAdministratorCanEditThroughTheNormalCatalogWithoutTakingContributorOwnership() {
+        val directory = Files.createTempDirectory("foodrun-admin-catalog-edit").toFile()
+        RoomDatabase(directory).use { db ->
+            val provider = AdminIdentityProvider()
+            val rooms = RoomService(db, identityProvider = provider)
+            val admin = AdminService(db, rooms, identityProvider = provider)
+            val login = rooms.execute(RoomCommand(commandId = "admin-catalog-login", kind = CommandKind.IDENTITY,
+                identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token")))
+            val selected = admin.catalog().first()
+            val contributionKey = "${AdminService.CONTRIBUTOR_PREFIX}${selected.id}"
+            db.putRecord(contributionKey, "original-contributor")
+            val edited = selected.copy(nameAr = "تعديل المدير")
+            assertEquals(edited, admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, restaurant = edited))
+                .restaurants.single { it.id == selected.id })
+            assertEquals("original-contributor", db.record(contributionKey))
+            provider.identity = provider.identity.copy(emailVerified = false)
+            assertFailsWith<IllegalArgumentException> { admin.contributeRestaurant(CatalogRestaurantMutation(login.identityToken, restaurant = edited)) }
         }
         directory.deleteRecursively()
     }

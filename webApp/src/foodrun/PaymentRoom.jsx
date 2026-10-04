@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Page } from './FoodRunApp.jsx';
 import { amount, money, minorInput, CURRENCIES } from './client.js';
 import { paymentRoomPayload, receiptPhotoData, splitEqually } from './paymentRoom.js';
@@ -132,11 +132,12 @@ export function PaymentShareEditor({ room, receipts, data }) {
 }
 
 export function RecordPayment({ room, receipt, data }) {
-  const [value, setValue] = useState(''), [reference, setReference] = useState(''), [error, setError] = useState('');
-  if (receipt.memberId === room.payerId || receipt.balance <= 0 || room.transfers.some(transfer => transfer.memberId === receipt.memberId && transfer.status === 'declared')) return null;
-  return <details><summary>{t('Record payment received')}</summary><form className="stack" onSubmit={async e => { e.preventDefault(); try { const reply = await data.send('RECORD_PAYMENT', { memberId: receipt.memberId, amount: amount(value, room.restaurant.currency), text: reference.trim() }, room.id); if (reply) { setValue(''); setReference(''); setError(''); } } catch (e) { setError(e.message); } }}>
+  const [value, setValue] = useState(minorInput(receipt.balance, room.restaurant.currency)), [reference, setReference] = useState(''), [error, setError] = useState('');
+  useEffect(() => setValue(minorInput(receipt.balance, room.restaurant.currency)), [receipt.balance, room.restaurant.currency]);
+  if (!room.restaurantPaid || !['PLACED', 'FULFILLED'].includes(room.phase) || receipt.memberId === room.payerId || receipt.balance <= 0 || room.transfers.some(transfer => transfer.memberId === receipt.memberId && String(transfer.status).toLowerCase() === 'declared')) return null;
+  return <details><summary>{t('Record payment received')}</summary><form className="stack" onSubmit={async e => { e.preventDefault(); try { const received = amount(value, room.restaurant.currency); if (received <= 0 || received > receipt.balance) throw Error(t('Amount exceeds the remaining balance.')); const reply = await data.send('RECORD_PAYMENT', { memberId: receipt.memberId, amount: received, text: reference.trim() || 'Payment received' }, room.id); if (reply) { setReference(''); setError(''); } } catch (e) { setError(e.message); } }}>
     <label>{t('Amount received')} · {room.restaurant.currency}<input required inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} /></label>
-    <label>{t('Payment reference or cash note')}<input required maxLength={160} value={reference} onChange={e => setReference(e.target.value)} /></label>
+    <label>{t('Payment reference or cash note')}<input maxLength={160} value={reference} onChange={e => setReference(e.target.value)} /></label>
     <button className="secondary" disabled={data.busy}>{t('Confirm received')}</button>{error && <p role="alert">{error}</p>}
   </form></details>;
 }

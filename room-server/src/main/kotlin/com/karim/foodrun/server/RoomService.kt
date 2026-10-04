@@ -12,6 +12,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     internal fun emailInvitation(invitation: FoodInvitation) = emails.invitation(invitation)
     @Synchronized internal fun nextEmail(dailyLimit: Int): EmailDelivery? = db.transaction { emails.pending(dailyLimit) }
     @Synchronized internal fun finishEmail(delivery: EmailDelivery, result: EmailResult) = db.transaction { emails.delivered(delivery, result) }
+    internal fun sendPaymentReminder(commandId: String, sender: EmailSender, dailyLimit: Int): String {
+        val jobId = hash("reminder:$commandId")
+        val delivery = synchronized(this) { db.transaction { emails.pending(dailyLimit, jobId) } }
+        if (delivery != null) {
+            val result = try { sender.send(delivery) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { EmailResult.RETRY }
+            finishEmail(delivery, result)
+        }
+        return synchronized(this) { emails.status(jobId) }
+    }
     @Synchronized fun notificationRequest(request: NotificationRequest, pushAvailable: Boolean): NotificationReply =
         db.transaction { notifications.request(accounts.userId(request.identityToken), request, pushAvailable) }
     @Synchronized internal fun nextPush(): PushDelivery? = db.transaction { notifications.pending() }
@@ -80,6 +89,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
+        else if (c.kind == CommandKind.PAYMENT_REMINDER_STATUS) db.transaction {
+            val actor = authenticate(c.roomId, c.token)
+            val room = requireNotNull(db.room(c.roomId))
+            require(c.expectedOrderNumber == room.orderNumber) { "This reminder belongs to an earlier order." }
+            projection(room, actor).copy(code = emails.reminderStatus(room, actor, c.memberId))
+        }
         else db.transaction {
             if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) {
                 require(!c.guest) { "Guest mode is unavailable. Sign in to join the room." }
@@ -87,6 +102,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
+            if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
             val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
@@ -94,6 +110,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                     CommandKind.CREATE -> create(c)
                     CommandKind.JOIN -> join(c)
                     CommandKind.REQUEST_BLOCK -> requestBlock(c)
+                    CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE -> selectionOverride(c)
                     CommandKind.REMIND_PAYMENT -> {
                         val actor = authenticate(c.roomId, c.token)
                         val room = requireNotNull(db.room(c.roomId))
@@ -104,11 +121,13 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         val actor = authenticate(c.roomId, c.token)
                         presence[actor] = clock()
                         val room = withPresence(finalizeSpin(requireNotNull(db.room(c.roomId))))
-                        val changed = reducer.apply(room, actor, c, clock())
+                        val changed = reducer.apply(room, actor, c, clock(), db.record(selectionOverrideKey(room)))
                         val result = if (c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY)) accounts.withSavedPayment(changed) else changed
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        if (result.spin?.id != room.spin?.id || c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.CANCEL, CommandKind.NEXT_ORDER))
+                            clearSelectionOverride(room)
                         notifications.changed(room, result, actor, c)
                         if (c.kind == CommandKind.SHARE_ACCOUNT) accounts.updatePayment(result.id, actor, requireNotNull(result.account), result.receivingAccounts)
                         signalRoom(result.id)
@@ -119,7 +138,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 db.record(c.commandId, digest, reply); reply
             }
         }
-    } catch (e: AccountBlockedException) { RoomReply(ok = false, error = e.message.orEmpty(), code = if(e.block.removed) "ACCOUNT_BLOCKED" else "ROOM_BLOCKED", accessBlock = e.block, serverTime = clock()) }
+    } catch (e: ReminderEmailRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REMINDER_EMAIL_REQUIRED", serverTime = clock()) }
+      catch (e: AccountBlockedException) { RoomReply(ok = false, error = e.message.orEmpty(), code = if(e.block.removed) "ACCOUNT_BLOCKED" else "ROOM_BLOCKED", accessBlock = e.block, serverTime = clock()) }
       catch (e: SignInRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REAUTH_REQUIRED", serverTime = clock()) }
       catch (e: IllegalArgumentException) { RoomReply(ok = false, error = e.message ?: "Invalid request.", code = "VALIDATION", serverTime = clock()) }
       catch (e: IllegalStateException) { RoomReply(ok = false, error = e.message ?: "Action unavailable.", code = "STATE", serverTime = clock()) }
@@ -134,7 +154,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         db.transaction { db.spinningRooms().forEach { room ->
             if (room.phase == RoomPhase.PREPARING_SPIN) {
                 val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
-                if (candidates.isNotEmpty()) db.save(room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock()), revision = room.revision + 1)).also { signalRoom(room.id) }
+                if (candidates.isNotEmpty()) {
+                    db.save(room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock(), db.record(selectionOverrideKey(room))), revision = room.revision + 1))
+                    clearSelectionOverride(room)
+                    signalRoom(room.id)
+                }
             } else finalizeSpin(room)
         } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
@@ -176,12 +200,56 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         return projection(room, person.id).copy(token = token)
     }
     @Synchronized internal fun nativeAdminToken(token: String): String = accounts.firebaseIdToken(token)
+    @Synchronized internal fun isAdministrator(token: String): Boolean {
+        val userId = accounts.userId(token)
+        val identity = requireNotNull(identityProvider) { "Firebase identity is not configured." }.exchange(accounts.firebaseIdToken(token))
+        require(identity.userId == userId) { "This identity belongs to another account." }
+        return identity.emailVerified && identity.email.equals(AdminService.ADMIN_EMAIL, ignoreCase = true)
+    }
+    private fun selectionOverrideKey(room: Room) = "selection:override:${room.id}:${room.orderNumber}"
+    private fun clearSelectionOverride(room: Room) {
+        db.deleteRecord(selectionOverrideKey(room))
+        db.records("selection:grant:${room.id}:${room.orderNumber}:").forEach { (key, _) -> db.deleteRecord(key) }
+    }
+    private fun selectionGrantKey(c: RoomCommand) = "selection:grant:${c.roomId}:${c.expectedOrderNumber}:${hash(c.identityToken)}"
+    private fun requireSelectionAdministrator(c: RoomCommand) {
+        require(isAdministrator(c.identityToken)) { "This account cannot change the wheel selection." }
+        val actor = authenticate(c.roomId, c.token)
+        require(db.record("member-user:${c.roomId}:$actor") == accounts.userId(c.identityToken)) { "This room belongs to another account session." }
+    }
+    private fun selectionOverride(c: RoomCommand): RoomReply {
+        val actor = authenticate(c.roomId, c.token)
+        val room = requireNotNull(db.room(c.roomId))
+        require(room.paymentRoom == null && room.phase == RoomPhase.LOBBY) { "The wheel selection can only change before spinning." }
+        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "The order changed. Refresh the room and try again." }
+        val code = if (c.kind == CommandKind.UNLOCK_SELECTION_OVERRIDE) {
+            require(c.text == "5457") { "Incorrect passcode." }
+            db.putRecord(selectionGrantKey(c), (clock() + 10 * 60_000).toString())
+            "SELECTION_OVERRIDE_UNLOCKED"
+        } else {
+            require((db.record(selectionGrantKey(c))?.toLongOrNull() ?: 0) > clock()) { "Long press the room name and enter the passcode again." }
+            if (c.memberId.isEmpty()) db.deleteRecord(selectionOverrideKey(room))
+            else {
+                require(room.orderingMembers.any { it.id == c.memberId && it.eligible }) { "Choose someone eligible for this wheel." }
+                db.putRecord(selectionOverrideKey(room), c.memberId)
+            }
+            "SELECTION_OVERRIDE_SAVED"
+        }
+        // Keep this setting outside the shared room, audit entries, and WebSocket snapshots.
+        return projection(room, actor).copy(code = code)
+    }
+    @Synchronized internal fun ownsCatalogRestaurant(roomId: String, roomToken: String, restaurantId: String): Boolean {
+        if (roomId.isEmpty()) return false
+        val actor = authenticate(roomId, roomToken)
+        val room = requireNotNull(db.room(roomId))
+        return room.ownerId == actor && (room.restaurant.id == restaurantId || room.restaurantOptions.any { it.id == restaurantId })
+    }
     @Synchronized internal fun catalogContributor(identityToken: String, roomId: String, roomToken: String): String {
         val userId = accounts.userId(identityToken)
         if (roomId.isEmpty()) return userId
         val actor = authenticate(roomId, roomToken)
         val room = requireNotNull(db.room(roomId)) { "Room was not found." }
-        require(room.ownerId == actor) { "Only the room owner can add a restaurant from this room." }
+        require(room.ownerId == actor || isAdministrator(identityToken)) { "Only the room owner or administrator can add a restaurant from this room." }
         require(db.record("member-user:$roomId:$actor") == userId) { "This room belongs to another account session." }
         return userId
     }

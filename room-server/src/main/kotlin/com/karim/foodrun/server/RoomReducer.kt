@@ -3,12 +3,13 @@ package com.karim.foodrun.server
 import com.karim.foodrun.orders.*
 
 class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int) {
-    fun spin(room: Room, now: Long): SpinRound {
+    fun spin(room: Room, now: Long, overrideMemberId: String? = null): SpinRound {
         val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
         val weights = PayerSelection.weights(candidates, room.lastChosenMemberId)
-        return SpinRound(id(), candidates, PayerSelection.choose(candidates, weights, randomIndex), now + 3000, weights = weights)
+        val winner = overrideMemberId?.takeIf { it in candidates } ?: PayerSelection.choose(candidates, weights, randomIndex)
+        return SpinRound(id(), candidates, winner, now + 3000, weights = weights)
     }
-    fun apply(r: Room, actorId: String, c: RoomCommand, now: Long): Room {
+    fun apply(r: Room, actorId: String, c: RoomCommand, now: Long, overrideMemberId: String? = null): Room {
         require(c.expectedOrderNumber > 0) { "Update Food Run before changing this order, then refresh the room and try again." }
         require(c.expectedOrderNumber == r.orderNumber) { "This request belongs to an earlier order. Refresh the room and review today's order before trying again." }
         val actor = RoomRules.member(r, actorId)
@@ -118,7 +119,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PREPARE_SPIN -> {
                 owner(); phase(RoomPhase.LOBBY); fresh(); RoomRules.spinReady(r)
-                val spin = spin(r, now)
+                val spin = spin(r, now, overrideMemberId)
                 r.copy(phase = RoomPhase.SPINNING, preparationId = id(), preparedIds = emptyList(), spin = spin)
             }
             CommandKind.ABORT_PREPARE -> { owner(); phase(RoomPhase.PREPARING_SPIN); fresh(); reason(); r.copy(phase = RoomPhase.LOBBY, preparationId = "", preparedIds = emptyList()) }
@@ -126,7 +127,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 orderer(); phase(RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)
                 require(c.text == r.preparationId) { "Spin preparation has changed." }
                 if (r.spin != null) r else {
-                    r.copy(phase = RoomPhase.SPINNING, spin = spin(r, now))
+                    r.copy(phase = RoomPhase.SPINNING, spin = spin(r, now, overrideMemberId))
                 }
             }
             CommandKind.ACCEPT_DUTY -> {
@@ -268,8 +269,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     billRevision = r.billRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.RECORD_PAYMENT -> {
-                payer(); phase(RoomPhase.FULFILLED); fresh(); reason()
-                require(r.paymentRoom != null && r.restaurantPaid) { "Confirm the updated bill before recording payments." }
+                payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh(); reason()
+                require(r.restaurantPaid) { "Confirm the updated bill before recording payments." }
                 require(c.memberId != actorId && r.transfers.none { it.memberId == c.memberId && it.status == TransferStatus.DECLARED }) { "Resolve the pending payment first. Your own share needs no transfer." }
                 val receipt = Billing.receipts(r).singleOrNull { it.memberId == c.memberId } ?: error("Member not found.")
                 require(c.amount > 0 && c.amount <= receipt.balance) { "Received amount exceeds the remaining balance." }

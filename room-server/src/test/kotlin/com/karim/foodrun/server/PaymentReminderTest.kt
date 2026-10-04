@@ -1,6 +1,10 @@
 package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.server.testing.*
 import kotlin.test.*
 
 class PaymentReminderTest {
@@ -20,6 +24,65 @@ class PaymentReminderTest {
         return member
     }
     private fun remind(f: RoomFixture, member: RoomReply) = f.command(f.owner, CommandKind.REMIND_PAYMENT).copy(memberId = member.memberId)
+
+    @Test fun missingAddressAsksForEmailAndManualRecipientIsPrivateAndValidated() = fixture().use { f ->
+        val member = ready(f)
+        f.db.deleteRecord("email-contact:Member")
+        val command = remind(f, member)
+        assertEquals("REMINDER_EMAIL_REQUIRED", f.service.execute(command).code)
+        for (address in listOf("not-an-email", "a@example.test\r\nBcc: other@example.test")) {
+            assertFalse(f.service.execute(command.copy(commandId = f.id(), text = address)).ok)
+            assertTrue(f.db.records("email-job:").isEmpty())
+        }
+        val reply = f.execute(command.copy(commandId = f.id(), text = " alternate@example.test "))
+        assertFalse(orderJson.encodeToString(reply).contains("alternate@example.test"))
+        assertNull(EmailContacts.address(f.db, "Member"))
+        f.restart()
+        assertEquals("alternate@example.test", assertNotNull(f.service.nextEmail(100)).address)
+    }
+
+    @Test fun commandRouteWaitsForGmailAcceptanceAndReplayCannotDeliverTwice() = fixture().use { f ->
+        val member = ready(f)
+        val command = remind(f, member).copy(text = "override@example.test")
+        var sent = 0
+        val gmail = GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") {
+            sent++; GmailApiResponse(200)
+        }
+        val sender = EmailSender { delivery ->
+            assertEquals("Member@example.test", delivery.address) // verified address cannot be overridden
+            assertFalse(Thread.holdsLock(f.service))
+            gmail.send(delivery)
+        }
+        testApplication {
+            application { hubRoutes(f.service, reminderSender = { f.service.sendPaymentReminder(it, sender, 100) }) }
+            suspend fun post() = orderJson.decodeFromString<RoomReply>(client.post("/command") {
+                contentType(ContentType.Application.Json); setBody(orderJson.encodeToString(command))
+            }.bodyAsText())
+            assertEquals("REMINDER_SENT", post().code)
+            assertEquals("REMINDER_SENT", post().code)
+        }
+        assertEquals(1, sent)
+        assertTrue(f.db.records("email-job:").isEmpty())
+    }
+
+    @Test fun retriesReportProgressAndPermanentFailureAllowsANewAttempt() = fixture().use { f ->
+        val member = ready(f)
+        val command = remind(f, member)
+        f.execute(command)
+        assertEquals("REMINDER_PENDING", f.service.sendPaymentReminder(command.commandId, EmailSender { EmailResult.RETRY }, 100))
+        f.restart()
+        val status = f.command(f.owner, CommandKind.PAYMENT_REMINDER_STATUS).copy(memberId = member.memberId)
+        assertEquals("REMINDER_PENDING", f.execute(status).code)
+        assertFalse(f.service.execute(status.copy(commandId = f.id(), token = member.token)).ok)
+        assertFalse(f.service.execute(status.copy(commandId = f.id(), expectedOrderNumber = 0)).ok)
+        f.now += 120_000
+        assertEquals("REMINDER_FAILED", f.service.sendPaymentReminder(command.commandId, EmailSender { EmailResult.FAILED }, 100))
+        assertEquals("REMINDER_FAILED", f.execute(status.copy(commandId = f.id())).code)
+        val retry = remind(f, member)
+        f.execute(retry)
+        assertEquals("REMINDER_SENT", f.service.sendPaymentReminder(retry.commandId, EmailSender { EmailResult.SENT }, 100))
+        assertEquals("REMINDER_SENT", f.execute(status.copy(commandId = f.id())).code)
+    }
 
     @Test fun payerQueuesOneBilingualReminderAndCommandReplayDoesNotSendAnother() = fixture().use { f ->
         val member = ready(f)

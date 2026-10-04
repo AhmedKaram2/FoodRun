@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import { reminderKey } from './paymentReminders.js';
+import { useFeedback } from './useFeedback.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -38,8 +39,10 @@ export function useFoodRun() {
   const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
-  const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
+  const { error, setError, notice, setNotice, feedback, dismissFeedback } = useFeedback();
+  const [busy, setBusy] = useState(false);
   const [paymentReminderTimes, setPaymentReminderTimes] = useState({});
+  const [paymentReminderStates, setPaymentReminderStates] = useState({});
   const [sessionScope, setSessionScope] = useState('');
   const [offlineReceipts, setOfflineReceipts] = useState([]);
   const [identityToken, setIdentityToken] = useState(''), [sessions, setSessions] = useState({});
@@ -60,7 +63,7 @@ export function useFoodRun() {
     setUser(next); setAuthReady(true);
   }), []);
   useEffect(() => {
-    const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); seen.current.clear(); pending.current = null;
+    const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); setPaymentReminderTimes({}); setPaymentReminderStates({}); seen.current.clear(); pending.current = null;
     if (!user || !hub) return;
     try {
       pending.current = JSON.parse(sessionStorage.getItem(`foodrun-pending:${user.uid}:${hub}`) || 'null');
@@ -96,7 +99,7 @@ export function useFoodRun() {
   }, [user?.uid, hub]);
   const cacheReceipt = reply => {
     const epoch = alive.current;
-    saveReceiptArchive(user.uid, hub, reply).then(value => { if (epoch === alive.current) setOfflineReceipts(value); }).catch(() => setNotice(t("Receipts could not be saved offline. Check browser storage permissions.")));
+    saveReceiptArchive(user.uid, hub, reply).then(value => { if (epoch === alive.current) setOfflineReceipts(value); }).catch(() => setNotice(t("Receipts could not be saved offline. Check browser storage permissions."), true));
   };
   useEffect(() => {
     if (!user || !hub || sessionScope !== sessionStorageKey(user.uid, hub)) return;
@@ -162,17 +165,25 @@ export function useFoodRun() {
       const reply = await request(hub, payload);
       if (epoch !== alive.current) return null;
       savePending(null); accept(reply, olderPage);
-      if (payload.kind === 'REMIND_PAYMENT' && reply.code === 'REMINDER_QUEUED') {
+      if (payload.kind === 'REMIND_PAYMENT') {
         const key = reminderKey({ id: payload.roomId, orderNumber: payload.expectedOrderNumber }, payload.memberId);
-        setPaymentReminderTimes(old => ({ ...old, [key]: Date.now() }));
-        setNotice(t('Email reminder queued'));
+        const state = reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_FAILED' ? 'failed' : 'pending';
+        setPaymentReminderStates(old => ({ ...old, [key]: state }));
+        if (state !== 'failed') setPaymentReminderTimes(old => ({ ...old, [key]: Date.now() }));
+        if (state === 'failed') setError(t('Email could not be sent. Please try again.'));
+        else setNotice(t(state === 'sent' ? 'Email reminder sent' : 'Sending email reminder…'));
       }
+      if (payload.kind === 'RECORD_PAYMENT') setNotice(t('Payment recorded.'));
+      if (['CONFIRM_TRANSFER', 'CONFIRM_REFUND'].includes(payload.kind)) setNotice(t('Payment confirmed.'));
       return reply;
     } catch (e) {
       if (epoch !== alive.current) return null;
       readBlock(e);
       if (e.accessBlock && ['JOIN', 'CREATE'].includes(payload.kind)) setJoinBlock({ ...e.accessBlock, serverTime: e.serverTime || Date.now(), receivedAt: Date.now() });
       if (e.definitive) savePending(null);
+      if (payload.kind === 'REMIND_PAYMENT' && e.code === 'REMINDER_EMAIL_REQUIRED') {
+        setError(''); return { ok: false, code: e.code, error: e.message };
+      }
       setError(e.message + (pending.current ? ' Retry the saved request to confirm its result.' : ''));
       return null;
     } finally {
@@ -199,5 +210,18 @@ export function useFoodRun() {
     try { await clearReceiptArchive(user.uid, hub); setOfflineReceipts([]); }
     catch { setError(t("Could not remove downloaded receipts. Check browser storage permissions.")); }
   };
-  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes };
+  const checkPaymentReminder = async (roomId, memberId) => {
+    const room = roomRef.current[roomId]?.room, session = sessions[roomId];
+    if (!room || !session) return;
+    const epoch = alive.current, key = reminderKey(room, memberId);
+    try {
+      const reply = await request(hub, command('PAYMENT_REMINDER_STATUS', { roomId, token: session.token, memberId, expectedOrderNumber: room.orderNumber }));
+      if (epoch !== alive.current) return;
+      const state = reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_PENDING' ? 'pending' : 'failed';
+      setPaymentReminderStates(old => ({ ...old, [key]: state }));
+      if (state === 'sent') setNotice(t('Email reminder sent'));
+      if (state === 'failed') { setPaymentReminderTimes(old => { const next = { ...old }; delete next[key]; return next; }); setError(t('Email could not be sent. Please try again.')); }
+    } catch { /* A later status check can recover after a network interruption. */ }
+  };
+  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
 }

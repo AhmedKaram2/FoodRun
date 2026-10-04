@@ -3,6 +3,8 @@ package com.karim.foodrun
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
@@ -35,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,6 +66,8 @@ import com.karim.foodrun.shared.orders.GroupObserver
 import com.karim.foodrun.shared.orders.GroupPage
 import com.karim.foodrun.shared.orders.GroupState
 import com.karim.foodrun.shared.orders.GroupText
+import com.karim.foodrun.shared.orders.GroupField
+import com.karim.foodrun.shared.orders.GroupFieldKey
 
 @Composable
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -76,6 +81,15 @@ fun GroupScreen(controller: GroupController) {
         onDispose { controller.removeObserver(observer) }
     }
     val state = screenState
+    LaunchedEffect(state.feedback?.id) {
+        state.feedback?.let { feedback ->
+            kotlinx.coroutines.delay((feedback.expiresAt - controller.platform.now()).coerceAtLeast(0))
+            controller.dismissFeedback(feedback.id)
+        }
+    }
+    LaunchedEffect(state.hasPendingEmailReminders) {
+        while (state.hasPendingEmailReminders) { kotlinx.coroutines.delay(5000); controller.tickPaymentReminders() }
+    }
     LaunchedEffect(state.accessBlocked) {
         while (state.accessBlocked) { kotlinx.coroutines.delay(1000); controller.tickAccessBlock() }
     }
@@ -83,6 +97,19 @@ fun GroupScreen(controller: GroupController) {
     LaunchedEffect(state.page) { focus.clearFocus() }
     BackHandler(state.canGoBack) { controller.dispatch(GroupAction.BACK, "") }
     CompositionLocalProvider(LocalLayoutDirection provides if(state.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    state.reminderEmailPrompt?.let { prompt ->
+        AlertDialog(onDismissRequest = { controller.dispatch(GroupAction.DISMISS_REMINDER_EMAIL) },
+            title = { Text(if (state.rtl) "إيميل المستلم" else "Recipient email") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {
+                    Text(if (state.rtl) "اكتب إيميل ${prompt.name} لإرسال التذكير." else "Enter an email address for ${prompt.name} to receive this reminder.")
+                    GroupFieldContent(GroupField(GroupFieldKey.REMINDER_EMAIL, if (state.rtl) "عنوان الإيميل" else "Email address", prompt.address), state.busy, controller)
+                    if (prompt.error.isNotEmpty()) Text(prompt.error, color = FoodColors.Orange)
+                }
+            },
+            confirmButton = { TextButton(enabled = !state.busy, onClick = { controller.dispatch(GroupAction.SAVE_REMINDER_EMAIL) }) { Text(if (state.rtl) "إرسال التذكير" else "Send reminder") } },
+            dismissButton = { TextButton(enabled = !state.busy, onClick = { controller.dispatch(GroupAction.DISMISS_REMINDER_EMAIL) }) { Text(if (state.rtl) "إلغاء" else "Cancel") } })
+    }
     if (state.page == GroupPage.QUICK_SPIN) {
         Column {
             TextButton(
@@ -108,7 +135,7 @@ fun GroupScreen(controller: GroupController) {
             modifier = Modifier.widthIn(max = FoodSize.MaxContentWidth).fillMaxSize()
                 .statusBarsPadding().navigationBarsPadding().imePadding(),
         ) {
-            if (state.error.isNotEmpty()) GroupErrorBanner(state.error)
+            state.feedback?.let { feedback -> GroupFeedbackBanner(feedback.message, feedback.isError) { controller.dismissFeedback(feedback.id) } }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = FoodColors.Orange)
                 Text(GroupText.localized(GroupText.working, state.rtl), style = FoodType.Status, color = FoodColors.Muted, modifier = Modifier.padding(FoodSpacing.XSmall))
@@ -162,7 +189,10 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
             Spacer(Modifier.weight(1f))
             GroupLanguagePicker(state, controller)
         }
-        Text(text = state.title, style = FoodType.Hero, color = FoodColors.Ink, modifier = Modifier.semantics { heading() })
+        Text(text = state.title, style = FoodType.Hero, color = FoodColors.Ink, modifier = Modifier.semantics { heading() }
+            .pointerInput(state.canOverrideSelection) {
+                if (state.canOverrideSelection) detectTapGestures(onLongPress = { controller.dispatch(GroupAction.OPEN_SELECTION_OVERRIDE) })
+            })
         if (state.subtitle.isNotEmpty()) Text(text = state.subtitle, style = FoodType.Body, color = FoodColors.Muted)
         if (state.status.isNotEmpty()) Text(text = state.status, style = FoodType.Status, color = FoodColors.Muted)
         if (state.roomCode.isNotEmpty()) FoodCard(bordered = true) {

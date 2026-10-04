@@ -84,9 +84,84 @@ class GroupSettlementPresentationTest {
         assertEquals("member", command.memberId)
         assertEquals(due.orderNumber, command.expectedOrderNumber)
         val queued = GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT)
-        assertEquals("Email reminder queued", queued.title); assertFalse(queued.enabled)
+        assertEquals("Sending email reminder…", queued.title); assertFalse(queued.enabled)
         c.library = c.library.copy(language = "ar")
-        assertEquals("تذكير الإيميل في انتظار الإرسال", GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).title)
+        assertEquals("جاري إرسال تذكير الإيميل…", GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).title)
+        device.response = c.reply!!.copy(code = "REMINDER_SENT")
+        c.tickPaymentReminders()
+        assertEquals("تم إرسال تذكير الإيميل", GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).title)
+        assertFalse(c.state.hasPendingEmailReminders)
+    }
+
+    @Test fun missingEmailShowsRecipientPromptAndOnlySendsAfterValidAddress() {
+        val due = confirmed(room()).copy(phase = RoomPhase.PLACED, restaurantPaid = true)
+        val device = Device()
+        val c = controller(due, device = device).apply {
+            online = true
+            library = library.copy(sessions = listOf(session!!), selectedHub = session!!.hub)
+        }
+        val snapshot = c.reply!!
+        device.response = RoomReply(ok = false, code = "REMINDER_EMAIL_REQUIRED", error = "Enter an email address for this payment reminder.")
+        c.dispatch(GroupAction.REMIND_PAYMENT, "member")
+        assertEquals("Hassan", c.state.reminderEmailPrompt?.name)
+        assertNull(c.library.pending)
+        c.update(GroupFieldKey.REMINDER_EMAIL, "invalid")
+        c.dispatch(GroupAction.SAVE_REMINDER_EMAIL)
+        assertEquals("Enter a valid email address.", c.state.reminderEmailPrompt?.error)
+        c.update(GroupFieldKey.REMINDER_EMAIL, "recipient@example.test")
+        device.response = snapshot.copy(code = "REMINDER_SENT")
+        c.dispatch(GroupAction.SAVE_REMINDER_EMAIL)
+        val outgoing = orderJson.decodeFromString<RoomCommand>(device.requestBody)
+        assertEquals("recipient@example.test", outgoing.text)
+        assertEquals("member", outgoing.memberId)
+        assertEquals(CommandKind.REMIND_PAYMENT, outgoing.kind)
+        assertNull(c.state.reminderEmailPrompt)
+        assertEquals("Email reminder sent", GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).title)
+    }
+
+    @Test fun failedOrMissingDeliveryStopsWaitingAndAllowsRetry() {
+        for (code in listOf("REMINDER_FAILED", "REMINDER_NONE")) {
+            val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true)
+            val device = Device()
+            val c = controller(due, device = device).apply {
+                online = true
+                library = library.copy(sessions = listOf(session!!), selectedHub = session!!.hub)
+            }
+            device.response = c.reply!!.copy(code = "REMINDER_PENDING")
+            c.dispatch(GroupAction.REMIND_PAYMENT, "member")
+            assertTrue(c.state.hasPendingEmailReminders)
+            device.response = c.reply!!.copy(code = code)
+            c.tickPaymentReminders()
+            assertFalse(c.state.hasPendingEmailReminders)
+            assertTrue(GroupSettlementPresentation(c).settlement().action(GroupAction.REMIND_PAYMENT).enabled)
+            assertContains(c.state.error, "Email could not be sent")
+        }
+    }
+
+    @Test fun onlyPayerCanRecordUnclaimedBalanceAndThreeDecimalAmountIsPreserved() {
+        val due = confirmed(room()).copy(phase = RoomPhase.PLACED, restaurantPaid = true,
+            restaurant = restaurant.copy(currency = "JOD"), account = account.copy(currency = "JOD"))
+        val device = Device()
+        val c = controller(due, device = device).apply {
+            online = true
+            library = library.copy(sessions = listOf(session!!), selectedHub = session!!.hub)
+        }
+        assertEquals("member", GroupSettlementPresentation(c).settlement().action(GroupAction.RECORD_PAYMENT).value)
+        for (r in listOf(due.copy(restaurantPaid = false), due.copy(transfers = listOf(transfer())), due.copy(transfers = listOf(transfer(status = TransferStatus.CONFIRMED))))) {
+            assertFalse(GroupSettlementPresentation(controller(r)).settlement().cards.flatMap { it.buttons }.any { it.action == GroupAction.RECORD_PAYMENT })
+        }
+        assertFalse(GroupSettlementPresentation(controller(due.copy(ownerId = "member"), "member")).settlement().cards.flatMap { it.buttons }.any { it.action == GroupAction.RECORD_PAYMENT })
+        c.dispatch(GroupAction.RECORD_PAYMENT, "member")
+        assertEquals(GroupPage.RECORD_PAYMENT, c.state.page)
+        assertEquals("1.000", c.state.fields.single { it.key == GroupFieldKey.PAYMENT_RECEIVED }.value)
+        c.update(GroupFieldKey.PAYMENT_RECEIVED, "0.125")
+        device.response = c.reply
+        c.dispatch(GroupAction.SAVE_RECORDED_PAYMENT)
+        val command = orderJson.decodeFromString<RoomCommand>(device.requestBody)
+        assertEquals(CommandKind.RECORD_PAYMENT, command.kind)
+        assertEquals(125L, command.amount)
+        assertEquals("member", command.memberId)
+        assertEquals("Payment received", command.text)
     }
 
     @Test fun copyAndWhatsAppLanguageDoNotChangeTheAppLanguage() {

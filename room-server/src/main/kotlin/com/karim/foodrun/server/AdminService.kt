@@ -52,11 +52,14 @@ class AdminService(
         }
         val existing = current.firstOrNull { it.id == saved.id }
         val contributionKey = "$CONTRIBUTOR_PREFIX${saved.id}"
-        if (existing != null) require(db.record(contributionKey) == actorId) { "Shared restaurants can only be edited by their contributor or an administrator." }
+        if (existing != null) require(db.record(contributionKey) == actorId ||
+            rooms.ownsCatalogRestaurant(change.roomId, change.roomToken, saved.id) || rooms.isAdministrator(change.identityToken)) {
+            "Shared restaurants can only be edited by their contributor, their room owner, or an administrator."
+        }
         val next = current.filterNot { it.id == saved.id } + saved
         require(next.size <= 100) { "Restaurant catalog limit reached." }
         db.transaction {
-            db.putRecord(contributionKey, actorId)
+            if (existing == null) db.putRecord(contributionKey, actorId)
             db.putRecord(DELETED_RESTAURANTS, orderJson.encodeToString(deletedRestaurantIds(db) - saved.id))
             db.putRecord(RESTAURANTS, orderJson.encodeToString(next))
             audit(actorId, if (existing == null) "contribute-restaurant" else "update-contributed-restaurant", saved.id)

@@ -13,14 +13,13 @@ export default function PaymentMethodsEditor({ data, room, id = 'payer-account' 
   const methods = room ? all.filter(account => account.currency === room.restaurant.currency) : all;
   const current = room ? room.account || methods[0] : profile.payment;
   const [editor, setEditor] = useState(() => methods.length ? null : { previous: null, form: { ...paymentDraft(), method: room && room.restaurant.currency !== 'AED' ? 'BANK' : 'AANI', currency: room?.restaurant.currency || 'AED' } });
-  const [message, setMessage] = useState('');
+  const setMessage = data.setError;
   const edit = account => { setMessage(''); setEditor({ previous: account || null, form: { ...paymentDraft(account), currency: room?.restaurant.currency || account?.currency || 'AED', method: account?.method || (room && room.restaurant.currency !== 'AED' ? 'BANK' : 'AANI') } }); };
   const persist = async updated => {
     setMessage('');
     try {
       const reply = await data.send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: { ...updated, userId: '', phone: profile.phone, language: profile.language || 'ar' } } });
-      if (reply) { setEditor(null); setMessage(t('Payment methods saved.')); }
-      else setMessage(t('Payment details were not saved. Please try again.'));
+      if (reply) { setEditor(null); data.setNotice(t('Payment methods saved.')); }
     } catch (error) { setMessage(t(error.message)); }
   };
   const save = async event => {
@@ -52,6 +51,5 @@ export default function PaymentMethodsEditor({ data, room, id = 'payer-account' 
       <PaymentFields form={editor.form} set={(key, value) => setEditor(old => ({ ...old, form: { ...old.form, [key]: value } }))} name={profile.name} required currency={room?.restaurant.currency || 'AED'} />
       <div className="hero-actions"><button className="primary" disabled={data.busy}>{t('Save payment details')}</button><button type="button" className="secondary" onClick={() => setEditor(null)}>{t('Cancel')}</button></div>
     </form>}
-    {message && <p className="form-message" role="status">{message}</p>}
   </article>;
 }

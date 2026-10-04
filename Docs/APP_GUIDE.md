@@ -1,5 +1,13 @@
 # Food Run — app guide
 
+## Website walkthrough
+
+Open **How to use Food Run** on the sign-in screen or website header. The public `/?guide=1` page follows the website's English/Arabic language selection and explains each role, with ten walkthroughs, eighteen sample screenshots, numbered steps, a first-order checklist and common questions. Screens can be enlarged; opening help keeps the current form draft, and Back returns to the previous screen.
+
+To refresh the sample screenshots, run Vite on port 5174 and an isolated headless Chrome with a temporary profile and debugging port 9334, then run `node Scripts/capture-guide-screens.mjs`. The development-only `webApp/test/guide-preview.html` uses the actual UI with invented people and amounts; it makes no authenticated changes and is excluded from the production build.
+
+Success feedback closes after four seconds and failure feedback after seven seconds, with manual dismissal available. Website timers pause while the banner is hovered or its controls are focused. Hiding feedback preserves saved requests and connection recovery actions.
+
 Food Run helps a group choose who collects the food, agree on an order, and track who owes the payer. It runs on Android and iOS with a matching warm cream, orange and deep green theme.
 
 [UI/UX review](UIUX_REVIEW.md) · [Earlier app and architecture demo](media/food-run-demo.mp4) · [Architecture](ARCHITECTURE.md) · [Hub setup](../room-server/README.md)

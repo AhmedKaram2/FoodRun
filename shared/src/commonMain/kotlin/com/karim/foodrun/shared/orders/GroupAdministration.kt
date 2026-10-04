@@ -6,6 +6,7 @@ internal class GroupAdministration(private val c: GroupController) {
     var allowed = false; private set
     var editingRestaurant = false; private set
     private var checkedIdentity = ""
+    val verifiedAccess: Boolean get() = allowed && checkedIdentity == c.library.identityToken
     private var checking = false
     private var dashboard: AdminDashboard? = null
     private var preview: AdminCleanupPreview? = null

@@ -63,6 +63,14 @@ input:focus,select:focus,textarea:focus { border-color:var(--orange); box-shadow
 .or { display:flex; align-items:center; gap:1rem; color:#90a19b; font-size:.8rem; margin-bottom:1rem; }.or span { height:1px; background:var(--line); flex:1; }
 .switch { width:100%; margin-top:.35rem; }
 .form-message { color:#ad3f35!important; background:#fff0eb; border-radius:12px; padding:.75rem; font-size:.85rem; }
+.feedback-banner{position:fixed;z-index:70;inset-block-start:1rem;inset-inline:1rem;margin-inline:auto;width:min(580px,calc(100% - 2rem));display:flex;align-items:flex-start;gap:.8rem;padding:1rem;border:1px solid;border-radius:18px;box-shadow:0 12px 36px #193b3430;animation:feedback-in .18s ease-out}
+.feedback-success{background:#edf5e9;border-color:#b9d2ae;color:#284b2d}.feedback-error{background:#fff0eb;border-color:#edc0b4;color:#873426}
+.feedback-icon{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:50%;background:#ffffffd9;font-weight:800;color:inherit}
+.feedback-body{flex:1;min-width:0}.feedback-body p{margin:.2rem 0 0;font-size:.9rem;line-height:1.5;overflow-wrap:anywhere;max-height:30vh;overflow:auto}
+.feedback-banner button{color:inherit}.feedback-close{flex:0 0 36px;min-height:36px;background:transparent;border:0;border-radius:10px;font-size:1.5rem;padding:0}.feedback-close:hover{background:#ffffff80}.feedback-retry{margin-top:.6rem;background:#fff;border:1px solid currentColor;border-radius:9px;padding:.45rem .8rem}
+.maintenance-message{padding:.8rem 1rem;background:#fff4df;color:#634c1d;text-align:center}
+@keyframes feedback-in{from{opacity:0;translate:0 -8px}to{opacity:1;translate:0 0}}
+@media(prefers-reduced-motion:reduce){.feedback-banner{animation:none}}
 .center-shell,.splash { min-height:100vh; display:grid; place-items:center; padding:1rem; }
 .setup-card { max-width:610px; padding:clamp(1.5rem,5vw,3rem); }.setup-card .brand-mark { margin-bottom:2rem; }
 .mode-cards { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;margin:1.4rem 0; }
@@ -72,6 +80,8 @@ input:focus,select:focus,textarea:focus { border-color:var(--orange); box-shadow
 .splash { align-content:center; gap:1rem; color:var(--muted); }.splash .brand-mark { margin:auto; }
 .spinner { width:36px;height:36px;border-radius:50%;border:3px solid #dbe7e2;border-top-color:var(--orange);animation:spin .8s linear infinite;margin:1rem auto; } @keyframes spin{to{transform:rotate(360deg)}}
 .app-shell { max-width:1240px; margin:auto; padding:0 clamp(1rem,4vw,3rem) 5rem; }
+.guide-link{display:inline-flex;align-items:center;gap:.45rem;text-decoration:none;font-size:.8rem;white-space:nowrap;padding:.5rem .7rem}.guide-link-icon{display:grid;place-items:center;border:1.5px solid currentColor;border-radius:50%;width:20px;height:20px;font-weight:800}.auth-story .guide-link{align-self:flex-start;background:#fff;color:#263b32;margin-block:1rem 0}
+@media(max-width:600px){.topbar .guide-link>span:last-child{display:none}.topbar .guide-link{padding:.5rem}}
 .topbar { height:88px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(33,88,74,.1); }
 .wordmark { border:0;background:none;color:var(--ink);font-weight:900;display:flex;align-items:center;gap:.65rem;font-size:1rem; }.wordmark span { display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--orange);color:white; }
 .top-actions { display:flex; align-items:center; gap:.65rem; }
@@ -279,6 +289,7 @@ html[dir=rtl] h1,html[dir=rtl] h2,html[dir=rtl] h3{letter-spacing:0;line-height:
 .reorder-review h2:focus,.cart-review:focus{outline:3px solid var(--orange);outline-offset:4px}
 .poll-dialog{width:min(640px,calc(100% - 2rem));max-height:85dvh;overflow:auto;padding:1.5rem;border:1px solid var(--line);margin:auto;color:var(--ink)}
 .poll-dialog::backdrop{background:rgb(15 30 24 / .55)}.poll-dialog-options{display:grid;gap:.75rem;margin:1rem 0}.poll-dialog-options button{white-space:normal;overflow-wrap:anywhere;text-align:start}
+.room-name-hold{user-select:none;-webkit-touch-callout:none;touch-action:pan-y}
 .order-pricing-panel .price-form{display:flex;flex-direction:column;align-items:stretch;padding:.8rem;border:1px solid var(--line);border-radius:12px;margin-bottom:1rem}.order-pricing-panel h3{margin-top:1rem}
 
 /* Existing-bill payment rooms retain the full receipt aspect ratio. */

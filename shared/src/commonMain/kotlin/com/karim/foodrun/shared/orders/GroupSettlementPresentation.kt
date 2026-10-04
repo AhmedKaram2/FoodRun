@@ -42,7 +42,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                     }
                     GroupCard("wallet:${receipt.memberId}", receipt.name,
                         "Order ${money(receipt.total)} · confirmed ${money(receipt.paid)}${claim?.let { "\n${money(it.amount)} awaiting confirmation" } ?: ""}", status,
-                        buttons = c.paymentReminderButtons(r, me, receipt))
+                        buttons = c.paymentReminderButtons(r, me, receipt) + c.recordPaymentButtons(r, me, receipt))
                 }
         }
         val own = receipts.firstOrNull { it.memberId == me } ?: return emptyList()

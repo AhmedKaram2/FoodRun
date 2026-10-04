@@ -2,6 +2,8 @@ import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
 import { useState } from 'react';
 import { CURRENCIES } from './client.js';
+import { useFeedback } from './useFeedback.js';
+import FeedbackBanner from './FeedbackBanner.jsx';
 import { Page, useRestaurantLibrary, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, parseRestaurantExport, restaurantExport, downloadText, copyText } from './FoodRunApp';
 
 const MANAGED_KEY = 'foodrun-server-catalog-v1';
@@ -10,8 +12,8 @@ function managedRestaurantIds() { try { return JSON.parse(localStorage.getItem(M
 export default function RestaurantLibraryScreen({ onBack, language = 'en', data, room }) {
   const [restaurants, setRestaurants] = useRestaurantLibrary();
   const [draft, setDraft] = useState(blankRestaurant);
-  const [message, setMessage] = useState('');
-  const [success, setSuccess] = useState(false);
+  const { feedback, setError: setMessage, setNotice, dismissFeedback } = useFeedback();
+  const clearMessage = () => { setMessage(''); setNotice(''); };
   const [busy, setBusy] = useState(false);
   const [managedIds, setManagedIds] = useState(managedRestaurantIds);
   const shared = managedIds.includes(draft.id);
@@ -26,15 +28,15 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
     return normalized;
   };
   const saveLocal = () => {
-    setMessage(''); setSuccess(false);
+    clearMessage();
     try {
       const normalized = normalizedDraft(false);
       const next = [...restaurants.filter(item => item.id !== normalized.id), normalized].sort((a, b) => a.name.localeCompare(b.name));
-      saveList(next); setDraft(clone(normalized)); setSuccess(true); setMessage(t("Restaurant and menu saved on this device."));
+      saveList(next); setDraft(clone(normalized)); setNotice(t("Restaurant and menu saved on this device."));
     } catch (error) { setMessage(error.message); }
   };
   const save = async event => {
-    event.preventDefault(); setMessage(''); setSuccess(false);
+    event.preventDefault(); clearMessage();
     if (!data?.hub || !data?.identityToken) { saveLocal(); return; }
     setBusy(true);
     try {
@@ -48,24 +50,23 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
       const nextIds = [...new Set([...managedIds, ...(result.restaurants || []).map(value => value.id), normalized.id])];
       localStorage.setItem(MANAGED_KEY, JSON.stringify(nextIds)); setManagedIds(nextIds);
       const next = [...restaurants.filter(item => item.id !== normalized.id), normalized].sort((a, b) => a.name.localeCompare(b.name));
-      saveList(next); setDraft(clone(normalized)); setSuccess(true);
-      setMessage(t('Restaurant, items, and prices are now available to everyone.'));
-      data.setNotice?.(t('Restaurant added to the shared list.'));
+      saveList(next); setDraft(clone(normalized));
+      setNotice(t('Restaurant, items, and prices are now available to everyone.'));
     } catch (error) { setMessage(error.message); }
     finally { setBusy(false); }
   };
   const importFile = async file => {
     if (!file) return;
-    try { const imported = parseRestaurantExport(await file.text()); setDraft(imported); setMessage(t("Menu imported. Review it, then save.")); }
+    try { const imported = parseRestaurantExport(await file.text()); setDraft(imported); setNotice(t("Menu imported. Review it, then save.")); }
     catch (error) { setMessage(error.message); }
   };
   return <Page title={t("Restaurants & menus")} subtitle={room ? t('Add a restaurant for this room and everyone using Food Run.') : t("Add restaurant details, menu items, and prices to the shared Food Run list.")} onBack={onBack}>
-    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t('ROOM OWNER') : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('Enter the restaurant basics, use Quick Add for each item and price, then publish once.')}</p></div><button type="button" className="primary" onClick={() => { setDraft(blankRestaurant()); setMessage(''); setSuccess(false); }}>{t('＋ Add new restaurant')}</button></section>
+    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t('ROOM OWNER') : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('Enter the restaurant basics, use Quick Add for each item and price, then publish once.')}</p></div><button type="button" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
     <div className="library-layout">
       <aside className="card library-list">
-        <div className="section-title compact"><div><p className="eyebrow">{t("AVAILABLE RESTAURANTS")}</p><h3>{restaurants.length} {language === 'ar' ? 'مطاعم' : t("restaurants")}</h3></div><button aria-label={t('Add restaurant')} className="icon-button" type="button" onClick={() => { setDraft(blankRestaurant()); setMessage(''); setSuccess(false); }}>＋</button></div>
+        <div className="section-title compact"><div><p className="eyebrow">{t("AVAILABLE RESTAURANTS")}</p><h3>{restaurants.length} {language === 'ar' ? 'مطاعم' : t("restaurants")}</h3></div><button aria-label={t('Add restaurant')} className="icon-button" type="button" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>＋</button></div>
         {restaurants.length === 0 && <p className="muted">{t("Add your first restaurant or import a menu from Food Run mobile.")}</p>}
-        {restaurants.map(restaurant => <button type="button" className={`restaurant-row ${draft.id === restaurant.id ? 'active' : ''}`} key={restaurant.id} onClick={() => { setDraft(clone(restaurant)); setMessage(''); }}><span><b>{restaurant.name}</b><small>{restaurant.menu.items.length} {t("menu items ·")} {restaurant.currency}</small></span><strong>›</strong></button>)}
+        {restaurants.map(restaurant => <button type="button" className={`restaurant-row ${draft.id === restaurant.id ? 'active' : ''}`} key={restaurant.id} onClick={() => { setDraft(clone(restaurant)); clearMessage(); }}><span><b>{restaurant.name}</b><small>{restaurant.menu.items.length} {t("menu items ·")} {restaurant.currency}</small></span><strong>›</strong></button>)}
         <label className="upload wide">{t("Import Food Run JSON")}<input type="file" accept="application/json,.json" onChange={event => importFile(event.target.files?.[0])} /></label>
       </aside>
       <form className="stack" onInvalid={event => { let node = event.target.parentElement; while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; } }} onSubmit={save}>
@@ -79,8 +80,8 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
           <div className="form-grid three"><label>{t("Default delivery fee")}<MenuMoneyInput currency={draft.currency} value={draft.pricing.defaultDeliveryFeeMinor} onChange={value => setPricing('defaultDeliveryFeeMinor', value)} /></label><label>{t("Default service fee")}<MenuMoneyInput currency={draft.currency} value={draft.pricing.defaultServiceFeeMinor} onChange={value => setPricing('defaultServiceFeeMinor', value)} /></label><label className="check field-check"><input type="checkbox" checked={draft.openOrdering} onChange={e => set('openOrdering', e.target.checked)} />{t("Allow custom items")}</label></div>
         </section>
         <MenuEditor menu={draft.menu} language={language} currency={draft.currency} onChange={menu => setDraft(old => ({ ...old, menu }))} />
-        {message && <p className={success ? 'success-message' : 'form-message'} role="status">{message}</p>}
-        <div className="editor-actions"><button type="button" className="secondary" onClick={saveLocal}>{t("Save on this device")}</button><button type="button" className="secondary" onClick={() => downloadText(`${(draft.name || t("restaurant")).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.foodrun.json`, restaurantExport(draft))}>{t("Export JSON")}</button><button type="button" className="secondary" onClick={() => copyText(restaurantExport(draft)).then(() => { setSuccess(true); setMessage(t("Restaurant JSON copied.")); })}>{t("Copy JSON")}</button><button className="primary" disabled={busy}>{busy ? t('Publishing…') : shared ? t('Save changes for everyone') : t('Publish for everyone')}</button></div>
+        {feedback && <FeedbackBanner key={feedback.id} feedback={feedback} onDismiss={dismissFeedback} />}
+        <div className="editor-actions"><button type="button" className="secondary" onClick={saveLocal}>{t("Save on this device")}</button><button type="button" className="secondary" onClick={() => downloadText(`${(draft.name || t("restaurant")).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.foodrun.json`, restaurantExport(draft))}>{t("Export JSON")}</button><button type="button" className="secondary" onClick={() => copyText(restaurantExport(draft)).then(() => setNotice(t("Restaurant JSON copied."))).catch(error => setMessage(error.message))}>{t("Copy JSON")}</button><button className="primary" disabled={busy}>{busy ? t('Publishing…') : shared ? t('Save changes for everyone') : t('Publish for everyone')}</button></div>
       </form>
     </div>
   </Page>;

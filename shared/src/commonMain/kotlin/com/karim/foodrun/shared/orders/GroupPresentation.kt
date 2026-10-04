@@ -70,6 +70,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 buttons = listOf(GroupButton(ui("Check access again"), GroupAction.REFRESH), GroupButton(ui("Back to my account"), GroupAction.BACK)))
         }
         when(c.page) {
+            GroupPage.SELECTION_OVERRIDE -> { title = tr("Wheel selection", "اختيار العجلة"); subtitle = ""; append(c.selectionOverride.content()) }
             GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY -> { title = tr("Menu editor", "تعديل القائمة"); append(c.menuEditor.content()) }
             GroupPage.ADMIN, GroupPage.ADMIN_USER, GroupPage.ADMIN_CONFIRM -> { title = tr("Administration", "الإدارة"); append(c.administration.content()) }
             GroupPage.PAYMENT_ROOM, GroupPage.PAYMENT_SHARE, GroupPage.RECORD_PAYMENT -> { title = tr("Payment room", "غرفة الدفع"); append(c.paymentRooms.form()) }
@@ -120,7 +121,11 @@ internal class GroupPresentation(private val c: GroupController) {
                 RoomPhase.PLACED, RoomPhase.FULFILLED, RoomPhase.ARCHIVED -> 5
                 else -> -1
             }, if(c.page == GroupPage.ROOM && room != null && c.session != null) c.roomInviteLink(c.session!!.hub, room.code) else "", ar,
-            inviteSummary = if (c.page == GroupPage.ROOM && room != null) roomInvitation(room, "", language).lines().drop(1).take(2).joinToString("\n") else "")
+            inviteSummary = if (c.page == GroupPage.ROOM && room != null) roomInvitation(room, "", language).lines().drop(1).take(2).joinToString("\n") else "",
+            canOverrideSelection = c.page == GroupPage.ROOM && c.selectionOverride.available,
+            reminderEmailPrompt = c.paymentReminders.prompt,
+            hasPendingEmailReminders = c.paymentReminders.hasPending,
+            feedback = c.feedbacks.current?.let { it.copy(message = ui(it.message)) })
     }
     private fun home() {
         title = tr("Food Run", "فود رن"); subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
@@ -656,6 +661,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 val payer = row.room.payerId == row.session.memberId
                 val actions = mutableListOf<GroupButton>()
                 actions += c.paymentReminderButtons(row.room, row.session.memberId, receipt, wallet = true)
+                actions += c.recordPaymentButtons(row.room, row.session.memberId, receipt, wallet = true)
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
                     actions += GroupButton(ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)

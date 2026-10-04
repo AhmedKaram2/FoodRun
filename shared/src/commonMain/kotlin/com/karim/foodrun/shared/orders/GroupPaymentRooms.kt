@@ -75,10 +75,10 @@ internal class GroupPaymentRooms(private val c: GroupController) {
             account = account, paymentRoom = PaymentRoomRequest(details, shares.values.toList(), selectedCurrency)))
     }
     fun record(id: String) {
-        require(c.room().payerId == c.me() && c.room().phase == RoomPhase.FULFILLED)
+        require(c.room().payerId == c.me() && c.room().phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) && c.room().restaurantPaid)
         val receipt = c.reply!!.receipts.single { it.memberId == id }
-        require(receipt.balance > 0 && id != c.me())
-        boundRoom = c.room().id; boundOrder = c.room().orderNumber; editing = id
+        require(PaymentReminderRules.eligible(c.room(), c.me(), receipt)) { "Resolve any pending payment first." }
+        mode = "record"; boundRoom = c.room().id; boundOrder = c.room().orderNumber; editing = id
         c.draft[GroupFieldKey.PAYMENT_RECEIVED] = display(receipt.balance)
         c.draft[GroupFieldKey.REFERENCE] = ""
         c.page = GroupPage.RECORD_PAYMENT
@@ -116,7 +116,6 @@ internal class GroupPaymentRooms(private val c: GroupController) {
         return listOf(GroupCard("payment-room-receipt", tr("Receipt and order details", "الإيصال وتفاصيل الطلب"), details.orderDetails,
             buttons = if(r.payerId == c.me() && r.phase == RoomPhase.FULFILLED) listOf(GroupButton(tr("Edit receipt", "تعديل الإيصال"), GroupAction.EDIT_PAYMENT_RECEIPT)) else emptyList(), image = details.receiptPhoto)) +
             if(r.payerId == c.me() && r.phase == RoomPhase.FULFILLED) c.reply!!.receipts.map { receipt -> GroupCard("payment-room-share:${receipt.memberId}", receipt.name,
-                "${receipt.totalText} · ${receipt.balanceText}", buttons = listOf(GroupButton(tr("Edit share", "تعديل الحصة"), GroupAction.EDIT_EXISTING_PAYMENT_SHARE, receipt.memberId)) +
-                    if(receipt.memberId != c.me() && receipt.balance > 0 && r.transfers.none { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }) listOf(GroupButton(tr("Record payment received", "تسجيل دفعة مستلمة"), GroupAction.RECORD_PAYMENT, receipt.memberId)) else emptyList()) } else emptyList()
+                "${receipt.totalText} · ${receipt.balanceText}", buttons = listOf(GroupButton(tr("Edit share", "تعديل الحصة"), GroupAction.EDIT_EXISTING_PAYMENT_SHARE, receipt.memberId))) } else emptyList()
     }
 }

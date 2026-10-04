@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -62,23 +63,30 @@ import androidx.compose.runtime.rememberCoroutineScope
 
 /** Kept outside the form's LazyColumn so a failed submit is visible at every scroll position. */
 @Composable
-internal fun GroupErrorBanner(message: String) {
+internal fun GroupFeedbackBanner(message: String, isError: Boolean, onDismiss: () -> Unit) {
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     FoodCard(
         modifier = Modifier.padding(horizontal = FoodSpacing.Page, vertical = FoodSpacing.XSmall)
             .heightIn(max = FoodSize.ErrorBanner),
-        fill = FoodColors.OrangeWash,
+        fill = if (isError) FoodColors.OrangeWash else FoodColors.SuccessWash,
     ) {
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text(if (isError) "!" else "✓", color = if (isError) FoodColors.Error else FoodColors.Success, style = FoodType.Body, modifier = Modifier.padding(start = FoodSpacing.Medium))
         key(message) {
             Text(
                 text = message,
-                color = FoodColors.Error,
+                color = if (isError) FoodColors.Error else FoodColors.Success,
                 style = FoodType.Body,
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(FoodSpacing.Large).testTag("groupError").semantics {
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
+                    .padding(FoodSpacing.Medium).testTag(if (isError) "groupError" else "groupSuccess").semantics {
                         liveRegion = LiveRegionMode.Polite
-                        error(message)
+                        if (isError) error(message)
                     },
             )
+        }
+        androidx.compose.material3.TextButton(onClick = onDismiss, modifier = Modifier.semantics { contentDescription = if (rtl) "إغلاق" else "Close" }) {
+            Text("×", color = if (isError) FoodColors.Error else FoodColors.Success)
+        }
         }
     }
 }
@@ -174,6 +182,8 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
     } else {
         val focus = LocalFocusManager.current
         val keyboard = when (field.key) {
+            GroupFieldKey.EMAIL, GroupFieldKey.REMINDER_EMAIL -> KeyboardType.Email
+            GroupFieldKey.SELECTION_PASSCODE -> KeyboardType.NumberPassword
             GroupFieldKey.HUB_URL, GroupFieldKey.PAIRING_LINK -> KeyboardType.Uri
             GroupFieldKey.PHONE -> KeyboardType.Phone
             GroupFieldKey.QUANTITY, GroupFieldKey.ROOM_CODE -> KeyboardType.Number

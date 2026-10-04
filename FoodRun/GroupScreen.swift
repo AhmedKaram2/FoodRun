@@ -26,6 +26,34 @@ struct GroupScreen: View {
                 if !Task.isCancelled { store.controller.tickAccessBlock() }
             }
         }
+        .task(id: state.hasPendingEmailReminders) {
+            while state.hasPendingEmailReminders && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if !Task.isCancelled { store.controller.tickPaymentReminders() }
+            }
+        }
+        .task(id: state.feedback?.id) {
+            if let feedback = state.feedback {
+                let remaining = max(0, feedback.expiresAt - store.controller.platform.now())
+                try? await Task.sleep(nanoseconds: UInt64(remaining) * 1_000_000)
+                if !Task.isCancelled { store.controller.dismissFeedback(id: feedback.id) }
+            }
+        }
+        .sheet(isPresented: Binding(get: { state.reminderEmailPrompt != nil }, set: { if !$0 { store.dispatch(.dismissReminderEmail) } })) {
+            VStack(alignment: .leading, spacing: FoodSpacing.s16) {
+                Text(state.rtl ? "إيميل المستلم" : "Recipient email").font(.title2)
+                Text(state.rtl ? "اكتب إيميل \(state.reminderEmailPrompt?.name ?? "") لإرسال التذكير." : "Enter an email address for \(state.reminderEmailPrompt?.name ?? "") to receive this reminder.")
+                TextField(state.rtl ? "عنوان الإيميل" : "Email address", text: Binding(get: { state.reminderEmailPrompt?.address ?? "" }, set: { store.controller.update(key: .reminderEmail, value: $0) }))
+                    .keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder).disabled(state.busy)
+                if let error = state.reminderEmailPrompt?.error, !error.isEmpty { Text(error).foregroundStyle(.red) }
+                HStack {
+                    Button(state.rtl ? "إلغاء" : "Cancel") { store.dispatch(.dismissReminderEmail) }
+                    Spacer()
+                    Button(state.rtl ? "إرسال التذكير" : "Send reminder") { store.dispatch(.saveReminderEmail) }
+                }.disabled(state.busy)
+            }.padding().presentationDetents([.medium]).interactiveDismissDisabled(state.busy)
+                .environment(\.layoutDirection, state.rtl ? .rightToLeft : .leftToRight)
+        }
         .background(FoodTheme.cream.ignoresSafeArea())
         .environment(\.layoutDirection, state.rtl ? .rightToLeft : .leftToRight)
         .onChange(of: scenePhase) { _, phase in
@@ -70,7 +98,9 @@ struct GroupScreen: View {
             .accessibilityIdentifier("groupScreen")
             .safeAreaInset(edge: .top, spacing: FoodSpacing.s0) {
                 VStack(spacing: FoodSpacing.s0) {
-                    if !state.error.isEmpty { GroupErrorBanner(message: state.error) }
+                    if let feedback = state.feedback {
+                        GroupErrorBanner(message: feedback.message, isError: feedback.isError, rtl: state.rtl) { store.controller.dismissFeedback(id: feedback.id) }
+                    }
                     if state.busy {
                         ProgressView(GroupText.shared.localized(value: GroupText.shared.working, rtl: state.rtl)).font(FoodTypography.status)
                             .padding(FoodSpacing.s8).frame(maxWidth: .infinity).background(FoodTheme.cream)
@@ -119,6 +149,9 @@ struct GroupScreen: View {
             }
             Text(state.title).font(FoodTypography.hero).foregroundStyle(FoodTheme.ink)
                 .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+                .onLongPressGesture(minimumDuration: 0.8) {
+                    if state.canOverrideSelection { store.dispatch(.openSelectionOverride) }
+                }
             if !state.subtitle.isEmpty {
                 Text(state.subtitle).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.muted)
             }

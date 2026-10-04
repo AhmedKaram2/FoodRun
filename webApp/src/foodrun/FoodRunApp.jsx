@@ -13,6 +13,10 @@ import PaymentMethodsEditor from './PaymentMethodsEditor.jsx';
 import { groupedOrderLines, restaurantOrderText } from './restaurantOrderText.js';
 import BlockedNotice from './BlockedNotice.jsx';
 import NativeGoogleSignIn from './NativeGoogleSignIn.jsx';
+import SelectionOverride from './SelectionOverride.jsx';
+import FeedbackBanner from './FeedbackBanner.jsx';
+import { useFeedback } from './useFeedback.js';
+import { GuideLink, GuideNavigation } from './GuideNavigation.jsx';
 import { roomInvitation } from './roomInvitation.js';
 import { deliveryDestination } from './roomSetup';
 import { menuCategories, defaultMenuCategory, browsedMenuItems } from './menuBrowsing';
@@ -44,6 +48,7 @@ import { validateMenu } from './menuValidation';
 const AdminApp = lazy(() => import('./AdminApp'));
 const RestaurantLibraryScreen = lazy(() => import('./RestaurantLibraryScreen'));
 const OfflineReceipts = lazy(() => import('./ReceiptArchiveScreen.jsx'));
+const HowToUse = lazy(() => import('./HowToUse.jsx'));
 
 const phaseLabel = {
   LOBBY: 'Gathering', PREPARING_SPIN: 'Getting ready', SPINNING: 'Selecting',
@@ -318,7 +323,7 @@ function AuthScreen({ ready, allowRegistration = true }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
+  const { feedback, setError: setMessage, setNotice, dismissFeedback } = useFeedback();
   const [busy, setBusy] = useState(false);
   const submit = async event => {
     event.preventDefault(); setBusy(true); setMessage('');
@@ -327,15 +332,16 @@ function AuthScreen({ ready, allowRegistration = true }) {
         const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(result.user, { displayName: name.trim() });
       } else await signInWithEmailAndPassword(auth, email.trim(), password);
-    } catch (error) { setMessage(error.message.replace(/^Firebase: /, '')); }
+    } catch (error) { setMessage(t(error.message.replace(/^Firebase: /, ''))); }
     finally { setBusy(false); }
   };
   const reset = async () => {
-    if (!email.trim()) return setMessage('Enter your email first.');
-    try { await sendPasswordResetEmail(auth, email.trim()); setMessage('Password reset email requested.'); }
-    catch (error) { setMessage(error.message.replace(/^Firebase: /, '')); }
+    if (!email.trim()) return setMessage(t('Enter your email first.'));
+    try { await sendPasswordResetEmail(auth, email.trim()); setMessage(''); setNotice(t('Password reset email requested.')); }
+    catch (error) { setMessage(t(error.message.replace(/^Firebase: /, ''))); }
   };
   return <main className="auth-shell">
+    {feedback && <FeedbackBanner key={feedback.id} feedback={feedback} onDismiss={dismissFeedback} />}
     <section className="auth-story">
       <LanguageToggle />
       <div className="brand-mark">FR</div>
@@ -344,6 +350,7 @@ function AuthScreen({ ready, allowRegistration = true }) {
       <p>{t("Pick who will order, collect everyone’s food live, and settle every share without the group-chat chaos.")}</p>
       <div className="story-steps"><span>{t("01 Join")}</span><span>{t("02 Select")}</span><span>{t("03 Order")}</span><span>{t("04 Settle")}</span></div>
       <AppDownloads compact />
+      <GuideLink />
     </section>
     <section className="auth-card card">
       <p className="eyebrow">{t("YOUR TABLE AWAITS")}</p>
@@ -355,7 +362,6 @@ function AuthScreen({ ready, allowRegistration = true }) {
         {register && <label>{t("Name")}<input value={name} onChange={e => setName(e.target.value)} required /></label>}
         <label>{t("Email")}<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
         <label>{t("Password")}<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
-        {message && <p className="form-message" role="alert">{message}</p>}
         <button className="primary" disabled={!ready || busy}>{busy ? t("One moment…") : register ? t("Create account") : t("Sign in")}</button>
       </form>
       {!register && <button className="link" onClick={reset}>{t("Forgot password?")}</button>}
@@ -456,7 +462,7 @@ function UserDashboard({ data, openRoom, compact = false }) {
 function ProfileScreen({ data, onBack, openRoom }) {
   const { profile } = data.home;
   const busy = data.busy, send = data.send;
-  const [message, setMessage] = useState('');
+  const setMessage = data.setError;
   const [form, setForm] = useState({
     name: profile?.name || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
     discoverable: profile?.discoverable ?? true,
@@ -477,7 +483,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
         ...profile, userId: '', name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
         payment: profile.payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
-      if (reply) { setDirty(false); setMessage(t("Profile and payment details saved.")); }
+      if (reply) { setDirty(false); data.setNotice(t("Profile and payment details saved.")); }
     } catch (error) { setMessage(error.message); }
   };
   const [previousLimit, setPreviousLimit] = useState(10);
@@ -490,14 +496,13 @@ function ProfileScreen({ data, onBack, openRoom }) {
     if (favoriteKeys.has(favoriteKey(favorite))) return setMessage(t("This order is already in your favorites."));
     if (favorites.length >= 30) return setMessage(t("Your 30 favorites are full. Remove one before saving another."));
     const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(profile, [favorite, ...favorites].slice(0, 30)) } });
-    if (reply) setMessage(t("Favorite order saved."));
+    if (reply) data.setNotice(t("Favorite order saved."));
   };
   const removeFavorite = async id => {
     const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(profile, favorites.filter(value => value.id !== id)) } });
-    if (reply) setMessage(t("Favorite removed."));
+    if (reply) data.setNotice(t("Favorite removed."));
   };
   return <Page title={t("Your profile")} subtitle={t("Your wallet, orders, favorites, and payment details in one place.")} onBack={onBack}>
-    {message && <p className="form-message" role="status">{message}</p>}
     <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#profile-details">{t('Your details')}</a><a className="secondary" href="#profile-wallet">{t('Wallet')}</a><a className="secondary" href="#payment-history">{t('Payment history')}</a><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a></nav>
     <section id="profile-details" className="profile-details"><h2>{t('Your details')}</h2><form className="profile-grid" onSubmit={save}>
       <section className="card profile-photo">
@@ -522,7 +527,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
 
 function Page({ title, subtitle, onBack, actions, children }) {
   return <main className="app-shell">
-    <header className="topbar"><button className="wordmark" onClick={onBack}><span>FR</span> FOOD RUN</button><div className="top-actions"><LanguageToggle />{actions}</div></header>
+    <header className="topbar"><button className="wordmark" onClick={onBack}><span>FR</span> FOOD RUN</button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
     <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("FOOD RUN / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     {children}
   </main>;
@@ -885,7 +890,7 @@ function WalletPanel({ room, receipts, me, payer }) {
 function PaymentDetails({ account, accounts = [], data }) {
   const methods = roomPaymentAccounts({ account, accounts });
   if (!methods.length) return null;
-  return <div className="stack">{methods.map(method => <div className="pay-to payment-details" key={method.id}><span>{t(method.method === "AANI" ? "Aani · UAE mobile number" : "Bank transfer · IBAN")}</span><b>{method.holder} · {method.bank}</b><code dir="ltr">{method.identifier}</code><button type="button" className="secondary" onClick={() => copyText(method.identifier).then(() => data.setNotice(t("Payment details copied."))).catch(error => data.setNotice(error.message))}>{t("Copy payment details")}</button></div>)}</div>;
+  return <div className="stack">{methods.map(method => <div className="pay-to payment-details" key={method.id}><span>{t(method.method === "AANI" ? "Aani · UAE mobile number" : "Bank transfer · IBAN")}</span><b>{method.holder} · {method.bank}</b><code dir="ltr">{method.identifier}</code><button type="button" className="secondary" onClick={() => copyText(method.identifier).then(() => data.setNotice(t("Payment details copied."))).catch(error => data.setNotice(error.message, true))}>{t("Copy payment details")}</button></div>)}</div>;
 }
 
 function PaymentActionLine({ room, receipt, memberId, data }) {
@@ -911,11 +916,11 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   };
   return <div className="payment-actions stack">
     <PaymentReminderButton room={room} receipt={receipt} memberId={memberId} data={data} />
+    {payer && <RecordPayment room={room} receipt={receipt} data={data} />}
     {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference} · {pending.recipient?.bank} · <bdi>{pending.recipient?.identifier}</bdi> · {t('Awaiting confirmation')}</p>}
     {canConfirm && <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => data.send(pending.refund ? 'CONFIRM_REFUND' : 'CONFIRM_TRANSFER', { transferId: pending.id }, room.id)}>{t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => data.send('REJECT_TRANSFER', { transferId: pending.id, text: 'Payment was not received or the details do not match.' }, room.id)}>{t('Not received')}</button></div>}
     {canDeclare && <form className="stack" onSubmit={submit}>{!payer && methods.length > 1 && <label>{t('Payment method')}<select value={accountId} onChange={event => setAccountChoice(event.target.value)}>{methods.map(method => <option key={method.id} value={method.id}>{t(method.method === 'AANI' ? 'Aani' : 'Bank account')} · {method.bank} · {method.identifier}</option>)}</select></label>}<div className="form-grid two"><label>{t('Amount sent')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Payment note (optional)')}<input value={reference} onChange={event => setReference(event.target.value)} maxLength={160} placeholder={t('Bank transfer or cash')} /></label></div><button className="primary wide" disabled={data.busy}>{payer ? t('Mark refund sent') : t('Mark paid')}</button></form>}
     {!room.restaurantPaid && receipt.balance !== 0 && <p className="field-help">{t('Waiting for restaurant payment to be recorded.')}</p>}
-    {payer && receipt.balance > 0 && !pending && room.restaurantPaid && <p className="field-help">{t('Waiting for payment')}</p>}
     {error && <p role="alert" className="form-message">{error}</p>}
   </div>;
 }
@@ -943,7 +948,7 @@ function SettlementPanel({ room, reply, me, owner, payer, data }) {
     <article id="room-payment" className="card stack payment-priority"><p className="eyebrow">{payer ? t('ROOM WALLET') : t('PAY YOUR SHARE')}</p><h2>{payer ? t('Payments') : t('Your payment')}</h2>
       {payer && <div className="settlement-totals"><span><small>{t('Your own share')}</small><b>{money(reply.receipts.find(receipt => receipt.memberId === me.id)?.total || 0, currency)}</b></span><span><small>{t('Received')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + receipt.paid, 0), currency)}</b></span><span><small>{t('Still to collect')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), currency)}</b></span></div>}
       {room.billRevision > 1 && <p className="field-help">{t('Updated totals apply automatically. No new approval is needed.')}</p>}
-      {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} />{payer && room.paymentRoom && <RecordPayment room={room} receipt={receipt} data={data} />}</section>)}
+      {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} /></section>)}
       {payer ? <PaymentMethodsEditor room={room} data={data} /> : <PaymentDetails account={room.account} accounts={room.accounts} data={data} />}
       <p className="fine">{t('Recording a payment tracks it in Food Run; it does not move money.')}</p>
     </article>
@@ -961,7 +966,7 @@ function RestaurantPoll({ room, me, owner, data }) {
 
 function RestaurantContactCard({ restaurant, data }) {
   const phone = restaurant.contact.phoneE164 || restaurant.contact.whatsappE164;
-  return <article className="card restaurant-contact"><div><p className="eyebrow">{t('RESTAURANT')}</p><h2>{localizedName(restaurant)}</h2><p>{[uiLanguage === 'ar' ? restaurant.emirateAr || restaurant.emirate : restaurant.emirate, uiLanguage === 'ar' ? restaurant.areaAr || restaurant.area : restaurant.area, restaurant.contact.address].filter(Boolean).join(' · ')}</p>{phone && <a className="restaurant-phone" dir="ltr" href={`tel:${phone}`}>{phone}</a>}</div>{phone && <button className="secondary" onClick={() => copyText(phone).then(() => data.setNotice(t('Phone number copied.'))).catch(error => data.setNotice(error.message))}>{t('Copy phone number')}</button>}</article>;
+  return <article className="card restaurant-contact"><div><p className="eyebrow">{t('RESTAURANT')}</p><h2>{localizedName(restaurant)}</h2><p>{[uiLanguage === 'ar' ? restaurant.emirateAr || restaurant.emirate : restaurant.emirate, uiLanguage === 'ar' ? restaurant.areaAr || restaurant.area : restaurant.area, restaurant.contact.address].filter(Boolean).join(' · ')}</p>{phone && <a className="restaurant-phone" dir="ltr" href={`tel:${phone}`}>{phone}</a>}</div>{phone && <button className="secondary" onClick={() => copyText(phone).then(() => data.setNotice(t('Phone number copied.'))).catch(error => data.setNotice(error.message, true))}>{t('Copy phone number')}</button>}</article>;
 }
 
 function RoomInviteCard({ room, hub }) {
@@ -1084,7 +1089,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
       {settling ? <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} /> : <article className="card stack"><h2>{t('Payment room completed')}</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}</article>}
     </fieldset>
   </Page>;
-  return <Page title={room.name} subtitle={tf('Order #{number} · {phase} · code {code}', { number: room.orderNumber, phase: t(phaseLabel[room.phase]), code: room.code })} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t("● Live") : t("Offline")}</span>}>
+  return <Page title={<SelectionOverride key={`${data.user?.uid}:${data.hub}:${room.id}:${room.orderNumber}`} room={room} data={data} language={uiLanguage} />} subtitle={tf('Order #{number} · {phase} · code {code}', { number: room.orderNumber, phase: t(phaseLabel[room.phase]), code: room.code })} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t("● Live") : t("Offline")}</span>}>
     {!settling && <OrderProgress room={room} receipts={reply.receipts} payer={payer} />}
     <fieldset disabled={data.busy} className="room-fieldset" aria-busy={data.busy}><div className="room-layout">
       <section className="room-main stack">
@@ -1176,7 +1181,7 @@ function FoodRunClient() {
   useEffect(() => {
     if (roomId && data.home?.deletedRoomIds?.includes(roomId)) closeRoom();
   }, [roomId, data.home?.deletedRoomIds]);
-  const alerts = useMemo(() => <>{siteConfig.maintenanceMessage && <div className="banner notice">{siteConfig.maintenanceMessage}</div>}{data.error && <div className="banner error" role="alert">{data.error}{data.hasPending && <button onClick={data.retry}>{t("Retry saved request")}</button>}</div>}{data.notice && <div className="banner notice">{data.notice}<button aria-label={t("Close")} onClick={() => data.setNotice('')}>×</button></div>}</>, [siteConfig.maintenanceMessage, data.error, data.hasPending, data.notice]);
+  const alerts = <>{siteConfig.maintenanceMessage && <div className="maintenance-message" role="status">{siteConfig.maintenanceMessage}</div>}{data.feedback && <FeedbackBanner key={data.feedback.id} feedback={data.feedback} onDismiss={data.dismissFeedback} retry={data.hasPending ? data.retry : null} busy={data.busy} />}</>;
   const roomBlock = page === 'room' ? data.roomBlocks?.[roomId] || data.roomBlocks?.['*'] : null;
   const block = roomBlock || (['join','create','payment-create'].includes(page) ? data.joinBlock : null);
   if (block) return <BlockedNotice block={block} retry={() => data.connect(data.hub)} onBack={() => { data.clearJoinBlock(); closeRoom(); }} />;
@@ -1202,6 +1207,22 @@ function FoodRunClient() {
 
 export default function FoodRunApp() {
   const [language, setLanguage] = useState(uiLanguage);
+  const [guideOpen, setGuideOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === '1');
+  const guideScroll = useRef(0);
+  const openGuide = () => {
+    guideScroll.current = window.scrollY;
+    const url = new URL(window.location.href); url.searchParams.set('guide', '1'); url.hash = '';
+    window.history.pushState({ foodRunGuide: true }, '', url); setGuideOpen(true); window.scrollTo(0, 0);
+  };
+  const closeGuide = () => {
+    if (window.history.state?.foodRunGuide) window.history.back();
+    else { const url = new URL(window.location.href); url.searchParams.delete('guide'); if (url.hash.startsWith('#guide-')) url.hash = ''; window.history.replaceState({}, '', url); setGuideOpen(false); }
+  };
+  useEffect(() => {
+    const pop = () => setGuideOpen(new URLSearchParams(window.location.search).get('guide') === '1');
+    window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);
+  }, []);
+  useEffect(() => { if (!guideOpen) window.scrollTo(0, guideScroll.current); }, [guideOpen]);
   uiLanguage = language;
   setTranslationLanguage(language);
   updateLanguage = value => { localStorage.setItem(LANGUAGE_KEY, value); setLanguage(value); };
@@ -1209,7 +1230,10 @@ export default function FoodRunApp() {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
-  return <Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>{new URLSearchParams(window.location.search).has('nativeSignIn') ? <NativeGoogleSignIn /> : <FoodRunClient />}</Suspense>;
+  return <GuideNavigation.Provider value={{ open: openGuide, isOpen: guideOpen }}><Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>
+    <div hidden={guideOpen}>{new URLSearchParams(window.location.search).has('nativeSignIn') ? <NativeGoogleSignIn /> : <FoodRunClient />}</div>
+    {guideOpen && <HowToUse language={language} onBack={closeGuide} />}
+  </Suspense></GuideNavigation.Provider>;
 }
 
-export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };
+export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, AuthScreen, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };

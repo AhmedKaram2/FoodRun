@@ -70,6 +70,8 @@ fun main() {
         println("FoodRun session reset completed: $accounts account sessions and $rooms room sessions revoked.")
     }
     val emailSender = GmailEmailSender.configured()
+    val emailDailyLimit = System.getenv("FOODRUN_EMAIL_DAILY_LIMIT")?.toInt() ?: 100
+    require(emailDailyLimit in 1..450) { "FOODRUN_EMAIL_DAILY_LIMIT must be between 1 and 450." }
     val service = RoomService(db, identityProvider = FirebaseIdentity.configured(), emailEnabled = emailSender != null)
     val admin = AdminService(db, service)
     Runtime.getRuntime().addShutdownHook(Thread { discoveries.forEach { it.close() }; db.close() })
@@ -77,14 +79,12 @@ fun main() {
         if (proxyMode) connector { this.port = port; this.host = "0.0.0.0" }
         else sslConnector(keyStore, "foodrun", { password.toCharArray() }, { password.toCharArray() }) { this.port = port; this.host = "0.0.0.0" }
     }) {
-        hubRoutes(service, admin)
+        hubRoutes(service, admin, reminderSender = emailSender?.let { sender -> { commandId -> service.sendPaymentReminder(commandId, sender, emailDailyLimit) } })
         if (emailSender != null) {
-            val dailyLimit = System.getenv("FOODRUN_EMAIL_DAILY_LIMIT")?.toInt() ?: 100
-            require(dailyLimit in 1..450) { "FOODRUN_EMAIL_DAILY_LIMIT must be between 1 and 450." }
             launch(Dispatchers.IO) {
                 while (isActive) {
                     try {
-                        service.nextEmail(dailyLimit)?.let { delivery ->
+                        service.nextEmail(emailDailyLimit)?.let { delivery ->
                             val result = try { emailSender.send(delivery) }
                             catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) { EmailResult.RETRY }
@@ -104,6 +104,7 @@ fun Application.hubRoutes(
     service: RoomService,
     admin: AdminService? = null,
     socketClock: () -> Long = System::currentTimeMillis,
+    reminderSender: ((String) -> String)? = null,
 ) {
     val nativeSignIn = NativeSignInBroker(service::validateFirebaseSignIn)
     val pushSender = FirebasePush.configured()
@@ -293,7 +294,12 @@ fun Application.hubRoutes(
                 visualSelectionDetails = command.visualSelectionDetails
                 liveRoomDetails = command.liveRoomDetails
                 multiplePaymentDetails = command.multiplePaymentDetails
-                withContext(Dispatchers.IO) { service.execute(command) }
+                withContext(Dispatchers.IO) {
+                    val result = service.execute(command)
+                    if (command.kind == CommandKind.REMIND_PAYMENT && result.ok && result.code == "REMINDER_QUEUED" && reminderSender != null)
+                        result.copy(code = reminderSender(command.commandId))
+                    else result
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (invalid: IllegalArgumentException) { RoomReply(ok = false, error = "Invalid request. Check the supplied fields and menu format.", code = "VALIDATION") }
             catch (failure: Exception) {

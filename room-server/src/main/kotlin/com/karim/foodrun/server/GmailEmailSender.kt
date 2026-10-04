@@ -13,11 +13,20 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 
+internal data class GmailApiResponse(val status: Int, val reasons: List<String> = emptyList())
+
 internal class GmailEmailSender(
     private val accessToken: () -> String,
     private val appUrl: String,
     private val apiUrl: String,
-    private val transport: (HttpRequest) -> Int = { request -> client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() },
+    private val transport: (HttpRequest) -> GmailApiResponse = { request ->
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        val reasons = if (response.statusCode() == 403) runCatching {
+            Json.parseToJsonElement(response.body()).jsonObject["error"]?.jsonObject?.get("errors")?.jsonArray.orEmpty()
+                .mapNotNull { it.jsonObject["reason"]?.jsonPrimitive?.content }
+        }.getOrDefault(emptyList()) else emptyList()
+        GmailApiResponse(response.statusCode(), reasons)
+    },
 ) : EmailSender {
     init {
         for (url in listOf(appUrl, apiUrl)) {
@@ -34,9 +43,11 @@ internal class GmailEmailSender(
             .timeout(Duration.ofSeconds(20)).header("Authorization", "Bearer ${accessToken()}")
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("raw", raw) }.toString())).build()
-        return when (transport(request)) {
+        val response = transport(request)
+        return when (response.status) {
             in 200..299 -> EmailResult.SENT
-            401, 403, 408, 429, in 500..599 -> EmailResult.RETRY
+            403 -> if (response.reasons.any { it in listOf("rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded") }) EmailResult.RETRY else EmailResult.FAILED
+            408, 429, in 500..599 -> EmailResult.RETRY
             else -> EmailResult.FAILED
         }
     }

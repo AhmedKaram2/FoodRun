@@ -101,7 +101,7 @@ class EmailServiceTest {
         val sender = GmailEmailSender({ "fixture-access-token" }, "https://intrvioo.com", "https://api.example.test") { request ->
             assertEquals("https://gmail.googleapis.com/gmail/v1/users/foodruncollection@gmail.com/messages/send", request.uri().toString())
             assertEquals("Bearer fixture-access-token", request.headers().firstValue("Authorization").get())
-            200
+            GmailApiResponse(200)
         }
         val mime = sender.mime(delivery)
         assertContains(mime, "From: Food Run <foodruncollection@gmail.com>")
@@ -113,8 +113,10 @@ class EmailServiceTest {
         assertFalse(mime.contains("fixture-access-token"))
         assertEquals(EmailResult.SENT, sender.send(delivery))
         assertFailsWith<IllegalArgumentException> { sender.mime(delivery.copy(address = "a@example.test\r\nBcc: victim@example.test")) }
-        assertEquals(EmailResult.RETRY, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { 429 }.send(delivery))
-        assertEquals(EmailResult.FAILED, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { 400 }.send(delivery))
+        assertEquals(EmailResult.RETRY, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { GmailApiResponse(429) }.send(delivery))
+        assertEquals(EmailResult.FAILED, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { GmailApiResponse(400) }.send(delivery))
+        assertEquals(EmailResult.FAILED, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { GmailApiResponse(403, listOf("accessNotConfigured")) }.send(delivery))
+        assertEquals(EmailResult.RETRY, GmailEmailSender({ "fixture" }, "https://intrvioo.com", "https://api.example.test") { GmailApiResponse(403, listOf("userRateLimitExceeded")) }.send(delivery))
         assertNull(GmailEmailSender.configured { null })
         assertFailsWith<IllegalArgumentException> { GmailEmailSender.configured { if (it == "FOODRUN_EMAIL_ENABLED") "true" else null } }
     }

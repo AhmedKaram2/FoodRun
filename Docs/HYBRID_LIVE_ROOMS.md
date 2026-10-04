@@ -34,6 +34,10 @@ The repository also includes `render.yaml`. In Render, create a Blueprint from t
 
 Administration uses the normal Firebase sign-in. Only the verified `1ahmedkaram1@gmail.com` account sees **Admin panel** on the web home screen. The API verifies that identity with Firebase for every admin request and denies disabled accounts. Shared admin passwords and `/admin/login` are no longer supported; old `FOODRUN_ADMIN_USERNAME` and `FOODRUN_ADMIN_PASSWORD` environment variables can be removed. The administrator must have verified their email (Google sign-in provides a verified Google identity).
 
+The normal shared restaurant editor also accepts that verified administrator. Contributors retain ownership when someone else edits their restaurant. A room owner can publish a new restaurant and edit the restaurant or poll choices attached to their own room, using their linked room and account sessions.
+
+Before a food room starts spinning, Ahmed's verified administrator account can long press the room name and enter `5457` to choose an eligible person for the next spin. This entry is hidden on web, Android, and iOS. Save the person, close the option, and start the wheel as usual: the normal animation stops on that person for everyone. Selecting **Random selection** clears the override. The API rechecks Ahmed's identity and room membership on each request; the passcode alone does not grant access. Unlocking lasts ten minutes for that account session and order. The selection survives server restarts but applies once, and returns to random if the selected person becomes ineligible or leaves. It is kept in private server records rather than shared room snapshots or audit entries, and is cleared when a spin starts, a payer is selected directly, or the order is cancelled or replaced.
+
 Run the container behind a managed HTTPS reverse proxy or container platform. Persist `FOODRUN_DATA`; it contains room state, memberships, and encrypted account data.
 
 ```text

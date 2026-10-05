@@ -38,7 +38,7 @@ struct FoodTextField: View {
             onValueChange: onValueChange,
             contentPadding: FoodSpacing.s18,
             borderWidth: FoodBorder.thin,
-            errorColor: FoodTheme.orange,
+            errorColor: FoodTheme.error,
             errorFont: .caption,
             textContentType: .givenName,
             focus: $focused,

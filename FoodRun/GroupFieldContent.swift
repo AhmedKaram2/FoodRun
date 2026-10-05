@@ -31,7 +31,7 @@ struct GroupFieldContent: View {
                         .font(FoodTypography.button).frame(maxWidth: .infinity, minHeight: FoodSpacing.s48)
                         .foregroundStyle(.white).background(FoodTheme.orange, in: RoundedRectangle(cornerRadius: FoodRadius.input))
                 }.disabled(!enabled)
-                if !photoError.isEmpty { Text(translated(photoError)).foregroundStyle(FoodTheme.orange).accessibilityAddTraits(.isStaticText) }
+                if !photoError.isEmpty { Text(translated(photoError)).foregroundStyle(FoodTheme.error).accessibilityAddTraits(.isStaticText) }
                 if !field.value.isEmpty {
                     Button(role: .destructive) { onChange("") } label: { Text(translated("Remove photo")).frame(maxWidth: .infinity) }
                         .disabled(!enabled)
@@ -136,7 +136,7 @@ struct GroupFieldContent: View {
             onValueChange: onChange,
             contentPadding: FoodSpacing.s16,
             borderWidth: FoodBorder.thin,
-            errorColor: FoodTheme.orange,
+            errorColor: FoodTheme.error,
             errorFont: FoodTypography.captionButton,
             inputIdentifier: field.key.name,
             onSubmit: {

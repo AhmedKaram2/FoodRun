@@ -43,7 +43,7 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
     init {
         require(memberIds.isNotEmpty() && memberIds.distinct().size == memberIds.size && winnerId in memberIds) { "Invalid spin candidates." }
         require(duration in 1..60_000 && turns in 1..100 && startAt in 0..Long.MAX_VALUE - duration) { "Invalid spin timing." }
-        require(weights.isEmpty() || weights.size == memberIds.size && weights.all { it in 1..100 }) { "Invalid spin weights." }
+        require(weights.isEmpty() || weights.size == memberIds.size && weights.all { it in 1..10000 }) { "Invalid spin weights." }
     }
     val endAt: Long get() = startAt + duration
     fun rotation(now: Long): Double {
@@ -104,7 +104,28 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val accounts: List<ReceivingAccount> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val wheelProtections: List<WheelProtection> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val wheelProtectionAccounts: List<ReceivingAccount> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val orderCreatedAt: Long = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val autoArchivedAt: Long = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val autoArchiveFrom: RoomPhase? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val paymentsPending: Boolean = false,
 ) {
+    val shouldStayLive: Boolean get() = phase.ongoing || autoArchivedAt > 0 && paymentsPending
+    val settlementOpen: Boolean get() = phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) ||
+        phase == RoomPhase.ARCHIVED && autoArchivedAt > 0 && autoArchiveFrom in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED)
     val receivingAccounts: List<ReceivingAccount> get() = (listOfNotNull(account) + accounts).distinctBy { it.id }
     val activeMembers: List<Member> get() = members.filter { it.approved && !it.removed }
     val orderingMembers: List<Member> get() = activeMembers.filter { !it.guest && it.participating }

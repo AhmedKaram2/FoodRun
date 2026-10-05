@@ -1,10 +1,10 @@
 # FoodRun email delivery
 
-FoodRun can send transactional room invitations and existing order/payment notifications from **foodruncollection@gmail.com**. The backend handles Android, iOS and web events using the same queue. This change does not add a bulk-mail composer or send marketing messages.
+FoodRun sends email from **foodruncollection@gmail.com** only when the chosen payer explicitly uses **Send payment reminder**. Android, iOS and web use the same server command and durable queue. Invitations and room/order/payment status changes stay in the app and push notifications; they do not create emails. The worker discards older queued invitation and status emails before delivery.
 
 ## Collection reminder button
 
-The chosen payer can use **Send payment reminder** beside an unpaid member in the room wallet or home/profile wallet. Android and iOS use the shared KMP action; the web app uses the same server command. The button is available only after restaurant payment, for an active order with a positive balance and no payment claim awaiting confirmation. The payer cannot remind themselves. Room owners who are not the chosen payer cannot send reminders.
+The chosen payer can use **Send payment reminder** beside an unpaid member in the room wallet or home/profile wallet. Android and iOS use the shared KMP action; the web app uses the same server command. The button is available after restaurant payment for a placed, fulfilled or automatically archived order with a positive balance and no payment claim awaiting confirmation. The payer cannot remind themselves. Room owners who are not the chosen payer cannot send reminders.
 
 The server uses the recipient's verified address when available. If there is no saved address, the app opens a recipient-email popup and the chosen payer can enter an address for this reminder. The server validates the address and stores it privately for that message; it does not change the member's profile or override an existing verified address. The server calculates the amount from the bill. Each message includes the member's name, remaining amount and currency, collector's name, and both English and Egyptian Arabic text. The wording uses a restrained collection-notice tone with a light FoodRun Collections Committee joke.
 
@@ -69,4 +69,4 @@ For website releases, include the existing `zai` and `ziina` Netlify functions e
 - Messages contain notification text and a link to the app. Session tokens, join codes, receipt photos and bank/payment credentials are not included. Actions require opening the app and signing in.
 - Render Free can sleep while idle, so pending retries resume when the service wakes. This setup does not promise immediate email while the server is asleep.
 
-After deployment, sign in again with two controlled test accounts, invite one to a test room, and verify the email in its inbox. Repeat a controlled order/payment event and confirm its recipient and language. This is a separate live check: local tests use fake identities and fake Gmail responses and deliver no email to real users.
+After deployment, use two controlled test accounts to complete an order, then press **Send payment reminder** for an unpaid balance and verify its inbox delivery. Confirm that inviting, selecting, placing, arriving and confirming payment produce no email. This is a separate live check: local tests use fake identities and fake Gmail responses and deliver no email to real users.

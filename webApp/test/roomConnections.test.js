@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { roomConnections } from '../src/foodrun/roomConnections.js';
 import { watch } from '../src/foodrun/client.js';
+test('automatically archived unpaid rooms stay live until payment settlement completes', async () => {
+  let opened = 0, stopped = 0, loaded = 0;
+  const manager = roomConnections({ watch: () => { opened++; return () => stopped++; }, load: async () => { loaded++; return {}; }, onReply: () => {}, onStatus: () => {} });
+  const session = { roomId: 'bill', memberId: 'me', token: 'saved', phase: 'ARCHIVED', orderNumber: 1, paymentsPending: true };
+  manager.sync({ bill: session });
+  assert.equal(opened, 1); assert.equal(loaded, 0);
+  manager.sync({ bill: { ...session } }); assert.equal(opened, 1);
+  manager.sync({ bill: { ...session, paymentsPending: false } }); await Promise.resolve();
+  assert.equal(stopped, 1); assert.equal(loaded, 1); manager.close();
+});
 
 test('only ongoing rooms stay live; closing, reopening and removing do not reconnect unaffected rooms', async () => {
   const opened = [], stopped = [], loaded = [], received = [];

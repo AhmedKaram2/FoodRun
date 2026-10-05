@@ -5,7 +5,7 @@ object PaymentReminderRules {
     const val COOLDOWN_MS = 86_400_000L
     fun eligible(room: Room, actorId: String, receipt: Receipt): Boolean =
         room.payerId == actorId && receipt.memberId != actorId && receipt.balance > 0 && room.restaurantPaid &&
-            room.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) &&
+            room.settlementOpen &&
             room.orderingMembers.any { it.id == receipt.memberId } &&
             room.transfers.none { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
 

@@ -64,6 +64,64 @@ export function measureAudit() {
     overflow: document.documentElement.scrollWidth > innerWidth + 1,
     text: host.innerText.slice(0, 500), inputs: [...host.querySelectorAll('input, select')].filter(x => x.getClientRects().length).map(x => ({ label: x.closest('label')?.textContent, fontSize: getComputedStyle(x).fontSize })) };
 }
+export async function runWheelProtectionAudit() {
+  commands.length = 0;
+  const members = ['me', 'friend', 'other'].map(id => ({ id, name: id, approved: true, participating: true, eligible: true }));
+  const base = { ownerId: 'friend', payerId: null, members };
+  const request = { id: 'wheel-request', memberId: 'me', recipientId: 'friend', orderNumber: 1, plan: 'HALF_CHANCE', amount: 500, currency: 'AED', status: 'REQUESTED' };
+  const options = () => host.querySelector('.wheel-protection');
+  const click = async (label, card = options()) => { const node = [...card.querySelectorAll('button')].find(node => node.textContent === t(label)); assert(node && !node.disabled, `Missing action: ${label}`); node.click(); await pause(); };
+  const expectCommand = (kind, fields) => { const actual = commands.at(-1); assert(actual?.kind === kind && Object.entries(fields).every(([key, value]) => actual.fields[key] === value), `Wrong command: ${JSON.stringify(actual)}`); };
+  await mountAudit('room', 'LOBBY', { room: base });
+  await click('Exclude me from selection · AED 10'); expectCommand('REQUEST_WHEEL_PROTECTION', { text: 'EXCLUDE' });
+  await click('Reduce my chance by 50% · AED 5'); expectCommand('REQUEST_WHEEL_PROTECTION', { text: 'HALF_CHANCE' });
+  await mountAudit('room', 'LOBBY', { room: { ...base, wheelProtections: [request] } });
+  assert(!options().querySelector('form'), 'Unapproved request asks for payment');
+  assert(!options().textContent.includes(t('Approve request')), 'Member can approve their own request');
+  await mountAudit('room', 'LOBBY', { memberId: 'friend', room: { ...base, wheelProtections: [request] } });
+  await click('Approve request'); expectCommand('REVIEW_WHEEL_PROTECTION', { transferId: request.id, flag: true });
+  await mountAudit('room', 'LOBBY', { room: { ...base, wheelProtections: [{ ...request, status: 'AWAITING_PAYMENT' }] } });
+  const input = options().querySelector('input'); setValue(input, 'Cash paid'); await pause();
+  options().querySelector('form').requestSubmit(); await pause();
+  expectCommand('DECLARE_WHEEL_PAYMENT', { transferId: request.id, amount: 500, text: 'Cash paid' });
+  await mountAudit('room', 'LOBBY', { memberId: 'friend', room: { ...base, wheelProtections: [{ ...request, status: 'PAYMENT_DECLARED' }] } });
+  assert(button('Spin to choose the payer').disabled, 'Owner can spin before confirming payment');
+  await click('Confirm received & activate'); expectCommand('CONFIRM_WHEEL_PAYMENT', { transferId: request.id, amount: 500, flag: true });
+  await mountAudit('room', 'LOBBY', { memberId: 'friend', room: { ...base, wheelProtections: [{ ...request, status: 'ACTIVE' }] } });
+  assert(button('Choose person directly').disabled, 'Owner can bypass paid half chance through direct selection');
+  assert(!button('Spin to choose the payer').disabled, 'Owner cannot spin after payment confirmation');
+  await mountAudit('room', 'LOBBY', { memberId: 'friend', room: { ...base, wheelProtections: [{ ...request, plan: 'EXCLUDE', amount: 1000, status: 'ACTIVE' }] } });
+  button('Choose person directly').click(); await pause();
+  const choice = [...host.querySelectorAll('select')].find(node => node.closest('label')?.textContent.includes(t('Ordering person')));
+  assert(choice && ![...choice.options].some(option => option.value === 'me'), 'Excluded member remains in direct selection');
+  await mountAudit('room', 'LOBBY', { room: { ...base, wheelProtections: [{ ...request, status: 'AWAITING_PAYMENT' }] } });
+  assert(!measureAudit().overflow, 'Wheel payment form overflows');
+  return { passed: ['two fixed fee options', 'approval before payment', 'owner approval', 'exact AED 5 payment declaration', 'owner receipt confirmation', 'pending payment blocks spin', 'half chance blocks direct selection', 'exclusion blocks direct selection'], ...measureAudit() };
+}
+export async function runAutoArchivePaymentAudit() {
+  commands.length = 0;
+  const members = ['me', 'friend'].map(id => ({ id, name: id, approved: true, participating: true, eligible: true }));
+  const room = { ownerId: 'me', payerId: 'me', members, restaurantPaid: true, autoArchivedAt: Date.now(), autoArchiveFrom: 'FULFILLED', paymentsPending: true };
+  const receipts = [{ memberId: 'me', name: 'me', food: 0, total: 0, paid: 0, balance: 0, currency: 'AED', totalText: 'AED 0.00', lines: [] },
+    { memberId: 'friend', name: 'friend', food: 1200, total: 1200, paid: 0, balance: 1200, currency: 'AED', totalText: 'AED 12.00', lines: [] }];
+  await mountAudit('room', 'ARCHIVED', { room, receipts, progress: { canArchive: false } });
+  assert(host.textContent.includes(t('Archived after 24 hours')), 'Automatic archive explanation missing');
+  assert(host.querySelector('.record-payment[open]'), 'Archived unpaid bill cannot be recorded');
+  assert(button('Send payment reminder'), 'Archived unpaid bill cannot be reminded');
+  assert(button('Start next order').disabled, 'Unsettled archived bill can be replaced');
+  assert(!button('Update final bill') && !button('Edit share'), 'Archived bill has editing controls');
+  host.querySelector('.record-payment form').requestSubmit(); await pause();
+  assert(commands.at(-1)?.kind === 'RECORD_PAYMENT' && commands.at(-1).fields.amount === 1200, 'Archived payment records wrong amount');
+  await mountAudit('room', 'ARCHIVED', { room, memberId: 'friend', receipts: [receipts[1]], progress: { canArchive: false } });
+  const pay = button('Mark paid'); assert(pay && !pay.disabled, 'Member cannot pay archived balance');
+  const form = pay.closest('form'); form.requestSubmit(); await pause();
+  assert(commands.at(-1)?.kind === 'DECLARE_TRANSFER' && commands.at(-1).fields.amount === 1200, 'Archived member payment records wrong amount');
+  await mountAudit('room', 'ARCHIVED', { room: { ...room, transfers: [{ id: 'claim', memberId: 'friend', amount: 1200, status: 'DECLARED', reference: 'Cash' }] }, receipts, progress: { canArchive: false } });
+  const confirm = button('Confirm received'); assert(confirm && !confirm.disabled, 'Archived claim cannot be confirmed');
+  confirm.click(); await pause(); assert(commands.at(-1).kind === 'CONFIRM_TRANSFER', 'Archived claim sent wrong confirmation command');
+  assert(!measureAudit().overflow, 'Archived settlement layout overflows');
+  return { passed: ['archive explanation', 'record received', 'payment reminder retained', 'unsettled next order blocked', 'bill editing closed', 'member payment retained', 'pending receipt confirmation'], ...measureAudit() };
+}
 function setValue(node, value) {
   Object.getOwnPropertyDescriptor(node instanceof HTMLSelectElement ? HTMLSelectElement.prototype : node instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(node, value);
   node.dispatchEvent(new Event(node instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));

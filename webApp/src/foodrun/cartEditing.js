@@ -29,3 +29,15 @@ export function menuLineTotal(restaurant, line) {
   const options = groups.flatMap(group => group.options).filter(option => (line.optionIds || []).includes(option.id));
   return (line.unitPrice ?? ((variant?.priceMinor ?? item.basePriceMinor) + options.reduce((sum, option) => sum + option.priceDeltaMinor, 0))) * line.quantity;
 }
+
+// Cart review shows food only, calculated from the lines currently being edited.
+// A receipt can include delivery/fees or belong to an earlier cart revision.
+export function cartFoodTotal(restaurant, lines) {
+  let total = 0;
+  for (const line of lines) {
+    const value = menuLineTotal(restaurant, line);
+    if (value == null) return null;
+    total += value;
+  }
+  return total;
+}

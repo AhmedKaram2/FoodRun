@@ -1,4 +1,5 @@
 import { matchesRestaurant } from './reorder.js';
+import { settlementOpen } from './roomLifecycle.js';
 
 export function selectionKey(restaurantKey, lines) {
   const normalized = lines.map(line => [
@@ -64,7 +65,7 @@ export function userDashboard(data) {
     }
     if (!room) return;
     currentOrders.push({ room, session, reply });
-    if (!['PLACED', 'FULFILLED'].includes(room.phase) || !room.payerId) return;
+    if (!settlementOpen(room) || !room.payerId) return;
     const payer = room.payerId === session.memberId;
     const payerName = room.members.find(member => member.id === room.payerId)?.name || 'selected payer';
     if (payer) {

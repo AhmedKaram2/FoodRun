@@ -67,6 +67,12 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         return requireNotNull(db.record("profile:$uid")) { "This user is no longer available. Refresh the people list." }
             .let { orderJson.decodeFromString<FoodProfile>(it) }
     }
+    internal fun wheelPaymentAccounts(room: Room): List<ReceivingAccount> {
+        val uid = db.record("member-user:${room.id}:${room.ownerId}") ?: return emptyList()
+        return profile(uid).receivingAccounts.filter { it.currency == "AED" }.mapNotNull {
+            runCatching { it.normalized().also(ReceivingAccount::validate) }.getOrNull()
+        }
+    }
     internal fun linkPaymentMember(uid: String, room: Room, memberId: String, token: String) {
         db.putRecord("membership:$uid:${room.id}", orderJson.encodeToString(AccountRoom(room.id, room.name, memberId, token)))
         db.putRecord("member-user:${room.id}:$memberId", uid)
@@ -85,7 +91,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                     renewed
                 }
             }
-            .map { member -> val room = requireNotNull(db.room(member.roomId)); member.copy(phase = room.phase, orderNumber = room.orderNumber) }
+            .map { member -> val room = requireNotNull(db.room(member.roomId)); member.copy(phase = room.phase, orderNumber = room.orderNumber, paymentsPending = RoomExpiry.paymentsPending(room)) }
             .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
         val invitations = db.records("invitation:$uid:").map { orderJson.decodeFromString<FoodInvitation>(it.second) }
             .filter { db.room(it.roomId)?.let { room -> room.orderNumber == it.orderNumber && room.phase == RoomPhase.LOBBY } == true }
@@ -159,7 +165,6 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 require(db.record("profile:${request.userId}") != null && profile(request.userId).discoverable) { "This person is not available for invitations on this hub." }
                 val invitation = FoodInvitation("${room.id}-${room.orderNumber}", request.userId, room.id, room.name, profile(saved.userId).name, room.orderNumber)
                 db.putRecord("invitation:${request.userId}:${invitation.id}", orderJson.encodeToString(invitation))
-                rooms.emailInvitation(invitation)
                 home(c.identityToken)
             }
             IdentityAction.ACCEPT_INVITE -> {

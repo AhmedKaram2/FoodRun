@@ -110,6 +110,47 @@ class GroupFlowIntegrationTest {
         }
 
     }
+    @Test fun paidWheelOptionUsesOwnerApprovalAndPaymentConfirmationInTheNativeFlow() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus)
+        assertTrue(member.state.buttons.any { it.action == GroupAction.OPEN_WHEEL_PROTECTION })
+        member.dispatch(GroupAction.OPEN_WHEEL_PROTECTION)
+        assertEquals(GroupPage.WHEEL_PROTECTION, member.state.page)
+        assertEquals(2, member.state.buttons.count { it.action == GroupAction.REQUEST_WHEEL_PROTECTION })
+        member.dispatch(GroupAction.REQUEST_WHEEL_PROTECTION, WheelProtectionPlan.HALF_CHANCE.name); bus.drain(); bus.sync()
+        val request = member.room().wheelProtections.single()
+        assertNull(WheelProtectionRules.active(member.room(), member.me()))
+        host.dispatch(GroupAction.OPEN_WHEEL_PROTECTION)
+        assertTrue(host.state.cards.flatMap { it.buttons }.any { it.action == GroupAction.APPROVE_WHEEL_PROTECTION })
+        host.dispatch(GroupAction.APPROVE_WHEEL_PROTECTION, request.id); bus.drain(); bus.sync()
+        assertTrue(member.state.fields.any { it.key == GroupFieldKey.WHEEL_PAYMENT_REFERENCE })
+        member.update(GroupFieldKey.WHEEL_PAYMENT_REFERENCE, "Cash received by owner")
+        member.dispatch(GroupAction.DECLARE_WHEEL_PAYMENT, request.id); bus.drain(); bus.sync()
+        assertNull(WheelProtectionRules.active(member.room(), member.me()))
+        host.dispatch(GroupAction.CONFIRM_WHEEL_PAYMENT, request.id); bus.drain(); bus.sync()
+        assertEquals("", host.state.error); assertEquals(WheelProtectionPlan.HALF_CHANCE, WheelProtectionRules.active(member.room(), member.me()))
+        member.dispatch(GroupAction.BACK); assertEquals(GroupPage.ROOM, member.state.page)
+        host.dispatch(GroupAction.BACK); host.dispatch(GroupAction.PREPARE_SPIN); bus.drain(); bus.sync()
+        assertEquals(listOf(3, 1), host.room().spin!!.weights)
+        assertEquals(host.room().spin, member.room().spin)
+    }
+    @Test fun automaticArchiveKeepsNativePaymentActionsUntilTheDebtIsSettled() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus); placeAndPay(host, member, bus)
+        val balance = member.reply!!.receipts.single { it.memberId == member.me() }.balance
+        bus.time = host.room().createdAt + RoomExpiry.LIFETIME_MS
+        bus.server.tick(); bus.sync()
+        assertEquals(RoomPhase.ARCHIVED, host.room().phase)
+        assertEquals(balance, member.reply!!.receipts.single { it.memberId == member.me() }.balance)
+        assertTrue(member.state.buttons.any { it.action == GroupAction.DECLARE_TRANSFER })
+        assertFalse(host.state.buttons.single { it.action == GroupAction.NEXT_ORDER }.enabled)
+        member.update(GroupFieldKey.AMOUNT, Money.format(balance, host.room().restaurant.currency).substringAfter(' '))
+        member.update(GroupFieldKey.REFERENCE, "Cash"); member.dispatch(GroupAction.DECLARE_TRANSFER); bus.drain(); bus.sync()
+        val claim = host.room().transfers.single()
+        host.dispatch(GroupAction.CONFIRM_TRANSFER, claim.id); bus.drain(); bus.sync()
+        assertEquals(0, member.reply!!.receipts.single { it.memberId == member.me() }.balance)
+        assertTrue(host.state.buttons.single { it.action == GroupAction.NEXT_ORDER }.enabled)
+    }
     @Test fun savedAccountSelectionLeadsToFoodSubmissionAndOrganizerReview() = Bus().use { bus ->
         val (host, _) = bus.phone(); val (payer, phone) = bus.phone()
         create(host, bus); join(payer, "Hassan", host, bus); collecting(host, payer, bus, memberPays = true)

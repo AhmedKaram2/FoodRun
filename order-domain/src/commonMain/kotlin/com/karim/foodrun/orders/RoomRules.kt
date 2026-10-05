@@ -4,6 +4,8 @@ object RoomRules {
     fun member(room: Room, id: String): Member = room.members.singleOrNull { it.id == id && !it.removed } ?: error("Membership has been removed. Ask the organizer to join again.")
     fun validateRoom(room: Room) {
         require(room.selectionStyle in listOf("wheel", "names")) { "Invalid selection style." }
+        require(room.wheelProtections.size <= 100 && room.wheelProtections.map { it.id }.distinct().size == room.wheelProtections.size) { "Invalid wheel requests." }
+        require(room.wheelProtections.all { it.orderNumber == room.orderNumber && it.amount == it.plan.amount && it.currency == "AED" && room.members.any { member -> member.id == it.memberId } }) { "Invalid wheel payment details." }
         room.paymentRoom?.validate()
         require(room.accounts.size <= 10 && room.accounts.map { it.id }.distinct().size == room.accounts.size && room.receivingAccounts.size <= 10) { "Share up to 10 distinct payment methods." }
         room.receivingAccounts.forEach { it.validate(); require(it.currency == room.restaurant.currency) { "Account currency must match the room." } }
@@ -29,6 +31,8 @@ object RoomRules {
         require(room.orderingMembers.isNotEmpty()) { "At least one ordering member must join." }
         require(room.expectedNames.all { name -> room.orderingMembers.any { it.name.equals(name.trim(), true) } }) { "Some expected people have not joined. Remove absent invitations explicitly." }
         require(room.orderingMembers.any { it.eligible }) { "At least one member must consent to ordering and paying." }
+        require(room.wheelProtections.none { it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish approved wheel payments or decline unpaid requests before spinning." }
+        WheelProtectionRules.requireSelectable(room)
     }
     fun requireReview(room: Room) {
         require(room.carts.all { cart -> cart.lines.all { it.description.isEmpty() || it.unitPrice != null } }) { "The selected person must price every custom item before totals can be confirmed." }

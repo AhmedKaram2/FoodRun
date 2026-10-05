@@ -8,6 +8,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val menuEditor = GroupMenuEditor(this)
     internal val administration = GroupAdministration(this)
     internal val selectionOverride = GroupSelectionOverride(this)
+    internal val wheelProtection = GroupWheelProtection(this)
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
     internal var page = GroupPage.HOME
@@ -109,6 +110,9 @@ class GroupController(val platform: GroupPlatform) {
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
+            GroupAction.OPEN_WHEEL_PROTECTION -> wheelProtection.open()
+            GroupAction.REQUEST_WHEEL_PROTECTION, GroupAction.APPROVE_WHEEL_PROTECTION, GroupAction.REJECT_WHEEL_PROTECTION,
+            GroupAction.DECLARE_WHEEL_PAYMENT, GroupAction.CONFIRM_WHEEL_PAYMENT, GroupAction.REJECT_WHEEL_PAYMENT, GroupAction.COPY_WHEEL_ACCOUNT -> wheelProtection.dispatch(action, value)
             GroupAction.SAVE_REMINDER_EMAIL -> paymentReminders.sendToEmail()
             GroupAction.DISMISS_REMINDER_EMAIL -> paymentReminders.dismiss()
             GroupAction.WALLET_RECORD_PAYMENT -> {
@@ -417,6 +421,7 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
+            GroupPage.WHEEL_PROTECTION -> GroupPage.ROOM
             GroupPage.PAYMENT, GroupPage.REORDER, GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
             GroupPage.LIBRARY -> libraryReturnPage
@@ -529,6 +534,7 @@ class GroupController(val platform: GroupPlatform) {
         val previousRoom = reply?.room
         val changedOrder = previousRoom?.id != room.id || previousRoom.orderNumber != room.orderNumber
         if (page == GroupPage.SELECTION_OVERRIDE && (changedOrder || room.phase != RoomPhase.LOBBY)) selectionOverride.close()
+        if (page == GroupPage.WHEEL_PROTECTION && changedOrder) { page = GroupPage.ROOM; draft.remove(GroupFieldKey.WHEEL_PAYMENT_REFERENCE) }
         val changedFees = previousRoom?.fees != room.fees
         val cached = library.snapshots[room.id]
         val combined = mergePaymentHistory(cached, next)
@@ -567,7 +573,7 @@ class GroupController(val platform: GroupPlatform) {
                         accept(next, platform.now())
                         if (this@GroupController.error.startsWith("Connection paused") || this@GroupController.error.startsWith("Hub unavailable")) this@GroupController.error = ""
                         val r = reply?.room ?: return
-                        if (!r.phase.ongoing) { watching?.cancel(); watching = null }
+                        if (!r.shouldStayLive) { watching?.cancel(); watching = null }
                         else if (!live) { startWatching(); return }
                         if (r.phase == RoomPhase.PREPARING_SPIN && r.orderingMembers.any { it.id == me() } && me() !in r.preparedIds && !busy && library.pending == null) {
                             command(CommandKind.ACK_SPIN, text = r.preparationId)
@@ -687,8 +693,8 @@ class GroupController(val platform: GroupPlatform) {
     private fun ongoingSession(saved: StoredSession): Boolean {
         val summary = library.home?.rooms?.firstOrNull { it.roomId == saved.roomId && sameHub(saved.hub, library.identityHub) }
         val cached = library.snapshots[saved.roomId]?.room
-        return if (summary?.phase != null && (cached == null || summary.orderNumber >= cached.orderNumber)) requireNotNull(summary.phase).ongoing
-        else cached?.phase?.ongoing ?: true
+        return if (summary?.phase != null && (cached == null || summary.orderNumber >= cached.orderNumber)) requireNotNull(summary.phase).ongoing || summary.paymentsPending
+        else cached?.shouldStayLive ?: true
     }
     private fun watchSavedRooms(epoch: Int) {
         val desired = library.sessions.filter { it.roomId != session?.roomId && ongoingSession(it) }.associateBy { it.roomId }
@@ -731,7 +737,7 @@ class GroupController(val platform: GroupPlatform) {
                     try {
                         val next = decodeReply(body); val room = next.room ?: return
                         if (!next.ok || next.memberId != saved.memberId || room.id != saved.roomId) return
-                        if (!room.phase.ongoing) { roomWatches.remove(room.id)?.cancel(); roomWatchTokens.remove(room.id) }
+                        if (!room.shouldStayLive) { roomWatches.remove(room.id)?.cancel(); roomWatchTokens.remove(room.id) }
                         if ((library.snapshots[room.id]?.room?.revision ?: 0) <= room.revision) {
                             if (library.snapshots[room.id]?.room?.revision != room.revision || library.snapshots[room.id]?.deletedHistoryNumbers != next.deletedHistoryNumbers)
                                 replaceLibrary(library.copy(snapshots = library.snapshots + (room.id to mergePaymentHistory(library.snapshots[room.id], next).copy(token = ""))))
@@ -792,7 +798,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

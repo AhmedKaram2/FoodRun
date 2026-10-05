@@ -24,3 +24,9 @@ test('pending payment claims, unpaid restaurant bills and closed rooms suppress 
   assert.equal(canRemindPayment({ ...room, phase: 'PLACED' }, 'payer', receipt), true);
   assert.notEqual(reminderKey(room, 'member'), reminderKey({ ...room, orderNumber: 3 }, 'member'));
 });
+test('automatic archive keeps unpaid reminders available without reopening ordinary archived rooms', () => {
+  const archived = { ...room, phase: 'ARCHIVED', autoArchivedAt: 86400000, autoArchiveFrom: 'FULFILLED' };
+  assert.equal(canRemindPayment(archived, 'payer', receipt), true);
+  assert.equal(canRemindPayment({ ...archived, autoArchiveFrom: 'LOBBY' }, 'payer', receipt), false);
+  assert.equal(canRemindPayment({ ...archived, transfers: [{ memberId: 'member', status: 'DECLARED' }] }, 'payer', receipt), false);
+});

@@ -44,7 +44,6 @@ async function capture() {
         await page.evaluate('document.fonts.ready.then(() => true)'); await delay(200);
         const selector = ({ selection: '.selection-card', food: '#room-menu', collector: '.restaurant-order-card', pay: '#room-payment', settle: '#room-payment' })[section.screen];
         if (selector) await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'start'})`);
-        if (section.screen === 'settle') await page.evaluate('document.querySelector("#room-payment .wallet-person details").open = true');
         if (page.errors.length) throw Error(page.errors.join('\n'));
         const screenshot = await page.rpc('Page.captureScreenshot', { format: 'webp', quality: 86, captureBeyondViewport: false });
         await writeFile(new URL(`${section.screen}.webp`, output), Buffer.from(screenshot.data, 'base64'));

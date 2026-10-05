@@ -1,6 +1,6 @@
 export const ongoingRoom = phase => !['ARCHIVED', 'CANCELLED'].includes(phase);
 
-// Membership credentials are retained for history; only ongoing rooms get a socket.
+// Memberships retain history; ongoing rooms and archived unpaid bills keep a socket.
 // Reconcile individual rooms so closing one does not reconnect every other room.
 export function roomConnections({ watch, load, onReply, onStatus, getSnapshot = () => null }) {
   const entries = new Map();
@@ -9,7 +9,7 @@ export function roomConnections({ watch, load, onReply, onStatus, getSnapshot = 
     sync(sessions) {
       for (const id of entries.keys()) if (!sessions[id]) remove(id);
       for (const session of Object.values(sessions)) {
-        const mode = ongoingRoom(session.phase) ? 'live' : 'history';
+        const mode = ongoingRoom(session.phase) || session.paymentsPending ? 'live' : 'history';
         const old = entries.get(session.roomId);
         const key = `${session.token}:${session.memberId}:${mode}:${mode === 'history' ? session.orderNumber : ''}`;
         if (old?.key === key) continue;

@@ -27,15 +27,34 @@ export function normalizeReply(reply) {
   return { ...reply, receipts: (reply.receipts || []).map(receipt), history: (reply.history || []).map(order => ({ ...order, receipts: (order.receipts || []).map(receipt) })) };
 }
 export async function request(hub, command, signal) {
-  const response = await fetch(`${hub}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command), signal: signal || AbortSignal.timeout(20000), credentials: 'omit', redirect: 'error' });
-  const reply = await response.json().catch(() => null);
-  if (!response.ok || !reply?.ok) {
-    const definitive = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status) || response.ok && reply?.code && reply.code !== 'HUB_UNAVAILABLE';
-    throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive, code: reply?.code, accessBlock: reply?.accessBlock, serverTime: reply?.serverTime });
+  // A sleeping internet hub can need about a minute to start. Only account
+  // connection gets this longer deadline; order/payment commands are not retried.
+  const timeoutMs = command.kind === 'IDENTITY' && command.identity?.action === 'FIREBASE_SIGN_IN' ? 90000 : 20000;
+  const abort = new AbortController();
+  const cancel = () => abort.abort(signal.reason);
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(() => abort.abort(new DOMException('The room server took too long to respond.', 'TimeoutError')), timeoutMs);
+  try {
+    abort.signal.throwIfAborted();
+    const response = await fetch(`${hub}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command), signal: abort.signal, credentials: 'omit', redirect: 'error' });
+    const reply = await response.json().catch(error => { if (abort.signal.aborted) throw error; return null; });
+    abort.signal.throwIfAborted();
+    if (!response.ok || !reply?.ok) {
+      const definitive = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status) || response.ok && reply?.code && reply.code !== 'HUB_UNAVAILABLE';
+      throw Object.assign(Error(reply?.error || `Hub request failed (${response.status}). Check your connection and retry.`), { definitive: !!definitive, code: reply?.code, accessBlock: reply?.accessBlock, serverTime: reply?.serverTime });
+    }
+    return normalizeReply(reply);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason;
+    if (abort.signal.aborted) throw Object.assign(Error(t('The room server took too long to respond. Please try again.')), { code: 'TIMEOUT', definitive: false });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
   }
-  return normalizeReply(reply);
 }
-export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true, liveRoomDetails: true, multiplePaymentDetails: true }; }
+export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true, liveRoomDetails: true, multiplePaymentDetails: true, wheelProtectionDetails: true, autoArchiveDetails: true }; }
 export function watch(hub, payload, onReply, onStatus) {
   let socket, stopped = false, timer, retry = 1000;
   const connect = () => {
@@ -47,7 +66,7 @@ export function watch(hub, payload, onReply, onStatus) {
         const reply = JSON.parse(event.data);
         if (!reply.ok) { onStatus(false, reply.error, reply); stopped = true; socket.close(); return; }
         retry = 1000; onStatus(true, ''); onReply(normalizeReply(reply));
-        if (['ARCHIVED', 'CANCELLED'].includes(reply.room?.phase)) { stopped = true; socket.close(); }
+        if (['ARCHIVED', 'CANCELLED'].includes(reply.room?.phase) && !reply.room?.paymentsPending) { stopped = true; socket.close(); }
       } catch { onStatus(false, 'The hub returned an unreadable update.'); }
     };
     socket.onclose = () => { onStatus(false, ''); if (!stopped) { timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 30000); } };

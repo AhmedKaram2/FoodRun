@@ -100,6 +100,8 @@ class RoomServiceTest {
         f.now += 10L * 365 * 24 * 60 * 60 * 1000
         f.restart()
         assertTrue(f.state(member).ok)
+        assertEquals(RoomPhase.ARCHIVED, f.state(member).room!!.phase)
+        f.send(f.owner, CommandKind.NEXT_ORDER)
         f.send(member, CommandKind.PARTICIPATE) { it.copy(flag = true) }
         assertTrue(f.state(member).room!!.orderingMembers.any { it.id == member.memberId })
     }

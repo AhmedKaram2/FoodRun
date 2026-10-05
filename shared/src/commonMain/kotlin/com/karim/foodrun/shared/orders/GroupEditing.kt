@@ -113,7 +113,10 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = reason)
         GroupAction.VOTE_RESTAURANT -> command(CommandKind.VOTE_RESTAURANT, text = value)
         GroupAction.FINALIZE_RESTAURANT -> command(CommandKind.FINALIZE_RESTAURANT, text = value)
-        GroupAction.SELECT_PAYER -> command(CommandKind.SELECT_PAYER, memberId = text(GroupFieldKey.PAYER_CHOICE).takeIf { choice -> room().orderingMembers.any { it.id == choice } } ?: room().orderingMembers.firstOrNull()?.id.orEmpty())
+        GroupAction.SELECT_PAYER -> {
+            val selectable = room().orderingMembers.filter { it.eligible && WheelProtectionRules.active(room(), it.id) != WheelProtectionPlan.EXCLUDE }
+            command(CommandKind.SELECT_PAYER, memberId = text(GroupFieldKey.PAYER_CHOICE).takeIf { choice -> selectable.any { it.id == choice } } ?: selectable.firstOrNull()?.id.orEmpty())
+        }
         GroupAction.PREPARE_SPIN -> command(CommandKind.PREPARE_SPIN)
         GroupAction.ABORT_SPIN -> command(CommandKind.ABORT_PREPARE, text = reason)
         GroupAction.ACCEPT_DUTY -> command(CommandKind.ACCEPT_DUTY)

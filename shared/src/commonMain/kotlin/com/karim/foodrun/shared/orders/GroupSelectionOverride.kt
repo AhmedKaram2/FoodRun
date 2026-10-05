@@ -8,7 +8,7 @@ internal class GroupSelectionOverride(private val c: GroupController) {
     private var order: Pair<String, Long>? = null
     private var message = ""
     val available: Boolean get() = c.administration.verifiedAccess && c.library.identityToken.isNotEmpty() &&
-        c.sameHub(c.library.identityHub, c.session?.hub) && c.reply?.room?.let { it.phase == RoomPhase.LOBBY && it.paymentRoom == null } == true
+        c.sameHub(c.library.identityHub, c.session?.hub) && c.reply?.room?.let { it.phase == RoomPhase.LOBBY && it.paymentRoom == null && it.wheelProtections.none { request -> request.status == WheelProtectionStatus.ACTIVE } } == true
     private fun tr(en: String, ar: String) = if (c.library.language == "ar") ar else en
     fun clear() {
         epoch++; unlocked = false; order = null; message = ""

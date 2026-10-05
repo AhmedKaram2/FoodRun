@@ -112,6 +112,9 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val orderNumber: Long = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val paymentsPending: Boolean = false,
 )
 @Serializable data class AccessBlock(val until: Long = 0, val reason: String = "", val durationHours: Int = 0, val removed: Boolean = false, val roomId: String = "")
 @Serializable data class HomePayload(

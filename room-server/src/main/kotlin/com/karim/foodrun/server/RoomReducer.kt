@@ -4,9 +4,10 @@ import com.karim.foodrun.orders.*
 
 class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int) {
     fun spin(room: Room, now: Long, overrideMemberId: String? = null): SpinRound {
-        val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
-        val weights = PayerSelection.weights(candidates, room.lastChosenMemberId)
-        val winner = overrideMemberId?.takeIf { it in candidates } ?: PayerSelection.choose(candidates, weights, randomIndex)
+        val candidates = WheelProtectionRules.candidates(room)
+        val weights = WheelProtectionRules.weights(room, candidates)
+        val winner = overrideMemberId?.takeIf { it in candidates && room.wheelProtections.none { request -> request.status == WheelProtectionStatus.ACTIVE } }
+            ?: PayerSelection.choose(candidates, weights, randomIndex)
         return SpinRound(id(), candidates, winner, now + 3000, weights = weights)
     }
     fun apply(r: Room, actorId: String, c: RoomCommand, now: Long, overrideMemberId: String? = null): Room {
@@ -19,11 +20,60 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
         fun joinApprover() { require(actorId == r.ownerId || actorId == r.payerId || r.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) && actorId == r.spin?.winnerId) { "Only the organizer or selected person can approve join requests." } }
         fun orderer() { require(!actor.guest && actor.participating) { "View-only guests cannot order or pay." } }
         fun phase(vararg phases: RoomPhase) { require(r.phase in phases) { "This action is unavailable at this order stage. Refresh the room." } }
+        fun settlement() { require(r.settlementOpen) { "Payments are unavailable at this order stage. Refresh the room." } }
         fun fresh() { require(c.expectedRevision == r.revision) { "The room changed. Review the latest details and retry." } }
         fun reason() { require(c.text.isNotBlank() && c.text.length <= 500) { "Enter a reason (up to 500 characters)." } }
         val result = when (c.kind) {
+            CommandKind.REQUEST_WHEEL_PROTECTION -> {
+                phase(RoomPhase.LOBBY); fresh(); orderer()
+                require(r.paymentRoom == null && actorId != r.ownerId) { "Only a room member can request paid wheel protection from the organizer." }
+                require(actor.eligible) { "Join the wheel before requesting protection." }
+                require(r.wheelProtections.none { it.memberId == actorId && it.status != WheelProtectionStatus.REJECTED }) { "You already have a wheel request for this order." }
+                val plan = WheelProtectionPlan.entries.singleOrNull { it.name == c.text } ?: error("Choose a wheel protection option.")
+                require(r.wheelProtections.size < 100) { "This order has reached its wheel request limit." }
+                r.copy(wheelProtections = r.wheelProtections + WheelProtection(id(), actorId, r.ownerId, r.orderNumber, plan, createdAt = now))
+            }
+            CommandKind.REVIEW_WHEEL_PROTECTION -> {
+                phase(RoomPhase.LOBBY); fresh()
+                val request = r.wheelProtections.singleOrNull { it.id == c.transferId } ?: error("Wheel request not found.")
+                require(actorId == r.ownerId || !c.flag && actorId == request.memberId) { "Only the organizer can approve wheel requests." }
+                require(request.status in listOf(WheelProtectionStatus.REQUESTED, WheelProtectionStatus.AWAITING_PAYMENT)) { "This wheel request was already resolved or its payment needs confirmation." }
+                if (c.flag) {
+                    require(request.recipientId == r.ownerId) { "The organizer changed. Decline this request and submit it again." }
+                    val member = RoomRules.member(r, request.memberId)
+                    require(member.approved && member.participating && member.eligible && !member.guest) { "This member is no longer eligible for the wheel." }
+                    // Reserve a feasible chance before asking this member to pay.
+                    val reserved = r.copy(wheelProtections = r.wheelProtections.map { item ->
+                        if (item.id == request.id || item.status in listOf(WheelProtectionStatus.ACTIVE, WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED)) item.copy(status = WheelProtectionStatus.ACTIVE) else item
+                    })
+                    WheelProtectionRules.requireSelectable(reserved)
+                }
+                r.copy(wheelProtections = r.wheelProtections.map { if (it.id == request.id) it.copy(status = if (c.flag) WheelProtectionStatus.AWAITING_PAYMENT else WheelProtectionStatus.REJECTED, approvedAt = if (c.flag) now else 0) else it })
+            }
+            CommandKind.DECLARE_WHEEL_PAYMENT -> {
+                phase(RoomPhase.LOBBY); fresh(); orderer(); reason()
+                require(actor.eligible) { "Join the wheel before paying for protection." }
+                val request = r.wheelProtections.singleOrNull { it.id == c.transferId } ?: error("Wheel request not found.")
+                require(request.memberId == actorId && request.status == WheelProtectionStatus.AWAITING_PAYMENT) { "Wait for the organizer to approve your request before paying." }
+                require(request.recipientId == r.ownerId && c.amount == request.amount) { "Pay the approved AED amount to the current organizer." }
+                r.copy(wheelProtections = r.wheelProtections.map { if (it.id == request.id) it.copy(status = WheelProtectionStatus.PAYMENT_DECLARED, reference = c.text.trim()) else it })
+            }
+            CommandKind.CONFIRM_WHEEL_PAYMENT -> {
+                require(r.phase == RoomPhase.LOBBY || r.phase == RoomPhase.ARCHIVED && r.autoArchivedAt > 0) { "Wheel payments are unavailable at this order stage." }; fresh(); owner()
+                val request = r.wheelProtections.singleOrNull { it.id == c.transferId } ?: error("Wheel request not found.")
+                require(request.status == WheelProtectionStatus.PAYMENT_DECLARED && request.recipientId == actorId) { "Only the receiving organizer can confirm this pending payment." }
+                require(c.amount == request.amount) { "Confirmed amount differs from the approved wheel fee." }
+                if (c.flag) {
+                    val target = RoomRules.member(r, request.memberId)
+                    require(target.approved && target.participating && target.eligible && !target.guest) { "This member is no longer eligible for the wheel." }
+                }
+                val updated = r.copy(wheelProtections = r.wheelProtections.map { if (it.id == request.id) it.copy(status = if (c.flag) WheelProtectionStatus.ACTIVE else if (r.phase == RoomPhase.ARCHIVED) WheelProtectionStatus.REJECTED else WheelProtectionStatus.AWAITING_PAYMENT, paidAt = if (c.flag) now else 0) else it })
+                if (c.flag && r.phase == RoomPhase.LOBBY) WheelProtectionRules.requireSelectable(updated)
+                updated
+            }
             CommandKind.NEXT_ORDER -> {
                 owner(); phase(RoomPhase.ARCHIVED, RoomPhase.CANCELLED); fresh()
+                RoomExpiry.requireNextOrder(r)
                 require(r.paymentRoom == null) { "Create a new payment room for another bill." }
                 val restaurant = c.restaurant ?: r.restaurant
                 MenuValidation.validate(restaurant)
@@ -36,7 +86,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     expectedNames = c.expectedNames, deliveryMode = c.flag, destination = c.destination,
                     deadline = c.deadline, fees = (c.fees ?: FeePolicy(restaurant.pricing.defaultDeliveryFeeMinor, restaurant.pricing.defaultServiceFeeMinor)).copy(automaticDelivery = c.flag),
                     members = r.members.filterNot { it.removed }.map { it.copy(ready = it.id == r.ownerId && !it.guest, eligible = it.id == r.ownerId && !it.guest, participating = it.id == r.ownerId, latePayerApproved = false) },
-                    revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now,
+                    revision = r.revision, orderNumber = r.orderNumber + 1, createdAt = r.createdAt, updatedAt = now, orderCreatedAt = now,
                     restaurantOptions = options, restaurantVotes = listOf(RestaurantVote(r.ownerId, restaurant.id)),
                     restaurantPollOpen = options.size > 1, selectionStyle = r.selectionStyle,
                     lastChosenMemberId = r.lastChosenMemberId ?: r.payerId,
@@ -66,6 +116,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     if (c.memberId.isEmpty()) r.copy(expectedNames = r.expectedNames.filterNot { it == c.name })
                     else {
                         val target = RoomRules.member(r, c.memberId)
+                        require(r.wheelProtections.none { it.memberId == target.id && it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish or decline this member's pending wheel payment before removal." }
                         require(target.id != r.payerId) { "Choose another ordering person before removing this member." }
                         val cart = r.carts.singleOrNull { it.memberId == target.id }
                         require(r.phase == RoomPhase.LOBBY || cart?.submitted != true) { "This member already submitted an order and cannot be removed from today's bill." }
@@ -81,6 +132,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PARTICIPATE -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)
+                require(c.flag || r.wheelProtections.none { it.memberId == actorId && it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish or cancel your pending wheel payment before skipping this order." }
                 r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = c.flag, eligible = c.flag && (!it.participating || it.eligible), lastSeen = if(c.flag) now else it.lastSeen) else it })
             }
             CommandKind.READY -> {
@@ -112,9 +164,12 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.SELECT_PAYER -> {
                 owner(); phase(RoomPhase.LOBBY); fresh()
+                require(r.wheelProtections.none { it.status == WheelProtectionStatus.ACTIVE && it.plan == WheelProtectionPlan.HALF_CHANCE }) { "Start the shared wheel to honor paid chance reductions." }
                 require(!r.restaurantPollOpen) { "Finish the restaurant poll before choosing the orderer." }
                 val selected = r.orderingMembers.singleOrNull { it.id == c.memberId }
                     ?: error("Choose someone who has joined this order.")
+                require(WheelProtectionRules.active(r, selected.id) != WheelProtectionPlan.EXCLUDE) { "This member paid to be excluded from selection for this order." }
+                require(r.wheelProtections.none { it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish approved wheel payments before choosing the orderer." }
                 r.copy(phase = RoomPhase.COLLECTING, payerId = selected.id, spin = null, preparationId = "", preparedIds = emptyList(), lastChosenMemberId = selected.id, lastChosenName = selected.name)
             }
             CommandKind.PREPARE_SPIN -> {
@@ -269,7 +324,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     billRevision = r.billRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.RECORD_PAYMENT -> {
-                payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh(); reason()
+                payer(); settlement(); fresh(); reason()
                 require(r.restaurantPaid) { "Confirm the updated bill before recording payments." }
                 require(c.memberId != actorId && r.transfers.none { it.memberId == c.memberId && it.status == TransferStatus.DECLARED }) { "Resolve the pending payment first. Your own share needs no transfer." }
                 val receipt = Billing.receipts(r).singleOrNull { it.memberId == c.memberId } ?: error("Member not found.")
@@ -277,13 +332,13 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(transfers = r.transfers + Transfer(id(), c.memberId, c.amount, c.text, requireNotNull(r.account), status = TransferStatus.CONFIRMED, createdAt = now))
             }
             CommandKind.PAY_RESTAURANT -> {
-                payer(); phase(RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
+                payer(); settlement(); fresh()
                 require(c.amount == Billing.receipts(r).sumOf { it.total }) { "Paid amount differs from the bill. Update item prices or the bill adjustment first." }
                 r.copy(restaurantPaid = true)
             }
             CommandKind.FULFILL -> { payer(); phase(RoomPhase.PLACED); fresh(); r.copy(phase = RoomPhase.FULFILLED) }
             CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND -> {
-                phase(RoomPhase.PLACED, RoomPhase.FULFILLED); orderer(); require(r.restaurantPaid) { "Wait for the payer to confirm restaurant payment." }
+                settlement(); orderer(); require(r.restaurantPaid) { "Wait for the payer to confirm restaurant payment." }
                 val refund = c.kind == CommandKind.DECLARE_REFUND
                 val target = if (refund) { payer(); c.memberId } else actorId
                 require(target != r.payerId) { "The payer's own contribution needs no transfer." }
@@ -296,7 +351,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(transfers = r.transfers + transfer)
             }
             CommandKind.CONFIRM_TRANSFER, CommandKind.REJECT_TRANSFER, CommandKind.CONFIRM_REFUND -> {
-                phase(RoomPhase.PLACED, RoomPhase.FULFILLED)
+                settlement()
                 val transfer = r.transfers.singleOrNull { it.id == c.transferId } ?: error("Transfer not found.")
                 require(transfer.status == TransferStatus.DECLARED) { "This transfer was already resolved." }
                 if (transfer.refund) require(actorId == transfer.memberId) { "The refund recipient must confirm." } else payer()
@@ -316,6 +371,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.HANDOVER -> {
                 owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); reason()
+                require(r.wheelProtections.none { it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish or decline pending wheel payments before changing the organizer." }
                 val target = RoomRules.member(r, c.memberId); require(target.approved && !target.guest)
                 r.copy(ownerId = target.id)
             }
@@ -324,10 +380,12 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 RoomRules.requireArchive(r)
                 r.copy(phase = RoomPhase.ARCHIVED)
             }
-            CommandKind.CANCEL -> { owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.ACCEPTING); fresh(); reason(); r.copy(phase = RoomPhase.CANCELLED) }
+            CommandKind.CANCEL -> { owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.ACCEPTING); fresh(); reason()
+                require(r.wheelProtections.none { it.status == WheelProtectionStatus.PAYMENT_DECLARED }) { "Confirm or reject pending wheel payments before cancelling the order." }
+                r.copy(phase = RoomPhase.CANCELLED) }
             else -> error("Unsupported room action.")
         }
         require(r.audit.size < 10000 || c.kind in listOf(CommandKind.CANCEL, CommandKind.ARCHIVE, CommandKind.NEXT_ORDER)) { "This order has reached its action limit. Archive or cancel it before starting the next order in this room." }
-        return result.copy(revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, c.text.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND) } ?: "", now))
+        return result.copy(revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, c.text.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND, CommandKind.DECLARE_WHEEL_PAYMENT) } ?: "", now))
     }
 }

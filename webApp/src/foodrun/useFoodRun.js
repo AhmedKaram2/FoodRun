@@ -7,6 +7,7 @@ import { auth } from '../firebase';
 import { command, request, watch } from './client';
 import { mergeRoomReply } from './roomState';
 import { roomConnections } from './roomConnections';
+import { accountConnection } from './accountConnection.js';
 import { readReceiptArchive, saveReceiptArchive, clearReceiptArchive, clearUserReceiptArchives } from './offlineReceipts';
 
 const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
@@ -38,6 +39,7 @@ export function useFoodRun() {
   const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
   const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
+  const [connectionState, setConnectionState] = useState('');
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
   const { error, setError, notice, setNotice, feedback, dismissFeedback } = useFeedback();
   const [busy, setBusy] = useState(false);
@@ -64,32 +66,36 @@ export function useFoodRun() {
   }), []);
   useEffect(() => {
     const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); setPaymentReminderTimes({}); setPaymentReminderStates({}); seen.current.clear(); pending.current = null;
+    setConnectionState(''); setError('');
     if (!user || !hub) return;
     try {
       pending.current = JSON.parse(sessionStorage.getItem(`foodrun-pending:${user.uid}:${hub}`) || 'null');
       if (pending.current) setError(t("A saved request needs confirmation. Retry it before making another change."));
     } catch { pending.current = null; }
     try { setSessions(JSON.parse(localStorage.getItem(sessionStorageKey(user.uid, hub)) || '{}')); } catch { setSessions({}); }
-    let stop = () => {}, cancelled = false;
-    const connect = async () => {
-      try {
-        const reply = await request(hub, command('IDENTITY', { identity: { action: 'FIREBASE_SIGN_IN', firebaseToken: await user.getIdToken() } }));
-        if (cancelled || epoch !== alive.current) return;
+    let cancelled = false;
+    const current = () => !cancelled && epoch === alive.current;
+    const stop = accountConnection({
+      signIn: async signal => {
+        const firebaseToken = await user.getIdToken();
+        signal.throwIfAborted();
+        return request(hub, command('IDENTITY', { identity: { action: 'FIREBASE_SIGN_IN', firebaseToken } }), signal);
+      },
+      onStatus: state => { if (current()) setConnectionState(state); },
+      onConnected: reply => {
+        if (!current()) return;
         readBlock(reply); setAccessBlock(null); setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); setHome(reply.home); if (!pending.current) setError('');
         setSessions(Object.fromEntries(reply.home.rooms.map(room => [room.roomId, room])));
-        stop = watch(hub, command('HOME', { identityToken: reply.identityToken }), next => {
-          if (cancelled || epoch !== alive.current) return;
+        return watch(hub, command('HOME', { identityToken: reply.identityToken }), next => {
+          if (!current()) return;
           readBlock(next); setHome(next.home);
           setSessions(Object.fromEntries(next.home.rooms.map(room => [room.roomId, room])));
           next.home.invitations.forEach(invite => alert(`invite:${invite.id}`, `You're invited to ${invite.roomName}.`, t("Join from your home screen.")));
-        }, (connected, reason, statusReply) => { if (cancelled || epoch !== alive.current) return; readBlock(statusReply); setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
-      } catch (e) { if (!cancelled) readBlock(e); if (!cancelled) setError(hub === publicHub
-        ? `Could not connect to the internet room. ${e.message} Retry when your internet connection is available.`
-        : `Could not connect to the nearby hub. ${e.message} Open its HTTPS address once to trust its certificate after checking the fingerprint, and allow local-network access.`); }
-    };
-    connect();
-    const refresh = setInterval(() => { stop(); connect(); }, 50 * 60 * 1000);
-    return () => { cancelled = true; stop(); clearInterval(refresh); };
+        }, (connected, reason, statusReply) => { if (!current()) return; readBlock(statusReply); setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
+      },
+      onError: error => { if (current()) { readBlock(error); setError(error.message); } },
+    });
+    return () => { cancelled = true; stop(); };
   }, [user, hub, hubRevision, alert]);
   useEffect(() => {
     let cancelled = false;
@@ -223,5 +229,5 @@ export function useFoodRun() {
       if (state === 'failed') { setPaymentReminderTimes(old => { const next = { ...old }; delete next[key]; return next; }); setError(t('Email could not be sent. Please try again.')); }
     } catch { /* A later status check can recover after a network interruption. */ }
   };
-  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
+  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, connectionState, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
 }

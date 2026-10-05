@@ -6,7 +6,7 @@ import { command, request } from './client.js';
 export default function SelectionOverride({ room, data, language }) {
   const ar = language === 'ar';
   const tx = (en, arabic) => ar ? arabic : en;
-  const allowed = canAccessAdmin(data.user) && room.phase === 'LOBBY' && !room.paymentRoom;
+  const allowed = canAccessAdmin(data.user) && room.phase === 'LOBBY' && !room.paymentRoom && !(room.wheelProtections || []).some(request => request.status === 'ACTIVE');
   const [open, setOpen] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [passcode, setPasscode] = useState('');

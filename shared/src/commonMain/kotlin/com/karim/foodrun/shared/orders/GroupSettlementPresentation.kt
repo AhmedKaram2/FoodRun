@@ -120,13 +120,15 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 fields += field(GroupFieldKey.AMOUNT, tr("Refund amount sent", "المبلغ المرتجع المرسل"))
                 fields += field(GroupFieldKey.REFERENCE, tr("Refund reference / cash note", "مرجع الإرجاع أو ملاحظة النقد"))
             }
-            fields += field(GroupFieldKey.BILL_ADJUSTMENT, tr("Total bill adjustment · minus reduces · 0 removes", "تعديل إجمالي الفاتورة · السالب يخفضها · صفر يلغي التعديل"))
-            val adjustmentText = c.text(GroupFieldKey.BILL_ADJUSTMENT).trim()
-            val proposedAdjustment = runCatching {
-                Money.parse(adjustmentText.removePrefix("-"), currency) * if (adjustmentText.startsWith('-')) -1 else 1
-            }.getOrNull()
-            buttons += GroupButton(tr("Update final bill", "تعديل الفاتورة النهائية"), GroupAction.ADJUST_BILL,
-                enabled = proposedAdjustment == null || proposedAdjustment != r.adjustment)
+            if (r.phase != RoomPhase.ARCHIVED) {
+                fields += field(GroupFieldKey.BILL_ADJUSTMENT, tr("Total bill adjustment · minus reduces · 0 removes", "تعديل إجمالي الفاتورة · السالب يخفضها · صفر يلغي التعديل"))
+                val adjustmentText = c.text(GroupFieldKey.BILL_ADJUSTMENT).trim()
+                val proposedAdjustment = runCatching {
+                    Money.parse(adjustmentText.removePrefix("-"), currency) * if (adjustmentText.startsWith('-')) -1 else 1
+                }.getOrNull()
+                buttons += GroupButton(tr("Update final bill", "تعديل الفاتورة النهائية"), GroupAction.ADJUST_BILL,
+                    enabled = proposedAdjustment == null || proposedAdjustment != r.adjustment)
+            }
             if (r.restaurantPaid) {
                 val owed = receipts.filter { it.balance > 0 }
                 val refunds = receipts.filter { it.balance < 0 }
@@ -134,6 +136,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                     pending.isNotEmpty() -> "${pending.size} payment or refund ${if (pending.size == 1) "claim needs" else "claims need"} confirmation. Review Payment activity below."
                     refunds.isNotEmpty() -> tr("Refunds are due to ${refunds.joinToString { it.name }}. Send each refund, record it, and wait for the recipient to confirm.", "مبالغ مرتجعة مستحقة إلى ${refunds.joinToString { it.name }}. أرسلها وسجلها وانتظر تأكيد المستلم.")
                     owed.isNotEmpty() -> tr("Waiting for reimbursements from ${owed.joinToString { it.name }}. Your own share needs no transfer.", "بانتظار دفعات ${owed.joinToString { it.name }}. حصتك الشخصية لا تحتاج تحويلاً.")
+                    r.phase == RoomPhase.ARCHIVED -> tr("All payments are settled. This order remains archived.", "كل الدفعات اتسوت. الطلب يفضل مؤرشف.")
                     r.phase == RoomPhase.PLACED -> tr("Every share is settled. Mark the food collected or delivered when it arrives.", "تمت تسوية جميع الحصص. أكد استلام الطعام عند وصوله.")
                     owner || payer -> tr("Every share is settled and the food has arrived. Complete this order to prepare for the next meal.", "تمت تسوية الحصص ووصل الطعام. أكمل الطلب للتحضير للوجبة القادمة.")
                     else -> tr("Every share is settled and the food has arrived. ${name(r.ownerId)} can complete this order.", "تمت تسوية الحصص ووصل الطعام. يستطيع ${name(r.ownerId)} إكمال الطلب.")
@@ -178,7 +181,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             return GroupButton(if(language == "ar") { if(confirmed) "تم تأكيد الإجمالي والمستلم" else "تأكيد إجمالي طلبي والمستلم" } else if (confirmed) "Total and recipient confirmed" else "Confirm my total and recipient",
                 GroupAction.CONFIRM_QUOTE, primary = !confirmed, enabled = !confirmed)
         }
-        fun refundAvailable(room: Room, receipt: Receipt): Boolean = room.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) && room.restaurantPaid && receipt.balance < 0 && room.transfers.none { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
+        fun refundAvailable(room: Room, receipt: Receipt): Boolean = room.settlementOpen && room.restaurantPaid && receipt.balance < 0 && room.transfers.none { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
         fun receiptBalanceText(receipt: Receipt, payerId: String?, language: String = "en"): String = if(language == "ar") when {
             receipt.memberId == payerId -> "حصتك الشخصية — لا حاجة للتحويل لنفسك"
             receipt.balance < 0 -> "مبلغ مرتجع مستحق ${Money.format(-receipt.balance, receipt.currency)}"

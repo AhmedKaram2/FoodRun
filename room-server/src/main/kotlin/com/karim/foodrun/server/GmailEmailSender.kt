@@ -60,9 +60,9 @@ internal class GmailEmailSender(
             val text = String(points.toIntArray(), 0, points.size)
             "=?UTF-8?B?${Base64.getEncoder().encodeToString(text.toByteArray(Charsets.UTF_8))}?="
         }
-        // Invitations are accepted after sign-in; room IDs and credentials never appear in mail links.
+        // Payment actions require sign-in; room IDs and credentials never appear in mail links.
         val link = "${appUrl.trimEnd('/')}?hub=${URLEncoder.encode(apiUrl.trimEnd('/'), Charsets.UTF_8)}"
-        val body = "${job.body}\n\nFood Run: $link\n\nFood Run sends this update for a room invitation, order or payment.\nReply to this email if you need help."
+        val body = "${job.body}\n\nFood Run: $link\n\nFood Run sends this payment reminder at the chosen payer's request.\nReply to this email if you need help."
         return listOf("From: Food Run <$SENDER>", "To: ${delivery.address}", "Subject: $encodedTitle",
             "Date: ${DateTimeFormatter.RFC_1123_DATE_TIME.format(Instant.ofEpochMilli(job.createdAt).atOffset(ZoneOffset.UTC))}",
             "Message-ID: <foodrun-${job.id}@gmail.com>", "Auto-Submitted: auto-generated", "MIME-Version: 1.0",

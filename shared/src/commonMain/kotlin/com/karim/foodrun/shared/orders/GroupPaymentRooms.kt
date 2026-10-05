@@ -75,7 +75,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
             account = account, paymentRoom = PaymentRoomRequest(details, shares.values.toList(), selectedCurrency)))
     }
     fun record(id: String) {
-        require(c.room().payerId == c.me() && c.room().phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) && c.room().restaurantPaid)
+        require(c.room().payerId == c.me() && c.room().settlementOpen && c.room().restaurantPaid)
         val receipt = c.reply!!.receipts.single { it.memberId == id }
         require(PaymentReminderRules.eligible(c.room(), c.me(), receipt)) { "Resolve any pending payment first." }
         mode = "record"; boundRoom = c.room().id; boundOrder = c.room().orderNumber; editing = id

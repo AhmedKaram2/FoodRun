@@ -218,6 +218,21 @@ test('known menu prices immediately include quantity, selected size and extras',
   assert.equal(menuLineTotal(restaurant, { description: 'Custom', quantity: 2, unitPrice: 600 }), 1200);
 });
 
+test('cart food subtotal is the current 3 + 7 total and follows quantity edits, extras and unknown prices', async () => {
+  const { cartFoodTotal, changeQuantity } = await import('../src/foodrun/cartEditing.js');
+  const restaurant = { menu: { items: [{ id: 'beans', basePriceMinor: 300, variants: [], optionGroupIds: [] },
+    { id: 'falafel', basePriceMinor: 600, variants: [], optionGroupIds: ['extras'] }],
+    optionGroups: [{ id: 'extras', options: [{ id: 'salad', priceDeltaMinor: 100 }] }] } };
+  const lines = [{ id: 'a', itemId: 'beans', quantity: 1, optionIds: [] }, { id: 'b', itemId: 'falafel', quantity: 1, optionIds: ['salad'] }];
+  assert.equal(cartFoodTotal(restaurant, lines), 1000);
+  assert.equal(cartFoodTotal(restaurant, changeQuantity(lines, 'a', 1)), 1300);
+  assert.equal(cartFoodTotal(restaurant, changeQuantity(lines, 'b', -1)), 300);
+  assert.equal(cartFoodTotal(restaurant, [{ ...lines[1], quantity: 2, unitPrice: 400 }]), 800);
+  assert.equal(cartFoodTotal(restaurant, [...lines, { description: 'Custom', quantity: 1, unitPrice: null }]), null);
+  assert.equal(cartFoodTotal(restaurant, [{ itemId: 'missing', quantity: 1 }]), null);
+  assert.equal(cartFoodTotal(restaurant, []), 0);
+});
+
 
 test('admin visibility requires the verified allowed account', async () => {
   const { canAccessAdmin } = await import('../src/foodrun/adminAccess.js');
@@ -238,6 +253,16 @@ test('wallet retains money due until recipient approval and exposes the pending 
   data.rooms.room.receipts = [{ ...receipt, balance: 700 }];
   assert.equal(userDashboard(data).toReceive, 700);
   assert.equal(userDashboard(data).entries[0].pending, undefined);
+});
+test('automatic archive keeps unpaid and refund balances in the user wallet', () => {
+  const room = { id: 'room', name: 'Lunch', phase: 'ARCHIVED', autoArchivedAt: 86400000, autoArchiveFrom: 'FULFILLED', payerId: 'payer', members: [{ id: 'payer', name: 'Payer' }], transfers: [{ id: 'claim', memberId: 'me', amount: 500, status: 'DECLARED' }] };
+  const data = { sessions: { room: { roomId: 'room', memberId: 'me' } }, rooms: { room: { room, receipts: [receipt] } } };
+  assert.equal(userDashboard(data).toPay, 1200);
+  assert.equal(userDashboard(data).entries[0].pending.id, 'claim');
+  data.sessions.room.memberId = 'payer';
+  assert.equal(userDashboard(data).toReceive, 1200);
+  data.rooms.room.receipts = [{ ...receipt, balance: -300 }];
+  assert.equal(userDashboard(data).toPay, 300);
 });
 
 

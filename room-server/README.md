@@ -79,7 +79,7 @@ The web administration panel is available at `/admin`. Sign in with the verified
 
 ## Permanent rooms and daily orders
 
-**Rooms, join codes and memberships have no daily expiry or automatic expiry timer.** A saved member session resumes the same room after an app or hub restart. Keep the hub data directory and the phone's app data to preserve that access.
+**Each order automatically finishes and archives 24 hours after creation.** A new order gets its own 24-hour window. Unpaid balances, refunds and pending transfers remain due and can still be settled or reminded after automatic archiving. An unsettled order cannot be replaced by a new one. Maintenance catches up when a sleeping hub wakes. Room codes, memberships, receipts and payment records remain saved; keep the hub data directory and phone's app data to preserve that access.
 
 The organizer starts **Next order** inside the existing room after the previous meal is cancelled or fully completed and settled. The room keeps its identity, approved members and past receipts. Members choose to participate or skip the new meal; skipping does not remove their membership. The creator participates by default when starting the next order.
 

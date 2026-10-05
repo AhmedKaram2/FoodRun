@@ -8,8 +8,7 @@ import java.util.UUID
 class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null, emailEnabled: Boolean = false) {
     private val accounts = AccountService(db, identityProvider, this, clock)
     private val emails = EmailService(db, clock, emailEnabled)
-    private val notifications = NotificationService(db, clock, emails)
-    internal fun emailInvitation(invitation: FoodInvitation) = emails.invitation(invitation)
+    private val notifications = NotificationService(db, clock)
     @Synchronized internal fun nextEmail(dailyLimit: Int): EmailDelivery? = db.transaction { emails.pending(dailyLimit) }
     @Synchronized internal fun finishEmail(delivery: EmailDelivery, result: EmailResult) = db.transaction { emails.delivered(delivery, result) }
     internal fun sendPaymentReminder(commandId: String, sender: EmailSender, dailyLimit: Int): String {
@@ -40,6 +39,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private val roomEvents = mutableMapOf<String, Long>()
     private var homeEvents = 1L
     private var eventSequence = 1L
+    private var nextExpiryScanAt = 0L
     private val reducer = RoomReducer(::uuid, random::nextInt)
     init {
         // Admit members left waiting by older hubs without changing a locked order's participants.
@@ -83,6 +83,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
+        expireDueRooms()
+        if (c.roomId.isNotEmpty()) db.transaction { db.room(c.roomId)?.let(::archiveExpired) }
         if (c.kind == CommandKind.IDENTITY) db.transaction { accounts.execute(c) }.also { reply ->
             signalHome()
             reply.room?.let { signalRoom(it.id) }
@@ -103,7 +105,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -146,14 +148,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
 
     @Synchronized fun snapshot(roomId: String, token: String, historyOffset: Int = 0): RoomReply {
         val actor = authenticate(roomId, token)
-        val room = finalizeSpin(requireNotNull(db.room(roomId)))
+        val room = db.transaction { finalizeSpin(archiveExpired(requireNotNull(db.room(roomId)))) }
         presence[actor] = clock()
         return projection(withPresence(room), actor, historyOffset)
     }
     @Synchronized fun tick() {
+        expireDueRooms()
         db.transaction { db.spinningRooms().forEach { room ->
             if (room.phase == RoomPhase.PREPARING_SPIN) {
-                val candidates = room.orderingMembers.filter { it.eligible }.map { it.id }
+                val candidates = WheelProtectionRules.candidates(room)
                 if (candidates.isNotEmpty()) {
                     db.save(room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock(), db.record(selectionOverrideKey(room))), revision = room.revision + 1))
                     clearSelectionOverride(room)
@@ -162,6 +165,21 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             } else finalizeSpin(room)
         } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
+    }
+    private fun expireDueRooms() {
+        val now = clock()
+        if (now < nextExpiryScanAt) return
+        db.transaction { db.ongoingRooms().forEach(::archiveExpired) }
+        nextExpiryScanAt = now + 30_000
+    }
+    private fun archiveExpired(room: Room): Room {
+        val archived = RoomExpiry.archive(room, clock())
+        if (archived != room) {
+            db.save(archived)
+            clearSelectionOverride(room)
+            signalRoom(room.id)
+        }
+        return archived
     }
     private fun withPresence(room: Room): Room = room.copy(members = room.members.map { member -> member.copy(lastSeen = presence[member.id] ?: member.lastSeen) })
     private fun finalizeSpin(room: Room): Room {
@@ -220,6 +238,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun selectionOverride(c: RoomCommand): RoomReply {
         val actor = authenticate(c.roomId, c.token)
         val room = requireNotNull(db.room(c.roomId))
+        require(room.wheelProtections.none { it.status == WheelProtectionStatus.ACTIVE }) { "Paid wheel protection keeps this selection random." }
         require(room.paymentRoom == null && room.phase == RoomPhase.LOBBY) { "The wheel selection can only change before spinning." }
         require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "The order changed. Refresh the room and try again." }
         val code = if (c.kind == CommandKind.UNLOCK_SELECTION_OVERRIDE) {
@@ -371,6 +390,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             restaurantReference = "", preparationId = "", preparedIds = emptyList(), adjustmentApprovals = emptyList(),
             restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false, paymentRoom = null,
             lastChosenMemberId = null, lastChosenName = "",
+            wheelProtections = emptyList(), wheelProtectionAccounts = emptyList(),
         ) else room.copy(
             // Legacy clients use this field as a payment gate. All members are exempt:
             // Owner and payer price changes apply directly without another approval cycle.
@@ -381,6 +401,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             carts = room.carts.map { if (canViewPrices || (orderer && it.memberId == actor)) it else it.copy(lines = emptyList()) },
             account = room.account.takeIf { orderer },
             accounts = room.accounts.takeIf { orderer }.orEmpty(),
+            wheelProtections = room.wheelProtections.filter { room.ownerId == actor || it.memberId == actor || it.status == WheelProtectionStatus.ACTIVE }
+                .map { if (room.ownerId == actor || it.memberId == actor) it else it.copy(reference = "") },
+            wheelProtectionAccounts = if (orderer || room.ownerId == actor) accounts.wheelPaymentAccounts(room) else emptyList(),
+            paymentsPending = RoomExpiry.paymentsPending(room),
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },
         )
@@ -389,7 +413,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     private fun progress(room: Room, actor: String): OrderProgress {
         val reviewStage = (actor == room.ownerId || actor == room.payerId) && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)
-        val archiveStage = (actor == room.ownerId || actor == room.payerId) && room.phase == RoomPhase.FULFILLED
+        val archiveStage = (actor == room.ownerId || actor == room.payerId) && (room.phase == RoomPhase.FULFILLED || room.autoArchivedAt > 0 && room.settlementOpen)
         fun blocker(validate: () -> Unit): String = try { validate(); "" }
             catch (invalid: IllegalArgumentException) { invalid.message ?: "Review the order before continuing." }
         val reviewBlocker = if (reviewStage) blocker { RoomRules.requirePlaceable(room) } else ""

@@ -19,6 +19,13 @@ class EmailServiceTest {
     private fun login(f: RoomFixture, user: String) = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
         identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = user, email = "forged@example.test")))
     private fun select(f: RoomFixture): RoomCommand = f.command(f.owner, CommandKind.SELECT_PAYER).copy(memberId = f.owner.memberId)
+    private fun reminder(f: RoomFixture): RoomReply {
+        val member = f.placed(); f.pay()
+        assertTrue(f.db.records("email-job:").isEmpty())
+        val command = f.command(f.owner, CommandKind.REMIND_PAYMENT).copy(memberId = member.memberId)
+        f.execute(command); f.execute(command)
+        return member
+    }
 
     @Test fun verifiedGoogleEmailIsPrivateAndSurvivesSignOutAndRestart() = RoomFixture(Identity()).use { f ->
         val signedIn = login(f, "friend")
@@ -38,24 +45,22 @@ class EmailServiceTest {
             assertNull(EmailContacts.address(f.db, "friend"))
         }
     }
-    @Test fun notificationIsQueuedOnceAndRetriedDurablyWithQuota() = RoomFixture(Identity(), emailEnabled = true).use { f ->
-        f.join()
-        val command = select(f); f.execute(command); f.execute(command)
+    @Test fun explicitPaymentReminderIsQueuedOnceAndRetriedDurablyWithQuota() = RoomFixture(Identity(), emailEnabled = true).use { f ->
+        reminder(f)
         assertEquals(1, f.db.records("email-job:").size)
-        val first = assertNotNull(f.service.nextEmail(2))
-        assertEquals("fixture-owner@example.test", first.address)
+        val first = assertNotNull(f.service.nextEmail(1))
+        assertEquals("Member@example.test", first.address)
         assertNull(f.service.nextEmail(2)) // lease prevents a second worker from taking the same job
         f.service.finishEmail(first, EmailResult.RETRY)
         f.restart(); assertNull(f.service.nextEmail(2))
         f.now += 120_000
+        assertNull(f.service.nextEmail(1)) // rolling limit includes failed attempts
         val retry = assertNotNull(f.service.nextEmail(2))
         assertEquals(first.job.id, retry.job.id)
         f.service.finishEmail(retry, EmailResult.SENT)
         assertTrue(f.db.records("email-job:").isEmpty())
         assertTrue(f.db.record("email-result:${first.job.id}")!!.endsWith(":sent"))
-        f.send(f.owner, CommandKind.CANCEL) { it.copy(text = "Test order cancelled") }
-        assertTrue(f.db.records("email-job:").isNotEmpty())
-        assertNull(f.service.nextEmail(2)) // rolling limit includes failed attempts
+        assertNull(f.service.nextEmail(2))
     }
     @Test fun disabledEmailDoesNotBuildAnOutbox() = RoomFixture(Identity()).use { f ->
         f.join(); f.execute(select(f))
@@ -63,38 +68,63 @@ class EmailServiceTest {
         assertNull(f.service.nextEmail(100))
     }
     @Test fun blockedRecipientsAreSkippedBeforeDelivery() = RoomFixture(Identity(), emailEnabled = true).use { f ->
-        f.join(); f.execute(select(f))
-        f.db.putRecord("admin:disabled:fixture-owner", "true")
+        reminder(f)
+        f.db.putRecord("admin:disabled:Member", "true")
         assertNull(f.service.nextEmail(100))
         assertTrue(f.db.records("email-job:").isEmpty())
     }
     @Test fun expiredEmailIsNotSentAfterTheServerWakes() = RoomFixture(Identity(), emailEnabled = true).use { f ->
-        f.join(); f.execute(select(f))
+        reminder(f)
         f.now += 86_400_001
         assertNull(f.service.nextEmail(100))
         assertTrue(f.db.records("email-job:").isEmpty())
     }
     @Test fun changedVerifiedAddressIsResolvedAtDeliveryTime() = RoomFixture(Identity(), emailEnabled = true).use { f ->
-        f.join(); f.execute(select(f))
-        EmailContacts.capture(f.db, CloudIdentity("fixture-owner", "fixture", email = "new@example.test", emailVerified = true), f.now)
+        reminder(f)
+        EmailContacts.capture(f.db, CloudIdentity("Member", "fixture", email = "new@example.test", emailVerified = true), f.now)
         assertEquals("new@example.test", assertNotNull(f.service.nextEmail(100)).address)
     }
-    @Test fun invitationIsDeduplicatedAndCancelledWhenAccepted() = RoomFixture(Identity(), emailEnabled = true).use { f ->
+    @Test fun invitationStaysInAppWithoutSendingEmail() = RoomFixture(Identity(), emailEnabled = true).use { f ->
         val owner = login(f, "fixture-owner"); val friend = login(f, "friend")
         val invite = RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = owner.identityToken,
             roomId = f.owner.room!!.id, token = f.owner.token, identity = IdentityRequest(IdentityAction.INVITE, userId = "friend"))
         f.execute(invite); f.execute(invite.copy(commandId = f.id()))
-        assertEquals(1, f.db.records("email-job:").size)
+        assertTrue(f.db.records("email-job:").isEmpty())
         val id = f.db.records("invitation:friend:").single().first.removePrefix("invitation:friend:")
         f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = friend.identityToken,
             identity = IdentityRequest(IdentityAction.ACCEPT_INVITE, invitationId = id)))
         assertNull(f.service.nextEmail(100))
     }
     @Test fun removedRoomMemberCannotReceiveQueuedEmail() = RoomFixture(Identity(), emailEnabled = true).use { f ->
-        f.join(); f.execute(select(f))
+        val member = reminder(f)
         val room = f.db.room(f.owner.room!!.id)!!
-        f.db.save(room.copy(members = room.members.map { if (it.id == f.owner.memberId) it.copy(removed = true) else it }))
+        f.db.save(room.copy(members = room.members.map { if (it.id == member.memberId) it.copy(removed = true) else it }))
         assertNull(f.service.nextEmail(100))
+    }
+    @Test fun roomAndPaymentStatusChangesOnlyCreateInAppNotifications() = RoomFixture(Identity(), emailEnabled = true).use { f ->
+        val member = f.placed(); f.pay()
+        val declared = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = f.state(member).receipts.single { r -> r.memberId == member.memberId }.balance, text = "Cash payment") }
+        f.send(f.owner, CommandKind.CONFIRM_TRANSFER) { it.copy(transferId = declared.room!!.transfers.single().id) }
+        f.send(f.owner, CommandKind.FULFILL)
+        assertTrue(f.db.records("notification:").isNotEmpty())
+        assertTrue(f.db.records("email-job:").isEmpty())
+        assertNull(f.service.nextEmail(100))
+    }
+    @Test fun queuedLegacyStatusAndInvitationEmailsAreDiscardedAfterRestart() = RoomFixture(Identity(), emailEnabled = true).use { f ->
+        val member = reminder(f)
+        val room = f.state().room!!
+        val jobs = listOf(
+            EmailJob("legacy-status", "fixture-owner", room.id, room.orderNumber, "Order update", "Order selected", f.now),
+            EmailJob("legacy-payment", "fixture-owner", room.id, room.orderNumber, "Payment update", "Payment received", f.now),
+            EmailJob("legacy-invite", "fixture-owner", room.id, room.orderNumber, "Invitation", "Join the room", f.now, invitationId = "old-invitation"),
+        )
+        jobs.forEach { f.db.putRecord("email-job:${it.id}", orderJson.encodeToString(it)) }
+        f.restart()
+        val delivery = assertNotNull(f.service.nextEmail(100))
+        assertEquals(member.memberId, delivery.job.reminderMemberId)
+        f.service.finishEmail(delivery, EmailResult.SENT)
+        assertNull(f.service.nextEmail(100))
+        assertTrue(f.db.records("email-job:").isEmpty())
     }
     @Test fun gmailUsesFixedSenderUtf8AndNoSessionCredentials() {
         val delivery = EmailDelivery(EmailJob("a".repeat(40), "user", "private-room-id", 1, "تم استلام دفعتك", "Your payment is confirmed.", 1000), "recipient@example.test")

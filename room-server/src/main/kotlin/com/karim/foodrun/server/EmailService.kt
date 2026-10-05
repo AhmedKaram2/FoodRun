@@ -30,6 +30,8 @@ internal class ReminderEmailRequired : IllegalArgumentException("Enter an email 
 
 /** Enqueued in the room transaction; Gmail runs outside the room lock. */
 internal class EmailService(private val db: RoomDatabase, private val clock: () -> Long, private val enabled: Boolean) {
+    // Also discard status and invitation emails queued by earlier server versions.
+    private fun allowed(job: EmailJob) = job.reminderMemberId.isNotEmpty() && job.reminderPayerId.isNotEmpty() && job.invitationId.isEmpty()
     fun remind(room: Room, actorId: String, command: RoomCommand) {
         require(enabled) { "Email reminders are not available on this server yet." }
         require(room.payerId == actorId) { "Only the chosen payer can send payment reminders." }
@@ -51,22 +53,6 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         db.putRecord("email-job:${job.id}", orderJson.encodeToString(job))
         db.putRecord(key, clock().toString())
         db.putRecord("email-reminder-job:${PaymentReminderRules.key(room, receipt.memberId)}", job.id)
-    }
-    fun notification(uid: String, room: Room, item: FoodNotification) {
-        enqueue(EmailJob(item.id, uid, room.id, room.orderNumber, item.title, item.body, clock()))
-    }
-    fun invitation(invitation: FoodInvitation) {
-        val ar = db.record("profile:${invitation.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it).language == "ar" } == true
-        enqueue(EmailJob(RoomService.hash("invite:${invitation.userId}:${invitation.id}"), invitation.userId,
-            invitation.roomId, invitation.orderNumber, if (ar) "دعوة إلى Food Run" else "You are invited to Food Run",
-            if (ar) "${invitation.invitedBy} يدعوك إلى ${invitation.roomName}. افتح Food Run لقبول الدعوة."
-            else "${invitation.invitedBy} invited you to ${invitation.roomName}. Open Food Run to accept the invitation.",
-            clock(), invitation.id))
-    }
-    private fun enqueue(job: EmailJob) {
-        if (!enabled || EmailContacts.address(db, job.userId) == null || !accessible(job)) return
-        if (db.record("email-job:${job.id}") != null || db.record("email-result:${job.id}") != null) return
-        db.putRecord("email-job:${job.id}", orderJson.encodeToString(job))
     }
     private fun accessible(job: EmailJob): Boolean {
         if (db.record("profile:${job.userId}") == null || AccountRestrictions.current(db, job.userId, clock()) != null ||
@@ -102,7 +88,7 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         for ((key, body) in jobs) {
             val job = orderJson.decodeFromString<EmailJob>(body)
             val address = job.recipientAddress.takeIf(EmailContacts::valid) ?: EmailContacts.address(db, job.userId)
-            if (job.createdAt < now - 86_400_000 || !accessible(job) || address == null) {
+            if (!allowed(job) || job.createdAt < now - 86_400_000 || !accessible(job) || address == null) {
                 db.deleteRecord(key)
                 failReminder(job)
                 continue

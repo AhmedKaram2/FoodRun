@@ -40,7 +40,7 @@ class NativeFeatureTest {
         c.dispatch(GroupAction.SAVE_PAYMENT_ROOM)
         val sent = requireNotNull(device.sent)
         assertEquals(CommandKind.CREATE_PAYMENT_ROOM, sent.kind)
-        assertEquals(account, sent.account); assertEquals("Mohre", sent.text)
+        assertEquals(account, sent.account); assertEquals(mealRoomName(10000L, 0, c.library.language), sent.text)
         assertEquals("identity-token", sent.identityToken)
         assertEquals(1000L, sent.paymentRoom!!.shares.sumOf { it.amount })
         assertEquals(200L, sent.paymentRoom!!.shares.single { it.userId == "friend" }.received)

@@ -161,6 +161,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 buttons += GroupButton(if(c.library.language == "ar") "استخدام كامل المبلغ المتبقي" else tr("Use full remaining amount", "استخدام كامل المبلغ المتبقي"), GroupAction.USE_REMAINING_AMOUNT)
                 buttons += GroupButton(tr("I paid · notify recipient", "دفعت · إشعار المستلم"), GroupAction.DECLARE_TRANSFER, primary = true)
                 c.walletFunds.payButton(r, me, ownReceipt)?.let { buttons += it }
+                c.walletFunds.topUpButton(r, me, ownReceipt)?.let { buttons += it }
             }
         } else cards += GroupCard("settlement-observer", tr("Order progress", "تقدم الطلب"), tr("${name(r.payerId)} is handling the restaurant order and payments. You have no food or payment due for this order.", "يتولى ${name(r.payerId)} طلب المطعم والدفعات. لا يوجد عليك طعام أو دفع لهذا الطلب."))
         if ((owner || payer) && r.phase == RoomPhase.FULFILLED) {

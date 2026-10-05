@@ -1,10 +1,12 @@
 # Custodial wallet
 
-Profile → Wallet balance → Charge wallet. Enter the amount and currency, search registered discoverable users, and select a person and one of their saved receiving methods. Send money outside Food Run, then mark the top-up sent. Only the chosen cash holder can confirm or reject receipt. Pending and rejected top-ups give no spendable credit.
+Profile → Wallet balance → Charge wallet. Enter the amount and currency, search registered discoverable users by name or account email, and select a person and one of their saved receiving methods. Users appear only after a nonblank query; clearing the search removes results and the selected recipient. Emails are matched privately and are not returned in results. Send money outside Food Run, then mark the top-up sent. Only the chosen cash holder can confirm or reject receipt. Pending and rejected top-ups give no spendable credit.
 
 Every balance is separated by customer, holder and currency. The profile shows where funds are held, incoming receipt requests, available funds held for other customers, outgoing grouped payments and incoming grouped confirmations.
 
 After the restaurant payment is recorded, customers can pay their remaining share directly or with their wallet. Wallet payment covers the full remaining share, automatically using confirmed funds in the same currency. Funds already held by the order recipient are used first and settle immediately. Other funds are allocated across holders, who become responsible for sending that cash. The customer's receipt records the wallet allocation; the order recipient still sees each unpaid holder obligation.
+
+When the wallet cannot cover the remaining share, a top-up shortcut opens the wallet with the exact shortfall and matching currency. Top-ups still require receipt confirmation; the shortcut does not credit funds or submit a payment automatically.
 
 A holder can send one full transfer per recipient and currency, covering several customers and rooms. The receiving person confirms or rejects the entire group. Confirmation settles all included obligations atomically. Rejection returns them to the holder's unpaid list without debiting customer wallets again. New obligations remain outside an already pending group.
 

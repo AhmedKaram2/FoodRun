@@ -1113,6 +1113,7 @@ internal object GroupUiText {
         "User name" to "اسم المستخدم",
         "Users" to "المستخدمون",
         "Version 1.6.0 · Android 8+" to "الإصدار ١٫٦٫٠ · أندرويد ٨ فأحدث",
+        "Version 1.6.1 · Android 8+" to "الإصدار 1.6.1 · أندرويد 8+",
         "View receipt photo" to "عرض صورة الفاتورة",
         "Wait for everyone's revised-bill approval before recording restaurant payment." to "انتظر موافقة الجميع على الفاتورة المعدلة قبل تسجيل دفع المطعم.",
         "Wait for the organizer or selected person to approve your join request." to "انتظر موافقة المنظم أو الشخص المختار على طلب انضمامك.",

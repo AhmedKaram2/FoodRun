@@ -169,6 +169,9 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
         completionHandler([.banner, .sound])
     }
     func now() -> Int64 { Int64(Date().timeIntervalSince1970 * 1_000) }
+    func localOffsetSeconds(timeMillis: Int64) -> Int32 {
+        Int32(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: Double(timeMillis) / 1_000)))
+    }
     func uuid() -> String { UUID().uuidString }
     func read(key: String) -> String { storage.read(key) }
     func write(key: String, value: String) -> Bool { storage.write(value, for: key) }

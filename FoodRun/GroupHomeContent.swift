@@ -38,6 +38,9 @@ struct GroupHomeContent: View {
             .padding(FoodSpacing.s16)
             .background(FoodTheme.hero, in: RoundedRectangle(cornerRadius: FoodRadius.group))
 
+            if let ongoing = state.cards.first(where: { $0.id == "continue-order" }) {
+                GroupCardContent(card: ongoing, busy: state.busy, dispatch: dispatch)
+            }
             ForEach(state.cards.filter { $0.id.hasPrefix("invitation:") }, id: \.renderID) { card in GroupCardContent(card: card, busy: state.busy, dispatch: dispatch) }
             let rooms = state.cards.filter { $0.id.hasPrefix("session:") }
             if !rooms.isEmpty {

@@ -4,20 +4,25 @@ import kotlin.math.floor
 
 internal class PickupDateFormatter(private val timeZone: FoodRunTimeZone) {
     fun format(timeMillis: Double): String {
-        val localSeconds = floor(timeMillis / 1000.0).toLong() + timeZone.offsetSecondsAt(timeMillis)
-        val days = floor(localSeconds / SECONDS_PER_DAY.toDouble()).toLong()
-        val secondsInDay = localSeconds - days * SECONDS_PER_DAY
-        // Gregorian civil date conversion, using March as the first month for leap-day handling.
-        val shiftedDays = days + 719468
-        val era = (if (shiftedDays >= 0) shiftedDays else shiftedDays - 146096) / 146097
-        val dayOfEra = shiftedDays - era * 146097
-        val yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365
-        val dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
-        val marchMonth = (5 * dayOfYear + 2) / 153
-        val day = dayOfYear - (153 * marchMonth + 2) / 5 + 1
-        val month = marchMonth + if (marchMonth < 10) 3 else -9
-        return FoodRunText.formatHistoryDate(month.toInt(), day.toInt(), (secondsInDay / 3600).toInt(), (secondsInDay % 3600 / 60).toInt())
+        val date = localFoodDateTime(timeMillis, timeZone.offsetSecondsAt(timeMillis))
+        return FoodRunText.formatHistoryDate(date.month, date.day, date.hour, date.minute)
     }
+}
 
-    private companion object { const val SECONDS_PER_DAY = 86400L }
+internal data class LocalFoodDateTime(val year: Int, val month: Int, val day: Int, val hour: Int, val minute: Int)
+internal fun localFoodDateTime(timeMillis: Double, offsetSeconds: Int): LocalFoodDateTime {
+    val localSeconds = floor(timeMillis / 1000.0).toLong() + offsetSeconds
+    val days = floor(localSeconds / 86400.0).toLong()
+    val secondsInDay = localSeconds - days * 86400L
+    // Gregorian civil date conversion, using March as the first month for leap-day handling.
+    val shiftedDays = days + 719468
+    val era = (if (shiftedDays >= 0) shiftedDays else shiftedDays - 146096) / 146097
+    val dayOfEra = shiftedDays - era * 146097
+    val yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365
+    val dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+    val marchMonth = (5 * dayOfYear + 2) / 153
+    val day = dayOfYear - (153 * marchMonth + 2) / 5 + 1
+    val month = marchMonth + if (marchMonth < 10) 3 else -9
+    val year = yearOfEra + era * 400 + if (month <= 2) 1 else 0
+    return LocalFoodDateTime(year.toInt(), month.toInt(), day.toInt(), (secondsInDay / 3600).toInt(), (secondsInDay % 3600 / 60).toInt())
 }

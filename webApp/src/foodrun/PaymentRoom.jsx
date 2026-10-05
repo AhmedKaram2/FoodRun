@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { settlementOpen } from './roomLifecycle.js';
 import { Page } from './FoodRunApp.jsx';
 import { amount, money, minorInput, CURRENCIES } from './client.js';
@@ -6,11 +6,13 @@ import { paymentRoomPayload, receiptPhotoData, splitEqually } from './paymentRoo
 import { t, tf } from './i18n.js';
 import { profilePaymentAccounts } from './paymentDetails.js';
 import PaymentMethodsEditor from './PaymentMethodsEditor.jsx';
+import { mealRoomName } from './smartDefaults.js';
 
 export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
   const owner = { userId: data.user.uid, name: data.home.profile.name };
   const [selected, setSelected] = useState([]), [search, setSearch] = useState(''), [shares, setShares] = useState({});
-  const [form, setForm] = useState({ name: '', restaurant: '', details: '', photo: '', total: '', currency: data.home.profile.payment?.currency || 'AED' });
+  const [form, setForm] = useState(() => ({ name: mealRoomName(), restaurant: '', details: '', photo: '', total: '', currency: data.home.profile.payment?.currency || 'AED' }));
+  const suggestedName = useRef(form.name);
   const [error, setError] = useState(''), [uploading, setUploading] = useState(false), [saving, setSaving] = useState(false);
   const [accountChoice, setAccountChoice] = useState('');
   const methods = profilePaymentAccounts(data.home.profile).filter(account => account.method === 'BANK' || form.currency === 'AED');
@@ -26,7 +28,7 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
     event.preventDefault(); if (saving || uploading || data.busy) return;
     setSaving(true); setError('');
     try {
-      const payload = paymentRoomPayload({ ...form, people, shares, account, accounts: methods, ownerId: owner.userId });
+      const payload = paymentRoomPayload({ ...form, name: form.name === suggestedName.current ? mealRoomName() : form.name, people, shares, account, accounts: methods, ownerId: owner.userId });
       const reply = await data.send('CREATE_PAYMENT_ROOM', payload);
       if (reply?.room) openRoom(reply.room.id);
     } catch (e) { setError(e.message); } finally { setSaving(false); }

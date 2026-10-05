@@ -6,7 +6,7 @@ import kotlin.test.*
 class WalletServiceTest {
     private class Provider : IdentityProvider {
         private val profiles = mutableMapOf<String, FoodProfile>()
-        private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid)
+        private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid, "$uid@example.test", true)
         override fun signIn(email: String, password: String, register: Boolean) = identity(email.substringBefore('@'))
         override fun exchange(idToken: String) = identity(idToken.removePrefix("id-"))
         override fun refresh(refreshToken: String) = identity(refreshToken.removePrefix("refresh-"))
@@ -162,6 +162,20 @@ class WalletServiceTest {
         assertEquals(1, results.count { it.ok })
         assertEquals(300L, s.home(s.a).wallet!!.balances.single().available)
         assertEquals(700L, WalletService.payments(s.f.db).sumOf { it.amount })
+    }
+    @Test fun peopleSearchRequiresTypedQueryAndMatchesPrivateVerifiedEmail() = Setup().use { s ->
+        for (query in listOf("", "   ")) assertTrue(s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = query) }.walletPeople!!.isEmpty())
+        val byEmail = s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = "  HOLDER@EXAMPLE.TEST  ") }
+        assertEquals(listOf(FoodPerson("Holder", "Holder")), byEmail.walletPeople)
+        assertFalse(orderJson.encodeToString(byEmail).contains("@example.test"))
+        assertTrue(s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = "Alice@example.test") }.walletPeople!!.isEmpty())
+        val holder = s.home(s.holder).profile
+        s.f.db.putRecord("profile:Holder", orderJson.encodeToString(holder.copy(discoverable = false)))
+        assertTrue(s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = "Holder@example.test") }.walletPeople!!.isEmpty())
+        EmailContacts.capture(s.f.db, CloudIdentity("Second", "", email = "Second@example.test", emailVerified = false), 1)
+        assertNull(EmailContacts.address(s.f.db, "Second"))
+        assertEquals("Second", s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = "Second@example.test") }.walletPeople!!.single().name)
+        assertEquals("Second", s.send(s.a, CommandKind.WALLET_PEOPLE) { it.copy(text = "second") }.walletPeople!!.single().name)
     }
     @Test fun oneTransferCanCoverDifferentRoomsAndRecipientHeldFundsNeedNoSecondPayment() = Setup().use { s ->
         s.credit(s.a); s.credit(s.b)

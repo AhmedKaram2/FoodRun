@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { amount, money, CURRENCIES } from './client.js';
+import { amount, money, minorInput, CURRENCIES } from './client.js';
 import { getLanguage, t } from './i18n.js';
 import { myWalletBalances, walletAvailable, walletPaymentGroups, walletTotals } from './wallet.js';
 
@@ -12,15 +12,20 @@ function ReceivingMethods({ methods, selected, onSelect }) {
 }
 
 function TopUp({ data, onClose }) {
-  const [value, setValue] = useState('100'), [currency, setCurrency] = useState('AED');
+  const initial = data.walletTopUpRequest;
+  const [value, setValue] = useState(() => initial ? minorInput(initial.amount, initial.currency) : '100'), [currency, setCurrency] = useState(initial?.currency || data.home.profile.payment?.currency || 'AED');
   const [search, setSearch] = useState(''), [people, setPeople] = useState([]), [person, setPerson] = useState(null);
   const [recipient, setRecipient] = useState(null), [accountId, setAccountId] = useState(''), [note, setNote] = useState('');
   const [loading, setLoading] = useState(false), [error, setError] = useState('');
+  const [searched, setSearched] = useState(false);
   useEffect(() => {
+    const query = search.trim();
+    setPeople([]); setSearched(false); setError(''); setLoading(false);
+    if (!query) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
-      try { const reply = await data.walletQuery('WALLET_PEOPLE', { text: search }, controller.signal); setPeople(reply.walletPeople || []); }
+      try { const reply = await data.walletQuery('WALLET_PEOPLE', { text: query }, controller.signal); if (!controller.signal.aborted) { setPeople(reply.walletPeople || []); setSearched(true); } }
       catch (failure) { if (!controller.signal.aborted) setError(failure.message); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
@@ -30,6 +35,7 @@ function TopUp({ data, onClose }) {
     if (!person) return;
     const controller = new AbortController(); setRecipient(null); setAccountId(''); setLoading(true); setError('');
     data.walletQuery('WALLET_RECIPIENT', { userId: person.userId, currency }, controller.signal).then(reply => {
+      if (controller.signal.aborted) return;
       setRecipient(reply.walletRecipient); setAccountId(reply.walletRecipient?.accounts[0]?.id || '');
     }).catch(failure => { if(!controller.signal.aborted) setError(failure.message); }).finally(() => { if(!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -47,9 +53,10 @@ function TopUp({ data, onClose }) {
   return <form className="card stack wallet-top-up" onSubmit={submit}>
     <div className="section-title compact"><h3>{tx('Charge my wallet', 'شحن محفظتي')}</h3><button type="button" className="secondary" onClick={onClose}>{t('Cancel')}</button></div>
     <div className="form-grid two"><label>{tx('Top-up amount', 'مبلغ الشحن')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Currency')}<select value={currency} onChange={event => setCurrency(event.target.value)}>{CURRENCIES.map(item => <option key={item}>{item}</option>)}</select></label></div>
-    <label>{tx('Choose who will hold your money', 'اختر الشخص الذي سيحتفظ بأموالك')}<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={tx('Search website users by name', 'ابحث باسم المستخدم في الموقع')} /></label>
-    <div className="wallet-people" role="group" aria-label={tx('Website users', 'مستخدمو الموقع')}>{people.map(value => <button type="button" className={`secondary ${person?.userId === value.userId ? 'selected' : ''}`} aria-pressed={person?.userId === value.userId} key={value.userId} onClick={() => setPerson(value)}>{value.name}</button>)}</div>
-    {!loading && !people.length && <p>{tx('No matching users.', 'لا يوجد مستخدمون مطابقون.')}</p>}
+    <label>{tx('Choose who will hold your money', 'اختر الشخص الذي سيحتفظ بأموالك')}<input type="search" value={search} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={254} onChange={event => { setSearch(event.target.value); setPeople([]); setPerson(null); setRecipient(null); setAccountId(''); }} placeholder={tx('Search by name or email', 'ابحث بالاسم أو البريد الإلكتروني')} /></label>
+    {!search.trim() && <p className="field-help">{tx('Start typing a name or email to find someone.', 'ابدأ بكتابة اسم أو بريد إلكتروني للبحث عن شخص.')}</p>}
+    {search.trim() && people.length > 0 && <div className="wallet-people" role="group" aria-label={tx('Search results', 'نتائج البحث')}>{people.map(value => <button type="button" className={`secondary ${person?.userId === value.userId ? 'selected' : ''}`} aria-pressed={person?.userId === value.userId} key={value.userId} onClick={() => setPerson(value)}>{value.name}</button>)}</div>}
+    {search.trim() && searched && !loading && !people.length && <p role="status">{tx('No matching users.', 'لا يوجد مستخدمون مطابقون.')}</p>}
     {loading && <p role="status">{t('Loading…')}</p>}
     {recipient && <><h4>{recipient.person.name}</h4><ReceivingMethods methods={recipient.accounts} selected={accountId} onSelect={setAccountId} /><p className="field-help">{tx('Send the money using this method, then mark it sent. Confirming here does not transfer money from your bank.', 'أرسل المبلغ باستخدام وسيلة الاستلام، ثم أكد الإرسال. هذا الزر لا يحوّل الأموال من حسابك البنكي.')}</p><label>{t('Payment note (optional)')}<input value={note} onChange={event => setNote(event.target.value)} maxLength={160} /></label><button className="primary" disabled={data.busy || loading || !accountId}>{tx('I sent the top-up', 'أرسلت مبلغ الشحن')}</button></>}
     {error && <p role="alert" className="form-message">{t(error)}</p>}
@@ -61,7 +68,7 @@ function BatchPayment({ group, data }) {
   useEffect(() => {
     if(!expanded) return;
     const controller = new AbortController(); setError('');
-    data.walletQuery('WALLET_RECIPIENT', { userId: group.recipientId, currency: group.currency }, controller.signal).then(reply => { setRecipient(reply.walletRecipient); setAccountId(reply.walletRecipient?.accounts[0]?.id || ''); }).catch(failure => { if(!controller.signal.aborted) setError(failure.message); });
+    data.walletQuery('WALLET_RECIPIENT', { userId: group.recipientId, currency: group.currency }, controller.signal).then(reply => { if (!controller.signal.aborted) { setRecipient(reply.walletRecipient); setAccountId(reply.walletRecipient?.accounts[0]?.id || ''); } }).catch(failure => { if(!controller.signal.aborted) setError(failure.message); });
     return () => controller.abort();
   }, [expanded, group.recipientId, group.currency]);
   return <article className="wallet-item stack"><div className="section-title compact"><b>{group.recipientName}</b><strong>{money(group.amount, group.currency)}</strong></div>
@@ -76,7 +83,7 @@ function BatchPayment({ group, data }) {
 }
 
 export default function WalletFunds({ data }) {
-  const [charging, setCharging] = useState(false);
+  const [charging, setCharging] = useState(!!data.walletTopUpRequest);
   const wallet = data.home.wallet, userId = uid(data);
   if(!wallet) return null;
   const mine = myWalletBalances(wallet, userId), held = wallet.balances.filter(value => value.holderId === userId && value.customerId !== userId);
@@ -85,12 +92,12 @@ export default function WalletFunds({ data }) {
   const received = wallet.payments.filter(value => value.recipientId === userId && value.status !== 'SETTLED');
   const review = (kind, id, received) => data.send(kind, { transferId: id, flag: received });
   return <section className="card stack wallet-funds" aria-label={tx('Wallet balance', 'رصيد المحفظة')}>
-    <div className="section-title"><h2>{tx('Wallet balance', 'رصيد المحفظة')}</h2><button className="primary" disabled={data.busy} onClick={() => setCharging(true)}>{tx('Charge wallet', 'شحن المحفظة')}</button></div>
-    <div className="wallet-balance-totals">{walletTotals(mine).map(([currency, value]) => <strong key={currency}>{money(value, currency)}</strong>)}</div>
-    <p className="field-help">{tx('Available to spend. Your money is held by these people:', 'الرصيد المتاح للاستخدام. أموالك موجودة لدى هؤلاء الأشخاص:')}</p>
-    {!mine.length && <p>{tx('No confirmed wallet balance yet.', 'لا يوجد رصيد مؤكد في المحفظة بعد.')}</p>}
-    {mine.map(value => <div className="wallet-balance-row" key={`${value.holderId}:${value.currency}`}><span>{tx('Held by', 'لدى')} <b>{value.holderName}</b></span><strong>{money(value.available, value.currency)}</strong></div>)}
-    {charging && <TopUp data={data} onClose={() => setCharging(false)} />}
+    {!charging && <><div className="section-title"><h2>{tx('Wallet balance', 'رصيد المحفظة')}</h2><button className="primary" disabled={data.busy} onClick={() => setCharging(true)}>{tx('Charge wallet', 'شحن المحفظة')}</button></div>
+    <div className="wallet-balance-totals">{(mine.length ? walletTotals(mine) : [[data.home.profile.payment?.currency || 'AED', 0]]).map(([currency, value]) => <strong key={currency}>{money(value, currency)}</strong>)}</div>
+    {mine.length > 0 && <p className="field-help">{tx('Available to spend. Your money is held by these people:', 'الرصيد المتاح للاستخدام. أموالك موجودة لدى هؤلاء الأشخاص:')}</p>}
+    {!mine.length && <p className="field-help">{tx('Your balance increases after the holder confirms a top-up.', 'يزداد رصيدك بعد تأكيد الشخص استلام مبلغ الشحن.')}</p>}
+    {mine.map(value => <div className="wallet-balance-row" key={`${value.holderId}:${value.currency}`}><span>{tx('Held by', 'لدى')} <b>{value.holderName}</b></span><strong>{money(value.available, value.currency)}</strong></div>)}</>}
+    {charging && <TopUp data={data} onClose={() => { setCharging(false); data.clearWalletTopUp?.(); }} />}
     {topUps.filter(value => value.status === 'PENDING').map(value => <article className="wallet-item stack" key={value.id}><div className="section-title compact"><b>{value.customerId === userId ? `${tx('Top-up sent to', 'شحن مرسل إلى')} ${value.holderName}` : `${tx('Top-up from', 'شحن من')} ${value.customerName}`}</b><strong>{money(value.amount, value.currency)}</strong></div><small>{value.account.bank} · <bdi>{value.account.identifier}</bdi></small>{value.note && <p>{value.note}</p>}<span className="status">{t('Awaiting confirmation')}</span>{value.holderId === userId && <><p>{tx('Check your bank or cash receipt before confirming. This credits the sender’s wallet.', 'تحقق من وصول المبلغ إلى حسابك أو استلام النقد قبل التأكيد. سيُضاف المبلغ إلى محفظة المرسل.')}</p><div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => review('WALLET_REVIEW_TOP_UP', value.id, true)}>{t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => review('WALLET_REVIEW_TOP_UP', value.id, false)}>{t('Not received')}</button></div></>}</article>)}
     {(held.length > 0 || obligations.length > 0) && <section className="stack"><h3>{tx('Money I hold for others', 'أموال الآخرين الموجودة لدي')}</h3>{held.map(value => <div className="wallet-balance-row" key={`${value.customerId}:${value.currency}`}><span>{value.customerName} · {tx('Available', 'متاح')}</span><b>{money(value.available, value.currency)}</b></div>)}<p className="field-help">{tx('Keep available funds for their owners. The payments below are already deducted from their wallets and must be sent to the order recipients.', 'احتفظ بالأرصدة المتاحة لأصحابها. الدفعات التالية خُصمت بالفعل من محافظهم ويجب إرسالها لمستلمي الطلبات.')}</p>{groups.map(group => <BatchPayment key={group.key} group={group} data={data} />)}</section>}
     {received.filter(value => value.status === 'OWING').map(value => <div className="wallet-item" key={value.id}><b>{money(value.amount, value.currency)}</b><p>{value.holderName} · {tx('will pay for', 'سيدفع عن')} {value.customerName} · {value.roomName} #{value.orderNumber}</p></div>)}
@@ -107,6 +114,7 @@ export function WalletPaymentOption({ data, room, receipt, canPay }) {
     {canPay && <><p>{tx('Pay directly below, or use your wallet balance.', 'ادفع مباشرة بالأسفل، أو استخدم رصيد محفظتك.')}</p><button className="secondary" disabled={data.busy || available < receipt.balance} onClick={async () => {
       if(await data.send('PAY_WITH_WALLET', { amount: receipt.balance }, room.id)) data.setNotice(tx('Wallet paid. The cash holder is responsible for the transfer.', 'تم الدفع بالمحفظة. الشخص الذي يحتفظ بالنقد مسؤول عن التحويل.'));
     }}>{tx('Pay with wallet', 'الدفع بالمحفظة')} · {money(receipt.balance, receipt.currency)}</button><small>{tx('Available wallet balance', 'رصيد المحفظة المتاح')}: {money(available, receipt.currency)}</small>{available < receipt.balance && <small>{tx('Top up to cover this payment, or pay directly.', 'اشحن محفظتك لتغطية المبلغ، أو ادفع مباشرة.')}</small>}</>}
+    {canPay && available < receipt.balance && data.openWallet && <button className="secondary" onClick={() => data.openWallet({ amount: receipt.balance - available, currency: receipt.currency })}>{tx('Top up', 'اشحن')} · {money(receipt.balance - available, receipt.currency)}</button>}
     {paid.map(value => <p className="field-help" key={value.id}>{money(value.amount, value.currency)} · {value.holderName} → {value.recipientName} · {tx(value.status === 'SETTLED' ? 'Cash settled' : value.status === 'SENT' ? 'Awaiting cash receipt confirmation' : 'Wallet paid; cash holder needs to pay', value.status === 'SETTLED' ? 'تمت تسوية النقد' : value.status === 'SENT' ? 'بانتظار تأكيد استلام النقد' : 'تم الدفع بالمحفظة؛ على حامل النقد الدفع')}</p>)}
   </div>;
 }

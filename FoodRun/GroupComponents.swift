@@ -93,11 +93,13 @@ struct GroupCardContent: View {
                 }
             }
         }
+        .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading).padding(FoodSpacing.s16).foodCard(showsBorder: true)
     }
     private var detail: some View {
         Text(compactDetail && !detailExpanded ? card.detail.components(separatedBy: "\n").prefix(4).joined(separator: "\n") : card.detail).font(FoodTypography.setting).foregroundStyle(FoodTheme.muted)
-            .lineSpacing(FoodSpacing.s4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            .lineSpacing(FoodSpacing.s4).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading).multilineTextAlignment(.leading).textSelection(.enabled)
     }
 }
 

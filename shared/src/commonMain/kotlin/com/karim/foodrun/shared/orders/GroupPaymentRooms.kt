@@ -20,7 +20,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
         profile(); requireNotNull(c.library.identityHub)
         mode = "create"; shares.clear(); editing = ""
         shares[profile().userId] = PaymentShare(profile().userId, tr("My share", "حصتي"), 0)
-        c.draft[GroupFieldKey.PAYMENT_ROOM_NAME] = "Mohre"
+        c.draft[GroupFieldKey.PAYMENT_ROOM_NAME] = c.smartDefaults.roomName(GroupFieldKey.PAYMENT_ROOM_NAME)
         c.draft[GroupFieldKey.PAYMENT_RESTAURANT] = ""
         c.draft[GroupFieldKey.PAYMENT_DETAILS] = ""
         c.draft[GroupFieldKey.RECEIPT_PHOTO] = ""
@@ -71,7 +71,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
         }.normalized().also { it.validate(); require(it.currency == selectedCurrency) { "Aani payment rooms use AED. Choose AED or use a bank account." } }
         c.replaceLibrary(c.library.copy(selectedHub = c.library.identityHub))
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.CREATE_PAYMENT_ROOM,
-            text = c.text(GroupFieldKey.PAYMENT_ROOM_NAME).trim(), name = c.text(GroupFieldKey.PAYMENT_RESTAURANT).trim(), amount = total,
+            text = c.smartDefaults.submittedName(GroupFieldKey.PAYMENT_ROOM_NAME), name = c.text(GroupFieldKey.PAYMENT_RESTAURANT).trim(), amount = total,
             account = account, paymentRoom = PaymentRoomRequest(details, shares.values.toList(), selectedCurrency)))
     }
     fun record(id: String) {

@@ -256,6 +256,7 @@ private fun GroupOptions(state: GroupState, controller: GroupController, expande
                     GroupPage.CONNECT -> GroupText.localized(GroupText.manualConnection, state.rtl)
                     GroupPage.LIBRARY -> GroupText.localized(GroupText.pasteMenu, state.rtl)
                     GroupPage.SETUP -> if (state.rtl) "خيارات إضافية · التصويت والرسوم" else "More options · voting and fees"
+                    GroupPage.PROFILE -> if (state.rtl) "تعديل الملف الشخصي وبيانات الاستلام" else "Edit profile & receiving details"
                     else -> GroupText.localized(GroupText.roomOptions, state.rtl)
                 }, style = FoodType.Input, color = FoodColors.Ink, modifier = Modifier.weight(1f))
                 Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = FoodColors.Muted)

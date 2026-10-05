@@ -54,6 +54,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
                 }
             }
         }
+        state.cards.firstOrNull { it.id == "continue-order" }?.let { GroupCardContent(it, state.busy, controller) }
         state.cards.filter { it.id.startsWith("invitation:") }.forEach { GroupCardContent(it, state.busy, controller) }
         val rooms = state.cards.filter { it.id.startsWith("session:") }
         if (rooms.isNotEmpty()) {

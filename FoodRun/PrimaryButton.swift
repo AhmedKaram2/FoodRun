@@ -32,6 +32,8 @@ struct PrimaryButton: View {
             ),
             onClick: action
         )
+        .frame(minHeight: 52)
+        .multilineTextAlignment(.center)
         .environmentObject(FoodTheme.components)
     }
 }

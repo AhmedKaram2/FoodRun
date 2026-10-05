@@ -171,6 +171,7 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
             .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body)).setContentIntent(tap).setAutoCancel(true).build())
     }
     override fun now() = System.currentTimeMillis()
+    override fun localOffsetSeconds(timeMillis: Long) = java.util.TimeZone.getDefault().getOffset(timeMillis) / 1000
     override fun uuid() = UUID.randomUUID().toString()
     override fun read(key: String): String = storage.read(key)
     override fun write(key: String, value: String): Boolean = storage.write(key, value)

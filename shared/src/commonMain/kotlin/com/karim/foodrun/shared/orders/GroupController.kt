@@ -12,6 +12,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
     internal val walletFunds = GroupWalletFunds(this)
+    internal val smartDefaults = GroupSmartDefaults(this)
     internal var page = GroupPage.HOME
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
@@ -72,8 +73,7 @@ class GroupController(val platform: GroupPlatform) {
             if (missingBuiltIns.isNotEmpty()) library = library.copy(restaurants = library.restaurants + missingBuiltIns)
             if (library.pending != null && library.pendingHub == null) library = library.copy(pendingHub = library.selectedHub)
             draft[GroupFieldKey.NAME] = library.displayName
-            draft[GroupFieldKey.ROOM_NAME] = "Mohre"
-            draft[GroupFieldKey.DESTINATION] = "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5"
+            smartDefaults.seed()
         } catch (_: Exception) { storageReadable = false; error = "Saved group data could not be opened. Restore its backup before creating new data." }
     }
     fun observe(observer: GroupObserver) { this.observer = observer; publish() }
@@ -103,6 +103,7 @@ class GroupController(val platform: GroupPlatform) {
                 }
                 if (key == GroupFieldKey.RESTAURANT_EMIRATE && value != text(key)) draft.remove(GroupFieldKey.RESTAURANT_AREA)
                 draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.RECEIPT_PHOTO) 600_000 else if (key in listOf(GroupFieldKey.PHOTO, GroupFieldKey.ADMIN_PHOTO)) 180_000 else 4000)
+                if (key == GroupFieldKey.WALLET_SEARCH) walletFunds.searchChanged()
                 if (key == GroupFieldKey.RESTAURANT_POLL && value == "true") openPollRestaurants()
             }
         } catch (e: Exception) { error = e.message ?: "This change could not be saved." }
@@ -223,8 +224,8 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.BACK -> back()
             GroupAction.QUICK_SPIN -> page = GroupPage.QUICK_SPIN
             GroupAction.CREATE, GroupAction.JOIN -> { if (action == GroupAction.CREATE) {
-                draft[GroupFieldKey.ROOM_NAME] = "Mohre"
-                draft[GroupFieldKey.DESTINATION] = "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5"
+                smartDefaults.seed()
+                selectedRestaurant?.let { seedFees(it.restaurant) }
                 draft[GroupFieldKey.SELECTION_STYLE] = "wheel"
             }; joinMode = action == GroupAction.JOIN; nextOrder = false; page = GroupPage.CONNECT; seedHub() }
             GroupAction.USE_INTERNET -> {
@@ -401,7 +402,7 @@ class GroupController(val platform: GroupPlatform) {
         val fees = fees(r.currency)
         val destination = if(flag(GroupFieldKey.DELIVERY)) text(GroupFieldKey.DESTINATION).trim().ifBlank { "The selected orderer will arrange delivery with the restaurant." } else ""
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = text(GroupFieldKey.ROOM_NAME).trim(), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }))
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }))
     }
     private fun back() {
         if (page == GroupPage.SELECTION_OVERRIDE) { selectionOverride.close(); return }
@@ -477,6 +478,7 @@ class GroupController(val platform: GroupPlatform) {
             text = if (action == GroupAction.WALLET_REJECT) "Payment was not received." else if (payer) "Refund sent" else "Payment sent"), returnPage = page)
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
+        val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT)
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
         val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_")) library.identityHub else library.selectedHub)
@@ -487,7 +489,12 @@ class GroupController(val platform: GroupPlatform) {
             override fun complete(body: String, error: String) {
                 if(c.kind.name.startsWith("WALLET_") && library.identityToken != outgoing.identityToken) return
                 busy = false
-                if (error.isNotBlank()) { online = false; this@GroupController.error = "$error Your request is saved. Retry to confirm its result."; publish(); return }
+                if (error.isNotBlank()) {
+                    online = false
+                    if (walletRead) replaceLibrary(library.copy(pending = null, pendingHub = null))
+                    this@GroupController.error = if (walletRead) "$error Try the search again when connected." else "$error Your request is saved. Retry to confirm its result."
+                    publish(); return
+                }
                 try {
                     val next = decodeReply(body)
                     if (!next.ok) {
@@ -495,7 +502,7 @@ class GroupController(val platform: GroupPlatform) {
                             replaceLibrary(library.copy(pending = null, pendingHub = null))
                             paymentReminders.ask(outgoing, returnPage ?: page); publish(); return
                         }
-                        if (next.code == "HUB_UNAVAILABLE") {
+                        if (next.code == "HUB_UNAVAILABLE" && !walletRead) {
                             online = false
                             this@GroupController.error = "${next.error} Your request remains saved; retry to confirm its result."
                         } else {
@@ -511,7 +518,8 @@ class GroupController(val platform: GroupPlatform) {
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = if(c.kind == CommandKind.CREATE_PAYMENT_ROOM) library.displayName else c.name)
                     }
                     next.home?.let { acceptHome(it, hub) }
-                    walletFunds.accept(next)
+                    if (c.kind == CommandKind.CREATE) next.room?.let(smartDefaults::remember)
+                    walletFunds.accept(next, outgoing)
                     if(next.room != null) accept(next, sentAt)
                     replaceLibrary(library.copy(pending = null, pendingHub = null))
                     if (c.kind == CommandKind.REMIND_PAYMENT) paymentReminders.accept(outgoing, next.code)
@@ -522,7 +530,8 @@ class GroupController(val platform: GroupPlatform) {
                     }
                     if (c.kind == CommandKind.CART) { selectedItem = null; editingCartLineId = null }
                     if (c.kind in listOf(CommandKind.PLACE, CommandKind.PAY_RESTAURANT, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND)) draft.remove(GroupFieldKey.REFERENCE)
-                    page = returnPage ?: GroupPage.ROOM; startWatching(); startHomeWatching()
+                    if (!walletRead) page = returnPage ?: GroupPage.ROOM
+                    startWatching(); startHomeWatching()
                 } catch (e: Exception) { this@GroupController.error = e.message ?: "Invalid hub response." }
                 publish()
             }

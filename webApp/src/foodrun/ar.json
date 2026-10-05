@@ -648,5 +648,6 @@
   "The order for this wallet payment is unavailable.": "الطلب المرتبط بدفعة المحفظة غير متاح.",
   "This wallet payment belongs to another order.": "دفعة المحفظة مرتبطة بطلب آخر.",
   "Wallet holders must settle their transfers before archiving.": "يجب على حاملي أموال المحافظ تسوية تحويلاتهم قبل إكمال الطلب.",
-  "Settle this user's wallet balances and pending payments before removal.": "يجب تسوية أرصدة محفظة المستخدم ودفعاته المعلقة قبل حذفه."
+  "Settle this user's wallet balances and pending payments before removal.": "يجب تسوية أرصدة محفظة المستخدم ودفعاته المعلقة قبل حذفه.",
+  "Version 1.6.1 · Android 8+": "الإصدار 1.6.1 · أندرويد 8+"
 }

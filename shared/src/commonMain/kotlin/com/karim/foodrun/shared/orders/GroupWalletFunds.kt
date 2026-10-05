@@ -4,6 +4,7 @@ import com.karim.foodrun.orders.*
 
 internal class GroupWalletFunds(private val c: GroupController) {
     private var people = emptyList<FoodPerson>()
+    private var searched = false
     private var recipient: WalletRecipient? = null
     private var selectedUser = ""
     private var batchRecipient = ""
@@ -19,15 +20,24 @@ internal class GroupWalletFunds(private val c: GroupController) {
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = kind, identityToken = c.library.identityToken, userId = userId,
             currency = currency(), amount = amount, accountId = accountId, transferId = transferId, flag = flag, text = text), returnPage = returnPage)
     }
-    fun accept(reply: RoomReply) {
-        reply.walletPeople?.let { people = it }
-        reply.walletRecipient?.let { recipient = it; c.draft[GroupFieldKey.WALLET_ACCOUNT] = it.accounts.firstOrNull()?.id.orEmpty() }
+    fun accept(reply: RoomReply, command: RoomCommand) {
+        reply.walletPeople?.takeIf { c.page == GroupPage.WALLET_TOP_UP && command.text.trim().isNotEmpty() && command.text.trim() == c.text(GroupFieldKey.WALLET_SEARCH).trim() }?.let { people = it; searched = true }
+        reply.walletRecipient?.takeIf { c.page in listOf(GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH) && command.currency == currency() && command.userId == if(c.page == GroupPage.WALLET_BATCH) batchRecipient else selectedUser }?.let { recipient = it; c.draft[GroupFieldKey.WALLET_ACCOUNT] = it.accounts.firstOrNull()?.id.orEmpty() }
     }
+    fun searchChanged() { people = emptyList(); searched = false; recipient = null; selectedUser = ""; c.draft.remove(GroupFieldKey.WALLET_ACCOUNT) }
     fun dispatch(value: String) {
         val action = value.substringBefore('|'); val id = value.substringAfter('|', "")
         when(action) {
-            "charge" -> { selectedUser = ""; recipient = null; people = emptyList(); c.draft[GroupFieldKey.WALLET_AMOUNT] = "100"; c.draft[GroupFieldKey.WALLET_CURRENCY] = "AED"; c.draft.remove(GroupFieldKey.WALLET_NOTE); c.page = GroupPage.WALLET_TOP_UP; send(CommandKind.WALLET_PEOPLE) }
-            "search" -> send(CommandKind.WALLET_PEOPLE, text = c.text(GroupFieldKey.WALLET_SEARCH))
+            "charge" -> {
+                searchChanged()
+                val parts = id.split('|')
+                val currency = parts.firstOrNull()?.takeIf { it in Money.currencies } ?: c.library.home?.profile?.payment?.currency ?: "AED"
+                val amount = parts.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0 }
+                c.draft[GroupFieldKey.WALLET_AMOUNT] = amount?.let { Money.format(it, currency).substringAfter(' ') } ?: "100"
+                c.draft[GroupFieldKey.WALLET_CURRENCY] = currency
+                c.draft.remove(GroupFieldKey.WALLET_NOTE); c.draft.remove(GroupFieldKey.WALLET_SEARCH); c.page = GroupPage.WALLET_TOP_UP
+            }
+            "search" -> { val query = c.text(GroupFieldKey.WALLET_SEARCH).trim(); if (query.isNotEmpty()) send(CommandKind.WALLET_PEOPLE, text = query) }
             "person" -> { selectedUser = id; recipient = null; send(CommandKind.WALLET_RECIPIENT) }
             "methods" -> send(CommandKind.WALLET_RECIPIENT, userId = if(c.page == GroupPage.WALLET_BATCH) batchRecipient else selectedUser)
             "top-up" -> {
@@ -60,6 +70,12 @@ internal class GroupWalletFunds(private val c: GroupController) {
         return GroupButton("${tr("Pay with wallet", "الدفع بالمحفظة")} · ${Money.format(receipt.balance, receipt.currency)}", GroupAction.PAY_WITH_WALLET, room.id, enabled = balance >= receipt.balance)
     }
     fun clear() { people = emptyList(); recipient = null; selectedUser = ""; batchRecipient = "" }
+    fun topUpButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {
+        if (payButton(room, memberId, receipt)?.enabled != false) return null
+        val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
+        val shortfall = receipt.balance - balance
+        return action("${tr("Top up", "اشحن")} · ${Money.format(shortfall, receipt.currency)}", "charge|${receipt.currency}|$shortfall")
+    }
     fun cards(prefix: String): List<GroupCard> {
         if(c.library.home?.wallet == null) return emptyList()
         val cards = mutableListOf<GroupCard>()
@@ -104,9 +120,12 @@ internal class GroupWalletFunds(private val c: GroupController) {
         if(c.page == GroupPage.WALLET_TOP_UP) {
             fields += GroupField(GroupFieldKey.WALLET_AMOUNT, tr("Top-up amount", "مبلغ الشحن"), c.text(GroupFieldKey.WALLET_AMOUNT))
             fields += GroupField(GroupFieldKey.WALLET_CURRENCY, tr("Currency", "العملة"), currency(), choices = Money.currencies.map { GroupChoice(it, it) })
-            fields += GroupField(GroupFieldKey.WALLET_SEARCH, tr("Search website users", "البحث عن مستخدمي الموقع"), c.text(GroupFieldKey.WALLET_SEARCH))
-            buttons += action(tr("Search users", "البحث عن المستخدمين"), "search")
-            people.forEach { cards += GroupCard("wallet-person:${it.userId}", it.name, buttons = listOf(action(tr("Hold my wallet money", "الاحتفاظ بأموال محفظتي"), "person|${it.userId}"))) }
+            val query = c.text(GroupFieldKey.WALLET_SEARCH).trim()
+            fields += GroupField(GroupFieldKey.WALLET_SEARCH, tr("Search by name or email", "البحث بالاسم أو البريد الإلكتروني"), c.text(GroupFieldKey.WALLET_SEARCH))
+            buttons += action(tr("Search users", "البحث عن المستخدمين"), "search", enabled = query.isNotEmpty())
+            if (query.isEmpty()) cards += GroupCard("wallet-search-help", tr("Find your money holder", "ابحث عن الشخص الذي سيحتفظ بأموالك"), tr("Type a name or email, then search.", "اكتب اسماً أو بريداً إلكترونياً ثم ابحث."))
+            else people.forEach { cards += GroupCard("wallet-person:${it.userId}", it.name, buttons = listOf(action(tr("Hold my wallet money", "الاحتفاظ بأموال محفظتي"), "person|${it.userId}"))) }
+            if (query.isNotEmpty() && searched && people.isEmpty()) cards += GroupCard("wallet-search-empty", tr("No matching users", "لا يوجد مستخدمون مطابقون"), tr("Try another name or email.", "جرّب اسماً آخر أو بريداً إلكترونياً."))
         } else {
             val values = group()
             cards += GroupCard("wallet-group-total", tr("Full group amount", "كامل المبلغ المجمع"), Money.format(values.sumOf { it.amount }, batchCurrency))

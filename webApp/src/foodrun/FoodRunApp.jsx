@@ -1,4 +1,5 @@
 import RunningNames from './RunningNames.jsx';
+import { mealRoomName, roomDefaults, rememberRoomDefaults } from './smartDefaults.js';
 import { useNotifications } from './useNotifications.js';
 import { NotificationCenter, NotificationActionCard } from './NotificationCenter.jsx';
 import { CreatePaymentRoom, PaymentReceipt, PaymentShareEditor, RecordPayment } from './PaymentRoom.jsx';
@@ -59,7 +60,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.0/FoodRun-Android-1.6.0.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.1/FoodRun-Android-1.6.1.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -306,7 +307,7 @@ function AppDownloads({ compact = false }) {
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.0 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.1 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -516,8 +517,9 @@ function ProfileScreen({ data, onBack, openRoom }) {
     if (reply) data.setNotice(t("Favorite removed."));
   };
   return <Page title={t("Your profile")} subtitle={t("Your wallet, orders, favorites, and payment details in one place.")} onBack={onBack}>
-    <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#profile-details">{t('Your details')}</a><a className="secondary" href="#profile-wallet">{t('Wallet')}</a><a className="secondary" href="#payment-history">{t('Payment history')}</a><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a></nav>
-    <section id="profile-details" className="profile-details"><h2>{t('Your details')}</h2><form className="profile-grid" onSubmit={save}>
+    <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#profile-details" onClick={() => { document.getElementById('profile-details').open = true; }}>{t('Your details')}</a><a className="secondary" href="#profile-wallet">{t('Wallet')}</a><a className="secondary" href="#payment-history">{t('Payment history')}</a><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a></nav>
+    <div id="profile-wallet"><UserDashboard data={data} openRoom={openRoom} /></div>
+    <details id="profile-details" className="profile-details" open={!profile.name || !profile.phone}><summary>{t('Your details')} · {tx('Edit profile', 'تعديل الملف الشخصي')}</summary><form className="profile-grid" onSubmit={save}>
       <section className="card profile-photo">
         <Avatar profile={{ name: form.name, photo: form.photo }} />
         <label className="upload">{t("Choose photo")}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); setMessage(''); } catch (error) { setMessage(error.message); } }} /></label>
@@ -530,9 +532,8 @@ function ProfileScreen({ data, onBack, openRoom }) {
         <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
       <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
-    </form></section>
-    <PaymentMethodsEditor data={data} id="profile-payment" />
-    <div id="profile-wallet"><UserDashboard data={data} openRoom={openRoom} /></div>
+    </form></details>
+    <details className="profile-details" id="receiving-details"><summary>{tx('Receiving payment methods', 'وسائل استلام المدفوعات')}</summary><PaymentMethodsEditor data={data} id="profile-payment" /></details>
     <section id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><span>☆</span><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
     <section id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><span>🥡</span><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <button className="secondary wide" onClick={() => setPreviousLimit(value => value + 10)}>{t("Show more unique orders")}</button>}</section>
   </Page>;
@@ -549,9 +550,11 @@ function Page({ title, subtitle, onBack, actions, children }) {
 function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restaurants'), allowRoomCreation = true }) {
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
+  const continuing = roomCards.find(({ reply }) => reply?.room && !['ARCHIVED', 'CANCELLED'].includes(reply.room.phase));
   return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}>{t("Payment room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={openRestaurants}>{t("Add restaurant & menu")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+    {continuing && <section className="card continue-order"><div><p className="eyebrow">{tx('PICK UP WHERE YOU LEFT OFF', 'أكمل من حيث توقفت')}</p><h3>{continuing.session.roomName}</h3><p>{t(phaseLabel[continuing.reply.room.phase])}</p></div><button className="primary" onClick={() => openRoom(continuing.session.roomId)}>{tx('Continue order', 'متابعة الطلب')}</button></section>}
     {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">{t("YOU’RE INVITED")}</p><h2>{t("Join the table")}</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">{t("Invitation")}</span><h3>{invite.roomName}</h3><p>{invite.invitedBy}{t("invited you to order #")}{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>{t("Join room")}</button></article>)}</div></section>}
     <section><div className="section-title"><div><p className="eyebrow">{t("YOUR TABLES")}</p><h2>{t("Live rooms")}</h2></div><span>{roomCards.length}</span></div>
       {roomCards.length ? <div className="grid two">{roomCards.map(({ session, reply }) => {
@@ -627,7 +630,8 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState({ room: 'Mohre', selectionStyle: 'wheel', restaurantId: '', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: true, destination: "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5", delivery: '0.00', service: '0.00', discount: '0.00', proportionalDelivery: false });
+  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
+  const suggestedRoomName = useRef(form.room);
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
   const [pollIds, setPollIds] = useState([]);
@@ -654,12 +658,12 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         const restaurant = form.restaurantPoll ? pollRestaurants[0] : chosen ? clone(chosen) : normalizeRestaurant({ ...blankRestaurant(), name: form.restaurant.trim(), contact: { phoneE164: form.phone.trim(), whatsappE164: null, address: null } });
         if (!chosen && !form.restaurantPoll) { const next = [...restaurants, restaurant]; setRestaurants(next); storeRestaurants(next); }
         reply = await data.send('CREATE', {
-          name: profile.name.trim(), text: form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
+          name: profile.name.trim(), text: form.room === suggestedRoomName.current ? mealRoomName() : form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
           selectionStyle: form.selectionStyle, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
           fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
       }
-      if (reply?.room) openRoom(reply.room.id);
+      if (reply?.room) { if (mode !== 'join') rememberRoomDefaults(profile.userId || data.user?.uid, reply.room); openRoom(reply.room.id); }
     } catch (error) { setMessage(error.message); }
   };
   return <Page title={mode === 'join' ? t("Join your people") : t("Create a room")} subtitle={mode === 'join' ? t("Open an invitation link, scan its QR, or enter the six-digit code.") : t("Choose the restaurant now, or let everyone vote after joining the room.")} onBack={onBack}>
@@ -670,7 +674,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         {form.restaurantPoll && <div className="poll-selection"><p className="field-help">{tx('Choose 2–12 restaurants. Only these choices will enter the poll.', 'اختر من مطعمين إلى 12 مطعماً. هذه المطاعم فقط ستدخل التصويت.')}</p>{pollChoices.map(restaurant => <button type="button" className="poll-chip" key={restaurant.id} onClick={() => togglePollRestaurant(restaurant.id)} aria-label={tx(`Remove ${localizedName(restaurant)} from poll`, `إزالة ${localizedName(restaurant)} من التصويت`)}>{localizedName(restaurant)} <span aria-hidden="true">×</span></button>)}</div>}
         {!chosen && !form.restaurantPoll && <div className="form-grid two"><label>{t("Restaurant / order name")}<input value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} placeholder={t("Today’s food order")} required /></label><label>{t("Restaurant phone")}<input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+971…" required /></label></div>}
         {chosen && !form.restaurantPoll && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
-        <label>{t("Room name")}<input value={form.room} enterKeyHint="next" onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required /><span className="field-help">{tx('Choose a restaurant to fill this in, or give your group a name.', 'اختر مطعماً لملء الاسم أو سمّ مجموعتك.')}</span></label>
+        <label>{t("Room name")}<input value={form.room} enterKeyHint="next" onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required /><span className="field-help">{tx('Suggested for today’s meal. Change it to any group name.', 'اسم مقترح لوجبة اليوم. يمكنك تغييره إلى اسم مجموعتك.')}</span></label>
         <label>{tx('Selection animation', 'طريقة عرض الاختيار')}<select value={form.selectionStyle} onChange={e => setForm({ ...form, selectionStyle: e.target.value })}><option value="wheel">{tx('Wheel', 'العجلة')}</option><option value="names">{tx('Running names', 'الأسماء المتحركة')}</option></select></label>
         <div className="segmented delivery-choice" role="group" aria-label={tx('Order type', 'نوع الطلب')}><button type="button" aria-pressed={!form.deliveryMode} className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>{t("Pickup")}</button><button type="button" aria-pressed={form.deliveryMode} className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>{t("Delivery")}</button></div>
         {form.deliveryMode && <DeliveryRule />}
@@ -993,7 +997,15 @@ function RoomInviteCard({ room, hub }) {
   const invitation = roomInvitation(room, link, uiLanguage);
   const [copied, setCopied] = useState('');
   const copy = async (value, kind) => { await copyText(value); setCopied(kind); setTimeout(() => setCopied(''), 2200); };
-  return <section className="card room-invite"><div className="invite-heading"><p className="eyebrow">{t("INVITE TO THIS ROOM")}</p><h3>{tx("Invite your group", "ادعُ مجموعتك")}</h3><p>{invitation.split('\n')[1]} · {tf('Order #{number}', { number: room.orderNumber })}</p></div><div className="invite-qr"><QRCodeSVG value={link} size={164} level="M" marginSize={2} title={tf('Join {name}', { name: room.name })} /></div><div className="invite-details"><strong className="invite-code" aria-label={tx("Room code", "رمز الغرفة")}>{room.code}</strong><p className="muted">{tx("Scan the QR or share the link or code to join this room.", "امسح الرمز أو شارك الرابط أو الكود للانضمام إلى الغرفة.")}</p><div className="hero-actions"><button className="primary" onClick={() => copy(invitation, 'link')}>{copied === 'link' ? tx('✓ Link copied', '✓ تم نسخ الرابط') : t('Copy invitation')}</button><button className="secondary" onClick={() => copy(room.code, 'code')}>{copied === 'code' ? tx('✓ Code copied', '✓ تم نسخ الكود') : tx('Copy code', 'نسخ الكود')}</button>{navigator.share && <button className="secondary" onClick={() => navigator.share({ title: tf('Join {name} on Food Run', { name: room.name }), text: invitation })}>{t("Share")}</button>}</div></div></section>;
+  return <section className="card room-invite">
+    <div className="invite-heading"><h3>{tx('Invite your group', 'ادعُ مجموعتك')}</h3><strong className="invite-code" dir="ltr" aria-label={tx('Room code', 'رمز الغرفة')}>{room.code}</strong></div>
+    <div className="invite-details"><div className="hero-actions">
+      <button className="primary" onClick={() => copy(invitation, 'link')}>{copied === 'link' ? tx('✓ Link copied', '✓ تم نسخ الرابط') : t('Copy invitation')}</button>
+      <button className="secondary" onClick={() => copy(room.code, 'code')}>{copied === 'code' ? tx('✓ Code copied', '✓ تم نسخ الكود') : tx('Copy code', 'نسخ الكود')}</button>
+      {navigator.share && <button className="secondary" onClick={() => navigator.share({ title: tf('Join {name} on Food Run', { name: room.name }), text: invitation })}>{t('Share')}</button>}
+    </div></div>
+    <details className="invite-qr-details"><summary>{tx('Show QR code', 'عرض رمز QR')}</summary><div className="invite-qr"><QRCodeSVG value={link} size={164} level="M" marginSize={2} title={tf('Join {name}', { name: room.name })} /></div><p className="field-help">{tx('Scan to join this room.', 'امسح الرمز للانضمام إلى الغرفة.')}</p></details>
+  </section>;
 }
 
 function BlockRequestForm({ room, data }) {
@@ -1169,7 +1181,9 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
 }
 
 function FoodRunClient() {
-  const data = useFoodRun();
+  const baseData = useFoodRun();
+  const [walletTopUpRequest, setWalletTopUpRequest] = useState(null);
+  const data = { ...baseData, walletTopUpRequest, clearWalletTopUp: () => setWalletTopUpRequest(null), openWallet: request => { setWalletTopUpRequest(request); setPage('profile'); } };
   const notifications = useNotifications({ ...data, language: uiLanguage });
   const [notificationAction, setNotificationAction] = useState(null);
   const notificationLink = useRef(new URLSearchParams(window.location.search));

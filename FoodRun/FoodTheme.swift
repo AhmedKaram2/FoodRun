@@ -48,9 +48,9 @@ enum FoodTheme {
 enum FoodRadius {
     static let avatar: CGFloat = 13
     static let input: CGFloat = 12
-    static let secondaryButton: CGFloat = 18
+    static let secondaryButton: CGFloat = 12
     static let setting: CGFloat = 20
-    static let button: CGFloat = 14
+    static let button: CGFloat = 12
     static let group: CGFloat = 16
     static let winner: CGFloat = 34
 }

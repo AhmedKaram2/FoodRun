@@ -19,7 +19,7 @@ struct SecondaryButton: View {
             shape: RoundedRectangle(cornerRadius: FoodRadius.secondaryButton),
             appearance: FilledButtonAppearance(
                 background: AnyShapeStyle(destructive ? FoodTheme.error.opacity(0.07) : FoodTheme.cream),
-                contentPadding: FoodSpacing.s16,
+                contentPadding: FoodSpacing.s12,
                 iconSpacing: FoodSpacing.s8,
                 iconFont: FoodTypography.button,
                 borderColor: FoodTheme.line,
@@ -31,6 +31,8 @@ struct SecondaryButton: View {
             ),
             onClick: action
         )
+        .frame(minHeight: FoodSpacing.s48)
+        .multilineTextAlignment(.center)
         .environmentObject(FoodTheme.components)
     }
 }

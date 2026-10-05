@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 
 /** Android counterpart of the themed IosComponents filled primary button. */
 @Composable
@@ -85,7 +86,7 @@ private fun FoodActionButton(
         animationSpec = spring(dampingRatio = FoodMotion.PressDamping),
         label = "button press",
     )
-    val shape = RoundedCornerShape(if (primary) FoodRadius.Card else FoodRadius.Add)
+    val shape = RoundedCornerShape(FoodRadius.Input)
     val foreground = if (primary) FoodColors.White else if (destructive) FoodColors.Error else FoodColors.Ink
     Row(
         modifier = modifier
@@ -105,7 +106,7 @@ private fun FoodActionButton(
             .background(
                 brush = Brush.verticalGradient(
                     if (primary) listOf(FoodColors.OrangeLight, FoodColors.Orange)
-                    else if (destructive) listOf(FoodColors.OrangeWash, FoodColors.OrangeWash)
+                    else if (destructive) listOf(FoodColors.Error.copy(alpha = .07f), FoodColors.Error.copy(alpha = .07f))
                     else listOf(FoodColors.Cream, FoodColors.Cream),
                 ),
                 shape = shape,
@@ -120,7 +121,7 @@ private fun FoodActionButton(
             )
             .padding(
                 horizontal = FoodSpacing.Medium,
-                vertical = if (primary) FoodSpacing.Field else FoodSpacing.Large,
+                vertical = FoodSpacing.Medium,
             ),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -138,6 +139,8 @@ private fun FoodActionButton(
             text = text,
             color = foreground,
             style = FoodType.Button,
+            modifier = Modifier.weight(1f, fill = false),
+            textAlign = TextAlign.Center,
         )
     }
 }

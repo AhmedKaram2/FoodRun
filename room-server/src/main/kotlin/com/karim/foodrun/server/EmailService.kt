@@ -8,12 +8,17 @@ import kotlinx.serialization.Serializable
 internal object EmailContacts {
     fun valid(address: String) = address.length in 3..254 && address.matches(Regex("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+"))
     fun capture(db: RoomDatabase, identity: CloudIdentity, now: Long) {
+        // The authenticated provider's account email can be searched privately. Only a
+        // verified address is eligible for automatic reminder delivery below.
+        val searchKey = "wallet-search-email:${identity.userId}"
+        if (valid(identity.email)) db.putRecord(searchKey, identity.email) else db.deleteRecord(searchKey)
         val key = "email-contact:${identity.userId}"
         if (!identity.emailVerified || !valid(identity.email)) { db.deleteRecord(key); return }
         db.putRecord(key, orderJson.encodeToString(EmailContact(identity.email, now)))
     }
     fun address(db: RoomDatabase, uid: String): String? = db.record("email-contact:$uid")
         ?.let { orderJson.decodeFromString<EmailContact>(it).address }?.takeIf(::valid)
+    fun searchAddress(db: RoomDatabase, uid: String): String? = db.record("wallet-search-email:$uid")?.takeIf(::valid) ?: address(db, uid)
 }
 
 @Serializable internal data class EmailJob(

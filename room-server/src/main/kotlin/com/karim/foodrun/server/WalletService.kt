@@ -8,12 +8,17 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
     private val clock: () -> Long, private val changed: (String) -> Unit) {
     fun execute(c: RoomCommand, actor: String? = null): RoomReply {
         val uid = accounts.userId(c.identityToken)
-        require(c.userId.length <= 128 && c.currency.length <= 3 && c.text.length <= 160) { "Invalid wallet details." }
+        require(c.userId.length <= 128 && c.currency.length <= 3 && c.text.length <= if (c.kind == CommandKind.WALLET_PEOPLE) 254 else 160) { "Invalid wallet details." }
         Money.precision(c.currency)
         when (c.kind) {
-            CommandKind.WALLET_PEOPLE -> return RoomReply(walletPeople = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
-                .filter { it.userId != uid && it.discoverable && it.name.isNotBlank() && it.name.contains(c.text.trim(), true) && AccountRestrictions.current(db, it.userId, clock()) == null }
-                .sortedBy { it.name.lowercase() }.take(50).map { FoodPerson(it.userId, it.name) })
+            CommandKind.WALLET_PEOPLE -> {
+                val query = c.text.trim()
+                if (query.isEmpty()) return RoomReply(walletPeople = emptyList())
+                return RoomReply(walletPeople = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
+                    .filter { it.userId != uid && it.discoverable && it.name.isNotBlank() && AccountRestrictions.current(db, it.userId, clock()) == null }
+                    .filter { it.name.contains(query, true) || EmailContacts.searchAddress(db, it.userId)?.contains(query, true) == true }
+                    .sortedBy { it.name.lowercase() }.take(50).map { FoodPerson(it.userId, it.name) })
+            }
             CommandKind.WALLET_RECIPIENT -> {
                 val person = accounts.paymentRoomProfile(c.userId)
                 val related = payments(db).any { it.holderId == uid && it.recipientId == c.userId && it.status != WalletPaymentStatus.SETTLED }

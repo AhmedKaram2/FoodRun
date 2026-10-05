@@ -8,12 +8,14 @@ class GroupWalletFundsTest {
         var response = RoomReply()
         var sent: RoomCommand? = null
         var hub: HubPairing? = null
+        var deferred = false
+        var callback: GroupReplyCallback? = null
         private var sequence = 0
         override fun read(key: String) = ""
         override fun write(key: String, value: String) = true
         override fun now() = 10000L
         override fun uuid() = "wallet-command-${++sequence}"
-        override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) { this.hub = hub; sent = orderJson.decodeFromString(body); callback.complete(orderJson.encodeToString(response), "") }
+        override fun request(hub: HubPairing, body: String, callback: GroupReplyCallback) { this.hub = hub; sent = orderJson.decodeFromString(body); this.callback = callback; if (!deferred) callback.complete(orderJson.encodeToString(response), "") }
         override fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback) = object : GroupSubscription { override fun cancel() = Unit }
         override fun share(text: String, fileName: String) = Unit
         override fun openLink(url: String) = Unit
@@ -31,7 +33,11 @@ class GroupWalletFundsTest {
         val device = Device(); val c = controller(device)
         device.response = RoomReply(walletPeople = listOf(FoodPerson("holder", "Holder")))
         c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "charge")
-        assertEquals(GroupPage.WALLET_TOP_UP, c.page); assertEquals(hub, device.hub)
+        assertEquals(GroupPage.WALLET_TOP_UP, c.page); assertNull(device.sent)
+        assertFalse(c.state.cards.any { it.id.startsWith("wallet-person:") })
+        c.update(GroupFieldKey.WALLET_SEARCH, "Holder@example.test")
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "search")
+        assertEquals(hub, device.hub); assertEquals("Holder@example.test", device.sent!!.text)
         assertTrue(c.state.cards.any { it.title == "Holder" })
         device.response = RoomReply(walletRecipient = WalletRecipient(FoodPerson("holder", "Holder"), listOf(account)))
         c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "person|holder")
@@ -67,6 +73,41 @@ class GroupWalletFundsTest {
         }
         c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "batch-yes|batch")
         assertEquals(CommandKind.WALLET_REVIEW_BATCH, device.sent!!.kind); assertTrue(device.sent!!.flag)
+    }
+    @Test fun clearingSearchHidesPeopleAndIgnoresEarlierReply() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "charge")
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "search")
+        assertNull(device.sent)
+        c.update(GroupFieldKey.WALLET_SEARCH, "hold")
+        device.response = RoomReply(walletPeople = listOf(FoodPerson("holder", "Holder")))
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "search")
+        val previous = device.sent!!
+        c.update(GroupFieldKey.WALLET_SEARCH, "  ")
+        c.walletFunds.accept(device.response, previous)
+        assertFalse(c.state.cards.any { it.id.startsWith("wallet-person:") })
+        assertFalse(c.state.buttons.single { it.value == "search" }.enabled)
+    }
+    @Test fun topUpShortcutPrefillsOnlyMissingAmountInPaymentCurrency() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "charge|JOD|1250")
+        assertEquals("JOD", c.text(GroupFieldKey.WALLET_CURRENCY))
+        assertEquals("1.250", c.text(GroupFieldKey.WALLET_AMOUNT))
+        assertNull(device.sent)
+    }
+    @Test fun searchFailureDoesNotSaveAMutationAndLateSearchDoesNotReopenTheForm() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "charge")
+        c.update(GroupFieldKey.WALLET_SEARCH, "holder")
+        device.deferred = true
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "search")
+        device.callback!!.complete("", "Connection timed out.")
+        assertNull(c.library.pending); assertFalse(c.busy)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "search")
+        c.dispatch(GroupAction.BACK)
+        device.callback!!.complete(orderJson.encodeToString(RoomReply(walletPeople = listOf(FoodPerson("holder", "Holder")))), "")
+        assertEquals(GroupPage.PROFILE, c.page); assertNull(c.library.pending)
+        assertFalse(c.state.cards.any { it.id.startsWith("wallet-person:") })
     }
     @Test fun fullBalancePaymentIsDisabledUntilCreditIsConfirmedAndUsesRoomToken() {
         val device = Device(); val c = controller(device)

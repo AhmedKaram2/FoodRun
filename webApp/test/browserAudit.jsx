@@ -1,3 +1,4 @@
+import { mealRoomName } from '../src/foodrun/smartDefaults.js';
 // Browser-only fixture harness. Run with Vite in an isolated browser profile:
 // await (await import('/test/browserAudit.jsx')).runCreateAudit()
 // It captures commands locally; no account, restaurant order, or payment is sent.
@@ -267,7 +268,7 @@ export async function runReorderAudit() {
 export async function runCreateAudit() {
   commands.length = 0;
   await mountAudit();
-  assert([...host.querySelectorAll('input')].some(input => input.value === 'Mohre'), 'Mohre room default missing');
+  assert([...host.querySelectorAll('input')].some(input => input.value === mealRoomName()), 'Meal and date room default missing');
   const selection = [...host.querySelectorAll('select')].find(node => [...node.options].some(option => option.value === 'names'));
   assert(selection?.value === 'wheel', 'Current wheel must remain default');
   setValue(selection, 'names'); await pause();
@@ -640,8 +641,9 @@ export async function runWalletAudit() {
   commands.length = 0;
   const bank = { id:'wallet-bank', holder:'Holder', bank:'Test Bank', identifier:'AE070331234567890123456', currency:'AED', method:'BANK' };
   const wallet = { balances:[{customerId:'me',customerName:'Alice',holderId:'holder',holderName:'Holder',currency:'AED',available:10000}],topUps:[],payments:[],batches:[] };
+  const searches = []; let finishLateSearch;
   const fixture = { ...data, home:{...data.home,profile:{...data.home.profile,userId:'me'},wallet}, setError:()=>{},
-    walletQuery:async(kind,fields)=>kind==='WALLET_PEOPLE' ? {walletPeople:[{userId:'holder',name:'Holder'}]} : {walletRecipient:{person:{userId:fields.userId,name:fields.userId==='recipient'?'Recipient':'Holder'},accounts:[bank]}} };
+    walletQuery:async(kind,fields)=> { if(kind==='WALLET_PEOPLE') { searches.push(fields.text); if(fields.text==='late') return new Promise(resolve => { finishLateSearch=resolve; }); return {walletPeople:[{userId:'holder',name:'Holder'}]}; } return {walletRecipient:{person:{userId:fields.userId,name:fields.userId==='recipient'?'Recipient':'Holder'},accounts:[bank]}}; } };
   const render = async component => {
     document.getElementById('root').style.display='none'; root?.unmount();host?.remove();host=document.createElement('div');host.id='audit-root';document.body.append(host);root=createRoot(host);root.render(component);await pause();
   };
@@ -652,6 +654,19 @@ export async function runWalletAudit() {
   await render(<WalletFunds data={fixture}/>);
   assert(host.textContent.includes('AED 100.00')&&host.textContent.includes('Holder'),'Balance does not identify cash holder');
   await click(host,ar?'شحن المحفظة':'Charge wallet');
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert(!host.querySelector('.wallet-people button') && searches.length===0,'Wallet lists users or searches before typing');
+  setValue(host.querySelector('input[type=search]'), 'Holder@example.test');
+  await wait(()=>host.querySelector('.wallet-people button'));
+  assert(searches.at(-1)==='Holder@example.test','Email query was not sent');
+  setValue(host.querySelector('input[type=search]'), '  '); await pause();
+  assert(!host.querySelector('.wallet-people button'),'Clearing wallet search leaves users visible');
+  setValue(host.querySelector('input[type=search]'), 'late');
+  await wait(()=>finishLateSearch);
+  setValue(host.querySelector('input[type=search]'), ''); await pause();
+  finishLateSearch({walletPeople:[{userId:'holder',name:'Holder'}]}); await pause();
+  assert(!host.querySelector('.wallet-people button'),'Late response reintroduces users after clearing search');
+  setValue(host.querySelector('input[type=search]'), 'hold');
   await wait(()=>host.querySelector('.wallet-people button'));
   await click(host.querySelector('.wallet-people'),'Holder');
   await wait(()=>host.querySelector('.wallet-method'));
@@ -677,7 +692,7 @@ export async function runWalletAudit() {
   assert(host.querySelector('button').disabled,'Wallet can be spent before credit confirmation');
   await render(<WalletFunds data={holder}/>);
   assert(!measureAudit().overflow,'Wallet controls overflow');
-  return {passed:['balance identifies holder','user search','selected receiving method','AED 100 pending top-up','holder received/not received','AED 40 grouped transfer for two users','recipient confirms whole group','wallet pays current remaining amount','insufficient balance disables wallet'],...measureAudit()};
+  return {passed:['balance identifies holder','no users before typing','email query','clear hides results','late search discarded','name search','selected receiving method','AED 100 pending top-up','holder received/not received','AED 40 grouped transfer for two users','recipient confirms whole group','wallet pays current remaining amount','insufficient balance disables wallet'],...measureAudit()};
 }
 
 // Exercises collapsed information and actions with a large order, in both languages.
@@ -716,4 +731,36 @@ export async function runDesignAudit() {
   assert(getComputedStyle(host.querySelector('.primary')).backgroundColor === 'rgb(22, 123, 88)', 'Primary theme is inconsistent');
   assert(!measureAudit().overflow, 'New theme overflows');
   return { passed: ['compact complete summary', 'full totals retained', 'summary expand and collapse', 'complete restaurant list', 'sticky shortcuts', 'PLACE command retained', 'received payment expanded', 'green theme', 'no overflow'], ...measureAudit() };
+}
+
+export async function runScreenRedesignAudit() {
+  const ar = getLanguage()==='ar', passed=[];
+  const assertScreen = label => { assert(!measureAudit().overflow, `${label} overflows`); passed.push(label); };
+  for (const screen of ['create','join','library','payment-create']) {
+    await mountAudit(screen); assertScreen(screen);
+    for (const label of host.querySelectorAll('label:not(.check):not(.upload)')) {
+      assert(getComputedStyle(label).textAlign==='start' || getComputedStyle(label).textAlign===(ar?'right':'left'), `${screen} field alignment`);
+    }
+  }
+  const account={id:'bank',holder:'Audit User',bank:'Bank',identifier:'AE070331234567890123456',currency:'AED',method:'BANK'};
+  const fixture={...data,home:{...data.home,profile:{...data.home.profile,userId:'me',payment:account},wallet:{balances:[],payments:[],topUps:[],batches:[]}}};
+  await mountAudit('profile','LOBBY',{data:fixture});
+  const wallet=host.querySelector('.wallet-funds'), details=host.querySelector('#profile-details');
+  assert(wallet && Number.parseFloat(getComputedStyle(wallet).paddingInlineStart)>=16,'Wallet content touches card edge');
+  assert(wallet.getBoundingClientRect().top < details.getBoundingClientRect().top && !details.open,'Profile details block wallet');
+  host.querySelector('a[href="#profile-details"]').click(); await pause(); assert(details.open,'Edit profile shortcut does not expand details');
+  assertScreen('profile wallet first and edit shortcut');
+  await mountAudit('home','COLLECTING',{room:{createdAt:Date.now()}});
+  assert(host.querySelector('.continue-order'), 'Missing continue order shortcut'); assertScreen('home continue order');
+  for(const phase of ['COLLECTING','FULFILLED']) {
+    await mountAudit('room',phase,{room:{restaurantPaid:true}});
+    const invite=host.querySelector('.invite-qr-details'); assert(invite && !invite.open,'QR takes over room layout');
+    invite.open=true; await pause(); assert(invite.querySelector('svg').getBoundingClientRect().width>0,'QR cannot expand');
+    assertScreen(`room ${phase}`);
+  }
+  await mountAudit('profile','LOBBY',{data:{...fixture,walletTopUpRequest:{amount:1250,currency:'JOD'}}});
+  const topUp=host.querySelector('.wallet-top-up');
+  assert(topUp.querySelector('input[inputmode=decimal]').value==='1.250' && topUp.querySelector('select').value==='JOD','Top-up shortfall was not prefilled');
+  assert(!topUp.querySelector('.wallet-people'), 'Shortfall top-up shows all users'); assertScreen('exact top-up shortfall');
+  return {passed,...measureAudit()};
 }

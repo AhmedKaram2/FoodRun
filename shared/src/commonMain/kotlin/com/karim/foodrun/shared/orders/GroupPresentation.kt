@@ -127,7 +127,8 @@ internal class GroupPresentation(private val c: GroupController) {
             canOverrideSelection = c.page == GroupPage.ROOM && c.selectionOverride.available,
             reminderEmailPrompt = c.paymentReminders.prompt,
             hasPendingEmailReminders = c.paymentReminders.hasPending,
-            feedback = c.feedbacks.current?.let { it.copy(message = ui(it.message)) })
+            feedback = c.feedbacks.current?.let { it.copy(message = ui(it.message)) },
+            profileReady = c.library.home?.profile?.let { it.name.isNotBlank() && it.phone.isNotBlank() } == true)
     }
     private fun home() {
         title = tr("Food Run", "فود رن"); subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
@@ -140,6 +141,11 @@ internal class GroupPresentation(private val c: GroupController) {
             return
         }
         button(tr("Create a room", "إنشاء غرفة"), GroupAction.CREATE, primary = true); button(tr("Join a room", "الانضمام إلى غرفة"), GroupAction.JOIN)
+        c.library.sessions.sortedByDescending { c.library.snapshots[it.roomId]?.room?.createdAt ?: 0L }
+            .firstOrNull { c.library.snapshots[it.roomId]?.room?.phase?.ongoing == true }?.let { session ->
+                card("continue-order", tr("Continue your order", "أكمل طلبك"), session.roomName,
+                    actions = listOf(GroupButton(tr("Continue order", "متابعة الطلب"), GroupAction.RESUME, session.roomId, primary = true)))
+            }
         button(if(c.library.home == null) tr("Register / sign in", "تسجيل أو دخول") else tr("My profile", "ملفي الشخصي"), GroupAction.OPEN_PROFILE); button(tr("Notifications", "الإشعارات") + c.notifications.items.count { !it.read }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty(), GroupAction.OPEN_NOTIFICATIONS)
         if(c.administration.allowed) button(tr("Administration", "الإدارة"), GroupAction.OPEN_ADMIN)
         button(tr("Create payment room", "إنشاء غرفة دفع"), GroupAction.CREATE_PAYMENT_ROOM)
@@ -678,6 +684,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 actions += c.paymentReminderButtons(row.room, row.session.memberId, receipt, wallet = true)
                 actions += c.recordPaymentButtons(row.room, row.session.memberId, receipt, wallet = true)
                 c.walletFunds.payButton(row.room, row.session.memberId, receipt)?.let { actions += it }
+                c.walletFunds.topUpButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
                     actions += GroupButton(ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)

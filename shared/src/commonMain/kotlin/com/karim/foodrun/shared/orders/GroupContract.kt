@@ -50,14 +50,18 @@ data class GroupState(
     val reminderEmailPrompt: GroupReminderEmailPrompt? = null,
     val hasPendingEmailReminders: Boolean = false,
     val feedback: GroupFeedback? = null,
+    val profileReady: Boolean = false,
 ) {
-    val primaryAction: GroupButton? get() = buttons.firstOrNull { it.primary }
-    val utilityButtons: List<GroupButton> get() = if (page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) buttons.filter {
+    val profileDetailsFolded: Boolean get() = page == GroupPage.PROFILE && profileReady
+    val primaryAction: GroupButton? get() = buttons.firstOrNull { it.primary && !(profileDetailsFolded && it.action == GroupAction.SAVE_PROFILE) }
+    val utilityButtons: List<GroupButton> get() = if (profileDetailsFolded) buttons.filter { it.action == GroupAction.SAVE_PROFILE }
+        else if (page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) buttons.filter {
         it.action in GroupLayout.roomUtilities && it != primaryAction
     } else emptyList()
     val inlineButtons: List<GroupButton> get() = buttons.filter { it != primaryAction && it !in utilityButtons }
     val extraFields: List<GroupField> get() = fields.filter {
         when (page) {
+            GroupPage.PROFILE -> profileDetailsFolded
             GroupPage.CONNECT -> it.key in listOf(GroupFieldKey.HUB_URL, GroupFieldKey.FINGERPRINT)
             GroupPage.LIBRARY -> it.key == GroupFieldKey.JSON_MENU
             GroupPage.SETUP -> it.key in listOf(GroupFieldKey.EXPECTED_NAMES, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE, GroupFieldKey.DISCOUNT, GroupFieldKey.PROPORTIONAL)
@@ -66,7 +70,8 @@ data class GroupState(
         }
     }
     val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
-    val topCards: List<GroupCard> get() = if(page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) cards.filter {
+    val topCards: List<GroupCard> get() = if (profileDetailsFolded) cards.filter { it.id in setOf("profile-dashboard:wallet-funds", "profile-dashboard:wallet-summary") }
+        else if(page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) cards.filter {
         it.id in setOf("notification-action", "order-summary", "wallet-summary", "my-payment-status", "restaurant-balance", "placement-blocked", "settlement-next-step")
     } else emptyList()
     val sections: List<GroupSection> get() = GroupLayout.sections(page, cards.filterNot { it in topCards }).map { it.copy(title = GroupUiText.translate(it.title, rtl)) }
@@ -131,6 +136,7 @@ interface GroupPlatform {
     fun read(key: String): String
     fun write(key: String, value: String): Boolean
     fun now(): Long
+    fun localOffsetSeconds(timeMillis: Long): Int = 0
     fun uuid(): String
     fun request(hub: HubPairing, body: String, callback: GroupReplyCallback)
     fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback): GroupSubscription

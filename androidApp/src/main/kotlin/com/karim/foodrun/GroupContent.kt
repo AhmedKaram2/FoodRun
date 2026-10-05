@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import com.karim.foodrun.shared.orders.GroupButton
 import com.karim.foodrun.shared.orders.GroupCard
 import com.karim.foodrun.shared.orders.GroupController
@@ -254,7 +255,7 @@ internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupC
                     }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
-                    Text(text = card.title, style = FoodType.Person, color = FoodColors.Ink)
+                    Text(text = card.title, style = FoodType.Person, color = FoodColors.Ink, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
                     if (card.badge.isNotEmpty()) Text(text = card.badge, style = FoodType.Status, color = FoodColors.Orange,
                         modifier = Modifier.background(FoodColors.AccentWash, RoundedCornerShape(FoodRadius.Card))
                             .padding(horizontal = FoodSpacing.XSmall, vertical = FoodSpacing.XXSmall))
@@ -265,7 +266,7 @@ internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupC
                 receipt?.let { Image(it.asImageBitmap(), card.title, Modifier.fillMaxWidth().heightIn(max = 600.dp), contentScale = ContentScale.Fit) }
             }
             if (card.detail.isNotEmpty()) SelectionContainer {
-                Text(text = if (compactDetail && !detailExpanded) card.detail.lines().take(4).joinToString("\n") else card.detail, style = FoodType.Body, color = FoodColors.Muted)
+                Text(text = if (compactDetail && !detailExpanded) card.detail.lines().take(4).joinToString("\n") else card.detail, style = FoodType.Body, color = FoodColors.Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             }
             if (compactDetail) TextButton(onClick = { detailExpanded = !detailExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
                 Text(if (controller.state.rtl) { if (detailExpanded) "عرض أقل" else "عرض الطلب كاملاً" } else { if (detailExpanded) "Show less" else "View full order" }, color = FoodColors.Orange)

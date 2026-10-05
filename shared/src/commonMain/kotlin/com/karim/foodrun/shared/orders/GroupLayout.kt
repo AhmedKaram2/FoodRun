@@ -26,7 +26,7 @@ internal object GroupLayout {
                 }
             }
             return listOf("Wallet", "Payment history", "Favorite orders", "Previous orders", "")
-                .mapNotNull { title -> groups[title]?.let { GroupSection(title, it) } }
+                .mapNotNull { title -> groups[title]?.let { GroupSection(title, it, collapsed = title in setOf("Payment history", "Favorite orders", "Previous orders")) } }
         }
         if (page == GroupPage.LIBRARY) {
             val (restaurants, information) = cards.partition { it.id.startsWith("restaurant:") }

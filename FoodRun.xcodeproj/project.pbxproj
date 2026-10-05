@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FDE000000000000000000012 /* NotoSansArabic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000002 /* NotoSansArabic.ttf */; };
+        FDE000000000000000000011 /* DMSans.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000001 /* DMSans.ttf */; };
         FCF000000000000000000001 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = FCF000000000000000000002 /* FirebaseMessaging */; };
         FCF000000000000000000003 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCF000000000000000000004 /* GoogleService-Info.plist */; };
 		0DB91B5A77A2E25B94009D8D /* FoodRunApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646BFA5B0B22080363718416 /* FoodRunApp.swift */; };
@@ -62,6 +64,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FDE000000000000000000002 /* NotoSansArabic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/NotoSansArabic.ttf; sourceTree = "<group>"; };
+        FDE000000000000000000001 /* DMSans.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/DMSans.ttf; sourceTree = "<group>"; };
         FCF000000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		0057E34771C3EC00DA4EFDD4 /* GroupErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupErrorBanner.swift; sourceTree = "<group>"; };
 		00FBDF448534DB804DA70B51 /* FoodSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodSpacing.swift; sourceTree = "<group>"; };
@@ -142,7 +146,9 @@
 		5AC00E086B6E02890530340C /* FoodRun */ = {
 			isa = PBXGroup;
 			children = (
-				FCF000000000000000000004 /* GoogleService-Info.plist */,
+				FDE000000000000000000001 /* DMSans.ttf */,
+                FDE000000000000000000002 /* NotoSansArabic.ttf */,
+                FCF000000000000000000004 /* GoogleService-Info.plist */,
                 94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */,
 				E503A8239E5FCB10C6D92F1F /* Assets.xcassets */,
 				2238643A86ADE70CC86A5383 /* ContentView.swift */,
@@ -287,6 +293,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B955CE75237939C6B3A52A80 /* Assets.xcassets in Resources */,
+                FDE000000000000000000011 /* DMSans.ttf in Resources */,
+                FDE000000000000000000012 /* NotoSansArabic.ttf in Resources */,
                 FCF000000000000000000003 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -459,7 +467,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				APS_ENVIRONMENT = development;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -485,7 +493,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -566,7 +574,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				APS_ENVIRONMENT = production;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -586,7 +594,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

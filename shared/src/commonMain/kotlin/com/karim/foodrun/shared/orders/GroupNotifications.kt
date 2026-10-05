@@ -30,7 +30,7 @@ internal class GroupNotifications(private val c: GroupController) {
                     result(reply)
                     pending?.let { (id, action) ->
                         val item = items.firstOrNull { it.id == id }
-                        if(item != null && c.library.sessions.any { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) }) { pending = null; open(id, action) }
+                        if(item != null && (item.kind.startsWith("wallet_") || c.library.sessions.any { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) })) { pending = null; open(id, action) }
                     }
                 } catch (failure: Exception) {
                     if(c.page == GroupPage.NOTIFICATIONS) c.error = failure.message.orEmpty()
@@ -80,6 +80,9 @@ internal class GroupNotifications(private val c: GroupController) {
     }
     fun open(id: String, action: String) {
         val item = items.firstOrNull { it.id == id } ?: error(tr("Refresh your notifications.", "حدث الإشعارات."))
+        if(item.kind.startsWith("wallet_")) {
+            request(NotificationRequest(c.library.identityToken, "read", notificationId = id)); selected = null; c.page = GroupPage.PROFILE; return
+        }
         val session = c.library.sessions.firstOrNull { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) }
             ?: error(tr("This room is no longer available.", "الغرفة لم تعد متاحة."))
         selected = item

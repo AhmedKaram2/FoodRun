@@ -122,6 +122,7 @@ fun GroupScreen(controller: GroupController) {
             Box(Modifier.weight(1f)) { FoodRunScreen() }
         }
     } else {
+    var expandedSections by remember(state.page, state.rtl) { mutableStateOf(emptySet<String>()) }
     var optionsExpanded by remember(state.page) { mutableStateOf(false) }
     LaunchedEffect(state.error) {
         if (state.error.isNotEmpty() && state.extraFields.isNotEmpty()) optionsExpanded = true
@@ -154,15 +155,20 @@ fun GroupScreen(controller: GroupController) {
                     state.wheel?.let { wheel -> item(key = "wheel:${wheel.round.id}") { GroupWheelContent(wheel) } }
                     items(state.topCards, key = { "top-card:${it.id}" }) { GroupCardContent(it, state.busy, controller) }
                     items(state.mainFields, key = { "field:${it.key.name}" }) { GroupFieldContent(it, state.busy, controller) }
-                    if (state.page != GroupPage.ROOM && state.extraFields.isNotEmpty()) item(key = "extras") {
+                    if (state.page !in listOf(GroupPage.ROOM, GroupPage.PAYMENT) && state.extraFields.isNotEmpty()) item(key = "extras") {
                         GroupOptions(state, controller, optionsExpanded) { optionsExpanded = !optionsExpanded }
                     }
                     items(state.inlineButtons.filter { it.action != GroupAction.SET_LANGUAGE }, key = { "action:${it.action.name}:${it.value}" }) { GroupActionButton(it, state.busy, controller, prominent = false) }
                     state.sections.forEachIndexed { index, section ->
-                        if (section.title.isNotEmpty()) item(key = "section:$index") { GroupSectionHeading(section.title, section.cards.size) }
-                        items(section.cards, key = { "card:${it.id}" }) { GroupCardContent(it, state.busy, controller) }
+                        if (section.collapsed) item(key = "section:$index") {
+                            TextButton(onClick = { expandedSections = if (section.title in expandedSections) expandedSections - section.title else expandedSections + section.title }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
+                                Text("${section.title} · ${section.cards.size}", style = FoodType.Person, color = FoodColors.Ink, modifier = Modifier.weight(1f))
+                                Icon(if (section.title in expandedSections) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null)
+                            }
+                        } else if (section.title.isNotEmpty()) item(key = "section:$index") { GroupSectionHeading(section.title, section.cards.size) }
+                        if (!section.collapsed || section.title in expandedSections) items(section.cards, key = { "card:${it.id}" }) { GroupCardContent(it, state.busy, controller) }
                     }
-                    if (state.page == GroupPage.ROOM && (state.extraFields.isNotEmpty() || state.utilityButtons.isNotEmpty())) item(key = "extras") {
+                    if (state.page in listOf(GroupPage.ROOM, GroupPage.PAYMENT) && (state.extraFields.isNotEmpty() || state.utilityButtons.isNotEmpty())) item(key = "extras") {
                         GroupOptions(state, controller, optionsExpanded) { optionsExpanded = !optionsExpanded }
                     }
                 }
@@ -180,6 +186,7 @@ fun GroupScreen(controller: GroupController) {
 
 @Composable
 private fun GroupHeader(state: GroupState, controller: GroupController) {
+    var inviteExpanded by remember(state.roomCode) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (state.canGoBack) TextButton(onClick = { controller.dispatch(GroupAction.BACK, "") }) {
@@ -197,6 +204,11 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
         if (state.status.isNotEmpty()) Text(text = state.status, style = FoodType.Status, color = FoodColors.Muted)
         if (state.roomCode.isNotEmpty()) FoodCard(bordered = true) {
             Column(Modifier.fillMaxWidth().padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                TextButton(onClick = { inviteExpanded = !inviteExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
+                    Text((if (state.rtl) "دعوة المجموعة · " else "Invite group · ") + state.roomCode, style = FoodType.Input, color = FoodColors.Ink, modifier = Modifier.weight(1f))
+                    Icon(if (inviteExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null)
+                }
+                if (inviteExpanded) {
                 if (state.inviteSummary.isNotEmpty()) Text(state.inviteSummary, style = FoodType.Body, color = FoodColors.Ink)
                 if (state.inviteLink.isNotEmpty()) remember(state.inviteLink) {
                     runCatching { BarcodeEncoder().encodeBitmap(state.inviteLink, BarcodeFormat.QR_CODE, 480, 480) }.getOrNull()
@@ -213,6 +225,7 @@ private fun GroupHeader(state: GroupState, controller: GroupController) {
                     IconButton(onClick = { controller.dispatch(GroupAction.SHARE_ROOM, "") }, enabled = !state.busy) {
                         Icon(Icons.Default.Share, "Share invitation link", tint = FoodColors.Orange)
                     }
+                }
                 }
             }
         }

@@ -190,7 +190,7 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             GroupFieldKey.JSON_MENU, GroupFieldKey.FINGERPRINT, GroupFieldKey.ACCOUNT_IDENTIFIER -> KeyboardType.Ascii
             // Decimal input does not request a signed number pad. Keep minus accessible for bill reductions.
             GroupFieldKey.BILL_ADJUSTMENT -> KeyboardType.Ascii
-            GroupFieldKey.PAYMENT_TOTAL, GroupFieldKey.PAYMENT_SHARE, GroupFieldKey.PAYMENT_RECEIVED, GroupFieldKey.AMOUNT, GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
+            GroupFieldKey.WALLET_AMOUNT, GroupFieldKey.PAYMENT_TOTAL, GroupFieldKey.PAYMENT_SHARE, GroupFieldKey.PAYMENT_RECEIVED, GroupFieldKey.AMOUNT, GroupFieldKey.MENU_ITEM_PRICE, GroupFieldKey.DELIVERY_FEE, GroupFieldKey.SERVICE_FEE,
             GroupFieldKey.DISCOUNT, GroupFieldKey.TAX_RATE, GroupFieldKey.MINIMUM_ORDER -> KeyboardType.Decimal
             else -> KeyboardType.Text
         }
@@ -240,9 +240,11 @@ internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: G
 
 @Composable
 internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupController) {
+    var detailExpanded by remember(card.id) { mutableStateOf(false) }
+    val compactDetail = card.id == "order-summary" && card.detail.lines().size > 4
     FoodCard(bordered = true) {
         Column(
-            modifier = Modifier.padding(FoodSpacing.XLarge),
+            modifier = Modifier.padding(FoodSpacing.Large),
             verticalArrangement = Arrangement.spacedBy(FoodSpacing.Content),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Medium), verticalAlignment = Alignment.Top) {
@@ -263,7 +265,10 @@ internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupC
                 receipt?.let { Image(it.asImageBitmap(), card.title, Modifier.fillMaxWidth().heightIn(max = 600.dp), contentScale = ContentScale.Fit) }
             }
             if (card.detail.isNotEmpty()) SelectionContainer {
-                Text(text = card.detail, style = FoodType.Body, color = FoodColors.Muted)
+                Text(text = if (compactDetail && !detailExpanded) card.detail.lines().take(4).joinToString("\n") else card.detail, style = FoodType.Body, color = FoodColors.Muted)
+            }
+            if (compactDetail) TextButton(onClick = { detailExpanded = !detailExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
+                Text(if (controller.state.rtl) { if (detailExpanded) "عرض أقل" else "عرض الطلب كاملاً" } else { if (detailExpanded) "Show less" else "View full order" }, color = FoodColors.Orange)
             }
             if (card.buttons.size > 1) FoodDivider()
             card.buttons.forEach { GroupActionButton(it, busy, controller) }

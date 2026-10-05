@@ -9,6 +9,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private val accounts = AccountService(db, identityProvider, this, clock)
     private val emails = EmailService(db, clock, emailEnabled)
     private val notifications = NotificationService(db, clock)
+    private val wallets = WalletService(db, accounts, notifications, clock, ::signalRoom)
     @Synchronized internal fun nextEmail(dailyLimit: Int): EmailDelivery? = db.transaction { emails.pending(dailyLimit) }
     @Synchronized internal fun finishEmail(delivery: EmailDelivery, result: EmailResult) = db.transaction { emails.delivered(delivery, result) }
     internal fun sendPaymentReminder(commandId: String, sender: EmailSender, dailyLimit: Int): String {
@@ -91,6 +92,23 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
+        else if (c.kind in WALLET_COMMANDS) db.transaction {
+            val uid = accounts.userId(c.identityToken)
+            val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
+            val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false)))
+            db.previous(c.commandId, digest)?.let {
+                val current = accounts.home(c.identityToken)
+                if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
+            } ?: run {
+                val result = wallets.execute(c, actor)
+                val reply = if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = result.home) else result
+                if(c.kind !in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT)) {
+                    db.record(c.commandId, digest, reply); signalHome()
+                }
+                reply
+            }
+        }
         else if (c.kind == CommandKind.PAYMENT_REMINDER_STATUS) db.transaction {
             val actor = authenticate(c.roomId, c.token)
             val room = requireNotNull(db.room(c.roomId))
@@ -105,7 +123,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -391,6 +409,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             restaurantOptions = emptyList(), restaurantVotes = emptyList(), restaurantPollOpen = false, paymentRoom = null,
             lastChosenMemberId = null, lastChosenName = "",
             wheelProtections = emptyList(), wheelProtectionAccounts = emptyList(),
+            walletPayments = emptyList(),
         ) else room.copy(
             // Legacy clients use this field as a payment gate. All members are exempt:
             // Owner and payer price changes apply directly without another approval cycle.
@@ -405,6 +424,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 .map { if (room.ownerId == actor || it.memberId == actor) it else it.copy(reference = "") },
             wheelProtectionAccounts = if (orderer || room.ownerId == actor) accounts.wheelPaymentAccounts(room) else emptyList(),
             paymentsPending = RoomExpiry.paymentsPending(room),
+            walletPayments = room.walletPayments.filter { payer || it.memberId == actor },
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },
         )
@@ -459,6 +479,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun token(): String = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(random::nextBytes))
     private fun uuid() = UUID.randomUUID().toString()
     companion object {
+        private val WALLET_COMMANDS = setOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.WALLET_TOP_UP,
+            CommandKind.WALLET_REVIEW_TOP_UP, CommandKind.PAY_WITH_WALLET, CommandKind.WALLET_DECLARE_BATCH, CommandKind.WALLET_REVIEW_BATCH)
         private const val MAX_CURRENT_BYTES = 2 * 1024 * 1024 - 16 * 1024
         private const val MAX_REPLY_BYTES = 4 * 1024 * 1024 - 1024
         private const val HISTORY_PAGE_SIZE = 5

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct FoodCard: ViewModifier {
     var radius: CGFloat = FoodRadius.button
-    var opacity = 0.8
+    var opacity = 1.0
     var showsBorder = false
 
     func body(content: Content) -> some View {
@@ -23,7 +23,7 @@ struct FoodCard: ViewModifier {
 extension View {
     func foodCard(
         radius: CGFloat = FoodRadius.button,
-        opacity: Double = 0.8,
+        opacity: Double = 1,
         showsBorder: Bool = false
     ) -> some View {
         modifier(FoodCard(

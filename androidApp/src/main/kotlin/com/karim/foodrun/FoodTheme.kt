@@ -5,6 +5,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -15,24 +17,24 @@ import com.karim.foodrun.shared.Person
 
 /** Food Run's native rendering tokens. No application rules belong in this layer. */
 object FoodColors {
-    val Cream = Color(0xFFFAF7F2)
-    val Ink = Color(0xFF292C28)
-    val Muted = Color(0xFF696C63)
-    val Orange = Color(0xFFBE431E)
-    val OrangeLight = Color(0xFFBE431E)
-    val Hero = Color(0xFF263B32)
-    val OnHero = Color(0xFFDCE5D8)
-    val SuccessWash = Color(0xFFEAF1E5)
-    val AccentWash = Color(0xFFFBEEE7)
-    val Line = Color(0xFFE6E4DC)
+    val Cream = Color(0xFFF7FAF8)
+    val Ink = Color(0xFF172B26)
+    val Muted = Color(0xFF61756C)
+    val Orange = Color(0xFF167B58)
+    val OrangeLight = Color(0xFF167B58)
+    val Hero = Color(0xFF167B58)
+    val OnHero = Color(0xFFE2F3EA)
+    val SuccessWash = Color(0xFFEDF8F2)
+    val AccentWash = Color(0xFFEDF8F2)
+    val Line = Color(0xFFE1ECE7)
     val White = Color.White
     val Clear = Color.Transparent
-    val WheelRim = Color(0xFFFFFDF7)
+    val WheelRim = Color(0xFFFFFFFF)
     val Sage = Color(0xFF9BAF72)
-    val Success = Color(0xFF476B3F)
+    val Success = Color(0xFF167B58)
     val Error = Color(0xFFB53617)
-    val Card = White.copy(alpha = 0.80f)
-    val SubtleCard = White.copy(alpha = 0.62f)
+    val Card = White
+    val SubtleCard = White
     val OrangeWash = Orange.copy(alpha = 0.09f)
     val Palette = listOf(
         Color(0xFFF49A79),
@@ -63,7 +65,7 @@ object FoodSpacing {
     val Field = 18.dp
     val XLarge = 20.dp
     val Section = 22.dp
-    val Page = 24.dp
+    val Page = 16.dp
     val Hero = 26.dp
     val XXLarge = 32.dp
     val Empty = 60.dp
@@ -71,17 +73,17 @@ object FoodSpacing {
 
 object FoodRadius {
     val Avatar = 13.dp
-    val Input = 16.dp
+    val Input = 12.dp
     val Add = 18.dp
     val Toggle = 20.dp
-    val Card = 18.dp
+    val Card = 16.dp
     val Dialog = 30.dp
     val Sheet = 32.dp
 }
 
 object FoodSize {
-    val PrimaryButton = 64.dp
-    val Input = 58.dp
+    val PrimaryButton = 52.dp
+    val Input = 50.dp
     val TouchTarget = 48.dp
     val IconSmall = 16.dp
     val IconMedium = 22.dp
@@ -95,7 +97,7 @@ object FoodSize {
     val MaxDialogWidth = 420.dp
     val ErrorBanner = 160.dp
     val Wheel = 355.dp
-    val ButtonShadow = 4.dp
+    val ButtonShadow = 1.dp
     val Border = 1.dp
     val SelectionBorder = 1.5.dp
     val AvatarBorder = 2.5.dp
@@ -108,64 +110,29 @@ object FoodMotion {
 }
 
 object FoodType {
-    val Rounded = FontFamily(Font(R.font.rounded_black))
-    val Brand = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 15.sp,
-        letterSpacing = 2.sp,
-    )
-    val Hero = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 37.sp,
-        lineHeight = 42.sp,
-        letterSpacing = (-1.4).sp,
-    )
-    val Title = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 30.sp,
-    )
-    val DialogTitle = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 25.sp,
-    )
-    val SectionTitle = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 20.sp,
-    )
-    val Person = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 17.sp,
-    )
-    val Button = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 17.sp,
-        fontWeight = FontWeight.Bold,
-    )
-    val RoundedBody = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 14.sp,
-    )
-    val RoundedCaption = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 12.sp,
-    )
-    val Body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp)
-    val Input = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
-    val Caption = TextStyle(fontSize = 12.sp)
-    val SmallCaption = TextStyle(fontSize = 11.sp)
-    val Status = Caption.copy(fontWeight = FontWeight.SemiBold)
-    val Avatar = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 16.sp,
-    )
-    val AvatarSmall = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 13.sp,
-    )
-    val AvatarLarge = TextStyle(
-        fontFamily = Rounded,
-        fontSize = 20.sp,
-    )
+    private val English = FontFamily(Font(R.font.dm_sans))
+    private val Arabic = FontFamily(Font(R.font.noto_sans_arabic))
+    val Rounded: FontFamily
+        @Composable get() = if (LocalLayoutDirection.current == LayoutDirection.Rtl) Arabic else English
+    private fun style(font: FontFamily, size: Int, weight: FontWeight = FontWeight.Normal) =
+        TextStyle(fontFamily = font, fontSize = size.sp, lineHeight = (size * 1.5).sp, fontWeight = weight)
+    val Brand: TextStyle @Composable get() = style(Rounded, 15, FontWeight.Bold)
+    val Hero: TextStyle @Composable get() = style(Rounded, 30, FontWeight.Bold)
+    val Title: TextStyle @Composable get() = style(Rounded, 26, FontWeight.Bold)
+    val DialogTitle: TextStyle @Composable get() = style(Rounded, 23, FontWeight.Bold)
+    val SectionTitle: TextStyle @Composable get() = style(Rounded, 20, FontWeight.Bold)
+    val Person: TextStyle @Composable get() = style(Rounded, 17, FontWeight.SemiBold)
+    val Button: TextStyle @Composable get() = style(Rounded, 16, FontWeight.Bold)
+    val RoundedBody: TextStyle @Composable get() = style(Rounded, 14, FontWeight.Medium)
+    val RoundedCaption: TextStyle @Composable get() = style(Rounded, 12, FontWeight.SemiBold)
+    val Body: TextStyle @Composable get() = style(Rounded, 14)
+    val Input: TextStyle @Composable get() = style(Rounded, 16)
+    val Caption: TextStyle @Composable get() = style(Rounded, 12)
+    val SmallCaption: TextStyle @Composable get() = style(Rounded, 11)
+    val Status: TextStyle @Composable get() = style(Rounded, 12, FontWeight.SemiBold)
+    val Avatar: TextStyle @Composable get() = style(Rounded, 16, FontWeight.Bold)
+    val AvatarSmall: TextStyle @Composable get() = style(Rounded, 13, FontWeight.Bold)
+    val AvatarLarge: TextStyle @Composable get() = style(Rounded, 20, FontWeight.Bold)
 }
 
 @Composable

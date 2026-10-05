@@ -11,6 +11,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val wheelProtection = GroupWheelProtection(this)
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
+    internal val walletFunds = GroupWalletFunds(this)
     internal var page = GroupPage.HOME
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
@@ -110,6 +111,8 @@ class GroupController(val platform: GroupPlatform) {
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
+            GroupAction.WALLET_FUNDS_ACTION -> walletFunds.dispatch(value)
+            GroupAction.PAY_WITH_WALLET -> walletFunds.pay(value)
             GroupAction.OPEN_WHEEL_PROTECTION -> wheelProtection.open()
             GroupAction.REQUEST_WHEEL_PROTECTION, GroupAction.APPROVE_WHEEL_PROTECTION, GroupAction.REJECT_WHEEL_PROTECTION,
             GroupAction.DECLARE_WHEEL_PAYMENT, GroupAction.CONFIRM_WHEEL_PAYMENT, GroupAction.REJECT_WHEEL_PAYMENT, GroupAction.COPY_WHEEL_ACCOUNT -> wheelProtection.dispatch(action, value)
@@ -421,6 +424,7 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
+            GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> GroupPage.PROFILE
             GroupPage.WHEEL_PROTECTION -> GroupPage.ROOM
             GroupPage.PAYMENT, GroupPage.REORDER, GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
@@ -474,13 +478,14 @@ class GroupController(val platform: GroupPlatform) {
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
-        val requestSession = if(c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
-        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(library.selectedHub)
+        val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
+        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_")) library.identityHub else library.selectedHub)
         val outgoing = if (sameHub(library.identityHub, hub) && library.identityToken.isNotEmpty()) c.copy(identityToken = library.identityToken) else c
         replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
         try { platform.request(hub, encodeCommand(outgoing), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
+                if(c.kind.name.startsWith("WALLET_") && library.identityToken != outgoing.identityToken) return
                 busy = false
                 if (error.isNotBlank()) { online = false; this@GroupController.error = "$error Your request is saved. Retry to confirm its result."; publish(); return }
                 try {
@@ -505,7 +510,10 @@ class GroupController(val platform: GroupPlatform) {
                         val s = StoredSession(hub, room.id, next.token, next.memberId, room.name)
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = if(c.kind == CommandKind.CREATE_PAYMENT_ROOM) library.displayName else c.name)
                     }
-                    accept(next, sentAt); replaceLibrary(library.copy(pending = null, pendingHub = null))
+                    next.home?.let { acceptHome(it, hub) }
+                    walletFunds.accept(next)
+                    if(next.room != null) accept(next, sentAt)
+                    replaceLibrary(library.copy(pending = null, pendingHub = null))
                     if (c.kind == CommandKind.REMIND_PAYMENT) paymentReminders.accept(outgoing, next.code)
                     if (c.kind == CommandKind.RECORD_PAYMENT) success("Payment recorded.")
                     if (c.kind in listOf(CommandKind.CONFIRM_TRANSFER, CommandKind.CONFIRM_REFUND)) success("Payment confirmed.")
@@ -627,7 +635,7 @@ class GroupController(val platform: GroupPlatform) {
                     require(error.isEmpty()) { error }
                     val result = decodeReply(body); require(result.ok) { result.error }
                     if(action == IdentityAction.SIGN_OUT) {
-                        notifications.clear(); administration.clear(); selectionOverride.clear(); paymentReminders.clear(); feedbacks.clear(); platform.disablePush()
+                        notifications.clear(); walletFunds.clear(); administration.clear(); selectionOverride.clear(); paymentReminders.clear(); feedbacks.clear(); platform.disablePush()
                         stopHomeWatching(); watching?.cancel(); watching = null; generation++
                         session = null; reply = null
                         replaceLibrary(library.copy(identityToken = "", identityHub = null, home = null, sessions = emptyList(), snapshots = emptyMap(), accounts = emptyList(), displayName = ""))
@@ -798,7 +806,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

@@ -51,6 +51,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
     private fun devices() = db.records("push-device:").map { it.first to orderJson.decodeFromString<PushDevice>(it.second) }
     private fun accessible(uid: String, item: FoodNotification): Boolean {
         if (AccountRestrictions.current(db, uid, clock()) != null || AccountRestrictions.forRoom(db, uid, item.roomId, clock()) != null) return false
+        if (item.roomId.isEmpty() && item.kind.startsWith("wallet_")) return true
         val room = db.room(item.roomId) ?: return false
         val membership = db.record("membership:$uid:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it) }
         return membership != null && room.activeMembers.any { it.id == membership.memberId }
@@ -59,15 +60,17 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         val uid = db.record("member-user:${room.id}:$memberId") ?: return
         addUser(uid, room, eventId, kind, title, body, actions, transferId)
     }
-    private fun addUser(uid: String, room: Room, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>, actions: List<String>, transferId: String = "") {
-        val id = RoomService.hash("${room.id}:${room.orderNumber}:$eventId:$uid").take(40)
+    fun wallet(uid: String, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>) =
+        addUser(uid, null, eventId, kind, title, body, listOf("wallet"))
+    private fun addUser(uid: String, room: Room?, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>, actions: List<String>, transferId: String = "") {
+        val id = RoomService.hash("${room?.id ?: "wallet"}:${room?.orderNumber ?: 0}:$eventId:$uid").take(40)
         val key = "notification:$uid:$id"
         if (db.record(key) != null) return
         val ar = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it).language == "ar" } == true
         val labels = mapOf("open" to ("Open room" to "فتح الغرفة"), "order" to ("Review & send order" to "مراجعة وإرسال الطلب"),
             "copy" to ("Copy order" to "نسخ الطلب"), "share" to ("Share order" to "مشاركة الطلب"), "pay" to ("Payment sent" to "أرسلت الدفع"),
-            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"))
-        val item = FoodNotification(id, room.id, room.orderNumber, kind, if(ar) title.second else title.first,
+            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"))
+        val item = FoodNotification(id, room?.id.orEmpty(), room?.orderNumber ?: 0, kind, if(ar) title.second else title.first,
             if(ar) body.second else body.first, actions.map { action -> NotificationAction(action, labels.getValue(action).let { if(ar) it.second else it.first }) }, transferId, clock())
         db.putRecord(key, orderJson.encodeToString(item))
         val targets = devices().filter { it.second.userId == uid && it.second.updatedAt > clock() - 90L * 86_400_000 }.map { it.first }

@@ -8,6 +8,7 @@ import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx'
 import { t, getLanguage } from '../src/foodrun/i18n.js';
 import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
 import { CreatePaymentRoom } from '../src/foodrun/PaymentRoom.jsx';
+import WalletFunds, { WalletPaymentOption } from '../src/foodrun/WalletFunds.jsx';
 
 let root, host;
 export const commands = [];
@@ -151,7 +152,9 @@ export async function runPollPricingAudit() {
   const room = { restaurant, carts: [{ memberId: 'me', revision: 1, lines: [line], submitted: true }] };
   await mountAudit('room', 'COLLECTING', { room, liveCommands: true });
   const before = (first, second) => !!(host.querySelector(first).compareDocumentPosition(host.querySelector(second)) & Node.DOCUMENT_POSITION_FOLLOWING);
-  assert(before('.collected-orders', '.restaurant-order-card') && before('.fees-editor', '.restaurant-order-card'), 'Send controls must follow collected orders and fees');
+  assert(before('.collected-orders', '.restaurant-order-card') && before('.restaurant-order-card', '.fees-editor'), 'Summary and next action must precede secondary editors');
+  host.querySelector('.order-pricing-panel').closest('details').open = true;
+  host.querySelector('.fees-editor').closest('details').open = true;
   assert(host.querySelector('.order-pricing-panel'), 'Selected person cannot edit menu item prices');
   button('Edit price').click(); await pause();
   setValue(host.querySelector('.order-pricing-panel input'), '7.50'); await pause();
@@ -174,6 +177,7 @@ export async function runPollPricingAudit() {
   for (const phase of ['PLACED', 'FULFILLED']) {
     await mountAudit('room', phase, { room: { ...room, billRevision: 2, adjustmentApprovals: [] }, liveCommands: true });
     assert(host.querySelector('.order-pricing-panel'), 'Menu price editing disappears after sending');
+    host.querySelector('.order-pricing-panel').closest('details').open = true;
     button('Edit price').click(); await pause();
     setValue(host.querySelector('.order-pricing-panel input'), '8.00'); await pause();
     host.querySelector('.order-pricing-panel form').requestSubmit(); await pause();
@@ -630,4 +634,86 @@ export async function runDefaultsJoinPaymentAudit() {
   assert(commands.at(-1)?.kind === 'DECLARE_TRANSFER' && commands.at(-1).fields.accountId === aani.id, 'Member payment did not include the selected receiving method');
   assert(!measureAudit().overflow, 'Member payment controls overflow');
   return { language: getLanguage(), width: innerWidth, passed: ['delivery default', 'Arabic order text default', 'creator approval', 'selected payer approval', 'pending join privacy', 'inline Edit and Add', 'multiple methods', 'method-specific payment'], overflow: measureAudit().overflow };
+}
+
+export async function runWalletAudit() {
+  commands.length = 0;
+  const bank = { id:'wallet-bank', holder:'Holder', bank:'Test Bank', identifier:'AE070331234567890123456', currency:'AED', method:'BANK' };
+  const wallet = { balances:[{customerId:'me',customerName:'Alice',holderId:'holder',holderName:'Holder',currency:'AED',available:10000}],topUps:[],payments:[],batches:[] };
+  const fixture = { ...data, home:{...data.home,profile:{...data.home.profile,userId:'me'},wallet}, setError:()=>{},
+    walletQuery:async(kind,fields)=>kind==='WALLET_PEOPLE' ? {walletPeople:[{userId:'holder',name:'Holder'}]} : {walletRecipient:{person:{userId:fields.userId,name:fields.userId==='recipient'?'Recipient':'Holder'},accounts:[bank]}} };
+  const render = async component => {
+    document.getElementById('root').style.display='none'; root?.unmount();host?.remove();host=document.createElement('div');host.id='audit-root';document.body.append(host);root=createRoot(host);root.render(component);await pause();
+  };
+  const click = async (scope, label) => { const value=[...scope.querySelectorAll('button')].find(node=>node.textContent.includes(label));assert(value&&!value.disabled,`Missing wallet button ${label}`);value.click();await pause(); };
+  const wait = async predicate => { for(let i=0;i<30;i++){if(predicate()) return;await pause();}throw Error('Wallet UI did not load'); };
+  const expect = (kind, fields) => {const command=commands.at(-1);assert(command?.kind===kind&&Object.entries(fields).every(([key,value])=>command.fields[key]===value),`Incorrect wallet command ${JSON.stringify(command)}`);};
+  const ar=getLanguage()==='ar';
+  await render(<WalletFunds data={fixture}/>);
+  assert(host.textContent.includes('AED 100.00')&&host.textContent.includes('Holder'),'Balance does not identify cash holder');
+  await click(host,ar?'شحن المحفظة':'Charge wallet');
+  await wait(()=>host.querySelector('.wallet-people button'));
+  await click(host.querySelector('.wallet-people'),'Holder');
+  await wait(()=>host.querySelector('.wallet-method'));
+  assert(host.querySelector('.wallet-method').textContent.includes(bank.identifier),'Selected person receiving method missing');
+  host.querySelector('.wallet-top-up').requestSubmit();await pause();expect('WALLET_TOP_UP',{amount:10000,currency:'AED',userId:'holder',accountId:bank.id});
+  const topUp={id:'incoming',customerId:'alice',customerName:'Alice',holderId:'me',holderName:'Me',amount:10000,currency:'AED',account:bank,status:'PENDING',createdAt:Date.now()};
+  const payment={id:'p1',customerId:'alice',customerName:'Alice',holderId:'me',holderName:'Me',recipientId:'recipient',recipientName:'Recipient',roomId:'one',roomName:'Lunch',orderNumber:1,memberId:'alice',amount:1500,currency:'AED',status:'OWING'};
+  const holder={...fixture,home:{...fixture.home,wallet:{...wallet,topUps:[topUp],payments:[payment,{...payment,id:'p2',customerId:'bob',customerName:'Bob',amount:2500}],balances:[]}}};
+  await render(<WalletFunds data={holder}/>);
+  await click(host,t('Confirm received'));expect('WALLET_REVIEW_TOP_UP',{transferId:'incoming',flag:true});
+  await click(host,t('Not received'));expect('WALLET_REVIEW_TOP_UP',{transferId:'incoming',flag:false});
+  await click(host,ar?'دفع كامل المبلغ المجمع':'Pay full group amount');await wait(()=>host.querySelector('.wallet-method'));
+  assert(host.textContent.includes('AED 40.00')&&host.textContent.includes('Alice')&&host.textContent.includes('Bob'),'Full group omits customer contributions');
+  const batchForm=host.querySelector('.wallet-method').closest('form');batchForm.requestSubmit();await pause();expect('WALLET_DECLARE_BATCH',{amount:4000,userId:'recipient',accountId:bank.id,currency:'AED'});
+  const batch={id:'batch',holderId:'holder',holderName:'Holder',recipientId:'me',recipientName:'Me',amount:4000,currency:'AED',paymentIds:['p1','p2'],account:bank,status:'PENDING',createdAt:Date.now()};
+  const receiving={...holder,home:{...holder.home,wallet:{...holder.home.wallet,topUps:[],batches:[batch]}}};
+  await render(<WalletFunds data={receiving}/>);
+  await click(host,ar?'تأكيد استلام كامل المبلغ':'Confirm full amount received');expect('WALLET_REVIEW_BATCH',{transferId:'batch',flag:true});
+  const receipt={memberId:'me',currency:'AED',balance:1500};const room={id:'one',walletPayments:[]};
+  await render(<WalletPaymentOption data={fixture} room={room} receipt={receipt} canPay/>);
+  await click(host,ar?'الدفع بالمحفظة':'Pay with wallet');expect('PAY_WITH_WALLET',{amount:1500});
+  await render(<WalletPaymentOption data={{...fixture,home:{...fixture.home,wallet:{...wallet,balances:[]}}}} room={room} receipt={receipt} canPay/>);
+  assert(host.querySelector('button').disabled,'Wallet can be spent before credit confirmation');
+  await render(<WalletFunds data={holder}/>);
+  assert(!measureAudit().overflow,'Wallet controls overflow');
+  return {passed:['balance identifies holder','user search','selected receiving method','AED 100 pending top-up','holder received/not received','AED 40 grouped transfer for two users','recipient confirms whole group','wallet pays current remaining amount','insufficient balance disables wallet'],...measureAudit()};
+}
+
+// Exercises collapsed information and actions with a large order, in both languages.
+export async function runDesignAudit() {
+  commands.length = 0;
+  const lines = Array.from({ length: 14 }, (_, index) => ({ id: `line-${index}`, description: `Meal ${index + 1}`, quantity: 1, itemId: '', notes: '', unitPrice: 1500, optionIds: [] }));
+  const member = { id: 'me', name: 'Audit User', approved: true, participating: true };
+  const friend = { ...member, id: 'friend', name: 'Friend' };
+  const receipt = { memberId: 'me', name: member.name, currency: 'AED', food: 21000, total: 21000, totalText: 'AED 210.00', paid: 0, balance: 0, lines: lines.map(line => ({ ...line, amount: 1500 })) };
+  const account = { id: 'bank', holder: 'Audit User', bank: 'Bank', identifier: 'AE070331234567890123456', currency: 'AED', method: 'BANK_TRANSFER' };
+  const options = { room: { account, accounts: [account], members: [member, friend], carts: [{ memberId: 'me', submitted: true, revision: 1, lines }] }, receipts: [receipt], progress: { canReview: true } };
+  await mountAudit('room', 'COLLECTING', options);
+  await document.fonts.ready;
+  const summary = host.querySelector('.order-summary');
+  assert(summary.querySelectorAll('.summary-items li').length === 4, 'Large order is not compact by default');
+  assert(summary.textContent.includes('210.00'), 'Full total is lost in compact summary');
+  assert(host.querySelector('.room-main').firstElementChild === summary, 'Payer summary is not first');
+  const more = summary.querySelector('[aria-expanded]'); more.click(); await pause();
+  assert(summary.querySelectorAll('.summary-items li').length === 14, 'Expanded summary loses items');
+  more.click(); await pause();
+  assert(summary.querySelectorAll('.summary-items li').length === 4, 'Summary cannot be collapsed');
+  const preview = host.querySelector('.restaurant-list-preview');
+  assert(!preview.open && preview.getBoundingClientRect().height < 120, 'Duplicate restaurant list is expanded');
+  preview.open = true; await pause();
+  assert(preview.querySelector('pre').textContent.includes('Meal 14'), 'Restaurant copy list is incomplete');
+  preview.open = false;
+  const nav = host.querySelector('.payer-quick-nav');
+  window.scrollTo(0, 700); await pause();
+  assert(nav.getBoundingClientRect().top >= 0 && nav.getBoundingClientRect().top < 15, 'Order shortcuts scroll out of reach');
+  window.scrollTo(0, 0);
+  const send = button('Order sent'); assert(send && !send.disabled, 'Primary order action is unavailable');
+  send.click(); await pause(); assert(commands.at(-1).kind === 'PLACE', 'Order action no longer sends PLACE');
+  await mountAudit('room', 'FULFILLED', { ...options, room: { ...options.room, restaurantPaid: true }, receipts: [receipt, { ...receipt, memberId: 'friend', name: 'Friend', food: 1500, total: 1500, totalText: 'AED 15.00', paid: 0, balance: 1500, lines: [receipt.lines[0]] }], progress: { canArchive: false } });
+  const record = host.querySelector('.record-payment');
+  assert(record && (!record.matches('details') || record.open) && record.querySelector('input').getClientRects().length, 'Received payment is no longer visibly expanded');
+  assert(getComputedStyle(host.querySelector('.primary')).backgroundColor === 'rgb(22, 123, 88)', 'Primary theme is inconsistent');
+  assert(!measureAudit().overflow, 'New theme overflows');
+  return { passed: ['compact complete summary', 'full totals retained', 'summary expand and collapse', 'complete restaurant list', 'sticky shortcuts', 'PLACE command retained', 'received payment expanded', 'green theme', 'no overflow'], ...measureAudit() };
 }

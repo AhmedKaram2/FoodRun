@@ -124,4 +124,7 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     val deletedRestaurantIds: Set<String> = emptySet(),
     val deletedRoomIds: Set<String> = emptySet(),
     val roomAccessBlocks: Map<String, AccessBlock> = emptyMap(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val wallet: WalletSnapshot? = null,
 )

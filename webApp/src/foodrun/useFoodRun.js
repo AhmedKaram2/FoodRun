@@ -167,7 +167,7 @@ export function useFoodRun() {
     const epoch = alive.current;
     inFlight.current = true; setBusy(true); setError('');
     try {
-      if (payload.kind !== 'IDENTITY' && payload.kind !== 'SNAPSHOT') savePending(payload);
+      if (!['IDENTITY', 'SNAPSHOT', 'WALLET_PEOPLE', 'WALLET_RECIPIENT'].includes(payload.kind)) savePending(payload);
       const reply = await request(hub, payload);
       if (epoch !== alive.current) return null;
       savePending(null); accept(reply, olderPage);
@@ -229,5 +229,6 @@ export function useFoodRun() {
       if (state === 'failed') { setPaymentReminderTimes(old => { const next = { ...old }; delete next[key]; return next; }); setError(t('Email could not be sent. Please try again.')); }
     } catch { /* A later status check can recover after a network interruption. */ }
   };
-  return { identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, connectionState, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
+  const walletQuery = (kind, fields = {}, signal) => request(hub, command(kind, { identityToken, ...fields }), signal);
+  return { walletQuery, identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, connectionState, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
 }

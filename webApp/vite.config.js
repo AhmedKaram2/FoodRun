@@ -5,7 +5,7 @@ function offlineShell() {
   return {
     name: 'foodrun-offline-shell',
     generateBundle(_, bundle) {
-      const files = new Set(['/', '/index.html', '/manifest.json', '/foodrun-icon-192.png']);
+      const files = new Set(['/', '/index.html', '/manifest.json', '/foodrun-icon-192.png', '/fonts/DMSans.ttf', '/fonts/NotoSansArabic.ttf']);
       const add = chunk => {
         const path = '/' + chunk.fileName;
         if (files.has(path)) return;

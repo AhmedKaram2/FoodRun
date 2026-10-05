@@ -8,6 +8,7 @@ struct GroupScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     private var state: GroupState { store.state }
     @State private var optionsExpanded = false
+    @State private var expandedSections: Set<String> = []
     var body: some View {
         Group {
             if state.page == .quickSpin {
@@ -76,21 +77,34 @@ struct GroupScreen: View {
                             GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
                         }
                         ForEach(state.mainFields, id: \.key.name) { field in fieldContent(field) }
-                        if state.page != .room { extraOptions }
+                        if state.page != .room && state.page != .payment { extraOptions }
                         ForEach(state.inlineButtons.filter { $0.action != .setLanguage }, id: \.renderID) { button in
                             GroupActionContent(button: button, busy: state.busy, dispatch: store.dispatch, prominent: false)
                         }
                         ForEach(Array(state.sections.enumerated()), id: \.offset) { _, section in
-                            if !section.title.isEmpty { GroupSectionHeading(title: section.title, count: section.cards.count) }
-                            ForEach(section.cards, id: \.renderID) { card in
-                                GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
+                            if section.collapsed {
+                                Button {
+                                    if expandedSections.contains(section.title) { expandedSections.remove(section.title) }
+                                    else { expandedSections.insert(section.title) }
+                                } label: {
+                                    HStack {
+                                        Text("\(section.title) · \(section.cards.count)").font(FoodTypography.bodyBold)
+                                        Spacer()
+                                        Image(systemName: expandedSections.contains(section.title) ? "chevron.up" : "chevron.down")
+                                    }.frame(minHeight: FoodSpacing.s44).foregroundStyle(FoodTheme.ink)
+                                }
+                            } else if !section.title.isEmpty { GroupSectionHeading(title: section.title, count: section.cards.count) }
+                            if !section.collapsed || expandedSections.contains(section.title) {
+                                ForEach(section.cards, id: \.renderID) { card in
+                                    GroupCardContent(card: card, busy: state.busy, dispatch: store.dispatch)
+                                }
                             }
                         }
-                        if state.page == .room { extraOptions }
+                        if state.page == .room || state.page == .payment { extraOptions }
                     }
                 }
                 .frame(maxWidth: FoodSpacing.s490)
-                .padding(FoodSpacing.s24)
+                .padding(FoodSpacing.s16)
                 .frame(maxWidth: .infinity)
             }
             .id(state.page.name)
@@ -123,6 +137,7 @@ struct GroupScreen: View {
             .onChange(of: state.page) { _, _ in
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 optionsExpanded = false
+                expandedSections = []
                 scroll.scrollTo("groupHeader", anchor: .top)
             }
             .toolbar {
@@ -161,6 +176,7 @@ struct GroupScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !state.roomCode.isEmpty {
+                DisclosureGroup {
                 VStack(spacing: FoodSpacing.s16) {
                     if !state.inviteSummary.isEmpty {
                         Text(state.inviteSummary).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.ink)
@@ -182,7 +198,12 @@ struct GroupScreen: View {
                                 .frame(width: FoodSpacing.s48, height: FoodSpacing.s48)
                         }.disabled(state.busy).accessibilityLabel("Share invitation link")
                     }
-                }.padding(FoodSpacing.s16).foodCard(showsBorder: true)
+                }
+                } label: {
+                    Text((state.rtl ? "دعوة المجموعة · " : "Invite group · ") + state.roomCode).font(FoodTypography.setting).foregroundStyle(FoodTheme.ink)
+                        .frame(minHeight: FoodSpacing.s44)
+                }
+                .padding(FoodSpacing.s12).foodCard(showsBorder: true)
             }
         }
     }

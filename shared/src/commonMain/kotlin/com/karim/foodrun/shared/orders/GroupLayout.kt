@@ -1,7 +1,7 @@
 package com.karim.foodrun.shared.orders
 
 /** Presentation grouping shared by the native renderers. All domain actions remain unchanged. */
-data class GroupSection(val title: String, val cards: List<GroupCard>)
+data class GroupSection(val title: String, val cards: List<GroupCard>, val collapsed: Boolean = false)
 
 internal object GroupLayout {
     val roomUtilities = setOf(
@@ -34,7 +34,7 @@ internal object GroupLayout {
                 .filter { it.cards.isNotEmpty() }
         }
         // Historical receipts and their recipient must stay next to their original order.
-        if (page != GroupPage.ROOM) return listOf(GroupSection(when (page) {
+        if (page !in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) return listOf(GroupSection(when (page) {
             GroupPage.RESTAURANT -> "On the menu"
             GroupPage.ACCOUNT -> "Receiving accounts"
             GroupPage.ITEM -> "Make it yours"
@@ -55,6 +55,8 @@ internal object GroupLayout {
         }
         val grouped = cards.groupBy(::category)
         return listOf("Order summary", "Payment actions", "Wallet", "Payment activity", "Restaurant order", "Order updates", "Choose your food", "Your order", "Totals & recipient", "At the table")
-            .mapNotNull { title -> grouped[title]?.let { GroupSection(title, it) } }
+            .mapNotNull { title -> grouped[title]?.let {
+                GroupSection(title, it, collapsed = title in setOf("At the table", "Totals & recipient", "Payment activity") && it.all { card -> card.buttons.isEmpty() })
+            } }
     }
 }

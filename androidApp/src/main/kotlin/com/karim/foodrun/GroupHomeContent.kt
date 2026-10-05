@@ -26,6 +26,7 @@ import com.karim.foodrun.shared.orders.*
 
 @Composable
 internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
+    var walletExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Page)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Small)) {
             Text(FoodRunText.brand, style = FoodType.Brand, color = FoodColors.Ink, modifier = Modifier.weight(1f))
@@ -49,7 +50,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
                 Text(GroupText.localized(GroupText.groupTitle, state.rtl), style = FoodType.DialogTitle, color = FoodColors.White)
                 Text(GroupText.localized(GroupText.groupDescription, state.rtl), style = FoodType.Body, color = FoodColors.OnHero)
                 state.buttons.filter { it.action in listOf(GroupAction.CREATE, GroupAction.JOIN) }.forEach {
-                    GroupActionButton(it, state.busy, controller)
+                    GroupActionButton(it, state.busy, controller, prominent = false)
                 }
             }
         }
@@ -65,7 +66,12 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
         if (dashboard.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {
                 GroupSectionHeading(if (state.rtl) "المحفظة والطلبات" else "Wallet & orders")
-                dashboard.forEach { GroupCardContent(it, state.busy, controller) }
+                val summaryIds = setOf("dashboard:wallet-funds", "dashboard:wallet-summary")
+                dashboard.filter { it.id in summaryIds }.forEach { GroupCardContent(it, state.busy, controller) }
+                TextButton(onClick = { walletExpanded = !walletExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
+                    Text(if (state.rtl) { if (walletExpanded) "إخفاء تفاصيل المدفوعات" else "عرض المدفوعات والأموال لدى الآخرين" } else { if (walletExpanded) "Hide payment details" else "View payments & money holders" }, color = FoodColors.Orange)
+                }
+                if (walletExpanded) dashboard.filter { it.id !in summaryIds }.forEach { GroupCardContent(it, state.busy, controller) }
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {

@@ -1,22 +1,23 @@
 import SwiftUI
+import UIKit
 import IosComponents
 
 enum FoodTheme {
-    static let cream = Color(hex: 0xFAF7F2)
-    static let ink = Color(hex: 0x292C28)
-    static let muted = Color(hex: 0x696C63)
-    static let orange = Color(hex: 0xBE431E)
-    static let line = Color(hex: 0xE6E4DC)
-    static let accentWash = Color(hex: 0xFBEEE7)
-    static let hero = Color(hex: 0x263B32)
-    static let onHero = Color(hex: 0xDCE5D8)
-    static let successWash = Color(hex: 0xEAF1E5)
+    static let cream = Color(hex: 0xF7FAF8)
+    static let ink = Color(hex: 0x172B26)
+    static let muted = Color(hex: 0x61756C)
+    static let orange = Color(hex: 0x167B58)
+    static let line = Color(hex: 0xE1ECE7)
+    static let accentWash = Color(hex: 0xEDF8F2)
+    static let hero = Color(hex: 0x167B58)
+    static let onHero = Color(hex: 0xE2F3EA)
+    static let successWash = Color(hex: 0xEDF8F2)
     static let error = Color(hex: 0xAF3025)
     static let white = Color.white
     static let black = Color.black
-    static let wheelRim = Color(hex: 0xFFFDF7)
+    static let wheelRim = Color(hex: 0xFFFFFF)
     static let sage = Color(hex: 0x9BAF72)
-    static let available = Color(hex: 0x476B3F)
+    static let available = Color(hex: 0x167B58)
     static let palette: [Color] = [
         Color(hex: 0xF49A79), Color(hex: 0xF5CB69), Color(hex: 0xBAD4AD),
         Color(hex: 0xB8CBEB), Color(hex: 0xCEBAE4), Color(hex: 0xF2B4BD),
@@ -46,11 +47,11 @@ enum FoodTheme {
 
 enum FoodRadius {
     static let avatar: CGFloat = 13
-    static let input: CGFloat = 16
+    static let input: CGFloat = 12
     static let secondaryButton: CGFloat = 18
     static let setting: CGFloat = 20
-    static let button: CGFloat = 18
-    static let group: CGFloat = 24
+    static let button: CGFloat = 14
+    static let group: CGFloat = 16
     static let winner: CGFloat = 34
 }
 
@@ -69,30 +70,37 @@ enum FoodMotion {
 }
 
 enum FoodTypography {
-    static let brand = Font.system(size: 15, weight: .black, design: .rounded)
-    static let hero = Font.system(.largeTitle, design: .rounded, weight: .heavy)
-    static let sheetTitle = Font.system(.title, design: .rounded, weight: .heavy)
-    static let formTitle = Font.system(.title2, design: .rounded, weight: .bold)
-    static let button = Font.system(.headline, design: .rounded, weight: .bold)
-    static let bodyBold = Font.system(.body, design: .rounded, weight: .bold)
-    static let input = Font.system(.body, design: .rounded, weight: .semibold)
-    static let setting = Font.system(.subheadline, design: .rounded, weight: .semibold)
-    static let captionButton = Font.system(.caption, design: .rounded, weight: .bold)
-    static let emptyTitle = Font.system(.title3, design: .rounded, weight: .bold)
-    static let subtitle = Font.system(.subheadline, weight: .medium)
-    static let footer = Font.system(.caption, weight: .medium)
-    static let metadata = Font.system(.caption, weight: .medium)
-    static let status = Font.system(.caption, design: .rounded, weight: .semibold)
-    static let crewTitle = Font.system(.subheadline, design: .rounded, weight: .bold)
-    static let crewAction = Font.system(.caption, design: .rounded, weight: .bold)
-    static let share = Font.system(size: 13, weight: .semibold, design: .rounded)
-    static let eyebrow = Font.system(.caption2, design: .rounded, weight: .heavy)
-    static let winnerIntro = Font.system(size: 16, weight: .semibold, design: .rounded)
-    static let winner = Font.system(size: 57, weight: .heavy, design: .rounded)
-    static let wheelCenter = Font.system(size: 8, weight: .black, design: .rounded)
-    static let avatarSmall = Font.system(size: 13, weight: .heavy, design: .rounded)
-    static let avatarMedium = Font.system(size: 16, weight: .heavy, design: .rounded)
-    static let avatarLarge = Font.system(size: 20, weight: .heavy, design: .rounded)
+    // The Arabic font is a glyph fallback, so Arabic and mixed-language strings
+    // use the same bundled typefaces without depending on the device language.
+    private static func text(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        let descriptor = UIFontDescriptor(name: "DMSans-9ptRegular", size: size)
+            .addingAttributes([.cascadeList: [UIFontDescriptor(name: "NotoSansArabic-Regular", size: size)]])
+        return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(descriptor: descriptor, size: size))).weight(weight)
+    }
+    static let brand = text(15, .bold)
+    static let hero = text(30, .bold)
+    static let sheetTitle = text(26, .bold)
+    static let formTitle = text(23, .bold)
+    static let button = text(16, .bold)
+    static let bodyBold = text(16, .semibold)
+    static let input = text(16)
+    static let setting = text(14)
+    static let captionButton = text(12, .bold)
+    static let emptyTitle = text(20, .bold)
+    static let subtitle = text(14)
+    static let footer = text(12)
+    static let metadata = text(12)
+    static let status = text(12, .semibold)
+    static let crewTitle = text(15, .semibold)
+    static let crewAction = text(12, .bold)
+    static let share = text(13, .semibold)
+    static let eyebrow = text(11, .bold)
+    static let winnerIntro = text(16, .semibold)
+    static let winner = text(48, .bold)
+    static let wheelCenter = text(8, .bold)
+    static let avatarSmall = text(13, .bold)
+    static let avatarMedium = text(16, .bold)
+    static let avatarLarge = text(20, .bold)
     static let buttonIcon = Font.system(size: 19, weight: .bold)
     static let brandIcon = Font.system(size: 18, weight: .semibold)
     static let historyIcon = Font.system(size: 20, weight: .medium)
@@ -108,6 +116,6 @@ enum FoodTypography {
     static let centerIcon = Font.system(size: 24, weight: .semibold)
 
     static func wheelLabel(size: CGFloat) -> Font {
-        .system(size: size * 0.046, weight: .heavy, design: .rounded)
+        text(size * 0.046, .bold)
     }
 }

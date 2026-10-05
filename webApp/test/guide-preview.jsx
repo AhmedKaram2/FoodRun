@@ -40,7 +40,7 @@ const receipts = members.map((member, i) => ({ memberId: member.id, name: member
   lines: [{ description: language === 'ar' ? i === 2 ? 'شاورما فراخ' : 'سندويش فلافل' : i === 2 ? 'Chicken shawarma' : 'Falafel sandwich', itemId: i === 2 ? 'shawarma' : 'falafel', quantity: 1, amount: i === 2 ? 1800 : 1200, notes: '', variantId: null, optionIds: [] }],
   food: i === 2 ? 1800 : 1200, delivery: 0, service: 0, tax: 0, discount: 0, total: i === 2 ? 1800 : 1200, paid: i === 1 ? 1200 : 0, balance: i === 1 ? 0 : i === 2 ? 1800 : 1200 }));
 const actor = ['selection','collector','settle'].includes(screen) ? members[1] : members[0];
-const reply = { ok: true, room, memberId: actor.id, receipts: actor.id === room.payerId ? receipts : receipts.filter(r => r.memberId === actor.id), history: [], historyNextOffset: -1, serverTime: Date.now(), progress: { canArchive: false, archiveBlocker: 'Waiting for payments' } };
+const reply = { ok: true, room, memberId: actor.id, receipts: actor.id === room.payerId ? receipts : receipts.filter(r => r.memberId === actor.id), history: [], historyNextOffset: -1, serverTime: Date.now(), progress: { canReview: screen === 'collector', reviewBlocker: '', canArchive: false, archiveBlocker: 'Waiting for payments' } };
 const data = { user: { uid: 'guide-user', email: 'guide@example.test', emailVerified: true }, hub: 'https://example.test', identityToken: '',
   home: { profile: { userId: 'guide-user', name: actor.name, phone: '+971500000000', language, payment: account, paymentAccounts: [account], favoriteOrders: [], photo: '', discoverable: true },
     people: members.filter(m => m.id !== actor.id).map(m => ({ userId: m.id, name: m.name, photo: '' })), invitations: [], rooms: [], deletedRoomIds: [] },

@@ -32,10 +32,10 @@ struct GroupHomeContent: View {
                 Text(GroupText.shared.localized(value: GroupText.shared.groupTitle, rtl: state.rtl)).font(FoodTypography.formTitle).foregroundStyle(FoodTheme.white)
                 Text(GroupText.shared.localized(value: GroupText.shared.groupDescription, rtl: state.rtl)).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.onHero)
                 ForEach(state.buttons.filter { $0.action == .create || $0.action == .join }, id: \.renderID) { button in
-                    GroupActionContent(button: button, busy: state.busy, dispatch: dispatch)
+                    GroupActionContent(button: button, busy: state.busy, dispatch: dispatch, prominent: false)
                 }
             }
-            .padding(FoodSpacing.s24)
+            .padding(FoodSpacing.s16)
             .background(FoodTheme.hero, in: RoundedRectangle(cornerRadius: FoodRadius.group))
 
             ForEach(state.cards.filter { $0.id.hasPrefix("invitation:") }, id: \.renderID) { card in GroupCardContent(card: card, busy: state.busy, dispatch: dispatch) }
@@ -50,9 +50,14 @@ struct GroupHomeContent: View {
             if !dashboard.isEmpty {
                 VStack(alignment: .leading, spacing: FoodSpacing.s12) {
                     GroupSectionHeading(title: state.rtl ? "المحفظة والطلبات" : "Wallet & orders")
-                    ForEach(dashboard, id: \.renderID) { card in
+                    ForEach(dashboard.filter { ["dashboard:wallet-funds", "dashboard:wallet-summary"].contains($0.id) }, id: \.renderID) { card in
                         GroupCardContent(card: card, busy: state.busy, dispatch: dispatch)
                     }
+                    DisclosureGroup(state.rtl ? "عرض المدفوعات والأموال لدى الآخرين" : "View payments & money holders") {
+                        ForEach(dashboard.filter { !["dashboard:wallet-funds", "dashboard:wallet-summary"].contains($0.id) }, id: \.renderID) { card in
+                            GroupCardContent(card: card, busy: state.busy, dispatch: dispatch)
+                        }
+                    }.font(FoodTypography.setting).tint(FoodTheme.orange)
                 }
             }
             VStack(alignment: .leading, spacing: FoodSpacing.s12) {

@@ -40,6 +40,7 @@ async function capture() {
       for (const section of guideContent[language].sections.filter(section => section.screen)) {
         page.errors.length = 0;
         await page.rpc('Page.navigate', { url: `http://127.0.0.1:5174/test/guide-preview.html?screen=${section.screen}&lang=${language}` });
+        await delay(500);
         await page.until('window.guideReady && document.querySelector("main")');
         await page.evaluate('document.fonts.ready.then(() => true)'); await delay(200);
         const selector = ({ selection: '.selection-card', food: '#room-menu', collector: '.restaurant-order-card', pay: '#room-payment', settle: '#room-payment' })[section.screen];

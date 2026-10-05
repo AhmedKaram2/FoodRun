@@ -5,6 +5,7 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
+    WALLET_PEOPLE, WALLET_RECIPIENT, WALLET_TOP_UP, WALLET_REVIEW_TOP_UP, PAY_WITH_WALLET, WALLET_DECLARE_BATCH, WALLET_REVIEW_BATCH,
     CREATE_PAYMENT_ROOM, UPDATE_PAYMENT_RECEIPT, UPDATE_PAYMENT_SHARE, RECORD_PAYMENT, IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
     VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
     UNLOCK_SELECTION_OVERRIDE, SET_SELECTION_OVERRIDE,
@@ -63,6 +64,15 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val autoArchiveDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val userId: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val currency: String = "AED",
 
 )
 @Serializable data class OrderProgress(
@@ -89,6 +99,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val deletedHistoryNumbers: Set<Long> = emptySet(),
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletRecipient: WalletRecipient? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletPeople: List<FoodPerson>? = null,
 
 )
 /** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */

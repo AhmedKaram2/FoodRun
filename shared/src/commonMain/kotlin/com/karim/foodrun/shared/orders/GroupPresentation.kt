@@ -70,6 +70,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 buttons = listOf(GroupButton(ui("Check access again"), GroupAction.REFRESH), GroupButton(ui("Back to my account"), GroupAction.BACK)))
         }
         when(c.page) {
+            GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> { title = tr("Wallet", "المحفظة"); subtitle = ""; append(c.walletFunds.content()) }
             GroupPage.WHEEL_PROTECTION -> { title = tr("Please don’t pick me", "ما تختارنيش"); subtitle = ""; append(c.wheelProtection.content()) }
             GroupPage.SELECTION_OVERRIDE -> { title = tr("Wheel selection", "اختيار العجلة"); subtitle = ""; append(c.selectionOverride.content()) }
             GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY -> { title = tr("Menu editor", "تعديل القائمة"); append(c.menuEditor.content()) }
@@ -634,6 +635,7 @@ internal class GroupPresentation(private val c: GroupController) {
     }
 
     private fun dashboardCards(prefix: String) {
+        cards += c.walletFunds.cards(prefix)
         data class SnapshotRow(val session: StoredSession, val reply: RoomReply, val room: Room, val receipt: Receipt?)
         val rows = c.library.sessions.mapNotNull { session ->
             val reply = c.library.snapshots[session.roomId] ?: return@mapNotNull null
@@ -675,6 +677,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 val actions = mutableListOf<GroupButton>()
                 actions += c.paymentReminderButtons(row.room, row.session.memberId, receipt, wallet = true)
                 actions += c.recordPaymentButtons(row.room, row.session.memberId, receipt, wallet = true)
+                c.walletFunds.payButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
                     actions += GroupButton(ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)

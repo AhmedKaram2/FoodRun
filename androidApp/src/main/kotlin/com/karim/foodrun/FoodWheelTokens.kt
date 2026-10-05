@@ -1,6 +1,7 @@
 package com.karim.foodrun
 
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -34,16 +35,16 @@ object FoodWheelTokens {
     const val WinnerStiffness = 180f
     const val ConfettiDurationMillis = 5_000
     const val ConfettiPieceCount = 85
-    val HubType = TextStyle(
+    val HubType: TextStyle @Composable get() = TextStyle(
         fontFamily = FoodType.Rounded,
         fontSize = 8.sp,
         letterSpacing = 1.sp,
     )
-    val WinnerNameType = TextStyle(
+    val WinnerNameType: TextStyle @Composable get() = TextStyle(
         fontFamily = FoodType.Rounded,
         fontSize = 42.sp,
     )
-    val WinnerEyebrowType = TextStyle(
+    val WinnerEyebrowType: TextStyle @Composable get() = TextStyle(
         fontFamily = FoodType.Rounded,
         fontSize = 11.sp,
         letterSpacing = 2.sp,

@@ -51,6 +51,9 @@ struct GroupCardContent: View {
     let card: GroupCard
     let busy: Bool
     let dispatch: (GroupAction, String) -> Void
+    @State private var detailExpanded = false
+    @Environment(\.layoutDirection) private var layoutDirection
+    private var compactDetail: Bool { card.id == "order-summary" && card.detail.components(separatedBy: "\n").count > 4 }
     private var member: Bool { card.id.hasPrefix("member:") || card.id.hasPrefix("invite:") }
     var body: some View {
         VStack(alignment: .leading, spacing: FoodSpacing.s14) {
@@ -74,6 +77,12 @@ struct GroupCardContent: View {
                 Spacer(minLength: FoodSpacing.s0)
             }
             if !member && !card.detail.isEmpty { detail }
+            if compactDetail {
+                Button { detailExpanded.toggle() } label: {
+                    Text(layoutDirection == .rightToLeft ? (detailExpanded ? "عرض أقل" : "عرض الطلب كاملاً") : (detailExpanded ? "Show less" : "View full order"))
+                        .font(FoodTypography.captionButton).frame(minHeight: FoodSpacing.s44)
+                }.tint(FoodTheme.orange)
+            }
             if !card.image.isEmpty, let marker = card.image.range(of: "base64,"), let data = Data(base64Encoded: String(card.image[marker.upperBound...])), let photo = UIImage(data: data) {
                 Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 600).accessibilityLabel(card.title)
             }
@@ -84,10 +93,10 @@ struct GroupCardContent: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(FoodSpacing.s20).foodCard(showsBorder: true)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(FoodSpacing.s16).foodCard(showsBorder: true)
     }
     private var detail: some View {
-        Text(card.detail).font(FoodTypography.setting).foregroundStyle(FoodTheme.muted)
+        Text(compactDetail && !detailExpanded ? card.detail.components(separatedBy: "\n").prefix(4).joined(separator: "\n") : card.detail).font(FoodTypography.setting).foregroundStyle(FoodTheme.muted)
             .lineSpacing(FoodSpacing.s4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
     }
 }

@@ -43,6 +43,7 @@ object RoomRules {
         require(room.fees.discount <= receipts.sumOf { it.food }) { "Discount cannot exceed food total." }
     }
     fun requireArchive(room: Room) {
+        require(room.walletPayments.all { it.status == WalletPaymentStatus.SETTLED }) { "Wallet holders must settle their transfers before archiving." }
         require(room.restaurantPaid) { "Confirm the restaurant payment first." }
         require(Billing.receipts(room).all { it.balance == 0L } && room.transfers.none { it.status == TransferStatus.DECLARED }) { "Settle every reimbursement and refund before archiving. Resolve pending transfers first." }
     }

@@ -132,6 +132,8 @@ class AdminService(
                 audit(actorId, if(block) "block-user:${change.durationHours}h" else "unblock-user", change.userId)
             }
             "remove" -> {
+                val wallet = WalletService.snapshot(db, change.userId)
+                require(wallet.balances.all { it.available == 0L } && wallet.topUps.none { it.status == WalletStatus.PENDING } && wallet.payments.all { it.status == WalletPaymentStatus.SETTLED }) { "Settle this user's wallet balances and pending payments before removal." }
                 require(change.confirmation == change.userId) { "Confirm the selected user before removal." }
                 require(memberships.none { membership -> db.room(membership.roomId)?.let { room ->
                     room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED) && room.activeMembers.any { it.id == membership.memberId }

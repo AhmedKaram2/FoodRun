@@ -154,7 +154,7 @@ struct GroupFieldContent: View {
         case .jsonMenu, .fingerprint, .accountIdentifier: .asciiCapable
         // Bill adjustments accept a leading minus; decimalPad has no minus key.
         case .billAdjustment: .numbersAndPunctuation
-        case .paymentTotal, .paymentShare, .paymentReceived, .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice, .taxRate, .minimumOrder: .decimalPad
+        case .walletAmount, .paymentTotal, .paymentShare, .paymentReceived, .amount, .deliveryFee, .serviceFee, .discount, .menuItemPrice, .taxRate, .minimumOrder: .decimalPad
         case .quantity, .roomCode: .numberPad
         default: .default
         }

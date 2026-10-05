@@ -61,6 +61,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>()
         cards += walletCards()
+        r.walletPayments.forEach { cards += GroupCard("wallet-custody:${it.id}", "${it.customerName} · ${money(it.amount)}", "${it.holderName} → ${it.recipientName}", c.walletFunds.status(it)) }
         cards += GroupCard("review-next-step", tr("Ready for the restaurant", "جاهز للمطعم"),
             if (payer) tr("Copy or share the order, then mark it as sent. You can add the expected arrival if known. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها أكّد إن الطلب اتبعت. ممكن تضيف معاد الوصول لو معروف. مش محتاج تأكيد تاني من الناس.")
             else tr("${name(r.payerId)} is sending the order to the restaurant.", "${name(r.payerId)} بيبعت الطلب للمطعم."))
@@ -100,6 +101,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val ownPending = pending.firstOrNull { it.memberId == me }
         val ownReceipt = receipts.firstOrNull { it.memberId == me }
         cards += walletCards()
+        r.walletPayments.forEach { cards += GroupCard("wallet-custody:${it.id}", "${it.customerName} · ${money(it.amount)}", "${it.holderName} → ${it.recipientName}", c.walletFunds.status(it)) }
         cards += GroupCard("placed", if (r.restaurantPaid) tr("Restaurant payment confirmed", "تم تأكيد دفع المطعم") else tr("Restaurant payment pending", "بانتظار دفع المطعم"), r.restaurantReference)
         if (r.billRevision > 1) {
             val detail = buildString {
@@ -133,6 +135,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 val owed = receipts.filter { it.balance > 0 }
                 val refunds = receipts.filter { it.balance < 0 }
                 cards += GroupCard("settlement-next-step", tr("Payment progress", "تقدم الدفعات"), when {
+                    r.walletPayments.any { it.status != WalletPaymentStatus.SETTLED } -> tr("Wallet holders still need to settle cash transfers. Open your profile wallet to review grouped payments.", "على حاملي أموال المحافظ تسوية التحويلات النقدية. افتح محفظة ملفك لمراجعة الدفعات المجمعة.")
                     pending.isNotEmpty() -> "${pending.size} payment or refund ${if (pending.size == 1) "claim needs" else "claims need"} confirmation. Review Payment activity below."
                     refunds.isNotEmpty() -> tr("Refunds are due to ${refunds.joinToString { it.name }}. Send each refund, record it, and wait for the recipient to confirm.", "مبالغ مرتجعة مستحقة إلى ${refunds.joinToString { it.name }}. أرسلها وسجلها وانتظر تأكيد المستلم.")
                     owed.isNotEmpty() -> tr("Waiting for reimbursements from ${owed.joinToString { it.name }}. Your own share needs no transfer.", "بانتظار دفعات ${owed.joinToString { it.name }}. حصتك الشخصية لا تحتاج تحويلاً.")
@@ -157,11 +160,12 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 fields += field(GroupFieldKey.REFERENCE, tr("Transfer reference / cash note", "مرجع التحويل أو ملاحظة الدفع النقدي"))
                 buttons += GroupButton(if(c.library.language == "ar") "استخدام كامل المبلغ المتبقي" else tr("Use full remaining amount", "استخدام كامل المبلغ المتبقي"), GroupAction.USE_REMAINING_AMOUNT)
                 buttons += GroupButton(tr("I paid · notify recipient", "دفعت · إشعار المستلم"), GroupAction.DECLARE_TRANSFER, primary = true)
+                c.walletFunds.payButton(r, me, ownReceipt)?.let { buttons += it }
             }
         } else cards += GroupCard("settlement-observer", tr("Order progress", "تقدم الطلب"), tr("${name(r.payerId)} is handling the restaurant order and payments. You have no food or payment due for this order.", "يتولى ${name(r.payerId)} طلب المطعم والدفعات. لا يوجد عليك طعام أو دفع لهذا الطلب."))
         if ((owner || payer) && r.phase == RoomPhase.FULFILLED) {
             // Nonpayer organizers receive only their own private receipt. Use the hub's safe summary.
-            val visiblySettled = receipts.all { it.balance == 0L } && pending.isEmpty()
+            val visiblySettled = receipts.all { it.balance == 0L } && pending.isEmpty() && r.walletPayments.all { it.status == WalletPaymentStatus.SETTLED }
             val progress = c.reply!!.progress
             val canComplete = progress?.canArchive ?: (r.restaurantPaid && visiblySettled)
             buttons += GroupButton(tr("Complete this order", "إكمال هذا الطلب"), GroupAction.ARCHIVE, primary = canComplete, enabled = canComplete)

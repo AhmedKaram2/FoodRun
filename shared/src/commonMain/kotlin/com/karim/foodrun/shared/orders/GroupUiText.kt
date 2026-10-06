@@ -654,6 +654,7 @@ internal object GroupUiText {
         "Open payment" to "فتح الدفع",
         "Open room" to "افتح الغرفة",
         "open this page in Safari, tap the Share button, then choose" to "افتح الصفحة في سفاري واضغط مشاركة ثم اختر",
+        "Open wallet" to "افتح المحفظة",
         "Opens the restaurant chat with your order ready to send." to "بيفتح شات المطعم والطلب جاهز للإرسال.",
         "or" to "أو",
         "Or paste a menu JSON file" to "أو الصق محتوى ملف المنيو JSON",

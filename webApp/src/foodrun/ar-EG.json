@@ -742,5 +742,6 @@
   "Choose a wallet holder and request a top-up.": "اختار صاحب المحفظة واطلب شحن الرصيد.",
   "Transfer the money outside Intrvioo. Your balance updates after the holder confirms receipt.": "حوّل الفلوس خارج إنترفيوو. الرصيد بيتضاف بعد ما صاحب المحفظة يؤكد الاستلام.",
   "Choose Pay with wallet when paying your share.": "اختار الدفع بالمحفظة وقت دفع حصتك.",
-  "Got it": "تمام، فهمت"
+  "Got it": "تمام، فهمت",
+  "Open wallet": "افتح المحفظة"
 }

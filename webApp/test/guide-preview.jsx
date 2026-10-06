@@ -57,7 +57,8 @@ function FeedbackPreview() {
 }
 let content;
 if (screen === 'feedback') content = <FeedbackPreview />;
-else if (screen === 'sign-in') content = <AuthScreen ready={false} />;
+else if (screen === 'sign-in') content = <AuthScreen ready={true} />;
+else if (screen === 'guide') { const { default: HowToUse } = await import('../src/foodrun/HowToUse.jsx'); content = <HowToUse language={language} onBack={() => { window.guideReturned = true; }} />; }
 else if (screen === 'home') content = <Home data={data} setPage={() => {}} openRoom={() => {}} />;
 else if (screen === 'join' || screen === 'create') content = <CreateRoom data={data} mode={screen} inviteCode={screen === 'join' ? '123456' : ''} onBack={() => {}} openRoom={() => {}} />;
 else if (screen === 'payment-room') content = <CreatePaymentRoom data={data} onBack={() => {}} openRoom={() => {}} openProfile={() => {}} />;

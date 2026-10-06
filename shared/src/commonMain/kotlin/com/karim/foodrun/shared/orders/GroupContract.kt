@@ -37,7 +37,7 @@ data class GroupCard(val id: String, val title: String, val detail: String = "",
 data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String, val style: String = "wheel")
 data class GroupReminderEmailPrompt(val name: String, val address: String, val error: String)
 data class GroupState(
-    val page: GroupPage = GroupPage.HOME, val title: String = "Food Run", val subtitle: String = "Good food. Great company.",
+    val page: GroupPage = GroupPage.HOME, val title: String = "Intrvioo", val subtitle: String = "Good food. Great company.",
     val fields: List<GroupField> = emptyList(), val cards: List<GroupCard> = emptyList(), val buttons: List<GroupButton> = emptyList(),
     val busy: Boolean = false, val online: Boolean = false, val status: String = "", val error: String = "", val wheel: GroupWheel? = null,
     val roomCode: String = "", val canGoBack: Boolean = false,
@@ -79,15 +79,15 @@ data class GroupState(
 interface GroupObserver { fun changed(state: GroupState) }
 object GroupText {
     fun localized(value: String, rtl: Boolean): String = if(!rtl) value else GroupUiText.translate(value, true).takeIf { it != value } ?: when(value) {
-        homeTitle -> "أكل طيب.\nأحلى مع بعض."
-        homeSubtitle -> "شارك أصحابك الوجبة القادمة."
+        homeTitle -> "الأكل أحلى\nمع بعض."
+        homeSubtitle -> "اطلبوا مع بعض. قسّموا الحساب بسهولة."
         groupEyebrow -> "مكان للجميع"
         groupTitle -> "غرفة واحدة لكل المجموعة."
         groupDescription -> "اختاروا الطعام ومسؤول الطلب واجمعوا طلباتكم معاً."
         quickDescription -> "اختاروا من يجلب الطعام دون إعداد مسبق."
         libraryDescription -> "احتفظ بقوائم مطاعمك المفضلة."
         savedRooms -> "مجموعاتك"
-        explore -> "خيارات فود رن"
+        explore -> "خيارات إنترفيو"
         back, backToRooms -> "رجوع"
         working -> "جارٍ تحديث مجموعتك…"
         roomCode -> "رمز الغرفة"
@@ -103,14 +103,14 @@ object GroupText {
         "Settle" -> "تسوية"
         else -> value
     }
-    val brand = "FOOD RUN / TOGETHER"
+    val brand = "INTRVIOO / TOGETHER"
     val back = "Back"
     val backToRooms = "Back to rooms"
-    val homeTitle = "Good food.\nBetter together."
-    val homeSubtitle = "Make the next meal a group effort."
+    val homeTitle = "Food is better\ntogether."
+    val homeSubtitle = "Order Together. Split Smarter."
     val groupEyebrow = "A TABLE FOR EVERYONE"
-    val groupTitle = "One room. The whole crew."
-    val groupDescription = "Choose food, pick a payer and keep every order together."
+    val groupTitle = "Different tastes. Same table."
+    val groupDescription = "Everyone chooses their food. Every share stays clear."
     val quickDescription = "Pick who's getting the food. No setup needed."
     val libraryDescription = "Keep your favorite menus close."
     val savedRooms = "Your tables"

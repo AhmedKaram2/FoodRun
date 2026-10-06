@@ -1,4 +1,6 @@
+import HomeBanner from './HomeBanner.jsx';
 import WalletAnnouncement from './WalletAnnouncement.jsx';
+import { BrandLogo, BrandMark, TogetherArt } from './Brand.jsx';
 import RunningNames from './RunningNames.jsx';
 import { mealRoomName, roomDefaults, rememberRoomDefaults } from './smartDefaults.js';
 import { useNotifications } from './useNotifications.js';
@@ -61,7 +63,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.1/FoodRun-Android-1.6.1.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.2/FoodRun-Android-1.6.2.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -173,7 +175,7 @@ function restaurantExport(restaurant) {
 }
 function parseRestaurantExport(text) {
   const value = JSON.parse(text);
-  if (value.schema !== 'foodrun.restaurant' || value.schemaVersion !== 1 || !value.restaurant) throw Error('Use a Food Run restaurant schema version 1 file.');
+  if (value.schema !== 'foodrun.restaurant' || value.schemaVersion !== 1 || !value.restaurant) throw Error('Use a Intrvioo restaurant schema version 1 file.');
   return normalizeRestaurant(value.restaurant);
 }
 async function copyText(text) {
@@ -189,7 +191,7 @@ function roomInviteLink(room, hub) {
 }
 function receiptText(room, receipt) {
   const account = room.account ? `Pay to: ${room.account.holder} · ${room.account.bank}\n${room.account.identifier}` : 'Receiving account not shared yet';
-  return [`Food Run · ${room.name} · order #${room.orderNumber}`, room.restaurant.name, receipt.name,
+  return [`Intrvioo · ${room.name} · order #${room.orderNumber}`, room.restaurant.name, receipt.name,
     ...receipt.lines.map(line => `${line.quantity} × ${line.description} · ${money(line.amount, receipt.currency)}${line.notes ? ` — ${line.notes}` : ''}`),
     `Total: ${receipt.totalText}`, `Paid: ${money(receipt.paid, receipt.currency)}`, `To pay: ${receipt.balanceText}`, account].join('\n');
 }
@@ -281,7 +283,7 @@ function WheelAnimation({ spin, members, serverTime, active }) {
       <circle className="wheel-hub-shadow" cx="200" cy="205" r="43" />
       <circle className="wheel-hub" cx="200" cy="200" r="40" />
       <text className="wheel-hub-icon" x="200" y="196" textAnchor="middle">🥡</text>
-      <text className="wheel-hub-label" x="200" y="219" textAnchor="middle">FOOD RUN</text>
+      <text className="wheel-hub-label" x="200" y="219" textAnchor="middle">INTRVIOO</text>
       <g className="wheel-pointer"><path d="M184 7 Q184 2 190 2 L200 36 Q202 42 205 36 L216 7 Q217 2 211 2 Z" /></g>
     </svg>
   </div>;
@@ -302,13 +304,13 @@ function AppDownloads({ compact = false }) {
   const [iosHelp, setIosHelp] = useState(false);
   return <section id="app-downloads" className={`app-downloads ${compact ? 'compact' : ''}`}>
     <div className="download-heading">
-      <div><p className="eyebrow">{t("FOOD RUN ON YOUR PHONE")}</p><h2>{t("Take the table with you.")}</h2></div>
+      <div><p className="eyebrow">{t("INTRVIOO ON YOUR PHONE")}</p><h2>{t("Take the table with you.")}</h2></div>
       <p>{t("Use the same account and join Internet Rooms from Android, iPhone, or the web.")}</p>
     </div>
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.1 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.2 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -349,15 +351,17 @@ function AuthScreen({ ready, allowRegistration = true }) {
     {feedback && <FeedbackBanner key={feedback.id} feedback={feedback} onDismiss={dismissFeedback} />}
     <section className="auth-story">
       <LanguageToggle />
-      <div className="brand-mark">FR</div>
-      <p className="eyebrow">{t("FOOD RUN / TOGETHER")}</p>
-      <h1>{t("Good food.")}<br />{t("Better together.")}</h1>
-      <p>{t("Pick who will order, collect everyone’s food live, and settle every share without the group-chat chaos.")}</p>
+      <BrandLogo />
+      <p className="eyebrow">{tx("Order Together. Split Smarter.", "اطلبوا مع بعض. اقسموا الحساب بسهولة.")}</p>
+      <h1>{tx("Food is better", "الأكل أحلى")}<br /><span className="brand-headline-accent">{tx("together.", "مع بعض.")}</span></h1>
+      <p>{tx("Create a group order, let everyone choose what they want, and split the total without the awkward math.", "ابدأ طلب جماعي، وخلي كل واحد يختار أكله، واقسموا الحساب بسهولة.")}</p>
+      <TogetherArt />
       <div className="story-steps"><span>{t("01 Join")}</span><span>{t("02 Select")}</span><span>{t("03 Order")}</span><span>{t("04 Settle")}</span></div>
       <AppDownloads compact />
       <GuideLink />
     </section>
     <section className="auth-card card">
+      <BrandLogo className="auth-mobile-brand" />
       <p className="eyebrow">{t("YOUR TABLE AWAITS")}</p>
       <h2>{register ? t("Create your profile") : t("Welcome back")}</h2>
       <p className="muted">{t("Use the same account you already use in Intrvioo.")}</p>
@@ -370,7 +374,7 @@ function AuthScreen({ ready, allowRegistration = true }) {
         <button className="primary" disabled={!ready || busy}>{busy ? t("One moment…") : register ? t("Create account") : t("Sign in")}</button>
       </form>
       {!register && <button className="link" onClick={reset}>{t("Forgot password?")}</button>}
-      {(allowRegistration || register) && <button className="link switch" onClick={() => { setRegister(!register); setMessage(''); }}>{register ? t("Already registered? Sign in") : t("New to Food Run? Create account")}</button>}
+      {(allowRegistration || register) && <button className="link switch" onClick={() => { setRegister(!register); setMessage(''); }}>{register ? t("Already registered? Sign in") : tx("New to Intrvioo? Create account", "أول مرة في إنترفيوو؟ اعمل حساب")}</button>}
       {!allowRegistration && <p className="form-message">{t("New registration is temporarily disabled by the administrator.")}</p>}
     </section>
   </main>;
@@ -386,7 +390,7 @@ function HubScreen({ current, connect, error }) {
     catch (e) { setMessage(e.message); }
   };
   return <main className="center-shell"><section className="card setup-card">
-    <div className="brand-mark">FR</div><p className="eyebrow">{t("CONNECT YOUR TABLE")}</p>
+    <BrandMark /><p className="eyebrow">{t("CONNECT YOUR TABLE")}</p>
     <h1>{t("Where should this room live?")}</h1>
     <p className="muted">{t("Use a nearby hub to keep live traffic on your local network, or use the internet API so everyone can join from anywhere.")}</p>
     <div className="mode-cards">
@@ -402,7 +406,7 @@ function HubScreen({ current, connect, error }) {
       {(message || error) && <p className="form-message" role="alert">{message || error}</p>}
       <button className="primary">{t("Connect to nearby hub")}</button>
     </form>
-    <p className="fine">{t("Food Run remembers the API used to create each room. Android, iOS, and web use the same command API and event-driven WebSocket. Firebase holds the shared account and asynchronous backup.")}</p>
+    <p className="fine">{t("Intrvioo remembers the API used to create each room. Android, iOS, and web use the same command API and event-driven WebSocket. Firebase holds the shared account and asynchronous backup.")}</p>
   </section></main>;
 }
 
@@ -542,8 +546,8 @@ function ProfileScreen({ data, onBack, openRoom }) {
 
 function Page({ title, subtitle, onBack, actions, children }) {
   return <main className="app-shell">
-    <header className="topbar"><button className="wordmark" onClick={onBack}><span>FR</span> FOOD RUN</button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
-    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("FOOD RUN / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
+    <header className="topbar"><button className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={onBack}><BrandLogo /></button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
+    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("INTRVIOO / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     {children}
   </main>;
 }
@@ -555,7 +559,13 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
     {home.wallet && <WalletAnnouncement key={data.user?.uid || home.profile.userId} userId={data.user?.uid || home.profile.userId} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
-    <section className="hero card"><div><p className="eyebrow">{t("A TABLE FOR EVERYONE")}</p><h2>{t("One room. The whole crew.")}</h2><p>{t("Everyone joins live, the wheel picks who orders, and every item and amount stays together.")}</p><div className="hero-actions"><button className="primary light" disabled={!allowRoomCreation} onClick={() => setPage('create')}>{t("Create a room")}</button><button className="secondary light" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}>{t("Payment room")}</button><button className="secondary light" onClick={() => setPage('join')}>{t("Join with code")}</button><button className="secondary light" onClick={openRestaurants}>{t("Add restaurant & menu")}</button>{canAccessAdmin(data.user) && <button className="secondary light" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}</div>{!allowRoomCreation && <p className="form-message">{t("New room creation is temporarily disabled by the administrator.")}</p>}</div><div className="hero-art"><span>🥡</span><span>🍜</span><span>🥗</span></div></section>
+    <HomeBanner rtl={uiLanguage === 'ar'} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
+    <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
+      <button className="home-shortcut" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}><span aria-hidden="true">↔</span><span><b>{t("Payment room")}</b><small>{tx('Keep every share clear', 'حساب كل واحد واضح')}</small></span><span aria-hidden="true">↗</span></button>
+      <button className="home-shortcut" onClick={openRestaurants}><span aria-hidden="true">☷</span><span><b>{t("Add restaurant & menu")}</b><small>{tx('Your favorites, ready for next time', 'مطاعمك المفضلة جاهزة للطلب الجاي')}</small></span><span aria-hidden="true">↗</span></button>
+      {canAccessAdmin(data.user) && <button className="secondary" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}
+    </nav>
+    {!allowRoomCreation && <p className="form-message" role="status">{t("New room creation is temporarily disabled by the administrator.")}</p>}
     {continuing && <section className="card continue-order"><div><p className="eyebrow">{tx('PICK UP WHERE YOU LEFT OFF', 'أكمل من حيث توقفت')}</p><h3>{continuing.session.roomName}</h3><p>{t(phaseLabel[continuing.reply.room.phase])}</p></div><button className="primary" onClick={() => openRoom(continuing.session.roomId)}>{tx('Continue order', 'متابعة الطلب')}</button></section>}
     {home.invitations.length > 0 && <section><div className="section-title"><div><p className="eyebrow">{t("YOU’RE INVITED")}</p><h2>{t("Join the table")}</h2></div><span>{home.invitations.length}</span></div><div className="grid two">{home.invitations.map(invite => <article className="card invitation" key={invite.id}><span className="status live">{t("Invitation")}</span><h3>{invite.roomName}</h3><p>{invite.invitedBy}{t("invited you to order #")}{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>{t("Join room")}</button></article>)}</div></section>}
     <section><div className="section-title"><div><p className="eyebrow">{t("YOUR TABLES")}</p><h2>{t("Live rooms")}</h2></div><span>{roomCards.length}</span></div>
@@ -566,7 +576,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
       })}</div> : <div className="card empty"><span>🥢</span><h3>{t("No saved rooms yet")}</h3><p>{t("Create a room and invite your people, or join with a six-digit code.")}</p></div>}
     </section>
     <UserDashboard data={data} openRoom={openRoom} compact openProfile={() => setPage('profile')} />
-    <details className="app-download-options"><summary>{tx('Get the Food Run app', 'تحميل تطبيق فود رن')}</summary><AppDownloads /></details>
+    <details className="app-download-options"><summary>{tx('Get the Intrvioo app', 'تحميل تطبيق إنترفيوو')}</summary><AppDownloads /></details>
   </Page>;
 }
 
@@ -860,7 +870,7 @@ function FeeEditor({ room, data }) {
       else setMessage(t('Fees and tax were not saved. Please try again.'));
     } catch (error) { setMessage(error.message); }
   };
-  return <article id="room-fees" className="card fees-editor"><p className="eyebrow">{t("FEES, TAX & DISCOUNT")}</p><h2>{t("Cover the complete restaurant bill")}</h2><p className="muted">{t("Food Run allocates every minor unit so all member receipts equal the final food, delivery, service, tax, and discount total.")}</p><form className="stack" onSubmit={save}>{room.deliveryMode && <><DeliveryRule /><label className="check"><input type="checkbox" checked={fees.automaticDelivery} onChange={e => setFees({ ...fees, automaticDelivery: e.target.checked })} />{tx('Use the automatic delivery rule', 'استخدم قاعدة التوصيل التلقائية')}</label></>}<div className="form-grid three">{(!room.deliveryMode || !fees.automaticDelivery) && <label>{t("Delivery fee")}<input inputMode="decimal" value={fees.delivery} onChange={e => setFees({ ...fees, delivery: e.target.value })} /></label>}<label>{t("Service fee")}<input inputMode="decimal" value={fees.service} onChange={e => setFees({ ...fees, service: e.target.value })} /></label><label>{t("Shared discount (whole order)")}<input inputMode="decimal" value={fees.discount} onChange={e => setFees({ ...fees, discount: e.target.value })} /></label></div><div className="form-grid two"><label>{t('Tax treatment')}<select value={fees.taxTreatment} onChange={event => setFees({ ...fees, taxTreatment: event.target.value })}><option value="unspecified" disabled>{t('Choose tax treatment')}</option><option value="included">{t('Included in prices')}</option><option value="added">{t('Added to bill')}</option></select></label>{fees.taxTreatment === 'added' && <label>{t('Tax rate %')}<input inputMode="decimal" value={fees.taxRate} onChange={event => setFees({ ...fees, taxRate: event.target.value })} required /></label>}</div><p className="field-help">{t('Service fees are separate from tax. Choose included if the menu prices already include tax; no extra tax will be added.')}</p>{(!room.deliveryMode || !fees.automaticDelivery) && <label className="check"><input type="checkbox" checked={fees.proportionalDelivery} onChange={e => setFees({ ...fees, proportionalDelivery: e.target.checked })} />{t("Split delivery by food total")}<span>{t("Turn off for an equal split between everyone with food.")}</span></label>}{message && <p className="form-message" role="alert">{data.error || message}</p>}<button className="secondary">{t("Save fees, tax and discount")}</button></form></article>;
+  return <article id="room-fees" className="card fees-editor"><p className="eyebrow">{t("FEES, TAX & DISCOUNT")}</p><h2>{t("Cover the complete restaurant bill")}</h2><p className="muted">{t("Intrvioo allocates every minor unit so all member receipts equal the final food, delivery, service, tax, and discount total.")}</p><form className="stack" onSubmit={save}>{room.deliveryMode && <><DeliveryRule /><label className="check"><input type="checkbox" checked={fees.automaticDelivery} onChange={e => setFees({ ...fees, automaticDelivery: e.target.checked })} />{tx('Use the automatic delivery rule', 'استخدم قاعدة التوصيل التلقائية')}</label></>}<div className="form-grid three">{(!room.deliveryMode || !fees.automaticDelivery) && <label>{t("Delivery fee")}<input inputMode="decimal" value={fees.delivery} onChange={e => setFees({ ...fees, delivery: e.target.value })} /></label>}<label>{t("Service fee")}<input inputMode="decimal" value={fees.service} onChange={e => setFees({ ...fees, service: e.target.value })} /></label><label>{t("Shared discount (whole order)")}<input inputMode="decimal" value={fees.discount} onChange={e => setFees({ ...fees, discount: e.target.value })} /></label></div><div className="form-grid two"><label>{t('Tax treatment')}<select value={fees.taxTreatment} onChange={event => setFees({ ...fees, taxTreatment: event.target.value })}><option value="unspecified" disabled>{t('Choose tax treatment')}</option><option value="included">{t('Included in prices')}</option><option value="added">{t('Added to bill')}</option></select></label>{fees.taxTreatment === 'added' && <label>{t('Tax rate %')}<input inputMode="decimal" value={fees.taxRate} onChange={event => setFees({ ...fees, taxRate: event.target.value })} required /></label>}</div><p className="field-help">{t('Service fees are separate from tax. Choose included if the menu prices already include tax; no extra tax will be added.')}</p>{(!room.deliveryMode || !fees.automaticDelivery) && <label className="check"><input type="checkbox" checked={fees.proportionalDelivery} onChange={e => setFees({ ...fees, proportionalDelivery: e.target.checked })} />{t("Split delivery by food total")}<span>{t("Turn off for an equal split between everyone with food.")}</span></label>}{message && <p className="form-message" role="alert">{data.error || message}</p>}<button className="secondary">{t("Save fees, tax and discount")}</button></form></article>;
 }
 
 function RestaurantOrderCard({ room, receipts, data, finish = false, expectedArrival = room.restaurantReference, setExpectedArrival, canPlace = false, blocker = '', settlementActions = false }) {
@@ -974,7 +984,7 @@ function SettlementPanel({ room, reply, me, owner, payer, data }) {
       {room.billRevision > 1 && <p className="field-help">{t('Updated totals apply automatically. No new approval is needed.')}</p>}
       {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} /></section>)}
       {payer ? <details className="receiving-account-options" open={!roomPaymentAccounts(room).length || undefined}><summary>{tx('Receiving payment methods', 'طرق استلام المدفوعات')}</summary><PaymentMethodsEditor room={room} data={data} /></details> : <PaymentDetails account={room.account} accounts={room.accounts} data={data} />}
-      <p className="fine">{t('Recording a payment tracks it in Food Run; it does not move money.')}</p>
+      <p className="fine">{t('Recording a payment tracks it in Intrvioo; it does not move money.')}</p>
     </article>
     {payer && !room.paymentRoom && room.phase !== 'ARCHIVED' && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} settlementActions />}
     {!room.paymentRoom && <article className="card placed-banner"><p className="eyebrow">{t('RESTAURANT STATUS')}</p><h2>{room.restaurantPaid ? t('Restaurant payment recorded') : t('Order announced as placed')}</h2><p>{room.restaurantReference}</p></article>}
@@ -1004,7 +1014,7 @@ function RoomInviteCard({ room, hub }) {
     <div className="invite-details"><div className="hero-actions">
       <button className="primary" onClick={() => copy(invitation, 'link')}>{copied === 'link' ? tx('✓ Link copied', '✓ تم نسخ الرابط') : t('Copy invitation')}</button>
       <button className="secondary" onClick={() => copy(room.code, 'code')}>{copied === 'code' ? tx('✓ Code copied', '✓ تم نسخ الكود') : tx('Copy code', 'نسخ الكود')}</button>
-      {navigator.share && <button className="secondary" onClick={() => navigator.share({ title: tf('Join {name} on Food Run', { name: room.name }), text: invitation })}>{t('Share')}</button>}
+      {navigator.share && <button className="secondary" onClick={() => navigator.share({ title: tf('Join {name} on Intrvioo', { name: room.name }), text: invitation })}>{t('Share')}</button>}
     </div></div>
     <details className="invite-qr-details"><summary>{tx('Show QR code', 'عرض رمز QR')}</summary><div className="invite-qr"><QRCodeSVG value={link} size={164} level="M" marginSize={2} title={tf('Join {name}', { name: room.name })} /></div><p className="field-help">{tx('Scan to join this room.', 'امسح الرمز للانضمام إلى الغرفة.')}</p></details>
   </section>;
@@ -1248,7 +1258,7 @@ function FoodRunClient() {
   if (block) return <BlockedNotice block={block} retry={() => data.connect(data.hub)} onBack={() => { data.clearJoinBlock(); closeRoom(); }} />;
   if (data.user && page === 'offline') return <>{alerts}<OfflineReceipts receipts={data.offlineReceipts} language={uiLanguage} onBack={() => setPage('home')} onClear={data.clearOfflineReceipts} /></>;
   const offlineAction = data.user && <button className="secondary" onClick={() => setPage('offline')}>{tx('Downloaded receipts', 'الإيصالات المحفوظة')}</button>;
-  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><div className="brand-mark">FR</div>{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{offlineAction}</div>{alerts}</>;
+  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><BrandMark />{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{offlineAction}</div>{alerts}</>;
   if (!data.user) return <AuthScreen ready={data.authReady} allowRegistration={siteConfig.registrationsEnabled} />;
   if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
   if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
@@ -1256,14 +1266,14 @@ function FoodRunClient() {
   const profileMissing = !home.profile.name || !home.profile.phone;
   let content;
   if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
-  else if (page === 'downloads') content = <Page title={t("Get Food Run")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
+  else if (page === 'downloads') content = <Page title={t("Get Intrvioo")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
   else if (page === 'profile' || profileMissing) content = <ProfileScreen data={data} openRoom={openRoom} onBack={() => setPage('home')} />;
   else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} data={data} room={restaurantRoomId ? data.rooms[restaurantRoomId]?.room : null} onBack={() => { setPage(restaurantRoomId ? 'room' : 'home'); setRestaurantRoomId(''); }} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Food Run</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
+  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Intrvioo</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
 }
 
 export default function FoodRunApp() {

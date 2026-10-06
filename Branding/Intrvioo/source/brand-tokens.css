@@ -1,0 +1,25 @@
+:root {
+  --intrvioo-coral: #FF684A;
+  --intrvioo-green: #22C55E;
+  --intrvioo-yellow: #FBBF24;
+  --intrvioo-charcoal: #1F2937;
+  --intrvioo-cream: #FFF7ED;
+  --intrvioo-light-green: #E8F5E9;
+
+  --intrvioo-font: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --intrvioo-radius-sm: 10px;
+  --intrvioo-radius-md: 16px;
+  --intrvioo-radius-lg: 24px;
+  --intrvioo-shadow: 0 10px 30px rgba(31, 41, 55, 0.08);
+}
+
+.brand-primary { color: var(--intrvioo-coral); }
+.brand-bg { background: var(--intrvioo-cream); }
+.brand-button {
+  background: var(--intrvioo-coral);
+  color: white;
+  border-radius: var(--intrvioo-radius-md);
+  font-family: var(--intrvioo-font);
+  font-weight: 600;
+}

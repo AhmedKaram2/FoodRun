@@ -134,7 +134,7 @@ class EmailServiceTest {
             GmailApiResponse(200)
         }
         val mime = sender.mime(delivery)
-        assertContains(mime, "From: Food Run <foodruncollection@gmail.com>")
+        assertContains(mime, "From: Intrvioo <foodruncollection@gmail.com>")
         assertContains(mime, "To: recipient@example.test\r\n")
         assertContains(mime, "Subject: =?UTF-8?B?")
         val body = String(Base64.getMimeDecoder().decode(mime.substringAfter("\r\n\r\n")), Charsets.UTF_8)

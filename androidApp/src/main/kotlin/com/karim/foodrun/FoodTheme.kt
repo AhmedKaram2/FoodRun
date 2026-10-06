@@ -17,21 +17,25 @@ import com.karim.foodrun.shared.Person
 
 /** Food Run's native rendering tokens. No application rules belong in this layer. */
 object FoodColors {
-    val Cream = Color(0xFFF7FAF8)
-    val Ink = Color(0xFF172B26)
-    val Muted = Color(0xFF61756C)
-    val Orange = Color(0xFF167B58)
-    val OrangeLight = Color(0xFF167B58)
-    val Hero = Color(0xFF167B58)
-    val OnHero = Color(0xFFE2F3EA)
-    val SuccessWash = Color(0xFFEDF8F2)
-    val AccentWash = Color(0xFFEDF8F2)
-    val Line = Color(0xFFE1ECE7)
+    val Cream = Color(0xFFFFF7ED)
+    val Ink = Color(0xFF1F2937)
+    val Muted = Color(0xFF626874)
+    val BrandCoral = Color(0xFFFF684A)
+    val Orange = Color(0xFFCF442B)
+    val AccentText = Color(0xFFB83D27)
+    val FreshGreen = Color(0xFF22C55E)
+    val Yellow = Color(0xFFFBBF24)
+    val OrangeLight = Orange
+    val Hero = Color(0xFFFFEBDD)
+    val OnHero = Ink
+    val SuccessWash = Color(0xFFE8F5E9)
+    val AccentWash = Color(0xFFFFEBDD)
+    val Line = Color(0xFFE9DDD1)
     val White = Color.White
     val Clear = Color.Transparent
     val WheelRim = Color(0xFFFFFFFF)
     val Sage = Color(0xFF9BAF72)
-    val Success = Color(0xFF167B58)
+    val Success = Color(0xFF167347)
     val Error = Color(0xFFB53617)
     val Card = White
     val SubtleCard = White
@@ -73,7 +77,7 @@ object FoodSpacing {
 
 object FoodRadius {
     val Avatar = 13.dp
-    val Input = 12.dp
+    val Input = 16.dp
     val Add = 18.dp
     val Toggle = 20.dp
     val Card = 16.dp
@@ -110,7 +114,12 @@ object FoodMotion {
 }
 
 object FoodType {
-    private val English = FontFamily(Font(R.font.dm_sans))
+    private val English = FontFamily(
+        Font(R.font.poppins_regular, FontWeight.Normal),
+        Font(R.font.poppins_medium, FontWeight.Medium),
+        Font(R.font.poppins_semibold, FontWeight.SemiBold),
+        Font(R.font.poppins_bold, FontWeight.Bold),
+    )
     private val Arabic = FontFamily(Font(R.font.noto_sans_arabic))
     val Rounded: FontFamily
         @Composable get() = if (LocalLayoutDirection.current == LayoutDirection.Rtl) Arabic else English

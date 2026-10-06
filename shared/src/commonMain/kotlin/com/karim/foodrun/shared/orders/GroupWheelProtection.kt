@@ -64,7 +64,7 @@ internal class GroupWheelProtection(private val c: GroupController) {
                 "${Money.format(request.amount, "AED")} · $status${if(request.reference.isEmpty()) "" else "\n${request.reference}"}", actions)
         }
         cards += GroupCard("wheel-payment-note", tr("Pay only after approval", "ادفع بعد الموافقة بس"),
-            tr("Pay the room owner outside Food Run. The fee is separate from your food bill. At least one eligible member must keep their normal chance.", "ادفع لصاحب الغرفة خارج التطبيق. الرسوم منفصلة عن حساب الأكل. لازم يفضل عضو مؤهل واحد على الأقل بفرصته العادية."))
+            tr("Pay the room owner outside Intrvioo. The fee is separate from your food bill. At least one eligible member must keep their normal chance.", "ادفع لصاحب الغرفة خارج التطبيق. الرسوم منفصلة عن حساب الأكل. لازم يفضل عضو مؤهل واحد على الأقل بفرصته العادية."))
         return GroupFlowContent(cards = cards, fields = fields, buttons = buttons)
     }
 }

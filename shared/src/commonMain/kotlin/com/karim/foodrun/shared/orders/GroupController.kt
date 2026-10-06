@@ -361,7 +361,7 @@ class GroupController(val platform: GroupPlatform) {
     private fun connect() {
         val link = text(GroupFieldKey.PAIRING_LINK).trim()
         if (link.isNotEmpty()) {
-            require(link.startsWith("foodrun://pair?")) { "Use the pairing link shown by your Food Run server." }
+            require(link.startsWith("foodrun://pair?")) { "Use the pairing link shown by your Intrvioo server." }
             val params = link.substringAfter('?').split('&').associate { it.substringBefore('=') to it.substringAfter('=') }
             val host = params["host"] ?: error("Missing host."); val port = params["port"]?.toIntOrNull() ?: 8443
             require(host.matches(Regex("[a-zA-Z0-9.-]+")) && port in 1..65535)
@@ -369,7 +369,7 @@ class GroupController(val platform: GroupPlatform) {
         }
         val url = text(GroupFieldKey.HUB_URL).trim().trimEnd('/')
         val fingerprint = text(GroupFieldKey.FINGERPRINT).trim().replace(":", "").lowercase()
-        require(url.matches(Regex("https://[a-zA-Z0-9.-]+(:[0-9]{1,5})?"))) { "Enter an HTTPS Food Run API address, for example https://foodrun.example.com or https://192.168.1.20:8443." }
+        require(url.matches(Regex("https://[a-zA-Z0-9.-]+(:[0-9]{1,5})?"))) { "Enter an HTTPS Intrvioo API address, for example https://foodrun.example.com or https://192.168.1.20:8443." }
         val explicitPort = url.substringAfter("https://").substringAfter(':', "").toIntOrNull()
         require(explicitPort == null || explicitPort in 1..65535) { "API port must be between 1 and 65535." }
         require(fingerprint.isEmpty() || fingerprint.matches(Regex("[a-f0-9]{64}"))) { "Use the full SHA-256 fingerprint for a private hub, or leave it empty for a public HTTPS API." }
@@ -546,7 +546,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     private fun accept(next: RoomReply, sentAt: Long) {
-        require(next.protocolVersion == 1) { "Update Food Run to connect to this hub." }
+        require(next.protocolVersion == 1) { "Update Intrvioo to connect to this hub." }
         val s = requireNotNull(session); val room = requireNotNull(next.room)
         require(room.id == s.roomId && next.memberId == s.memberId) { "Hub returned a different room." }
         if (reply?.room?.id == room.id && room.revision < (reply?.room?.revision ?: 0)) return
@@ -688,7 +688,7 @@ class GroupController(val platform: GroupPlatform) {
         if (updated != library) replaceLibrary(updated)
         if (session != null && wasOngoing != ongoingSession(requireNotNull(session))) startWatching()
         notifications.refresh(); notifications.register(false); administration.checkAccess()
-        home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Food Run and tap Join on your home screen.") }
+        home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Intrvioo and tap Join on your home screen.") }
     }
     private fun stopHomeWatching() {
         homeGeneration++; homeWatching?.cancel(); homeWatching = null

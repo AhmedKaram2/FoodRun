@@ -35,16 +35,8 @@ struct FoodRunContent: View {
 
     private var navigationBar: some View {
         HStack(spacing: FoodSpacing.s10) {
-            Image(systemName: "takeoutbag.and.cup.and.straw.fill")
-                .font(FoodTypography.brandIcon)
-                .foregroundStyle(FoodTheme.white)
-                .frame(width: FoodSpacing.s38, height: FoodSpacing.s38)
-                .background(FoodTheme.orange, in: RoundedRectangle(cornerRadius: FoodRadius.avatar))
-                .rotationEffect(.degrees(-7))
-            Text(FoodStrings.text.brand)
-                .font(FoodTypography.brand)
-                .tracking(2)
-                .foregroundStyle(FoodTheme.ink)
+            Image("IntrviooLogo").resizable().scaledToFit()
+                .frame(width: 150, height: 40).accessibilityLabel(FoodStrings.text.appName)
             Spacer()
             Button(action: store.openHistory) {
                 Image(systemName: "clock.arrow.circlepath")

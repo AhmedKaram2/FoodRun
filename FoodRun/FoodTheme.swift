@@ -3,21 +3,25 @@ import UIKit
 import IosComponents
 
 enum FoodTheme {
-    static let cream = Color(hex: 0xF7FAF8)
-    static let ink = Color(hex: 0x172B26)
-    static let muted = Color(hex: 0x61756C)
-    static let orange = Color(hex: 0x167B58)
-    static let line = Color(hex: 0xE1ECE7)
-    static let accentWash = Color(hex: 0xEDF8F2)
-    static let hero = Color(hex: 0x167B58)
-    static let onHero = Color(hex: 0xE2F3EA)
-    static let successWash = Color(hex: 0xEDF8F2)
+    static let cream = Color(hex: 0xFFF7ED)
+    static let ink = Color(hex: 0x1F2937)
+    static let muted = Color(hex: 0x626874)
+    static let brandCoral = Color(hex: 0xFF684A)
+    static let orange = Color(hex: 0xCF442B)
+    static let accentText = Color(hex: 0xB83D27)
+    static let freshGreen = Color(hex: 0x22C55E)
+    static let yellow = Color(hex: 0xFBBF24)
+    static let line = Color(hex: 0xE9DDD1)
+    static let accentWash = Color(hex: 0xFFEBDD)
+    static let hero = Color(hex: 0xFFEBDD)
+    static let onHero = ink
+    static let successWash = Color(hex: 0xE8F5E9)
     static let error = Color(hex: 0xAF3025)
     static let white = Color.white
     static let black = Color.black
     static let wheelRim = Color(hex: 0xFFFFFF)
     static let sage = Color(hex: 0x9BAF72)
-    static let available = Color(hex: 0x167B58)
+    static let available = Color(hex: 0x167347)
     static let palette: [Color] = [
         Color(hex: 0xF49A79), Color(hex: 0xF5CB69), Color(hex: 0xBAD4AD),
         Color(hex: 0xB8CBEB), Color(hex: 0xCEBAE4), Color(hex: 0xF2B4BD),
@@ -47,10 +51,10 @@ enum FoodTheme {
 
 enum FoodRadius {
     static let avatar: CGFloat = 13
-    static let input: CGFloat = 12
-    static let secondaryButton: CGFloat = 12
+    static let input: CGFloat = 16
+    static let secondaryButton: CGFloat = 16
     static let setting: CGFloat = 20
-    static let button: CGFloat = 12
+    static let button: CGFloat = 16
     static let group: CGFloat = 16
     static let winner: CGFloat = 34
 }
@@ -73,9 +77,10 @@ enum FoodTypography {
     // The Arabic font is a glyph fallback, so Arabic and mixed-language strings
     // use the same bundled typefaces without depending on the device language.
     private static func text(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        let descriptor = UIFontDescriptor(name: "DMSans-9ptRegular", size: size)
+        let face = weight == .bold ? "Bold" : weight == .semibold ? "SemiBold" : weight == .medium ? "Medium" : "Regular"
+        let descriptor = UIFontDescriptor(name: "Poppins-\(face)", size: size)
             .addingAttributes([.cascadeList: [UIFontDescriptor(name: "NotoSansArabic-Regular", size: size)]])
-        return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(descriptor: descriptor, size: size))).weight(weight)
+        return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(descriptor: descriptor, size: size)))
     }
     static let brand = text(15, .bold)
     static let hero = text(30, .bold)

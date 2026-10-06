@@ -8,7 +8,9 @@ struct GroupHomeContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FoodSpacing.s24) {
             HStack(spacing: FoodSpacing.s10) {
-                Text(FoodStrings.text.brand).font(FoodTypography.brand).tracking(FoodSpacing.s2)
+                HStack(spacing: FoodSpacing.s8) {
+                    Image("IntrviooLogo").resizable().scaledToFit().frame(width: 160, height: 44).accessibilityLabel("Intrvioo")
+                }.environment(\.layoutDirection, .leftToRight)
                 Spacer()
                 GroupLanguagePicker(state: state, dispatch: dispatch)
             }
@@ -32,7 +34,7 @@ struct GroupHomeContent: View {
                     Spacer(minLength: FoodSpacing.s8)
                     Image(systemName: "person.3.fill").font(FoodTypography.brandIcon).accessibilityHidden(true)
                 }.foregroundStyle(FoodTheme.onHero)
-                Text(GroupText.shared.localized(value: GroupText.shared.groupTitle, rtl: state.rtl)).font(FoodTypography.formTitle).foregroundStyle(FoodTheme.white)
+                Text(GroupText.shared.localized(value: GroupText.shared.groupTitle, rtl: state.rtl)).font(FoodTypography.formTitle).foregroundStyle(FoodTheme.ink)
                 Text(GroupText.shared.localized(value: GroupText.shared.groupDescription, rtl: state.rtl)).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.onHero)
                 ForEach(state.buttons.filter { $0.action == .create || $0.action == .join }, id: \.renderID) { button in
                     GroupActionContent(button: button, busy: state.busy, dispatch: dispatch, prominent: false)

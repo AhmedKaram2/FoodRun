@@ -30,4 +30,24 @@ class RestaurantReadyTextTest {
         assertEquals("", number("+97165569877"))
     }
 
+    @Test fun numberedItemNamesSeparateQuantityInBothLanguagesWithoutChangingGrouping() {
+        val room = Room("room", "123456", "owner", "Lunch",
+            Restaurant("restaurant", "Kitchen", openOrdering = true),
+            deliveryMode = true, destination = "Office 12")
+        for (description in listOf("٢ طعمية", "2 Falafel", "۲ طعمية", "Falafel 12-pack", "7UP", "١/٢ دجاج")) {
+            fun receipt(quantity: Int, notes: String = "") = Receipt(
+                memberId = "member", name = "Member",
+                lines = listOf(ReceiptLine(description, quantity, quantity * 300L, notes)),
+                food = 0, delivery = 0, service = 0, discount = 0, tax = 0, total = 0,
+                paid = 0, balance = 0, revision = 1, currency = "AED")
+            assertEquals("العنوان: Office 12\n\n$description — الكمية: ١\nإجمالي السندويشات: ١",
+                restaurantReadyText(room, listOf(receipt(1)), "ar"))
+            val receipts = listOf(receipt(1, "بدون سلطة"), receipt(2, "بدون سلطة"), receipt(1, "Extra lemon"))
+            assertEquals("العنوان: Office 12\n\n$description — الكمية: ٣ — بدون سلطة\n$description — الكمية: ١ — Extra lemon\nإجمالي السندويشات: ٤",
+                restaurantReadyText(room, receipts, "ar"))
+            assertEquals("Address: Office 12\n\n$description — Quantity: 3 — بدون سلطة\n$description — Quantity: 1 — Extra lemon\nTotal sandwiches: 4",
+                restaurantReadyText(room, receipts, "en"))
+        }
+    }
+
 }

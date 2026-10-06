@@ -5,7 +5,14 @@ function offlineShell() {
   return {
     name: 'foodrun-offline-shell',
     generateBundle(_, bundle) {
-      const files = new Set(['/', '/index.html', '/manifest.json', '/foodrun-icon-192.png', '/fonts/DMSans.ttf', '/fonts/NotoSansArabic.ttf']);
+      const files = new Set([
+        '/', '/index.html', '/manifest.json', '/foodrun-icon-192.png',
+        '/intrvioo-icon-192.png', '/intrvioo-icon-512.png', '/intrvioo-maskable-512.png',
+        '/apple-touch-icon.png', '/favicon-32.png',
+        '/branding/intrvioo-symbol.svg', '/branding/together-reference.png',
+        '/fonts/Poppins-Regular.ttf', '/fonts/Poppins-Medium.ttf',
+        '/fonts/Poppins-SemiBold.ttf', '/fonts/Poppins-Bold.ttf', '/fonts/NotoSansArabic.ttf',
+      ]);
       const add = chunk => {
         const path = '/' + chunk.fileName;
         if (files.has(path)) return;

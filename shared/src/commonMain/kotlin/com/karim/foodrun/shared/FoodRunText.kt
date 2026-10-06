@@ -2,8 +2,8 @@ package com.karim.foodrun.shared
 
 /** Shared English copy catalog. Native views render these values without duplicating wording. */
 object FoodRunText {
-    const val appName = "Food Run"
-    const val brand = "FOOD RUN"
+    const val appName = "Intrvioo"
+    const val brand = "INTRVIOO"
     const val headlineFirst = "Who’s getting"
     const val headlineSecond = "the food?"
     const val tagline = "One spin. One hero. Zero debates."
@@ -66,7 +66,7 @@ object FoodRunText {
     fun winnerTitle(name: String): String = "$name!"
 
     fun winnerShare(name: String): String =
-        "The Food Run wheel has spoken! 🍟 $name is picking up the food. The hungry crew is counting on you!"
+        "The Intrvioo wheel has spoken! 🍟 $name is picking up the food. The hungry crew is counting on you!"
 
     fun personAddedAnnouncement(name: String): String = "$name added to the crew and included on the wheel."
 

@@ -453,6 +453,43 @@ export async function runAdminAudit() {
   return { passed:['room-scoped admin block','self-block protection','owner request approval','cleanup preview and confirmation','red live countdown','return to account'], ...measureAudit() };
 }
 
+export async function runAdminDateRangeAudit() {
+  const { AdminCleanup } = await import('../src/foodrun/AdminApp.jsx');
+  document.getElementById('root').style.display = 'none';
+  root?.unmount(); host?.remove(); host = document.createElement('div'); host.id = 'audit-root'; host.className = 'admin-shell'; document.body.append(host); root = createRoot(host);
+  const requests = []; let changed = 0, legacy = false;
+  root.render(<div className="admin-content"><AdminCleanup initialFilter="date" roomsOnly onChanged={async () => { changed++; }} request={async (path, body) => {
+    requests.push({ path, body });
+    if (path.endsWith('delete')) return { removedCount: 1 };
+    return { scope: body.scope, olderThanDays: body.olderThanDays, ...(legacy ? {} : { fromDate: body.fromDate, toDate: body.toDate, timeZone: body.timeZone }), count: 1, previewToken: 'sample-date-preview', targets: [{ id: 'sample-room', name: 'Lunch with friends', restaurant: 'Sample Kitchen', orderNumber: 1, phase: 'CANCELLED', updatedAt: new Date('2026-10-02T12:00:00Z').getTime() }] };
+  }} /></div>);
+  await pause();
+  assert(button('Preview cleanup').disabled, 'Blank dates allow preview');
+  const dates = () => host.querySelectorAll('input[type=date]');
+  setValue(dates()[0], '2026-10-01'); setValue(dates()[1], '2026-10-02'); await pause();
+  button('Preview cleanup').click(); await pause();
+  assert(requests.at(-1).body.fromDate === '2026-10-01' && requests.at(-1).body.toDate === '2026-10-02' && requests.at(-1).body.olderThanDays === 0 && requests.at(-1).body.timeZone, 'Dates/timezone were lost or age also applied');
+  assert(button('Delete selected data').disabled, 'Preview allows deletion without confirmation');
+  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
+  setValue(dates()[1], '2026-10-03'); await pause();
+  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'Changing dates retained the old deletion preview');
+  button('Preview cleanup').click(); await pause();
+  assert([...host.querySelectorAll('input')].find(input => input.type === 'text').value === '', 'Confirmation was retained after changing dates');
+  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
+  button('Delete selected data').click(); await pause();
+  assert(requests.at(-1).body.toDate === '2026-10-03' && requests.at(-1).body.previewToken === 'sample-date-preview' && requests.at(-1).body.confirmation === 'DELETE', 'Delete did not use the reviewed range');
+  assert(changed === 1 && host.textContent.includes(t('records removed')), 'Deletion did not refresh the admin dashboard');
+  setValue(dates()[0], '2026-10-04'); await pause();
+  assert(button('Preview cleanup').disabled, 'Reversed range allows preview');
+  setValue(dates()[0], '2026-10-01'); await pause(); legacy = true;
+  button('Preview cleanup').click(); await pause();
+  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'An older server ignoring the dates enabled deletion');
+  assert(host.textContent.includes(t('The server could not verify this date range. Refresh and preview again.')), 'Unsupported range did not show an explanation');
+  legacy = false; button('Preview cleanup').click(); await pause();
+  assert(!measureAudit().overflow, 'Date range controls overflow');
+  return { passed: ['date fields', 'inclusive range payload and timezone', 'preview and confirmation', 'changed range invalidation', 'dashboard refresh', 'reversed date rejection', 'legacy server rejection'], ...measureAudit() };
+}
+
 export async function runPaymentProfileAudit() {
   commands.length = 0;
   const receipt = { memberId:'other', name:'Member', lines:[], total:1200, paid:200, balance:1000, currency:'AED' };
@@ -728,9 +765,9 @@ export async function runDesignAudit() {
   await mountAudit('room', 'FULFILLED', { ...options, room: { ...options.room, restaurantPaid: true }, receipts: [receipt, { ...receipt, memberId: 'friend', name: 'Friend', food: 1500, total: 1500, totalText: 'AED 15.00', paid: 0, balance: 1500, lines: [receipt.lines[0]] }], progress: { canArchive: false } });
   const record = host.querySelector('.record-payment');
   assert(record && (!record.matches('details') || record.open) && record.querySelector('input').getClientRects().length, 'Received payment is no longer visibly expanded');
-  assert(getComputedStyle(host.querySelector('.primary')).backgroundColor === 'rgb(22, 123, 88)', 'Primary theme is inconsistent');
+  assert(getComputedStyle(host.querySelector('.primary')).backgroundColor === 'rgb(207, 68, 43)', 'Intrvioo accessible coral primary is inconsistent');
   assert(!measureAudit().overflow, 'New theme overflows');
-  return { passed: ['compact complete summary', 'full totals retained', 'summary expand and collapse', 'complete restaurant list', 'sticky shortcuts', 'PLACE command retained', 'received payment expanded', 'green theme', 'no overflow'], ...measureAudit() };
+  return { passed: ['compact complete summary', 'full totals retained', 'summary expand and collapse', 'complete restaurant list', 'sticky shortcuts', 'PLACE command retained', 'received payment expanded', 'Intrvioo coral theme', 'no overflow'], ...measureAudit() };
 }
 
 export async function runScreenRedesignAudit() {
@@ -764,44 +801,6 @@ export async function runScreenRedesignAudit() {
   assert(!topUp.querySelector('.wallet-people'), 'Shortfall top-up shows all users'); assertScreen('exact top-up shortfall');
   return {passed,...measureAudit()};
 }
-
-export async function runAdminDateRangeAudit() {
-  const { AdminCleanup } = await import('../src/foodrun/AdminApp.jsx');
-  document.getElementById('root').style.display = 'none';
-  root?.unmount(); host?.remove(); host = document.createElement('div'); host.id = 'audit-root'; host.className = 'admin-shell'; document.body.append(host); root = createRoot(host);
-  const requests = []; let changed = 0, legacy = false;
-  root.render(<div className="admin-content"><AdminCleanup initialFilter="date" roomsOnly onChanged={async () => { changed++; }} request={async (path, body) => {
-    requests.push({ path, body });
-    if (path.endsWith('delete')) return { removedCount: 1 };
-    return { scope: body.scope, olderThanDays: body.olderThanDays, ...(legacy ? {} : { fromDate: body.fromDate, toDate: body.toDate, timeZone: body.timeZone }), count: 1, previewToken: 'sample-date-preview', targets: [{ id: 'sample-room', name: 'Lunch with friends', restaurant: 'Sample Kitchen', orderNumber: 1, phase: 'CANCELLED', updatedAt: new Date('2026-10-02T12:00:00Z').getTime() }] };
-  }} /></div>);
-  await pause();
-  assert(button('Preview cleanup').disabled, 'Blank dates allow preview');
-  const dates = () => host.querySelectorAll('input[type=date]');
-  setValue(dates()[0], '2026-10-01'); setValue(dates()[1], '2026-10-02'); await pause();
-  button('Preview cleanup').click(); await pause();
-  assert(requests.at(-1).body.fromDate === '2026-10-01' && requests.at(-1).body.toDate === '2026-10-02' && requests.at(-1).body.olderThanDays === 0 && requests.at(-1).body.timeZone, 'Dates/timezone were lost or age also applied');
-  assert(button('Delete selected data').disabled, 'Preview allows deletion without confirmation');
-  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
-  setValue(dates()[1], '2026-10-03'); await pause();
-  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'Changing dates retained the old deletion preview');
-  button('Preview cleanup').click(); await pause();
-  assert([...host.querySelectorAll('input')].find(input => input.type === 'text').value === '', 'Confirmation was retained after changing dates');
-  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
-  button('Delete selected data').click(); await pause();
-  assert(requests.at(-1).body.toDate === '2026-10-03' && requests.at(-1).body.previewToken === 'sample-date-preview' && requests.at(-1).body.confirmation === 'DELETE', 'Delete did not use the reviewed range');
-  assert(changed === 1 && host.textContent.includes(t('records removed')), 'Deletion did not refresh the admin dashboard');
-  setValue(dates()[0], '2026-10-04'); await pause();
-  assert(button('Preview cleanup').disabled, 'Reversed range allows preview');
-  setValue(dates()[0], '2026-10-01'); await pause(); legacy = true;
-  button('Preview cleanup').click(); await pause();
-  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'An older server ignoring the dates enabled deletion');
-  assert(host.textContent.includes(t('The server could not verify this date range. Refresh and preview again.')), 'Unsupported range did not show an explanation');
-  legacy = false; button('Preview cleanup').click(); await pause();
-  assert(!measureAudit().overflow, 'Date range controls overflow');
-  return { passed: ['date fields', 'inclusive range payload and timezone', 'preview and confirmation', 'changed range invalidation', 'dashboard refresh', 'reversed date rejection', 'legacy server rejection'], ...measureAudit() };
-}
-
 
 export async function runWalletAnnouncementAudit() {
   const { default: WalletAnnouncement } = await import('../src/foodrun/WalletAnnouncement.jsx');

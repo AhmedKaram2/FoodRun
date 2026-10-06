@@ -1,5 +1,7 @@
 package com.karim.foodrun
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -29,7 +32,9 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
     var walletExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(FoodSpacing.Page)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.Small)) {
-            Text(FoodRunText.brand, style = FoodType.Brand, color = FoodColors.Ink, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FoodSpacing.XSmall)) {
+                Image(painterResource(R.drawable.intrvioo_logo), contentDescription = "Intrvioo", modifier = Modifier.width(160.dp).height(44.dp))
+            }
             GroupLanguagePicker(state, controller)
         }
         state.cards.firstOrNull { it.id == "sign-in" }?.let { signIn ->
@@ -48,7 +53,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
                     Text(GroupText.localized(GroupText.groupEyebrow, state.rtl), style = FoodType.RoundedCaption, color = FoodColors.OnHero, modifier = Modifier.weight(1f))
                     Icon(Icons.Default.Person, null, tint = FoodColors.OnHero)
                 }
-                Text(GroupText.localized(GroupText.groupTitle, state.rtl), style = FoodType.DialogTitle, color = FoodColors.White)
+                Text(GroupText.localized(GroupText.groupTitle, state.rtl), style = FoodType.DialogTitle, color = FoodColors.Ink)
                 Text(GroupText.localized(GroupText.groupDescription, state.rtl), style = FoodType.Body, color = FoodColors.OnHero)
                 state.buttons.filter { it.action in listOf(GroupAction.CREATE, GroupAction.JOIN) }.forEach {
                     GroupActionButton(it, state.busy, controller, prominent = false)
@@ -71,7 +76,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
                 val summaryIds = setOf("dashboard:wallet-funds", "dashboard:wallet-summary")
                 dashboard.filter { it.id in summaryIds }.forEach { GroupCardContent(it, state.busy, controller) }
                 TextButton(onClick = { walletExpanded = !walletExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = FoodSize.TouchTarget)) {
-                    Text(if (state.rtl) { if (walletExpanded) "إخفاء تفاصيل المدفوعات" else "عرض المدفوعات والأموال لدى الآخرين" } else { if (walletExpanded) "Hide payment details" else "View payments & money holders" }, color = FoodColors.Orange)
+                    Text(if (state.rtl) { if (walletExpanded) "إخفاء تفاصيل المدفوعات" else "عرض المدفوعات والأموال لدى الآخرين" } else { if (walletExpanded) "Hide payment details" else "View payments & money holders" }, color = FoodColors.AccentText)
                 }
                 if (walletExpanded) dashboard.filter { it.id !in summaryIds }.forEach { GroupCardContent(it, state.busy, controller) }
             }

@@ -19,7 +19,11 @@ export function restaurantOrderText(room, receipts, language = 'ar') {
     ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)])
     : String(quantity);
   const lines = groupedOrderLines(room, receipts, language).map(line => {
-    return `${quantityText(line.quantity)} ${line.description}${line.notes ? ` — ${line.notes}` : ''}`;
+    const quantity = quantityText(line.quantity);
+    const itemText = /\p{Nd}/u.test(line.description)
+      ? `${line.description} — ${language === 'ar' ? 'الكمية' : 'Quantity'}: ${quantity}`
+      : `${quantity} ${line.description}`;
+    return `${itemText}${line.notes ? ` — ${line.notes}` : ''}`;
   });
   const address = (room.deliveryMode ? room.destination : room.restaurant.contact?.address)?.trim()
     || (language === 'ar' ? 'العنوان يحدد لاحقاً' : 'Address to be confirmed');

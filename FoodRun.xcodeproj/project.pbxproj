@@ -51,6 +51,10 @@
 		ED9E903A88F58D078B38DA91 /* PinnedHubSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E02EE35503DE3EF46660CC /* PinnedHubSession.swift */; };
 		F4E51278047D4A977D1DC1C9 /* WheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86234D1590C292B9C1EB337C /* WheelView.swift */; };
 		F5E562EB94FF2393802663A0 /* WinnerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8290882A20F8879FDD30BAB8 /* WinnerOverlay.swift */; };
+        FDE000000000000000000041 /* Poppins-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000031 /* Poppins-Regular.ttf */; };
+        FDE000000000000000000042 /* Poppins-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000032 /* Poppins-Medium.ttf */; };
+        FDE000000000000000000043 /* Poppins-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000033 /* Poppins-SemiBold.ttf */; };
+        FDE000000000000000000044 /* Poppins-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FDE000000000000000000034 /* Poppins-Bold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,6 +115,10 @@
 		E503A8239E5FCB10C6D92F1F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E83FA3C08D95C98F7D638249 /* IosFoodRunStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosFoodRunStorage.swift; sourceTree = "<group>"; };
 		EE7F1D05FECDF1F7AD411718 /* GroupComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupComponents.swift; sourceTree = "<group>"; };
+        FDE000000000000000000031 /* Poppins-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/Poppins-Regular.ttf; sourceTree = "<group>"; };
+        FDE000000000000000000032 /* Poppins-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/Poppins-Medium.ttf; sourceTree = "<group>"; };
+        FDE000000000000000000033 /* Poppins-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/Poppins-SemiBold.ttf; sourceTree = "<group>"; };
+        FDE000000000000000000034 /* Poppins-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fonts/Poppins-Bold.ttf; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -147,6 +155,10 @@
 			isa = PBXGroup;
 			children = (
 				FDE000000000000000000001 /* DMSans.ttf */,
+                FDE000000000000000000034 /* Poppins-Bold.ttf */,
+                FDE000000000000000000033 /* Poppins-SemiBold.ttf */,
+                FDE000000000000000000032 /* Poppins-Medium.ttf */,
+                FDE000000000000000000031 /* Poppins-Regular.ttf */,
                 FDE000000000000000000002 /* NotoSansArabic.ttf */,
                 FCF000000000000000000004 /* GoogleService-Info.plist */,
                 94CD07DF052299B4A8F734BD /* AddPersonSheet.swift */,
@@ -294,6 +306,10 @@
 			files = (
 				B955CE75237939C6B3A52A80 /* Assets.xcassets in Resources */,
                 FDE000000000000000000011 /* DMSans.ttf in Resources */,
+                FDE000000000000000000044 /* Poppins-Bold.ttf in Resources */,
+                FDE000000000000000000043 /* Poppins-SemiBold.ttf in Resources */,
+                FDE000000000000000000042 /* Poppins-Medium.ttf in Resources */,
+                FDE000000000000000000041 /* Poppins-Regular.ttf in Resources */,
                 FDE000000000000000000012 /* NotoSansArabic.ttf in Resources */,
                 FCF000000000000000000003 /* GoogleService-Info.plist in Resources */,
 			);
@@ -394,10 +410,10 @@
 				CODE_SIGN_ENTITLEMENTS = FoodRun/FoodRun.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = FoodRun/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Food Run";
+				INFOPLIST_KEY_CFBundleDisplayName = "Intrvioo";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Food Run server.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Food Run room and watch the same spin with people on your Wi-Fi.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Intrvioo server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Intrvioo room and watch the same spin with people on your Wi-Fi.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -416,10 +432,10 @@
 				CODE_SIGN_ENTITLEMENTS = FoodRun/FoodRun.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = FoodRun/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Food Run";
+				INFOPLIST_KEY_CFBundleDisplayName = "Intrvioo";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Food Run server.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Food Run room and watch the same spin with people on your Wi-Fi.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR shown by your Intrvioo server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Join your Intrvioo room and watch the same spin with people on your Wi-Fi.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -467,7 +483,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				APS_ENVIRONMENT = development;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -493,7 +509,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.6.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -574,7 +590,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				APS_ENVIRONMENT = production;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -594,7 +610,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.6.1;
+				MARKETING_VERSION = 1.6.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

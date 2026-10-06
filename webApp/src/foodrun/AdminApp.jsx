@@ -1,3 +1,4 @@
+import { BrandLogo, BrandMark } from './Brand.jsx';
 import PaymentFields from './PaymentFields.jsx';
 import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
 import { photoData, CURRENCIES } from './client';
@@ -35,10 +36,10 @@ export default function AdminApp({ language, user, onBack }) {
   useEffect(() => { refresh(); }, [user]);
   const mutate = async (path, body) => { setBusy(true); try { const result = await adminRequest(path, user, body); await refresh(); return result; } catch (error) { setMessage(error.message); return null; } finally { setBusy(false); } };
   const saveRestaurant = restaurant => mutate('/admin/restaurant', { action: 'save', restaurant });
-  if (!dashboard) return <div className="splash"><div className="brand-mark">FR</div><p role="status">{message || t("Loading admin data…")}</p>{message && <button className="secondary" onClick={refresh}>{t("Retry")}</button>}<button className="link" onClick={onBack}>{t("Home")}</button></div>;
+  if (!dashboard) return <div className="splash"><BrandMark /><p role="status">{message || t("Loading admin data…")}</p>{message && <button className="secondary" onClick={refresh}>{t("Retry")}</button>}<button className="link" onClick={onBack}>{t("Home")}</button></div>;
   const totals = Object.entries(dashboard.rooms.reduce((values, room) => ({ ...values, [room.currency]: (values[room.currency] || 0) + room.totalMinor }), {}));
   return <main className="admin-shell">
-    <header className="admin-topbar"><div><span className="brand-mark">FR</span><b>{t("Food Run Admin")}</b></div><div><LanguageToggle /><button className="secondary" onClick={() => refresh()}>{t("Refresh")}</button><button className="link" onClick={onBack}>{t("Home")}</button></div></header>
+    <header className="admin-topbar"><div><BrandLogo /><b>{t("Intrvioo Admin")}</b></div><div><LanguageToggle /><button className="secondary" onClick={() => refresh()}>{t("Refresh")}</button><button className="link" onClick={onBack}>{t("Home")}</button></div></header>
     <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{t(value[0].toUpperCase() + value.slice(1))}</button>)}</nav>
     {message && <div className="banner error">{message}</div>}
     <fieldset disabled={busy} className="admin-content room-fieldset">
@@ -141,13 +142,13 @@ function AdminUserCard({ person, self, rooms, mutate, busy }) {
     {message && <p role="status">{message}</p>}
     {person.disabled && <p className="admin-block-status">{person.blockedUntil ? `${t('Blocked until')} ${new Date(person.blockedUntil).toLocaleString()}` : t('Until unblocked by admin')}{person.blockReason && <> · {person.blockReason}</>}</p>}
     {Object.entries(person.roomBlocks || {}).map(([roomId, block]) => <div className="admin-block-status" key={roomId}>{rooms.find(room => room.id === roomId)?.name || roomId} · {block.until ? new Date(block.until).toLocaleString() : t('Until unblocked by admin')} · {block.reason}<button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'unblock', scopeRoomId: roomId })}>{t('Unblock now')}</button></div>)}
-    {self ? <p>{t('Your administrator account')}</p> : person.removed ? <button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'restore' })}>{t('Restore Food Run access')}</button> : <>
+    {self ? <p>{t('Your administrator account')}</p> : person.removed ? <button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'restore' })}>{t('Restore Intrvioo access')}</button> : <>
       {person.disabled ? <button className="secondary" onClick={() => mutate('/admin/user', { userId: person.id, action: 'unblock' })}>{t('Unblock now')}</button> : <form className="stack" onSubmit={event => { event.preventDefault(); mutate('/admin/user', { userId: person.id, action: 'block', durationHours: Number(duration), reason, scopeRoomId }); }}>
         <label>{t('Block scope')}<select value={scopeRoomId} onChange={e => setScopeRoomId(e.target.value)}><option value="">{t('All rooms')}</option>{rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
         <div className="form-grid two"><label>{t('Block duration')}<select value={duration} onChange={e => setDuration(e.target.value)}>{[[1,'1 hour'],[6,'6 hours'],[24,'1 day'],[72,'3 days'],[168,'7 days'],[720,'30 days'],[0,'Until unblocked by admin']].map(([value,label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
         <label>{t('Reason')}<input required minLength={5} maxLength={300} value={reason} onChange={e => setReason(e.target.value)} /></label></div><button disabled={busy} className="secondary danger">{t('Block user')}</button>
       </form>}
-      <button className="link danger" onClick={() => { if (window.confirm(t('Remove this user from Food Run? Their shared Google/email account stays active. Active rooms must be finished first.') + '\n' + person.name)) mutate('/admin/user', { userId: person.id, action: 'remove', confirmation: person.id, reason }); }}>{t('Remove from Food Run')}</button>
+      <button className="link danger" onClick={() => { if (window.confirm(t('Remove this user from Intrvioo? Their shared Google/email account stays active. Active rooms must be finished first.') + '\n' + person.name)) mutate('/admin/user', { userId: person.id, action: 'remove', confirmation: person.id, reason }); }}>{t('Remove from Intrvioo')}</button>
     </>}
   </article>;
 }

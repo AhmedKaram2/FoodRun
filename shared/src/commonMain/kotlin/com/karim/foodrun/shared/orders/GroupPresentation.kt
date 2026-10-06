@@ -30,7 +30,10 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
     }
     val lines = combined.map { (key, quantity) ->
         val (description, notes) = key
-        "${quantityText(quantity)} $description${if(notes.isNotBlank()) " — $notes" else ""}"
+        val itemText = if(description.any(Char::isDigit)) {
+            "$description — ${if(language == "ar") "الكمية" else "Quantity"}: ${quantityText(quantity)}"
+        } else "${quantityText(quantity)} $description"
+        "$itemText${if(notes.isNotBlank()) " — $notes" else ""}"
     }
     val address = (if(room.deliveryMode) room.destination else room.restaurant.contact.address.orEmpty()).trim()
         .ifBlank { if(language == "ar") "العنوان يحدد لاحقاً" else "Address to be confirmed" }
@@ -44,7 +47,7 @@ internal class GroupPresentation(private val c: GroupController) {
     private val fields = mutableListOf<GroupField>()
     private val cards = mutableListOf<GroupCard>()
     private val buttons = mutableListOf<GroupButton>()
-    private var title = "Food Run"
+    private var title = "Intrvioo"
     private var subtitle = "Good food. Great company."
     private val language get() = c.library.language
     private val copyLanguage get() = c.text(GroupFieldKey.ORDER_COPY_LANGUAGE).takeIf { it in listOf("en", "ar") } ?: language
@@ -131,7 +134,7 @@ internal class GroupPresentation(private val c: GroupController) {
             profileReady = c.library.home?.profile?.let { it.name.isNotBlank() && it.phone.isNotBlank() } == true)
     }
     private fun home() {
-        title = tr("Food Run", "فود رن"); subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
+        title = tr("Intrvioo", "إنترفيو"); subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
         if (c.library.home == null) {
             button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
             button(ui("Register / sign in"), GroupAction.OPEN_PROFILE)
@@ -166,7 +169,7 @@ internal class GroupPresentation(private val c: GroupController) {
         dashboardCards("dashboard:")
     }
     private fun profile() {
-        title = if(c.library.home == null) tr("Your Food Run account", "حساب فود رن") else tr("Your profile", "ملفك الشخصي")
+        title = if(c.library.home == null) tr("Your Intrvioo account", "حساب إنترفيو") else tr("Your profile", "ملفك الشخصي")
         subtitle = if(c.library.home == null) tr("Use your existing Intrvioo account, or register here.", "استخدم حساب إنترفيوو أو سجل من هنا.") else tr("Your details, wallet and payments.", "بياناتك ومحفظتك ومدفوعاتك.")
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         if(c.library.home == null) {
@@ -613,7 +616,7 @@ internal class GroupPresentation(private val c: GroupController) {
         } else button(tr("Save payment details", "حفظ بيانات الدفع"), GroupAction.SHARE_ACCOUNT, primary = true)
     }
     private fun receipts() {
-        title = "Receipts"; subtitle = "Downloaded for offline access · Food Run breakdowns"
+        title = "Receipts"; subtitle = "Downloaded for offline access · Intrvioo breakdowns"
         c.reply?.let { receiptCards(it.receipts) }; accountCard()
         c.reply?.room?.takeIf { it.settlementOpen }?.let { room ->
             if (room.transfers.any { it.status == TransferStatus.DECLARED && (room.payerId == c.me() || it.refund && it.memberId == c.me()) }) field(GroupFieldKey.REASON, "Reason for rejecting a transfer or refund")
@@ -748,7 +751,7 @@ internal class GroupPresentation(private val c: GroupController) {
         val orderNumber = past?.number ?: c.room().orderNumber
         val restaurantName = past?.restaurantName ?: c.room().restaurant.name
         val accountText = account?.let { "Recipient: ${it.holder} · ${it.bank}\nAccount: ${it.identifier} · ${it.currency} · version ${it.version}" } ?: "Receiving account unavailable"
-        return "Food Run · ${c.room().name} · order #$orderNumber\n$restaurantName\n${receipt.name}\n${receiptDetail(receipt, past == null)}\n$accountText\nRevision ${receipt.revision}\nDownloaded ${timeLabel(c.reply!!.serverTime)}\nFood Run breakdown; restaurant invoice is separate."
+        return "Intrvioo · ${c.room().name} · order #$orderNumber\n$restaurantName\n${receipt.name}\n${receiptDetail(receipt, past == null)}\n$accountText\nRevision ${receipt.revision}\nDownloaded ${timeLabel(c.reply!!.serverTime)}\nIntrvioo breakdown; restaurant invoice is separate."
     }
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }

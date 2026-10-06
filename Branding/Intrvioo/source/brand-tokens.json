@@ -1,0 +1,29 @@
+{
+  "name": "Intrvioo",
+  "primary_slogan": "Order Together. Split Smarter.",
+  "alternate_slogans": [
+    "Good Food Brings People Closer.",
+    "Different Tastes. Same Table.",
+    "Food is Better Together.",
+    "Less Hassle. More Togetherness.",
+    "Split the Bill. Keep the Good Times."
+  ],
+  "colors": {
+    "coral": "#FF684A",
+    "fresh_green": "#22C55E",
+    "warm_yellow": "#FBBF24",
+    "charcoal": "#1F2937",
+    "cream": "#FFF7ED",
+    "light_green": "#E8F5E9"
+  },
+  "typography": {
+    "primary": "Poppins",
+    "fallback": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "weights": [
+      400,
+      500,
+      600,
+      700
+    ]
+  }
+}

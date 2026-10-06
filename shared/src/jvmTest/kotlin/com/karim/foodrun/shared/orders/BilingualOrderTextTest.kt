@@ -16,4 +16,16 @@ class BilingualOrderTextTest {
         assertTrue(text.endsWith("إجمالي السندويشات: ٢"))
         assertFalse(text.contains("وقت الوصول"))
     }
+
+    @Test fun numberedMenuNamesUseTheCopyLanguagesQuantityLabel() {
+        val restaurant = Restaurant("kitchen", "Kitchen", menu = Menu(
+            categories = listOf(MenuCategory("main", "Main")),
+            items = listOf(MenuItem("meal", "main", "2 Falafel", basePriceMinor = 300, nameAr = "٢ طعمية"))))
+        val member = Member("member", "Karam", approved = true, eligible = true, ready = true)
+        val room = Room("room", "123456", "member", "Lunch", restaurant,
+            members = listOf(member), carts = listOf(MemberCart("member", lines = listOf(CartLine("line", "meal", 1)), submitted = true)))
+        val receipts = Billing.receipts(room)
+        assertTrue(restaurantReadyText(room, receipts, "ar").contains("\n٢ طعمية — الكمية: ١\n"))
+        assertTrue(restaurantReadyText(room, receipts, "en").contains("\n2 Falafel — Quantity: 1\n"))
+    }
 }

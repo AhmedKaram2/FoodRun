@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restaurantOrderText } from '../src/foodrun/restaurantOrderText.js';
+import { groupedOrderLines, restaurantOrderText } from '../src/foodrun/restaurantOrderText.js';
 import { setLanguage, t } from '../src/foodrun/i18n.js';
 
 const room = { restaurant: { name: 'Kitchen', nameAr: 'المطعم', menu: {
@@ -45,4 +45,30 @@ test('pickup uses the restaurant address and custom notes remain readable', () =
   assert.ok(text.includes('١ User item — User note'));
   assert.ok(text.endsWith('إجمالي السندويشات: ١'));
   assert.ok(!text.includes('undefined'));
+});
+
+test('a number in an item name stays separate from the quantity in Arabic and English', () => {
+  for (const description of ['٢ طعمية', '2 Falafel', '۲ طعمية', 'Falafel 12-pack', '7UP', '١/٢ دجاج']) {
+    const numbered = [{ lines: [{ description, quantity: 1, amount: 300 }] }];
+    assert.ok(restaurantOrderText(room, numbered, 'ar').includes(`\n${description} — الكمية: ١\n`));
+    assert.ok(restaurantOrderText(room, numbered, 'en').includes(`\n${description} — Quantity: 1\n`));
+  }
+});
+
+test('numbered menu names keep grouped quantities, amounts and separate notes', () => {
+  const numberedRoom = { ...room, restaurant: { ...room.restaurant, menu: {
+    ...room.restaurant.menu,
+    items: [{ id: 'meal', name: '2 Falafel', nameAr: '٢ طعمية', variants: [] }],
+  } } };
+  const item = { itemId: 'meal', description: '2 Falafel', quantity: 1, amount: 300, notes: 'بدون سلطة' };
+  const numbered = [{ lines: [item] }, { lines: [{ ...item, quantity: 2, amount: 600 }, { ...item, notes: 'Extra lemon' }] }];
+  const arabic = restaurantOrderText(numberedRoom, numbered, 'ar');
+  assert.ok(arabic.includes('\n٢ طعمية — الكمية: ٣ — بدون سلطة\n'));
+  assert.ok(arabic.includes('\n٢ طعمية — الكمية: ١ — Extra lemon\n'));
+  assert.ok(arabic.endsWith('إجمالي السندويشات: ٤'));
+  const english = restaurantOrderText(numberedRoom, numbered, 'en');
+  assert.ok(english.includes('\n2 Falafel — Quantity: 3 — بدون سلطة\n'));
+  assert.ok(english.endsWith('Total sandwiches: 4'));
+  assert.deepEqual(groupedOrderLines(numberedRoom, numbered, 'ar').map(({ quantity, amount }) => ({ quantity, amount })),
+    [{ quantity: 3, amount: 900 }, { quantity: 1, amount: 300 }]);
 });

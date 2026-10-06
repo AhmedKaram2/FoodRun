@@ -152,7 +152,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 ownReceipt == null -> tr("Your receipt is not available yet. Reconnect to refresh this order.", "إيصالك غير متاح بعد. أعد الاتصال لتحديث الطلب.")
                 ownReceipt.balance < 0 -> tr("${name(r.payerId)} owes you a refund of ${money(-ownReceipt.balance)}. Wait for it to arrive, then confirm the refund claim.", "لك لدى ${name(r.payerId)} مبلغ مرتجع ${money(-ownReceipt.balance)}. انتظر وصوله ثم أكد الاستلام.")
                 ownReceipt.balance == 0L -> tr("Your share is settled. No further payment is needed for the current bill.", "تمت تسوية حصتك ولا توجد دفعات أخرى للفاتورة الحالية.")
-                else -> tr("Send up to ${money(ownReceipt.balance)} to ${r.account?.holder ?: name(r.payerId)} using your bank app or cash, then record the amount below. Food Run only records payments.", "أرسل حتى ${money(ownReceipt.balance)} إلى ${r.account?.holder ?: name(r.payerId)} عبر البنك أو نقداً ثم سجل المبلغ. فود رن يوثق الدفعات فقط.")
+                else -> tr("Send up to ${money(ownReceipt.balance)} to ${r.account?.holder ?: name(r.payerId)} using your bank app or cash, then record the amount below. Intrvioo only records payments.", "أرسل حتى ${money(ownReceipt.balance)} إلى ${r.account?.holder ?: name(r.payerId)} عبر البنك أو نقداً ثم سجل المبلغ. إنترفيو يوثق الدفعات فقط.")
             }
             cards += GroupCard("my-payment-status", if (ownPending != null) tr("Payment awaiting confirmation", "الدفعة بانتظار التأكيد") else tr("Your payment", "دفعتك"), detail)
             if (r.restaurantPaid && ownPending == null && ownReceipt != null && ownReceipt.balance > 0) {

@@ -1,6 +1,7 @@
 package com.karim.foodrun
 
 import androidx.compose.foundation.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,11 +32,7 @@ fun FoodRunContent(state: FoodRunState, rotation: Double, tick: Int, reduceMotio
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(FoodSize.Avatar).rotate(-7f).background(FoodColors.Orange, RoundedCornerShape(FoodRadius.Avatar)), contentAlignment = Alignment.Center) {
-                        FoodBag(Modifier.size(FoodSize.IconLarge), FoodColors.White)
-                    }
-                    Spacer(Modifier.width(FoodSpacing.Small))
-                    Text(FoodRunText.brand, style = FoodType.Brand, color = FoodColors.Ink)
+                    Image(painterResource(R.drawable.intrvioo_logo), FoodRunText.appName, Modifier.width(150.dp).height(40.dp))
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = onHistory, enabled = !state.isSpinning,
                         modifier = Modifier.size(FoodSize.TouchTarget).background(FoodColors.Card, CircleShape)

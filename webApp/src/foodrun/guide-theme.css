@@ -1,0 +1,74 @@
+/* Intrvioo presentation; guide.css retains the shared guide layout. */
+.guide-hero { padding:clamp(1.4rem,4vw,3rem); border:1px solid var(--line); border-radius:32px; background:linear-gradient(125deg,#fff,#FFF7ED 70%,#FFEBDD); color:var(--ink); box-shadow:0 16px 50px #a5512710; }
+.guide-hero-main { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:clamp(1rem,3vw,2.5rem); align-items:center; }
+.guide-hero-copy { min-width:0; }
+.guide-hero .eyebrow { color:var(--intrvioo-coral-ink)!important; }
+.guide-hero h2 { font-size:clamp(1.9rem,3.2vw,3.2rem); line-height:1.22; letter-spacing:-.045em; margin:.7rem 0 1.2rem; }
+.guide-hero-copy>p:last-of-type { color:var(--muted); font-size:.95rem; line-height:1.8; margin-bottom:1.4rem; max-width:600px; }
+.guide-hero .together-art { border-radius:42% 42% 20% 25%; }
+.guide-start { text-decoration:none; gap:.9rem; }
+.guide-path { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.8rem; margin-top:2rem; padding-top:1.4rem; border-top:1px solid var(--line); }
+.guide-path>span { display:flex; align-items:center; gap:.7rem; font-size:.82rem; font-weight:600; }
+.guide-path b { width:34px; height:34px; flex:0 0 34px; border:0; border-radius:50%; background:var(--orange-wash); color:var(--intrvioo-coral-ink); font-size:.75rem; }
+.guide-path>span:nth-child(2) b { background:var(--pale); color:var(--green); }
+.guide-path>span:nth-child(3) b { background:#FFF0C5; color:#795700; }
+.guide-roles h2 { font-size:clamp(1.5rem,3vw,2rem); }
+.guide-roles>p { line-height:1.7; }
+.guide-role-grid>a { position:relative; border-radius:24px; padding:1.5rem; box-shadow:0 8px 24px #1f293705; transition:border-color .15s,box-shadow .15s; }
+.guide-role-grid>a:hover { border-color:var(--orange); box-shadow:0 12px 30px #ff684a12; }
+.guide-role-grid>a>.guide-role-icon { width:44px; height:44px; border-radius:14px; margin-bottom:1rem; background:var(--orange-wash); color:var(--intrvioo-coral-ink); font-size:1.4rem; }
+.guide-role-grid>a:nth-child(2) .guide-role-icon { background:var(--pale); color:var(--green); }
+.guide-role-grid>a:nth-child(3) .guide-role-icon { background:#FFF0C5; color:#795700; }
+.guide-role-grid>a>.guide-role-arrow { position:absolute; inset-inline-end:1.5rem; inset-block-start:1.5rem; width:auto; height:auto; border-radius:0; margin:0; color:var(--intrvioo-coral-ink); background:none; font-size:1.1rem; }
+.guide-role-grid strong { font-weight:600; }
+.guide-role-grid p { margin:.6rem 0 0; font-size:.85rem; line-height:1.8; }
+.guide-layout { grid-template-columns:230px minmax(0,1fr); gap:1.5rem; }
+.guide-toc { max-height:calc(100dvh - 2rem); padding:1rem; border:1px solid var(--line); border-radius:20px; background:#ffffffb3; }
+.guide-toc>.eyebrow { padding:.4rem; margin-bottom:.5rem; }
+.guide-toc>a { font-size:.8rem; padding:.6rem .7rem; border-radius:12px; }
+.guide-toc>a:hover,.guide-toc>a:focus-visible { color:var(--intrvioo-coral-ink); background:var(--orange-wash); }
+.guide-section { border-radius:24px; }
+.guide-section-badge { display:grid; place-items:center; width:42px; height:42px; margin-bottom:1rem; border-radius:14px; color:var(--intrvioo-coral-ink); background:var(--orange-wash); font-size:.9rem; font-weight:600; }
+.guide-section header>p { line-height:1.8; }
+.guide-section h2 { font-size:1.35rem; line-height:1.5; }
+.guide-screen>button { border-radius:18px; }
+.guide-screen figcaption { margin-top:.6rem; }
+.guide-zoom { inset-inline-end:.7rem; bottom:.7rem; background:var(--intrvioo-action); color:#fff; padding:.5rem .7rem; border-radius:10px; box-shadow:0 4px 12px #1f293718; }
+.guide-step-number { background:var(--orange-wash); color:var(--intrvioo-coral-ink); font-weight:600; }
+.guide-steps strong { line-height:1.6; font-weight:600; }
+.guide-steps p { line-height:1.85; }
+.guide-tip { background:var(--pale); border-radius:16px; padding:1rem 1.2rem; border-inline-start-color:var(--intrvioo-green); }
+.guide-tip>strong { color:var(--green); }
+.guide-tip p { line-height:1.8; color:var(--ink); }
+.guide-checklist { padding:clamp(1.2rem,3vw,2rem); border-radius:24px; background:linear-gradient(125deg,#fff,#FFF7ED); }
+.guide-checklist h2 { font-size:1.5rem; line-height:1.5; }
+.guide-checklist li { line-height:1.7; }
+.guide-faq h2 { font-size:1.7rem; line-height:1.4; }
+.guide-faq details { padding:1.2rem 1.4rem; border-radius:18px; }
+.guide-faq summary { font-weight:600; line-height:1.7; }
+.guide-faq summary::marker { color:var(--intrvioo-coral-ink); }
+.guide-faq details[open] { border-color:#F4A28D; }
+.guide-faq p { line-height:1.85; margin:1rem 0 0; }
+.guide-lightbox { border-radius:24px; max-height:90dvh; color:var(--ink); }
+.guide-lightbox::backdrop { background:#1f2937d9; }
+.guide-lightbox header>strong { font-weight:600; }
+.guide-page :focus-visible { outline-color:var(--intrvioo-action); }
+html[dir=rtl] .guide-hero h2 { letter-spacing:0; line-height:1.5; }
+@media(max-width:900px) {
+  .guide-hero-main { grid-template-columns:1fr; }
+  .guide-hero .together-art { max-width:540px; justify-self:center; }
+  .guide-layout { grid-template-columns:1fr; gap:1rem; }
+  .guide-toc { position:static; flex-direction:row; flex-wrap:wrap; max-height:none; padding:1rem; }
+  .guide-toc>.eyebrow { width:100%; margin:0 0 .3rem; }
+  .guide-toc>a { background:var(--orange-wash); color:var(--intrvioo-coral-ink); padding:.45rem .65rem; font-size:.74rem; }
+  .guide-role-grid>a { padding:1.1rem; }
+}
+@media(max-width:600px) {
+  .guide-hero { border-radius:24px; }
+  .guide-hero h2 { font-size:1.9rem; }
+  .guide-path { grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem .5rem; }
+  .guide-role-grid>a { padding-inline-start:4.8rem; padding-inline-end:2.5rem; }
+  .guide-role-grid>a>.guide-role-icon { inset-inline-start:1rem; top:1.1rem; margin:0; }
+  .guide-role-grid>a>.guide-role-arrow { inset-inline-start:auto; inset-inline-end:1rem; inset-block-start:1.2rem; top:1.2rem; }
+}
+@media(prefers-reduced-motion:reduce) { .guide-role-grid>a { transition:none; } }

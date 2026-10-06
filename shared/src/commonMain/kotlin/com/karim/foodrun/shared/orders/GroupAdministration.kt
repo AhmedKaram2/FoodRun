@@ -38,23 +38,39 @@ internal class GroupAdministration(private val c: GroupController) {
                     if(action == "access") { checkedIdentity = identity; allowed = result.ok }
                     require(result.ok) { result.error }
                     allowed = true; result.dashboard?.let { dashboard = it }
-                    if(action == "cleanup-preview") preview = result.preview
+                    if(action == "cleanup-preview") {
+                        val selection = orderJson.decodeFromString<AdminCleanupRequest>(payload)
+                        val candidate = requireNotNull(result.preview) { "Preview this selection again." }
+                        require(candidate.scope == selection.scope && candidate.olderThanDays == selection.olderThanDays && candidate.previewToken.isNotBlank()) { "Preview this selection again." }
+                        if(selection.fromDate.isNotEmpty()) require(candidate.fromDate == selection.fromDate && candidate.toDate == selection.toDate && candidate.timeZone == selection.timeZone) { "The server could not verify this date range. Refresh and preview again." }
+                        preview = candidate
+                    }
                     if(action == "cleanup-delete") preview = null
                     done()
-                } catch(failure: Exception) { if(!silent) c.error = failure.message.orEmpty() }
+                } catch(failure: Exception) { if(action.startsWith("cleanup-")) preview = null; if(!silent) c.error = failure.message.orEmpty() }
                 c.publish()
             }
         })
     }
     fun open() { c.page = GroupPage.ADMIN; request("dashboard") }
     fun tab(value: String) {
-        tab = value; c.draft[GroupFieldKey.ADMIN_SEARCH] = ""
+        tab = if(value == "cleanup-date") "cleanup" else value; c.draft[GroupFieldKey.ADMIN_SEARCH] = ""
         if(value == "settings") dashboard?.settings?.let {
             c.draft[GroupFieldKey.ADMIN_REGISTRATION] = it.registrationsEnabled.toString()
             c.draft[GroupFieldKey.ADMIN_ROOMS] = it.roomCreationEnabled.toString()
             c.draft[GroupFieldKey.ADMIN_MESSAGE] = it.maintenanceMessage
         }
-        if(value == "cleanup") { c.draft[GroupFieldKey.ADMIN_SCOPE] = "closedRooms"; c.draft[GroupFieldKey.ADMIN_DAYS] = "30"; c.draft[GroupFieldKey.ADMIN_CONFIRMATION] = ""; preview = null }
+        if(tab == "cleanup") {
+            c.draft[GroupFieldKey.ADMIN_SCOPE] = "closedRooms"; c.draft[GroupFieldKey.ADMIN_DAYS] = "30"; c.draft[GroupFieldKey.ADMIN_CONFIRMATION] = ""
+            c.draft[GroupFieldKey.ADMIN_CLEANUP_FILTER] = if(value == "cleanup-date") "date" else "age"
+            c.draft[GroupFieldKey.ADMIN_FROM_DATE] = ""; c.draft[GroupFieldKey.ADMIN_TO_DATE] = ""; c.draft[GroupFieldKey.ADMIN_TIME_ZONE] = "Asia/Dubai"
+            preview = null
+        }
+    }
+    fun cleanupFilterChanged(key: GroupFieldKey) {
+        if(key in listOf(GroupFieldKey.ADMIN_SCOPE, GroupFieldKey.ADMIN_DAYS, GroupFieldKey.ADMIN_CLEANUP_FILTER, GroupFieldKey.ADMIN_FROM_DATE, GroupFieldKey.ADMIN_TO_DATE, GroupFieldKey.ADMIN_TIME_ZONE)) {
+            preview = null; c.draft[GroupFieldKey.ADMIN_CONFIRMATION] = ""
+        }
     }
     fun user(id: String) {
         userId = id
@@ -124,9 +140,21 @@ internal class GroupAdministration(private val c: GroupController) {
     fun back() { editingRestaurant = false; c.page = GroupPage.ADMIN }
     fun saveSettings() { request("settings", orderJson.encodeToString(AdminSettings(c.flag(GroupFieldKey.ADMIN_REGISTRATION), c.flag(GroupFieldKey.ADMIN_ROOMS), c.text(GroupFieldKey.ADMIN_MESSAGE)))) }
     fun cleanup(delete: Boolean) {
-        val scope = c.text(GroupFieldKey.ADMIN_SCOPE); val days = c.text(GroupFieldKey.ADMIN_DAYS).toIntOrNull() ?: error("Enter the number of days.")
-        if(delete) { require(preview?.scope == scope && preview?.olderThanDays == days) { "Preview this selection again." }; require(c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE") }
-        request(if(delete) "cleanup-delete" else "cleanup-preview", orderJson.encodeToString(AdminCleanupRequest(scope, days, if(delete) preview!!.previewToken else "", c.text(GroupFieldKey.ADMIN_CONFIRMATION))))
+        val scope = c.text(GroupFieldKey.ADMIN_SCOPE)
+        val dateRange = c.text(GroupFieldKey.ADMIN_CLEANUP_FILTER) == "date"
+        val days = if(dateRange) 0 else c.text(GroupFieldKey.ADMIN_DAYS).toIntOrNull()?.takeIf { it in 0..3650 } ?: error("Choose an age between 0 and 3650 days.")
+        val from = if(dateRange) c.text(GroupFieldKey.ADMIN_FROM_DATE) else ""
+        val to = if(dateRange) c.text(GroupFieldKey.ADMIN_TO_DATE) else ""
+        val zone = c.text(GroupFieldKey.ADMIN_TIME_ZONE).ifEmpty { "Asia/Dubai" }
+        if(dateRange) {
+            require(from.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && to.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Choose both a valid start date and an end date." }
+            require(to >= from) { "The end date must be on or after the start date." }
+        }
+        if(delete) {
+            require(preview?.scope == scope && preview?.olderThanDays == days && preview?.fromDate == from && preview?.toDate == to && (!dateRange || preview?.timeZone == zone)) { "Preview this selection again." }
+            require(c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE") { "Type DELETE to confirm this cleanup." }
+        }
+        request(if(delete) "cleanup-delete" else "cleanup-preview", orderJson.encodeToString(AdminCleanupRequest(scope, days, if(delete) preview!!.previewToken else "", c.text(GroupFieldKey.ADMIN_CONFIRMATION), from, to, zone)))
     }
     fun content(): GroupFlowContent {
         if(c.page == GroupPage.ADMIN_USER) return userContent()
@@ -135,6 +163,7 @@ internal class GroupAdministration(private val c: GroupController) {
         val fields = mutableListOf<GroupField>(); val cards = mutableListOf<GroupCard>(); val buttons = mutableListOf<GroupButton>()
         val tabs = listOf("overview" to tr("Overview", "نظرة عامة"), "users" to tr("Users", "المستخدمون"), "restaurants" to tr("Restaurants", "المطاعم"), "rooms" to tr("Rooms", "الغرف"), "history" to tr("Order history", "سجل الطلبات"), "wallets" to tr("Wallets", "المحافظ"), "blocks" to tr("Block requests", "طلبات الحظر"), "cleanup" to tr("Cleanup", "تنظيف البيانات"), "settings" to tr("Settings", "الإعدادات"))
         cards += GroupCard("admin-tabs", tr("Administration", "الإدارة"), buttons = tabs.map { GroupButton(it.second, GroupAction.ADMIN_TAB, it.first, enabled = tab != it.first) })
+        if(tab == "rooms") cards += GroupCard("admin-clear-rooms", tr("Clear rooms by date", "مسح الغرف حسب التاريخ"), buttons = listOf(button("Clear rooms by date", "مسح الغرف حسب التاريخ", GroupAction.ADMIN_TAB, "cleanup-date")))
         val search = c.text(GroupFieldKey.ADMIN_SEARCH)
         when(tab) {
             "overview" -> {
@@ -169,10 +198,16 @@ internal class GroupAdministration(private val c: GroupController) {
             }
             "cleanup" -> {
                 fields += field(GroupFieldKey.ADMIN_SCOPE, "Data to clean", "البيانات المطلوب تنظيفها", choices = listOf(GroupChoice("closedRooms", tr("Closed rooms", "الغرف المغلقة")), GroupChoice("history", tr("Order history", "سجل الطلبات"))))
-                fields += field(GroupFieldKey.ADMIN_DAYS, "Older than days", "أقدم من عدد أيام")
+                fields += field(GroupFieldKey.ADMIN_CLEANUP_FILTER, "Time filter", "فلتر الوقت", choices = listOf(GroupChoice("age", tr("Older than a number of days", "أقدم من عدد أيام")), GroupChoice("date", tr("Date range", "فترة زمنية"))))
+                if(c.text(GroupFieldKey.ADMIN_CLEANUP_FILTER) == "date") {
+                    fields += field(GroupFieldKey.ADMIN_FROM_DATE, "Start date · YYYY-MM-DD", "تاريخ البداية · YYYY-MM-DD")
+                    fields += field(GroupFieldKey.ADMIN_TO_DATE, "End date · YYYY-MM-DD", "تاريخ النهاية · YYYY-MM-DD")
+                    fields += field(GroupFieldKey.ADMIN_TIME_ZONE, "Time zone", "المنطقة الزمنية")
+                } else fields += field(GroupFieldKey.ADMIN_DAYS, "Older than days", "أقدم من عدد أيام")
+                cards += GroupCard("cleanup-help", tr("Review rooms before clearing", "راجع الغرف قبل المسح"), tr("The range uses last activity and includes both dates. Active orders and unsettled payments are protected.", "الفترة حسب آخر نشاط وتشمل يوم البداية والنهاية. الطلبات النشطة والمدفوعات غير المسددة محمية."))
                 buttons += button("Preview selection", "معاينة البيانات", GroupAction.ADMIN_PREVIEW_CLEANUP)
                 preview?.let { p -> cards += GroupCard("cleanup-count", "${p.count} ${tr("records", "سجلات")}", p.targets.take(30).joinToString("\n") { "${it.name} · #${it.orderNumber}" })
-                    if(p.count > 0) { fields += field(GroupFieldKey.ADMIN_CONFIRMATION, "Type DELETE to confirm", "اكتب DELETE للتأكيد"); buttons += button("Delete selected data", "حذف البيانات المحددة", GroupAction.ADMIN_DELETE_CLEANUP, destructive = true) } }
+                    if(p.count > 0) { fields += field(GroupFieldKey.ADMIN_CONFIRMATION, "Type DELETE to confirm", "اكتب DELETE للتأكيد"); buttons += button("Delete selected data", "حذف البيانات المحددة", GroupAction.ADMIN_DELETE_CLEANUP, destructive = true).copy(enabled = c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE") } }
             }
         }
         buttons += button("Refresh", "تحديث", GroupAction.OPEN_ADMIN)

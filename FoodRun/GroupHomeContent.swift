@@ -23,6 +23,9 @@ struct GroupHomeContent: View {
                     .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
                 Text(GroupText.shared.localized(value: GroupText.shared.homeSubtitle, rtl: state.rtl)).font(FoodTypography.subtitle).foregroundStyle(FoodTheme.muted)
             }
+            if let announcement = state.cards.first(where: { $0.id == "wallet-announcement" }) {
+                GroupCardContent(card: announcement, busy: state.busy, dispatch: dispatch)
+            }
             VStack(alignment: .leading, spacing: FoodSpacing.s16) {
                 HStack {
                     Text(GroupText.shared.localized(value: GroupText.shared.groupEyebrow, rtl: state.rtl)).font(FoodTypography.eyebrow).tracking(FoodSpacing.s1)

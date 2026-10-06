@@ -140,6 +140,7 @@ internal class GroupPresentation(private val c: GroupController) {
             card("sign-in", ui("Use your existing web account"), ui("Sign in or register with Google to open your rooms. Guest mode is unavailable."))
             return
         }
+        c.walletAnnouncement.card()?.let { cards += it }
         button(tr("Create a room", "إنشاء غرفة"), GroupAction.CREATE, primary = true); button(tr("Join a room", "الانضمام إلى غرفة"), GroupAction.JOIN)
         c.library.sessions.sortedByDescending { c.library.snapshots[it.roomId]?.room?.createdAt ?: 0L }
             .firstOrNull { c.library.snapshots[it.roomId]?.room?.phase?.ongoing == true }?.let { session ->

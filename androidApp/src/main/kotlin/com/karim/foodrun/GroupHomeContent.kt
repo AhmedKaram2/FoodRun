@@ -41,6 +41,7 @@ internal fun GroupHomeContent(state: GroupState, controller: GroupController) {
             Text(GroupText.localized(GroupText.homeTitle, state.rtl), style = FoodType.Hero, color = FoodColors.Ink, modifier = Modifier.semantics { heading() })
             Text(GroupText.localized(GroupText.homeSubtitle, state.rtl), style = FoodType.Body, color = FoodColors.Muted)
         }
+        state.cards.firstOrNull { it.id == "wallet-announcement" }?.let { GroupCardContent(it, state.busy, controller) }
         FoodCard(fill = FoodColors.Hero, radius = FoodSpacing.Page) {
             Column(Modifier.padding(FoodSpacing.Page), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Large)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

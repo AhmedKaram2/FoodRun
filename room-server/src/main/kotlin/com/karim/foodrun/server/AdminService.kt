@@ -2,6 +2,8 @@ package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.ZoneId
 
 class AdminService(
     private val db: RoomDatabase, private val rooms: RoomService, private val clock: () -> Long = System::currentTimeMillis,
@@ -185,11 +187,22 @@ class AdminService(
     fun cleanupPreview(request: AdminCleanupRequest): AdminCleanupPreview = synchronized(rooms) {
         require(request.olderThanDays in 0..3650) { "Choose an age between 0 and 3650 days." }
         require(request.scope in listOf("closedRooms", "history")) { "Choose rooms or order history." }
+        val dateRange = request.fromDate.isNotEmpty() || request.toDate.isNotEmpty()
+        val bounds = if (dateRange) {
+            require(request.fromDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && request.toDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Choose both a start date and an end date." }
+            val from = runCatching { LocalDate.parse(request.fromDate) }.getOrElse { error("Choose a valid start date.") }
+            val to = runCatching { LocalDate.parse(request.toDate) }.getOrElse { error("Choose a valid end date.") }
+            require(!to.isBefore(from)) { "The end date must be on or after the start date." }
+            val zone = runCatching { ZoneId.of(request.timeZone) }.getOrElse { error("Choose a valid time zone.") }
+            from.atStartOfDay(zone).toInstant().toEpochMilli() to to.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        } else null
         val cutoff = clock() - request.olderThanDays * 86_400_000L
         val targets = (if(request.scope == "closedRooms") db.allRooms() else db.allHistory())
-            .filter { it.updatedAt <= cutoff && deletable(it) }.sortedWith(compareBy<Room> { it.id }.thenBy { it.orderNumber })
-        val token = RoomService.hash(request.scope + ":" + request.olderThanDays + ":" + targets.joinToString("|") { "${it.id}:${it.orderNumber}:${it.revision}:${it.updatedAt}" })
-        AdminCleanupPreview(request.scope, request.olderThanDays, targets.size, targets.map(::roomView), token)
+            .filter { (if(bounds != null) it.updatedAt >= bounds.first && it.updatedAt < bounds.second else it.updatedAt <= cutoff) && deletable(it) }
+            .sortedWith(compareBy<Room> { it.id }.thenBy { it.orderNumber })
+        val filter = if(dateRange) "date:${request.fromDate}:${request.toDate}:${request.timeZone}" else "age:${request.olderThanDays}"
+        val token = RoomService.hash(request.scope + ":" + filter + ":" + targets.joinToString("|") { "${it.id}:${it.orderNumber}:${it.revision}:${it.updatedAt}" })
+        AdminCleanupPreview(request.scope, request.olderThanDays, targets.size, targets.map(::roomView), token, request.fromDate, request.toDate, request.timeZone)
     }
     fun cleanup(request: AdminCleanupRequest, actorId: String): AdminCleanupResult = synchronized(rooms) {
         require(request.confirmation == "DELETE") { "Type DELETE to confirm this cleanup." }
@@ -197,7 +210,8 @@ class AdminService(
         require(request.previewToken.isNotBlank() && request.previewToken == preview.previewToken) { "The cleanup selection changed. Preview it again before deleting." }
         db.transaction {
             preview.targets.forEach { if(request.scope == "closedRooms") db.deleteRoom(it.id) else db.deleteHistory(it.id, it.orderNumber) }
-            audit(actorId, "cleanup:${request.scope}", "${preview.count} records older than ${request.olderThanDays} days")
+            val filter = if(request.fromDate.isNotEmpty()) "last activity from ${request.fromDate} through ${request.toDate} (${request.timeZone})" else "older than ${request.olderThanDays} days"
+            audit(actorId, "cleanup:${request.scope}", "${preview.count} records $filter")
         }
         rooms.adminChanged(preview.targets.map { it.id })
         AdminCleanupResult(preview.count)

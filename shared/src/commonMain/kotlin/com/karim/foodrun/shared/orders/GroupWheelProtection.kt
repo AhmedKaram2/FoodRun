@@ -32,6 +32,8 @@ internal class GroupWheelProtection(private val c: GroupController) {
         val cards = mutableListOf(GroupCard("wheel-intro", tr("Please don’t pick me", "ما تختارنيش"),
             tr("For this order only. The owner approves first, then confirms receiving your payment. You still order food and pay your share.", "للطلب الحالي بس. صاحب الغرفة يوافق الأول وبعدها يؤكد استلام الفلوس. تقدر تطلب أكل وتدفع حصتك عادي.")))
         val buttons = mutableListOf<GroupButton>(); val fields = mutableListOf<GroupField>()
+        cards += GroupCard("wheel-service-support", tr("Support Intrvioo", "ادعم إنترفيوو"),
+            tr("Payments for paid features and subscriptions help renew our servers and improve the website service.", "مدفوعات المزايا المدفوعة والاشتراكات بتساعدنا في تجديد السيرفرات وتحسين خدمة الموقع."))
         if (editable && !owner && me.approved && me.participating && me.eligible && !me.guest && (mine == null || mine.status == WheelProtectionStatus.REJECTED)) {
             buttons += GroupButton(tr("Exclude me from selection · AED 10", "استبعدني من الاختيار · ١٠ دراهم"), GroupAction.REQUEST_WHEEL_PROTECTION, WheelProtectionPlan.EXCLUDE.name)
             buttons += GroupButton(tr("Reduce my chance by 50% · AED 5", "قلّل فرصة اختياري للنصف · ٥ دراهم"), GroupAction.REQUEST_WHEEL_PROTECTION, WheelProtectionPlan.HALF_CHANCE.name)

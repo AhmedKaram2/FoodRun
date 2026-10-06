@@ -31,8 +31,14 @@ import kotlinx.serialization.Serializable
     val userId: String, val userName: String, val reason: String, val durationHours: Int, val createdAt: Long, val status: String = "pending", val reviewedAt: Long = 0)
 @Serializable data class AdminBlockDecision(val requestId: String, val action: String)
 @Serializable data class AdminAuditEvent(val actorId: String, val action: String, val target: String, val at: Long)
-@Serializable data class AdminCleanupRequest(val scope: String = "closedRooms", val olderThanDays: Int = 30, val previewToken: String = "", val confirmation: String = "")
-@Serializable data class AdminCleanupPreview(val scope: String, val olderThanDays: Int, val count: Int, val targets: List<AdminRoomView>, val previewToken: String)
+@Serializable data class AdminCleanupRequest(
+    val scope: String = "closedRooms", val olderThanDays: Int = 30, val previewToken: String = "", val confirmation: String = "",
+    val fromDate: String = "", val toDate: String = "", val timeZone: String = "Asia/Dubai",
+)
+@Serializable data class AdminCleanupPreview(
+    val scope: String, val olderThanDays: Int, val count: Int, val targets: List<AdminRoomView>, val previewToken: String,
+    val fromDate: String = "", val toDate: String = "", val timeZone: String = "Asia/Dubai",
+)
 @Serializable data class AdminCleanupResult(val removedCount: Int)
 @Serializable data class AdminRestaurantMutation(val action: String = "save", val restaurant: Restaurant? = null, val restaurantId: String = "")
 @Serializable data class CatalogRestaurantMutation(

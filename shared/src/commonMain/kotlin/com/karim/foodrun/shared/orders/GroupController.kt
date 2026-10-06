@@ -12,6 +12,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
     internal val walletFunds = GroupWalletFunds(this)
+    internal val walletAnnouncement = GroupWalletAnnouncement(this)
     internal val smartDefaults = GroupSmartDefaults(this)
     internal var page = GroupPage.HOME
     internal var draft = mutableMapOf<GroupFieldKey, String>()
@@ -103,6 +104,7 @@ class GroupController(val platform: GroupPlatform) {
                 }
                 if (key == GroupFieldKey.RESTAURANT_EMIRATE && value != text(key)) draft.remove(GroupFieldKey.RESTAURANT_AREA)
                 draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.RECEIPT_PHOTO) 600_000 else if (key in listOf(GroupFieldKey.PHOTO, GroupFieldKey.ADMIN_PHOTO)) 180_000 else 4000)
+                administration.cleanupFilterChanged(key)
                 if (key == GroupFieldKey.WALLET_SEARCH) walletFunds.searchChanged()
                 if (key == GroupFieldKey.RESTAURANT_POLL && value == "true") openPollRestaurants()
             }
@@ -177,6 +179,8 @@ class GroupController(val platform: GroupPlatform) {
                 page = GroupPage.SETUP
             }
             GroupAction.OPEN_PROFILE -> { openProfile() }
+            GroupAction.OPEN_WALLET_ANNOUNCEMENT -> { walletAnnouncement.dismiss(); openProfile() }
+            GroupAction.DISMISS_WALLET_ANNOUNCEMENT -> walletAnnouncement.dismiss()
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
                 require(value in listOf("en", "ar")) { "Choose Arabic or English." }

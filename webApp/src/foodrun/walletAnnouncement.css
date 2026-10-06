@@ -1,0 +1,6 @@
+.wallet-announcement { display: flex; gap: 1rem; border: 1px solid #cf442b; background: #fff7ed; }
+.wallet-announcement .stack { min-width: 0; flex: 1; }
+.wallet-announcement-icon { display: grid; place-items: center; align-self: flex-start; flex: 0 0 2.8rem; height: 2.8rem; border-radius: 1rem; background: #cf442b; color: #fff; font-size: 1.8rem; }
+.wallet-announcement ol { margin: 0; padding-inline-start: 1.3rem; display: grid; gap: .5rem; }
+.service-support-note { border-inline-start: 3px solid #cf442b; padding: .75rem 1rem; border-radius: .4rem; background: #fff7ed; color: #1f2937; }
+@media (max-width: 420px) { .wallet-announcement { flex-direction: column; } }

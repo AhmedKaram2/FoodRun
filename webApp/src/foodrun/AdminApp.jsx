@@ -2,9 +2,11 @@ import PaymentFields from './PaymentFields.jsx';
 import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
 import { photoData, CURRENCIES } from './client';
 import { canAccessAdmin } from './adminAccess';
+import { cleanupSelection, requireCleanupPreview } from './adminCleanup.js';
+import './adminCleanup.css';
 import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { money } from './client';
 import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, changeRestaurantCurrency, clone, LanguageToggle } from './FoodRunApp';
 
@@ -42,10 +44,10 @@ export default function AdminApp({ language, user, onBack }) {
     <fieldset disabled={busy} className="admin-content room-fieldset">
       {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small>{totals.length ? totals.map(([currency, total]) => <b key={currency}>{money(total, currency)}</b>) : <b>{money(0, 'AED')}</b>}</article></div><div className="card"><h2>{t("Current activity")}</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
       {tab === 'users' && <AdminUsers users={dashboard.users} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} />}
-      {tab === 'rooms' && <div className="card"><h2>{t("Live and saved rooms")}</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
+      {tab === 'rooms' && <><details className="card admin-room-cleanup"><summary>{t('Clear rooms by date')}</summary><AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} initialFilter="date" roomsOnly /></details><div className="card"><h2>{t("Live and saved rooms")}</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
         const confirmation = window.prompt(t('Delete this room and its history? Enter the room code:') + ' ' + room.code);
         if (confirmation === room.code) mutate('/admin/room', { roomId: room.id, action: 'delete', expectedRevision: room.revision, confirmation });
-      }} key={room.id} />)}</div>}
+      }} key={room.id} />)}</div></>}
       {tab === 'requests' && <AdminBlockRequests requests={dashboard.blockRequests || []} mutate={mutate} busy={busy} />}
       {tab === 'cleanup' && <AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} />}
       {tab === 'orders' && <div className="card"><h2>{t("Order history")}</h2>{dashboard.archivedOrders.length ? dashboard.archivedOrders.map((room, index) => <AdminRoomRow room={room} key={`${room.id}-${room.orderNumber}-${index}`} />) : <p className="muted">{t("No archived orders yet.")}</p>}</div>}
@@ -152,22 +154,37 @@ function AdminUserCard({ person, self, rooms, mutate, busy }) {
 export function AdminBlockRequests({ requests, mutate, busy }) {
   return <section className="card stack"><h2>{t('Block requests')}</h2><p>{t('Room owners request a block for their room. The user can still sign in. Only an admin can approve the request.')}</p>{!requests.length && <p>{t('No block requests.')}</p>}{requests.map(request => <article key={request.id} className="admin-person stack"><b>{request.userName} · {request.durationHours} {t('hours')}</b><small>{request.requesterName} · {request.roomName} · {new Date(request.createdAt).toLocaleString()}</small><p>{request.reason}</p><span className="status">{t(request.status)}</span>{request.status === 'pending' && <div className="hero-actions"><button disabled={busy} className="primary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'approve' })}>{t('Approve block')}</button><button disabled={busy} className="secondary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'reject' })}>{t('Reject request')}</button></div>}</article>)}</section>;
 }
-export function AdminCleanup({ request, onChanged }) {
+export function AdminCleanup({ request, onChanged, initialFilter = 'age', roomsOnly = false }) {
   const [scope, setScope] = useState('closedRooms'), [days, setDays] = useState('30');
+  const [filter, setFilter] = useState(initialFilter), [fromDate, setFromDate] = useState(''), [toDate, setToDate] = useState('');
   const [preview, setPreview] = useState(null), [confirmation, setConfirmation] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
+  const requestVersion = useRef(0);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dubai';
+  let selection = null, validation = '';
+  try { selection = cleanupSelection({ scope, filter, days, fromDate, toDate, timeZone }); } catch (error) { validation = error.message; }
+  const resetPreview = () => { requestVersion.current++; setPreview(null); setConfirmation(''); setMessage(''); };
   const run = async remove => {
+    if (busy || !selection) return;
+    const version = ++requestVersion.current;
     setBusy(true); setMessage('');
     try {
-      const result = await request('/admin/cleanup/' + (remove ? 'delete' : 'preview'), { scope, olderThanDays: Number(days), ...(remove ? { previewToken: preview.previewToken, confirmation } : {}) });
+      if (remove) { requireCleanupPreview(preview, selection); if (confirmation !== 'DELETE') throw Error('Type DELETE to confirm this cleanup.'); }
+      const result = await request('/admin/cleanup/' + (remove ? 'delete' : 'preview'), { ...selection, ...(remove ? { previewToken: preview.previewToken, confirmation } : {}) });
+      if (version !== requestVersion.current) return;
       if (remove) { setPreview(null); setConfirmation(''); await onChanged(); setMessage(`${result.removedCount} ${t('records removed')}`); }
-      else { setPreview(result); setConfirmation(''); }
-    } catch (error) { setMessage(error.message); setPreview(null); } finally { setBusy(false); }
+      else { setPreview(requireCleanupPreview(result, selection)); setConfirmation(''); }
+    } catch (error) { if (version === requestVersion.current) { setMessage(t(error.message)); setPreview(null); setConfirmation(''); } } finally { setBusy(false); }
   };
-  return <section className="card stack"><h2>{t('Clear old website data')}</h2><p>{t('Delete cancelled or fully settled rooms, or old order history. Active orders and unsettled payments are protected. Downloaded copies and external backups are not erased.')}</p><div className="form-grid two">
-    <label>{t('Data to clear')}<select value={scope} onChange={e => { setScope(e.target.value); setPreview(null); }}><option value="closedRooms">{t('Closed rooms and their history')}</option><option value="history">{t('Previous order history only')}</option></select></label>
-    <label>{t('Older than (days)')}<input type="number" min={0} max={3650} value={days} onChange={e => { setDays(e.target.value); setPreview(null); }} /></label>
-    </div><button disabled={busy || days === '' || !Number.isInteger(Number(days)) || Number(days) < 0 || Number(days) > 3650} className="secondary" onClick={() => run(false)}>{t('Preview cleanup')}</button>
-    {preview && <div className="stack"><b>{preview.count} {t('records selected')}</b>{preview.targets.slice(0,30).map(room => <p key={`${room.id}:${room.orderNumber}`}>{room.name} · #{room.orderNumber} · {room.restaurant}</p>)}{preview.count > 0 && <><label>{t('Type DELETE to confirm')}<input value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" dir="ltr" /></label><button disabled={busy || confirmation !== 'DELETE'} className="primary danger" onClick={() => run(true)}>{t('Delete selected data')}</button></>}</div>}
+  return <section className="card stack admin-cleanup"><h2>{t(roomsOnly ? 'Clear rooms by date' : 'Clear old website data')}</h2><p>{t('Delete cancelled or fully settled rooms, or old order history. Active orders and unsettled payments are protected. Downloaded copies and external backups are not erased.')}</p>
+    <fieldset disabled={busy} className="room-fieldset form-grid two">
+      {!roomsOnly && <label>{t('Data to clear')}<select value={scope} onChange={e => { setScope(e.target.value); resetPreview(); }}><option value="closedRooms">{t('Closed rooms and their history')}</option><option value="history">{t('Previous order history only')}</option></select></label>}
+      <label>{t('Time filter')}<select value={filter} onChange={e => { setFilter(e.target.value); resetPreview(); }}><option value="age">{t('Older than a number of days')}</option><option value="date">{t('Date range')}</option></select></label>
+      {filter === 'date' ? <><label>{t('Start date')}<input type="date" value={fromDate} max={toDate || undefined} onChange={e => { setFromDate(e.target.value); resetPreview(); }} required /></label><label>{t('End date')}<input type="date" value={toDate} min={fromDate || undefined} onChange={e => { setToDate(e.target.value); resetPreview(); }} required /></label></> : <label>{t('Older than (days)')}<input type="number" min={0} max={3650} value={days} onChange={e => { setDays(e.target.value); resetPreview(); }} /></label>}
+    </fieldset>
+    {filter === 'date' && <p className="fine">{t('Based on last room activity. Both dates are included. Time zone:')} <b dir="ltr">{timeZone}</b></p>}
+    {validation && (filter === 'age' || fromDate && toDate) && <p className="form-message" role="alert">{t(validation)}</p>}
+    <button disabled={busy || !selection} className="secondary" onClick={() => run(false)}>{t('Preview cleanup')}</button>
+    {preview && <div className="stack"><b>{preview.count} {t('records selected')}</b><div className="admin-cleanup-targets">{preview.targets.map(room => <article key={`${room.id}:${room.orderNumber}`}><span><b>{room.name} · #{room.orderNumber}</b><small>{room.restaurant} · {t(room.phase || '')}</small></span>{room.updatedAt != null && <time dateTime={new Date(room.updatedAt).toISOString()}>{new Date(room.updatedAt).toLocaleString(undefined, { timeZone })}</time>}</article>)}</div>{preview.count === 0 && <p className="muted">{t('No rooms or orders match this selection.')}</p>}{preview.count > 0 && <><label>{t('Type DELETE to confirm')}<input disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" dir="ltr" /></label><button disabled={busy || !selection || confirmation !== 'DELETE'} className="primary danger" onClick={() => run(true)}>{t('Delete selected data')}</button></>}</div>}
     {message && <p role="status">{message}</p>}
   </section>;
 }

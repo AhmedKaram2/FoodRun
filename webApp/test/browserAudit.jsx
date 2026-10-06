@@ -438,7 +438,7 @@ export async function runAdminAudit() {
   await mount(<AdminBlockRequests requests={[{id:'request',userName:'Audit Member',requesterName:'Owner',roomName:'Room',durationHours:24,reason:'Needs review',createdAt:Date.now(),status:'pending'}]} mutate={mutate} busy={false} />);
   button('Approve block').click();await pause();assert(calls.at(-1).path==='/admin/block-request' && calls.at(-1).body.action==='approve','Request approval failed');
   const requests=[];
-  await mount(<AdminCleanup request={async (path,body)=>{requests.push({path,body});return path.endsWith('preview')?{count:1,previewToken:'preview-1',targets:[{id:'room',name:'Old room',orderNumber:1,restaurant:'Kitchen'}]}:{removedCount:1};}} onChanged={async()=>{}} />);
+  await mount(<AdminCleanup request={async (path,body)=>{requests.push({path,body});return path.endsWith('preview')?{scope:body.scope,olderThanDays:body.olderThanDays,count:1,previewToken:'preview-1',targets:[{id:'room',name:'Old room',orderNumber:1,restaurant:'Kitchen'}]}:{removedCount:1};}} onChanged={async()=>{}} />);
   button('Preview cleanup').click();await pause();assert(button('Delete selected data').disabled,'Cleanup enabled without confirmation');
   const confirmation=[...host.querySelectorAll('input')].find(node=>node.type==='text');setValue(confirmation,'DELETE');await pause();button('Delete selected data').click();await pause();
   assert(requests.at(-1).body.previewToken==='preview-1' && requests.at(-1).body.confirmation==='DELETE','Cleanup selection not preserved');
@@ -763,4 +763,76 @@ export async function runScreenRedesignAudit() {
   assert(topUp.querySelector('input[inputmode=decimal]').value==='1.250' && topUp.querySelector('select').value==='JOD','Top-up shortfall was not prefilled');
   assert(!topUp.querySelector('.wallet-people'), 'Shortfall top-up shows all users'); assertScreen('exact top-up shortfall');
   return {passed,...measureAudit()};
+}
+
+export async function runAdminDateRangeAudit() {
+  const { AdminCleanup } = await import('../src/foodrun/AdminApp.jsx');
+  document.getElementById('root').style.display = 'none';
+  root?.unmount(); host?.remove(); host = document.createElement('div'); host.id = 'audit-root'; host.className = 'admin-shell'; document.body.append(host); root = createRoot(host);
+  const requests = []; let changed = 0, legacy = false;
+  root.render(<div className="admin-content"><AdminCleanup initialFilter="date" roomsOnly onChanged={async () => { changed++; }} request={async (path, body) => {
+    requests.push({ path, body });
+    if (path.endsWith('delete')) return { removedCount: 1 };
+    return { scope: body.scope, olderThanDays: body.olderThanDays, ...(legacy ? {} : { fromDate: body.fromDate, toDate: body.toDate, timeZone: body.timeZone }), count: 1, previewToken: 'sample-date-preview', targets: [{ id: 'sample-room', name: 'Lunch with friends', restaurant: 'Sample Kitchen', orderNumber: 1, phase: 'CANCELLED', updatedAt: new Date('2026-10-02T12:00:00Z').getTime() }] };
+  }} /></div>);
+  await pause();
+  assert(button('Preview cleanup').disabled, 'Blank dates allow preview');
+  const dates = () => host.querySelectorAll('input[type=date]');
+  setValue(dates()[0], '2026-10-01'); setValue(dates()[1], '2026-10-02'); await pause();
+  button('Preview cleanup').click(); await pause();
+  assert(requests.at(-1).body.fromDate === '2026-10-01' && requests.at(-1).body.toDate === '2026-10-02' && requests.at(-1).body.olderThanDays === 0 && requests.at(-1).body.timeZone, 'Dates/timezone were lost or age also applied');
+  assert(button('Delete selected data').disabled, 'Preview allows deletion without confirmation');
+  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
+  setValue(dates()[1], '2026-10-03'); await pause();
+  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'Changing dates retained the old deletion preview');
+  button('Preview cleanup').click(); await pause();
+  assert([...host.querySelectorAll('input')].find(input => input.type === 'text').value === '', 'Confirmation was retained after changing dates');
+  setValue([...host.querySelectorAll('input')].find(input => input.type === 'text'), 'DELETE'); await pause();
+  button('Delete selected data').click(); await pause();
+  assert(requests.at(-1).body.toDate === '2026-10-03' && requests.at(-1).body.previewToken === 'sample-date-preview' && requests.at(-1).body.confirmation === 'DELETE', 'Delete did not use the reviewed range');
+  assert(changed === 1 && host.textContent.includes(t('records removed')), 'Deletion did not refresh the admin dashboard');
+  setValue(dates()[0], '2026-10-04'); await pause();
+  assert(button('Preview cleanup').disabled, 'Reversed range allows preview');
+  setValue(dates()[0], '2026-10-01'); await pause(); legacy = true;
+  button('Preview cleanup').click(); await pause();
+  assert(![...host.querySelectorAll('button')].some(value => value.textContent === t('Delete selected data')), 'An older server ignoring the dates enabled deletion');
+  assert(host.textContent.includes(t('The server could not verify this date range. Refresh and preview again.')), 'Unsupported range did not show an explanation');
+  legacy = false; button('Preview cleanup').click(); await pause();
+  assert(!measureAudit().overflow, 'Date range controls overflow');
+  return { passed: ['date fields', 'inclusive range payload and timezone', 'preview and confirmation', 'changed range invalidation', 'dashboard refresh', 'reversed date rejection', 'legacy server rejection'], ...measureAudit() };
+}
+
+
+export async function runWalletAnnouncementAudit() {
+  const { default: WalletAnnouncement } = await import('../src/foodrun/WalletAnnouncement.jsx');
+  const { default: WheelProtection } = await import('../src/foodrun/WheelProtection.jsx');
+  const { walletAnnouncementKey } = await import('../src/foodrun/walletAnnouncement.js');
+  const { serviceSupportMessage } = await import('../src/foodrun/ServiceSupportNote.jsx');
+  const id = `announcement-audit-${Date.now()}`;
+  let opened = 0;
+  const render = async element => {
+    document.getElementById('root').style.display = 'none'; root?.unmount(); host?.remove();
+    host = document.createElement('div'); host.id = 'audit-root'; document.body.append(host); root = createRoot(host);
+    root.render(element); await pause();
+  };
+  const fixture = { ...data, user: { uid: id }, home: { ...data.home, profile: { ...data.home.profile, userId: id }, wallet: { balances: [], topUps: [], payments: [], batches: [] } } };
+  await mountAudit('home', 'LOBBY', { data: fixture });
+  assert(host.querySelector('.wallet-announcement'), 'First Home does not announce wallet');
+  assert(host.textContent.includes(t('Transfer the money outside Intrvioo. Your balance updates after the holder confirms receipt.')), 'Announcement does not explain confirmed top-ups');
+  button('Got it').click(); await pause();
+  assert(!host.querySelector('.wallet-announcement'), 'Dismiss did not hide announcement');
+  assert(localStorage.getItem(walletAnnouncementKey(id)) === 'seen', 'Dismissal did not persist');
+  await mountAudit('home', 'LOBBY', { data: fixture });
+  assert(!host.querySelector('.wallet-announcement'), 'Returning Home repeated announcement');
+  await render(<WalletAnnouncement userId={`${id}-other`} onOpen={() => opened++} />);
+  assert(host.querySelector('.wallet-announcement'), 'Another account did not receive announcement');
+  button('Open wallet').click(); await pause();
+  assert(opened === 1 && !host.querySelector('.wallet-announcement'), 'Open wallet did not open and dismiss');
+  const room = { id: 'sample-room', ownerId: 'owner', phase: 'LOBBY', members: [{ id: 'owner', name: 'Owner' }], wheelProtections: [] };
+  await render(<WheelProtection room={room} me={{ id: 'member', approved: true, participating: true, eligible: true }} data={{ ...data, online: { 'sample-room': true } }} />);
+  assert(host.querySelector('.service-support-note')?.textContent === t(serviceSupportMessage), 'Paid feature does not explain server and service funding');
+  assert(button('Exclude me from selection · AED 10'), 'Funding notice obscures paid choice');
+  const result = { passed: ['first authenticated Home announcement', 'confirmed top-up explanation', 'persistent dismissal', 'return visits', 'separate accounts', 'open wallet', 'paid feature funding notice'], ...measureAudit() };
+  localStorage.removeItem(walletAnnouncementKey(id)); localStorage.removeItem(walletAnnouncementKey(`${id}-other`));
+  return result;
 }

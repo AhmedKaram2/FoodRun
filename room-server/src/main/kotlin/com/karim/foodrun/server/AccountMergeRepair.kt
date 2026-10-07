@@ -119,7 +119,7 @@ internal object AccountMergeRepair {
             if (value.userId == source.userId) db.putRecord(key, orderJson.encodeToString(value.copy(userId = target.userId)))
         }
         db.records(AdminService.CONTRIBUTOR_PREFIX).filter { it.second == source.userId }.forEach { db.putRecord(it.first, target.userId) }
-        for (prefix in listOf("email-contact", "wallet-search-email")) {
+        for (prefix in listOf("email-contact", "wallet-search-email", "notification-preferences")) {
             db.record("$prefix:${source.userId}")?.let { if (db.record("$prefix:${target.userId}") == null) db.putRecord("$prefix:${target.userId}", it) }
             db.deleteRecord("$prefix:${source.userId}")
         }

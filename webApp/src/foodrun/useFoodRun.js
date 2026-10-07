@@ -180,11 +180,11 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
       savePending(null); accept(reply, olderPage);
       if (payload.kind === 'REMIND_PAYMENT') {
         const key = reminderKey({ id: payload.roomId, orderNumber: payload.expectedOrderNumber }, payload.memberId);
-        const state = reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_FAILED' ? 'failed' : 'pending';
+        const state = reply.code === 'REMINDER_NOTIFIED' ? 'notified' : reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_FAILED' ? 'failed' : 'pending';
         setPaymentReminderStates(old => ({ ...old, [key]: state }));
         if (state !== 'failed') setPaymentReminderTimes(old => ({ ...old, [key]: Date.now() }));
         if (state === 'failed') setError(t('Email could not be sent. Please try again.'));
-        else setNotice(t(state === 'sent' ? 'Email reminder sent' : 'Sending email reminder…'));
+        else setNotice(t(state === 'notified' ? 'Reminder sent in the app; recipient emails are disabled.' : state === 'sent' ? 'Email reminder sent' : 'Sending email reminder…'));
       }
       if (payload.kind === 'RECORD_PAYMENT') setNotice(t('Payment recorded.'));
       if (['CONFIRM_TRANSFER', 'CONFIRM_REFUND'].includes(payload.kind)) setNotice(t('Payment confirmed.'));
@@ -230,7 +230,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     try {
       const reply = await request(hub, command('PAYMENT_REMINDER_STATUS', { roomId, token: session.token, memberId, expectedOrderNumber: room.orderNumber }));
       if (epoch !== alive.current) return;
-      const state = reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_PENDING' ? 'pending' : 'failed';
+      const state = reply.code === 'REMINDER_NOTIFIED' ? 'notified' : reply.code === 'REMINDER_SENT' ? 'sent' : reply.code === 'REMINDER_PENDING' ? 'pending' : 'failed';
       setPaymentReminderStates(old => ({ ...old, [key]: state }));
       if (state === 'sent') setNotice(t('Email reminder sent'));
       if (state === 'failed') { setPaymentReminderTimes(old => { const next = { ...old }; delete next[key]; return next; }); setError(t('Email could not be sent. Please try again.')); }

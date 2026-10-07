@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -243,7 +244,7 @@ internal fun GroupActionButton(button: GroupButton, busy: Boolean, controller: G
 internal fun GroupCardContent(card: GroupCard, busy: Boolean, controller: GroupController) {
     var detailExpanded by remember(card.id) { mutableStateOf(false) }
     val compactDetail = card.id == "order-summary" && card.detail.lines().size > 4
-    FoodCard(bordered = true) {
+    FoodCard(modifier = if(card.selection != null) Modifier.clickable(enabled = !busy && card.selection!!.enabled, role = Role.Button) { controller.dispatch(card.selection!!.action,card.selection!!.value) } else Modifier, bordered = true) {
         Column(
             modifier = Modifier.padding(FoodSpacing.Large),
             verticalArrangement = Arrangement.spacedBy(FoodSpacing.Content),

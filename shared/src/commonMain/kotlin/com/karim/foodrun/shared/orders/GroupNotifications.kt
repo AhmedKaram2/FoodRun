@@ -30,7 +30,7 @@ internal class GroupNotifications(private val c: GroupController) {
                     result(reply)
                     pending?.let { (id, action) ->
                         val item = items.firstOrNull { it.id == id }
-                        if(item != null && (item.kind.startsWith("wallet_") || c.library.sessions.any { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) })) { pending = null; open(id, action) }
+                        if(item != null && (item.kind.startsWith("wallet_") || item.kind.startsWith("friend_") || c.library.sessions.any { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) })) { pending = null; open(id, action) }
                     }
                 } catch (failure: Exception) {
                     if(c.page == GroupPage.NOTIFICATIONS) c.error = failure.message.orEmpty()
@@ -46,7 +46,7 @@ internal class GroupNotifications(private val c: GroupController) {
         request(NotificationRequest(c.library.identityToken))
     }
     fun register(prompt: Boolean) {
-        if(registering) return
+        if(registering || c.library.home?.notificationPreferences?.pushEnabled == false) return
         if(!prompt && registered.startsWith(c.library.identityToken) && registered.endsWith(c.library.language) && registered.isNotEmpty()) return
         if(c.library.identityToken.isEmpty()) { if(prompt) c.error = tr("Sign in to enable notifications.", "سجل الدخول لتفعيل الإشعارات."); return }
         val identity = c.library.identityToken
@@ -80,6 +80,8 @@ internal class GroupNotifications(private val c: GroupController) {
     }
     fun open(id: String, action: String) {
         val item = items.firstOrNull { it.id == id } ?: error(tr("Refresh your notifications.", "حدث الإشعارات."))
+        if(item.kind == "friend_group_added") { request(NotificationRequest(c.library.identityToken,"read",notificationId=id)); c.friends.open(); return }
+        if(item.kind == "friend_room_invitation") { request(NotificationRequest(c.library.identityToken,"read",notificationId=id)); c.dispatch(GroupAction.ACCEPT_INVITE,item.transferId); return }
         if(item.kind.startsWith("wallet_")) {
             request(NotificationRequest(c.library.identityToken, "read", notificationId = id)); selected = null; c.page = GroupPage.PROFILE; return
         }

@@ -18,6 +18,9 @@ Distributions/*.zip
 
 .local/
 webApp/node_modules/
+mobileApp/node_modules/
+Pods/
+.bundle/
 webApp/dist/
 webApp/.env.local
 

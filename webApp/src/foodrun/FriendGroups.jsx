@@ -1,39 +1,37 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getLanguage, t } from './i18n.js';
+import PagedList from './PagedList.jsx';
 const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
-
+const key = member => member.userId || member.email.toLowerCase();
 export default function FriendGroups({ data, onBack }) {
   const blank = () => ({ id: crypto.randomUUID(), name: '', favourite: true, members: [] });
-  const [group, setGroup] = useState(blank), [email, setEmail] = useState(''), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
-  const queryVersion = useRef(0);
-  const [viewKey, setViewKey] = useState('');
-  const joined = data.home.joinedFriendGroups || [];
-  const viewed = joined.find(value => `${value.ownerId}:${value.group.id}` === viewKey);
-  const leave = async value => {
-    const reply = await data.send('LEAVE_FRIEND_GROUP', { friendGroupId: value.group.id, friendGroupOwnerId: value.ownerId });
-    if(reply) { setViewKey(''); data.setNotice(tx('You left the group.', 'غادرت المجموعة.')); }
-  };
-  const edit = value => { ++queryVersion.current; setViewKey(''); setGroup(value); setEmail(''); setMessage(''); setBusy(false); };
-  const add = async event => {
-    event.preventDefault(); const version = ++queryVersion.current; const value = email.trim().toLowerCase(); setBusy(true); setMessage('');
-    try {
-      const reply = await data.walletQuery('FRIEND_LOOKUP', { text: value });
-      if(version !== queryVersion.current) return;
-      if(!reply.friendContact) throw Error(tx('Could not look up this email.', 'تعذر البحث عن هذا البريد.'));
-      setGroup(old => ({ ...old, members: [...old.members.filter(member => member.email !== value), reply.friendContact] })); setEmail('');
-    } catch(error) { if(version === queryVersion.current) setMessage(error.message); }
-    finally { if(version === queryVersion.current) setBusy(false); }
-  };
-  return <main className="page-shell"><div className="section-title"><h1>{tx('Friend groups', 'مجموعات الأصدقاء')}</h1><button className="secondary" onClick={onBack}>{t('Home')}</button></div>
-    <p>{tx('Save a favourite group, then select it when creating a room to email everyone an invitation.', 'احفظ مجموعة مفضلة ثم اخترها عند إنشاء غرفة لإرسال دعوة بالبريد لجميع أعضائها.')}</p>
-    <div className="stack">
-      <section className="card stack"><h2>{tx('Your groups', 'مجموعاتك')}</h2>{(data.home.friendGroups || []).map(value => <article key={value.id} className="wallet-item"><b>{value.name} {value.favourite ? '★' : ''}</b><p>{value.members.length} {tx('friends', 'أصدقاء')}</p><button className="secondary" disabled={data.busy} onClick={() => edit(value)}>{t('Edit')}</button><button className="link danger" disabled={data.busy} onClick={async () => { const reply = await data.send('DELETE_FRIEND_GROUP', { friendGroupId: value.id }); if(reply && group.id === value.id) edit(blank()); }}>{t('Delete')}</button></article>)}<button className="secondary" onClick={() => edit(blank())}>{tx('New group', 'مجموعة جديدة')}</button></section>
-      <section className="card stack"><h2>{tx('Groups I joined', 'المجموعات التي انضممت إليها')}</h2>{!joined.length && <p>{tx('Groups you are added to will appear here.', 'تظهر هنا المجموعات التي تُضاف إليها.')}</p>}{joined.map(value => <article className="wallet-item" key={`${value.ownerId}:${value.group.id}`}><b>{value.group.name}</b><p>{tx('Created by', 'أنشأها')} {value.ownerName} · {value.group.members.length} {tx('friends', 'أصدقاء')}</p><button className="secondary" onClick={() => { ++queryVersion.current; setBusy(false); setViewKey(`${value.ownerId}:${value.group.id}`); }}>{tx('View group', 'عرض المجموعة')}</button><button className="link danger" disabled={data.busy} onClick={() => leave(value)}>{tx('Leave group', 'مغادرة المجموعة')}</button></article>)}</section>
-      {viewed ? <section className="card stack" aria-label={tx('Group details', 'تفاصيل المجموعة')}><h2>{viewed.group.name}</h2><p>{tx('Created by', 'أنشأها')} {viewed.ownerName}</p>{viewed.group.members.map(member => <article className="wallet-item" key={member.email}><b>{member.name || member.email}</b><p><bdi>{member.email}</bdi></p></article>)}<button className="secondary" onClick={() => setViewKey('')}>{t('Back')}</button><button className="link danger" disabled={data.busy} onClick={() => leave(viewed)}>{tx('Leave group', 'مغادرة المجموعة')}</button></section> : <section className="card stack"><h2>{tx('Edit group', 'تعديل المجموعة')}</h2><label>{tx('Group name', 'اسم المجموعة')}<input value={group.name} maxLength={160} onChange={event => setGroup({ ...group, name: event.target.value })} /></label><label className="check"><input type="checkbox" checked={group.favourite} onChange={event => setGroup({ ...group, favourite: event.target.checked })} />{tx('Favourite group', 'مجموعة مفضلة')}</label>
-        <form className="stack" onSubmit={add}><label>{t('Email')}<input type="email" required value={email} maxLength={254} onChange={event => { ++queryVersion.current; setBusy(false); setEmail(event.target.value); }} /></label><button className="secondary" disabled={busy || group.members.length >= 30}>{tx('Add by email', 'إضافة بالبريد')}</button></form>
-        {group.members.map(member => <div className="wallet-item" key={member.email}><b>{member.name || member.email}</b><p><bdi>{member.email}</bdi> · {member.userId ? tx('Registered user', 'مستخدم مسجل') : tx('Sign-up invitation will be emailed when saved', 'تُرسل دعوة التسجيل بالبريد عند الحفظ')}</p><button className="link danger" onClick={() => setGroup({ ...group, members: group.members.filter(value => value.email !== member.email) })}>{t('Remove')}</button></div>)}
-        {message && <p role="alert">{message}</p>}<button className="primary" disabled={data.busy || busy || !group.name.trim()} onClick={async () => { const reply = await data.send('SAVE_FRIEND_GROUP', { friendGroup: group }); if(reply) { edit(blank()); data.setNotice(tx('Friend group saved.', 'تم حفظ مجموعة الأصدقاء.')); } }}>{t('Save')}</button>
-      </section>}
-    </div>
-  </main>;
+  const [group,setGroup] = useState(blank), [query,setQuery] = useState(''), [results,setResults] = useState([]), [busy,setBusy] = useState(false), [message,setMessage] = useState(''), [viewKey,setViewKey] = useState('');
+  const version = useRef(0), input = useRef(null);
+  const joined = data.home.joinedFriendGroups || [], viewed = joined.find(value => `${value.ownerId}:${value.group.id}` === viewKey);
+  useEffect(() => {
+    const current = ++version.current, abort = new AbortController(); setResults([]); setMessage('');
+    if(query.trim().length < 2) { setBusy(false); return; }
+    setBusy(true);
+    const timer = setTimeout(async () => {
+      try { const reply = await data.walletQuery('FRIEND_SEARCH',{text:query.trim()},abort.signal); if(current === version.current) setResults(reply.friendContacts || []); }
+      catch(error) { if(!abort.signal.aborted && current === version.current) setMessage(error.message); }
+      finally { if(current === version.current) setBusy(false); }
+    },300);
+    return () => { clearTimeout(timer); abort.abort(); };
+  },[query,group.id,data.user?.uid,data.hub]);
+  const edit = value => { ++version.current; setViewKey(''); setGroup(value); setQuery(''); setResults([]); setMessage(''); };
+  const add = member => { if(group.members.length >= 30) return; setGroup(old => ({...old,members:[...old.members.filter(value => key(value) !== key(member)),member]})); setQuery(''); input.current?.focus(); };
+  const invite = async () => { const current = ++version.current; setBusy(true); try { const reply = await data.walletQuery('FRIEND_LOOKUP',{text:query.trim().toLowerCase()}); if(current === version.current && reply.friendContact) add(reply.friendContact); } catch(error) { if(current === version.current) setMessage(error.message); } finally { if(current === version.current) setBusy(false); } };
+  const leave = async value => { if(await data.send('LEAVE_FRIEND_GROUP',{friendGroupId:value.group.id,friendGroupOwnerId:value.ownerId})) { setViewKey(''); data.setNotice(tx('You left the group.','غادرت المجموعة.')); } };
+  const known = new Set(group.members.map(key)), options = results.filter(member => !known.has(key(member)));
+  const member = (value, removable = false) => <article className="wallet-item" key={key(value)}><b>{value.name || value.email}</b><p><bdi>{value.email || tx('App notifications available','إشعارات التطبيق متاحة')}</bdi> · {value.userId ? tx('Registered user','مستخدم مسجل') : tx('Sign-up invitation will be emailed when saved','تُرسل دعوة التسجيل بالبريد عند الحفظ')}</p>{removable && <button type="button" className="link danger" onClick={() => setGroup({...group,members:group.members.filter(old => key(old) !== key(value))})}>{t('Remove')}</button>}</article>;
+  return <main className="page-shell"><div className="section-title"><h1>{tx('Friend groups','مجموعات الأصدقاء')}</h1><button className="secondary" onClick={onBack}>{t('Home')}</button></div><p>{tx('Choose a saved group when creating a room to invite its members.','اختر مجموعة محفوظة عند إنشاء غرفة لدعوة أعضائها.')}</p><div className="stack">
+    <section data-mobile-section="owned" data-mobile-label={tx('Your groups','مجموعاتك')} className="card stack"><h2>{tx('Your groups','مجموعاتك')}</h2><PagedList items={data.home.friendGroups || []}>{value => <article key={value.id} className="wallet-item"><b>{value.name} {value.favourite ? '★' : ''}</b><p>{value.members.length} {tx('friends','أصدقاء')}</p><button className="secondary" disabled={data.busy} data-mobile-target="editor" onClick={() => edit(value)}>{t('Edit')}</button><button className="link danger" disabled={data.busy} onClick={async () => { if(await data.send('DELETE_FRIEND_GROUP',{friendGroupId:value.id}) && group.id === value.id) edit(blank()); }}>{t('Delete')}</button></article>}</PagedList><button className="secondary" data-mobile-target="editor" onClick={() => edit(blank())}>{tx('New group','مجموعة جديدة')}</button></section>
+    <section data-mobile-section="joined" data-mobile-label={tx('Groups I joined','المجموعات التي انضممت إليها')} className="card stack"><h2>{tx('Groups I joined','المجموعات التي انضممت إليها')}</h2><PagedList items={joined}>{value => <article className="wallet-item" key={`${value.ownerId}:${value.group.id}`}><b>{value.group.name}</b><p>{tx('Created by','أنشأها')} {value.ownerName} · {value.group.members.length} {tx('friends','أصدقاء')}</p><button className="secondary" data-mobile-target="editor" onClick={() => setViewKey(`${value.ownerId}:${value.group.id}`)}>{tx('View group','عرض المجموعة')}</button><button className="link danger" disabled={data.busy} onClick={() => leave(value)}>{tx('Leave group','مغادرة المجموعة')}</button></article>}</PagedList></section>
+    <section data-mobile-section="editor" data-mobile-label={viewed ? tx('Group details','تفاصيل المجموعة') : tx('Edit group','تعديل المجموعة')} className="card stack" aria-label={viewed ? tx('Group details','تفاصيل المجموعة') : tx('Edit group','تعديل المجموعة')}>
+      {viewed ? <><h2>{viewed.group.name}</h2><p>{tx('Created by','أنشأها')} {viewed.ownerName}</p><PagedList items={viewed.group.members} resetKey={viewKey}>{value => member(value)}</PagedList><button className="secondary" onClick={() => setViewKey('')}>{t('Back')}</button><button className="link danger" disabled={data.busy} onClick={() => leave(viewed)}>{tx('Leave group','مغادرة المجموعة')}</button></> : <><h2>{tx('Edit group','تعديل المجموعة')}</h2><label>{tx('Group name','اسم المجموعة')}<input value={group.name} maxLength={160} onChange={event => setGroup({...group,name:event.target.value})} /></label><label className="check"><input type="checkbox" checked={group.favourite} onChange={event => setGroup({...group,favourite:event.target.checked})} />{tx('Favourite group','مجموعة مفضلة')}</label>
+      <div className="friend-search"><label>{tx('Find people by name or email','ابحث عن الأشخاص بالاسم أو البريد')}<input ref={input} type="search" role="combobox" aria-expanded={query.trim().length >= 2} aria-controls="friend-search-results" autoComplete="off" value={query} maxLength={254} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if(event.key === 'Escape') setQuery(''); if(event.key === 'ArrowDown') { event.preventDefault(); document.querySelector('#friend-search-results button')?.focus(); } }} /></label><small>{tx('Type at least two characters, then select a person.','اكتب حرفين على الأقل ثم اختر الشخص.')}</small>
+      {query.trim().length >= 2 && <div id="friend-search-results" className="friend-search-results" aria-label={tx('Matching people','الأشخاص المطابقون')} aria-busy={busy}>{busy && <p role="status">{tx('Searching…','جارٍ البحث…')}</p>}{options.map(value => <button type="button" className="friend-search-person" key={key(value)} disabled={data.busy || group.members.length >= 30} onClick={() => add(value)}><span className="avatar initials small">{(value.name || value.email).slice(0,1)}</span><span><b>{value.name || value.email}</b><small><bdi>{value.email || tx('Registered user','مستخدم مسجل')}</bdi></small></span><b>＋</b></button>)}{!busy && !options.length && <p>{tx('No new people match this search.','لا يوجد أشخاص جدد مطابقون للبحث.')}</p>}{!busy && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.trim()) && !results.some(value => value.email.toLowerCase() === query.trim().toLowerCase()) && <button type="button" className="secondary" disabled={data.busy || group.members.length >= 30} onClick={invite}>{tx('Invite by email','دعوة بالبريد')} · <bdi>{query.trim()}</bdi></button>}</div>}</div>
+      <h3>{tx('Selected members','الأعضاء المحددون')} · {group.members.length}/30</h3><PagedList items={group.members} resetKey={group.id}>{value => member(value,true)}</PagedList>{message && <p role="alert">{message}</p>}<button className="primary" disabled={data.busy || busy || !group.name.trim()} onClick={async () => { if(await data.send('SAVE_FRIEND_GROUP',{friendGroup:group})) { edit(blank()); data.setNotice(tx('Friend group saved.','تم حفظ مجموعة الأصدقاء.')); } }}>{t('Save')}</button></>}
+    </section></div></main>;
 }

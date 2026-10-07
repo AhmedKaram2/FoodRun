@@ -35,7 +35,7 @@ class GroupFriendsTest {
         assertTrue(read.second.friendsDetails)
         read.third.complete(orderJson.encodeToString(RoomReply(friendContact = FriendContact("new@example.test"))), "")
         assertEquals(GroupPage.FRIENDS, c.page)
-        assertTrue(c.state.cards.any { it.id == "friend-email:new@example.test" })
+        assertTrue(c.state.cards.any { it.id == "friend-email:email:new@example.test" })
         c.dispatch(GroupAction.FRIENDS_ACTION, "save")
         val save = device.requests.last()
         assertEquals(CommandKind.SAVE_FRIEND_GROUP, save.second.kind)
@@ -120,5 +120,20 @@ class GroupFriendsTest {
         c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = emptyList()))
         assertTrue(c.state.cards.none { it.id == "friend-view" })
         assertTrue(c.state.fields.any { it.key == GroupFieldKey.FRIEND_GROUP_NAME })
+    }
+
+    @Test fun nameSearchIsReadOnlyAndCannotReturnIntoAnotherIdentityOrPage() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.FRIENDS_ACTION,"new"); c.update(GroupFieldKey.FRIEND_EMAIL,"bo")
+        val search = device.requests.last(); assertEquals(CommandKind.FRIEND_SEARCH,search.second.kind); assertNull(c.library.pending); assertFalse(c.busy)
+        search.third.complete(orderJson.encodeToString(RoomReply(friendContacts = listOf(FriendContact("bob@example.test","bob","Bob")))),"")
+        assertTrue(c.state.cards.any { it.id == "friend-result:user:bob" })
+        c.dispatch(GroupAction.FRIENDS_ACTION,"pick|user:bob"); c.update(GroupFieldKey.FRIEND_GROUP_NAME,"Friends"); c.dispatch(GroupAction.FRIENDS_ACTION,"save")
+        assertEquals("bob",device.requests.last().second.friendGroup!!.members.single().userId)
+        device.requests.last().third.complete(orderJson.encodeToString(RoomReply(home = c.library.home)),"")
+        c.update(GroupFieldKey.FRIEND_EMAIL,"al"); val late = device.requests.last()
+        c.page = GroupPage.HOME
+        late.third.complete(orderJson.encodeToString(RoomReply(friendContacts = listOf(FriendContact("alice@example.test","alice","Alice")))),"")
+        assertEquals(GroupPage.HOME,c.page); assertFalse(c.state.cards.any { it.id == "friend-result:user:alice" })
     }
 }

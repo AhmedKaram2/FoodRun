@@ -13,6 +13,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 import com.karim.foodrun.orders.HubPairing
 import com.karim.foodrun.shared.orders.GroupPlatform
 import com.karim.foodrun.shared.orders.GroupReplyCallback
+import com.karim.foodrun.shared.orders.GroupScheduledCallback
 import com.karim.foodrun.shared.orders.GroupSubscription
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -171,6 +172,7 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
             .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body)).setContentIntent(tap).setAutoCancel(true).build())
     }
     override fun now() = System.currentTimeMillis()
+    override fun schedule(delayMillis: Long, callback: GroupScheduledCallback) { main.postDelayed({ callback.run() }, delayMillis) }
     override fun localOffsetSeconds(timeMillis: Long) = java.util.TimeZone.getDefault().getOffset(timeMillis) / 1000
     override fun uuid() = UUID.randomUUID().toString()
     override fun read(key: String): String = storage.read(key)

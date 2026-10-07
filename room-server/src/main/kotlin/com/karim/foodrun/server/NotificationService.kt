@@ -23,6 +23,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
                 }
             }
             "register" -> {
+                require(NotificationPreferencesStore.read(db,uid).pushEnabled) { "Push notifications are disabled in your profile preferences." }
                 require(pushAvailable) { "Push delivery is not configured on this hub. Your notification inbox is still available." }
                 require(request.platform in listOf("web", "android", "ios") && request.language in listOf("en", "ar"))
                 require(request.token.length in 20..4096 && request.token.none(Char::isWhitespace)) { "Invalid notification token." }
@@ -51,6 +52,12 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
     private fun devices() = db.records("push-device:").map { it.first to orderJson.decodeFromString<PushDevice>(it.second) }
     private fun accessible(uid: String, item: FoodNotification): Boolean {
         if (AccountRestrictions.current(db, uid, clock()) != null || AccountRestrictions.forRoom(db, uid, item.roomId, clock()) != null) return false
+        if(item.kind == "friend_group_added") return true
+        if(item.kind == "friend_room_invitation") {
+            val invitation = db.record("invitation:$uid:${item.transferId}")?.let { orderJson.decodeFromString<FoodInvitation>(it) } ?: return false
+            val invitedRoom = db.room(invitation.roomId) ?: return false
+            return invitedRoom.phase == RoomPhase.LOBBY && invitedRoom.orderNumber == invitation.orderNumber && (invitedRoom.joinDeadlineAt == 0L || invitedRoom.joinDeadlineAt > clock())
+        }
         if (item.roomId.isEmpty() && item.kind.startsWith("wallet_")) return true
         val room = db.room(item.roomId) ?: return false
         val membership = db.record("membership:$uid:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it) }
@@ -62,6 +69,15 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
     }
     fun wallet(uid: String, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>) =
         addUser(uid, null, eventId, kind, title, body, listOf("wallet"))
+    fun friendRoom(uid: String, invitation: FoodInvitation, room: Room) = addUser(uid,room,invitation.id,"friend_room_invitation",
+        "You're invited to ${room.name}" to "دعوة للانضمام إلى ${room.name}",
+        "${invitation.invitedBy} invited you. Room code: ${room.code}." to "دعاك ${invitation.invitedBy}. رمز الغرفة: ${room.code}.",listOf("join"),invitation.id)
+    fun friendGroup(uid: String, group: FriendGroup, creator: String, eventId: String) = addUser(uid,null,eventId,"friend_group_added",
+        "Added to ${group.name}" to "تمت إضافتك إلى ${group.name}", "$creator added you to this friend group." to "أضافك $creator إلى مجموعة الأصدقاء.",listOf("groups"))
+    fun friendRoomCreated(uid: String, room: Room, eventId: String) = addUser(uid,room,eventId,"friend_room_created",
+        "${room.name} is ready" to "${room.name} جاهزة", "Your group room is ready. Room code: ${room.code}." to "غرفة مجموعتك جاهزة. رمز الغرفة: ${room.code}.",listOf("open"))
+    fun reminder(room: Room, memberId: String, eventId: String, body: String) = add(room,memberId,eventId,"payment_reminder",
+        "Payment reminder" to "تذكير بالدفع",body to body,listOf("pay","open"))
     private fun addUser(uid: String, room: Room?, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>, actions: List<String>, transferId: String = "") {
         val id = RoomService.hash("${room?.id ?: "wallet"}:${room?.orderNumber ?: 0}:$eventId:$uid").take(40)
         val key = "notification:$uid:$id"
@@ -69,12 +85,12 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         val ar = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it).language == "ar" } == true
         val labels = mapOf("open" to ("Open room" to "فتح الغرفة"), "order" to ("Review & send order" to "مراجعة وإرسال الطلب"),
             "copy" to ("Copy order" to "نسخ الطلب"), "share" to ("Share order" to "مشاركة الطلب"), "pay" to ("Payment sent" to "أرسلت الدفع"),
-            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"))
+            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"), "join" to ("Join room" to "الانضمام للغرفة"), "groups" to ("View group" to "عرض المجموعة"))
         val item = FoodNotification(id, room?.id.orEmpty(), room?.orderNumber ?: 0, kind, if(ar) title.second else title.first,
             if(ar) body.second else body.first, actions.map { action -> NotificationAction(action, labels.getValue(action).let { if(ar) it.second else it.first }) }, transferId, clock())
         db.putRecord(key, orderJson.encodeToString(item))
         val targets = devices().filter { it.second.userId == uid && it.second.updatedAt > clock() - 90L * 86_400_000 }.map { it.first }
-        if (targets.isNotEmpty()) db.putRecord("push-job:$id", orderJson.encodeToString(PushJob(uid, item, targets)))
+        if (targets.isNotEmpty() && NotificationPreferencesStore.read(db,uid).pushEnabled) db.putRecord("push-job:$id", orderJson.encodeToString(PushJob(uid, item, targets)))
         db.records("notification:$uid:").map { it.first to orderJson.decodeFromString<FoodNotification>(it.second) }
             .sortedByDescending { it.second.createdAt }.drop(100).forEach { db.deleteRecord(it.first) }
     }
@@ -135,6 +151,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
     fun pending(): PushDelivery? {
         for ((key, body) in db.records("push-job:")) {
             val job = orderJson.decodeFromString<PushJob>(body)
+            if(!NotificationPreferencesStore.read(db,job.userId).pushEnabled) { db.deleteRecord(key); continue }
             if (job.nextAt > clock()) continue
             val item = db.record("notification:${job.userId}:${job.notification.id}")?.let { orderJson.decodeFromString<FoodNotification>(it) }
             if (item == null || item.read || job.notification.createdAt < clock() - 86_400_000 || !accessible(job.userId, job.notification)) { db.deleteRecord(key); continue }

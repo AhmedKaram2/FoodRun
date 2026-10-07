@@ -1,3 +1,4 @@
+import PagedList from './PagedList.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { settlementOpen } from './roomLifecycle.js';
 import { Page } from './FoodRunApp.jsx';
@@ -69,10 +70,10 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
           {sectionHeading('02', 'Add people', 'Selected people will see this room and their balance in their wallet.')}
           <div className="payment-selection-heading"><span className="payment-owner"><span className="payment-avatar" aria-hidden="true">{initials(owner.name)}</span><bdi>{owner.name}</bdi><small>{t(' · You')}</small></span><span className="payment-count">{tf('{count} selected', { count: people.length })}</span></div>
           <label>{t('Search users')}<input type="search" placeholder={t('Search by name…')} value={search} onChange={e => setSearch(e.target.value)} /></label>
-          <div className="payment-people-list">{matches.map(person => <label className={`payment-person-choice${selected.includes(person.userId) ? ' is-selected' : ''}`} key={person.userId}>
+          <div className="payment-people-list"><PagedList items={matches} resetKey={search}>{person => <label className={`payment-person-choice${selected.includes(person.userId) ? ' is-selected' : ''}`} key={person.userId}>
             <input type="checkbox" checked={selected.includes(person.userId)} onChange={e => setSelected(old => e.target.checked ? [...old, person.userId] : old.filter(id => id !== person.userId))} />
             <span className="payment-avatar" aria-hidden="true">{initials(person.name)}</span><bdi>{person.name}</bdi>
-          </label>)}</div>
+          </label>}</PagedList></div>
           {!matches.length && <p className="payment-empty">{t(search.trim() ? 'No people match your search.' : 'No users are available yet. Ask them to sign in and enable visibility in the users list.')}</p>}
         </section>
         <section className="card payment-section stack">
@@ -81,12 +82,12 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
             <label>{t('Receipt total')} · {form.currency}<input className="payment-amount-input" required inputMode="decimal" placeholder={minorInput(0, form.currency)} value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} /></label>
             <button type="button" className="secondary" onClick={() => { try { const values = splitEqually(amount(form.total, form.currency), people.map(person => person.userId)); setShares(old => Object.fromEntries(people.map(person => [person.userId, { ...old[person.userId], amount: minorInput(values[person.userId], form.currency) }]))); setError(''); } catch (e) { setError(e.message); } }}>{t('Split equally')}</button>
           </div>
-          <div className="payment-share-list">{people.map(person => <div className="payment-share-row stack" key={person.userId}>
+          <div className="payment-share-list"><PagedList items={people}>{person => <div className="payment-share-row stack" key={person.userId}>
             <h3><span className="payment-avatar" aria-hidden="true">{initials(person.name)}</span><bdi>{person.name}</bdi>{person.userId === owner.userId && <small>{t(' · You')}</small>}</h3>
             <label>{t('Their order')}<input maxLength={160} value={shares[person.userId]?.description || ''} onChange={e => updateShare(person.userId, 'description', e.target.value)} placeholder={t('Food order')} /></label>
             <div className="form-grid two"><label>{t('Share')} · {form.currency}<input className="payment-amount-input" inputMode="decimal" placeholder={minorInput(0, form.currency)} required value={shares[person.userId]?.amount || ''} onChange={e => updateShare(person.userId, 'amount', e.target.value)} /></label>
             {person.userId !== owner.userId && <label>{t('Already received')} · {form.currency}<input className="payment-amount-input" inputMode="decimal" value={shares[person.userId]?.received || ''} placeholder={minorInput(0, form.currency)} onChange={e => updateShare(person.userId, 'received', e.target.value)} /></label>}</div>
-          </div>)}</div>
+          </div>}</PagedList></div>
         </section>
       </div>
       <aside className="payment-create-summary card">

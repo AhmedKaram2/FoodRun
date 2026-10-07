@@ -649,7 +649,7 @@
   "This wallet payment belongs to another order.": "دفعة المحفظة مرتبطة بطلب آخر.",
   "Wallet holders must settle their transfers before archiving.": "يجب على حاملي أموال المحافظ تسوية تحويلاتهم قبل إكمال الطلب.",
   "Settle this user's wallet balances and pending payments before removal.": "يجب تسوية أرصدة محفظة المستخدم ودفعاته المعلقة قبل حذفه.",
-  "Version 1.6.6 · Android 8+": "الإصدار 1.6.6 · أندرويد 8+",
+  "Version 1.6.7 · Android 8+": "الإصدار 1.6.7 · أندرويد 8+",
   "Food is better\ntogether.": "الأكل أحلى\nمع بعض.",
   "Order Together. Split Smarter.": "اطلبوا مع بعض. اقسموا الحساب بسهولة.",
   "Different Tastes. Same Table.": "أذواق مختلفة. سفرة واحدة.",
@@ -699,5 +699,9 @@
   "Mobile number": "رقم الهاتف المحمول",
   "Mobile number · optional": "رقم الهاتف المحمول · اختياري",
   "Aani uses a UAE mobile number (+971).": "تستخدم آني رقم هاتف محمول إماراتي (+971).",
-  "Sign in as this user": "تسجيل الدخول باسم هذا المستخدم"
+  "Sign in as this user": "تسجيل الدخول باسم هذا المستخدم",
+  "Search": "بحث",
+  "Clear search to review the full cleanup selection before deleting.": "امسح البحث لمراجعة جميع البيانات المحددة قبل الحذف.",
+  "Reminder sent in app": "تم إرسال التذكير في التطبيق",
+  "Reminder sent in the app; recipient emails are disabled.": "تم إرسال التذكير في التطبيق؛ المستلم أوقف رسائل البريد."
 }

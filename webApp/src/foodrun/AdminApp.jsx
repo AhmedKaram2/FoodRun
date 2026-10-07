@@ -1,3 +1,5 @@
+import PagedList, { matchesSearch } from './PagedList.jsx';
+import MobilePageLayout from './MobilePageLayout.jsx';
 import { BrandLogo, BrandMark } from './Brand.jsx';
 import PaymentFields from './PaymentFields.jsx';
 import { paymentDraft, paymentAccount, internationalPhone } from './paymentDetails.js';
@@ -27,6 +29,7 @@ async function adminRequest(path, user, body) {
 export default function AdminApp({ language, user, onBack, onSupport }) {
   const [dashboard, setDashboard] = useState(null);
   const [tab, setTab] = useState('overview');
+  const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const refresh = async () => {
@@ -38,25 +41,26 @@ export default function AdminApp({ language, user, onBack, onSupport }) {
   const saveRestaurant = restaurant => mutate('/admin/restaurant', { action: 'save', restaurant });
   if (!dashboard) return <div className="splash"><BrandMark /><p role="status">{message || t("Loading admin data…")}</p>{message && <button className="secondary" onClick={refresh}>{t("Retry")}</button>}<button className="link" onClick={onBack}>{t("Home")}</button></div>;
   const totals = Object.entries(dashboard.rooms.reduce((values, room) => ({ ...values, [room.currency]: (values[room.currency] || 0) + room.totalMinor }), {}));
-  return <main className="admin-shell">
+  return <MobilePageLayout pageKey={tab}><main className="admin-shell">
     <header className="admin-topbar"><div><BrandLogo /><b>{t("Intrvioo Admin")}</b></div><div><LanguageToggle /><button className="secondary" onClick={() => refresh()}>{t("Refresh")}</button><button className="link" onClick={onBack}>{t("Home")}</button></div></header>
-    <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{t(value[0].toUpperCase() + value.slice(1))}</button>)}</nav>
+    <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => { setTab(value); setSearch(''); }} key={value}>{t(value[0].toUpperCase() + value.slice(1))}</button>)}</nav>
+    <label className="admin-search">{t("Search")} · {t(tab[0].toUpperCase() + tab.slice(1))}<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t("Search")} /></label>
     {message && <div className="banner error">{message}</div>}
     <fieldset disabled={busy} className="admin-content room-fieldset">
-      {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small>{totals.length ? totals.map(([currency, total]) => <b key={currency}>{money(total, currency)}</b>) : <b>{money(0, 'AED')}</b>}</article></div><div className="card"><h2>{t("Current activity")}</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
-      {tab === 'users' && <AdminUsers users={dashboard.users} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} onSupport={async userId => { const reply = await mutate('/admin/support/start', { userId }); if(reply?.identityToken) onSupport?.(reply); }} />}
-      {tab === 'rooms' && <><details className="card admin-room-cleanup"><summary>{t('Clear rooms by date')}</summary><AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} initialFilter="date" roomsOnly /></details><div className="card"><h2>{t("Live and saved rooms")}</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
+      {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small>{totals.length ? totals.map(([currency, total]) => <b key={currency}>{money(total, currency)}</b>) : <b>{money(0, 'AED')}</b>}</article></div><div className="card"><h2>{t("Current activity")}</h2><PagedList items={dashboard.rooms.filter(room => matchesSearch(room,search))} resetKey={search}>{room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />}</PagedList></div></>}
+      {tab === 'users' && <AdminUsers users={dashboard.users} externalSearch={search} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} onSupport={async userId => { const reply = await mutate('/admin/support/start', { userId }); if(reply?.identityToken) onSupport?.(reply); }} />}
+      {tab === 'rooms' && <><details className="card admin-room-cleanup"><summary>{t('Clear rooms by date')}</summary><AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} initialFilter="date" search={search} roomsOnly /></details><div className="card"><h2>{t("Live and saved rooms")}</h2><PagedList items={dashboard.rooms.filter(room => matchesSearch(room,search))} resetKey={search}>{room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
         const confirmation = window.prompt(t('Delete this room and its history? Enter the room code:') + ' ' + room.code);
         if (confirmation === room.code) mutate('/admin/room', { roomId: room.id, action: 'delete', expectedRevision: room.revision, confirmation });
-      }} key={room.id} />)}</div></>}
-      {tab === 'requests' && <AdminBlockRequests requests={dashboard.blockRequests || []} mutate={mutate} busy={busy} />}
-      {tab === 'cleanup' && <AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} />}
-      {tab === 'orders' && <div className="card"><h2>{t("Order history")}</h2>{dashboard.archivedOrders.length ? dashboard.archivedOrders.map((room, index) => <AdminRoomRow room={room} key={`${room.id}-${room.orderNumber}-${index}`} />) : <p className="muted">{t("No archived orders yet.")}</p>}</div>}
-      {tab === 'wallets' && <div className="card"><h2>{t("Wallet and settlement totals")}</h2>{dashboard.rooms.map(room => <section className="admin-wallet-room" key={room.id}><div className="admin-row wallet-admin"><span><b>{room.name} · #{room.orderNumber}</b><small>{room.payer ? `Payer: ${room.payer}` : t("Payer not selected")}</small></span><span><small>{t("Total")}</small><b>{money(room.totalMinor, room.currency)}</b></span><span><small>{t("Confirmed")}</small><b>{money(room.confirmedPaidMinor, room.currency)}</b></span><span><small>{t("Outstanding")}</small><b>{money(room.outstandingMinor, room.currency)}</b></span></div>{room.wallets.map(wallet => <div className="admin-wallet-person" key={wallet.memberId}><b>{wallet.name}</b><span>{t("Order")}{money(wallet.totalMinor, room.currency)}</span><span>{t("Paid")}{money(wallet.paidMinor, room.currency)}</span><span>{wallet.balanceMinor < 0 ? 'Refund' : 'Due'} {money(Math.abs(wallet.balanceMinor), room.currency)}</span></div>)}</section>)}</div>}
-      {tab === 'restaurants' && <AdminRestaurants language={language} restaurants={dashboard.restaurants} save={saveRestaurant} remove={restaurantId => mutate('/admin/restaurant', { action: 'delete', restaurantId })} />}
-      {tab === 'settings' && <AdminSettingsPanel settings={dashboard.settings} save={settings => mutate('/admin/settings', settings)} />}
+      }} key={room.id} />}</PagedList></div></>}
+      {tab === 'requests' && <AdminBlockRequests requests={(dashboard.blockRequests || []).filter(value => matchesSearch(value,search))} mutate={mutate} busy={busy} />}
+      {tab === 'cleanup' && <AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} search={search} />}
+      {tab === 'orders' && <div className="card"><h2>{t("Order history")}</h2><PagedList items={dashboard.archivedOrders.filter(room => matchesSearch(room,search))} resetKey={search} empty={<p className="muted">{t("No archived orders yet.")}</p>}>{(room, index) => <AdminRoomRow room={room} key={`${room.id}-${room.orderNumber}-${index}`} />}</PagedList></div>}
+      {tab === 'wallets' && <div className="card"><h2>{t("Wallet and settlement totals")}</h2><PagedList items={dashboard.rooms.filter(room => matchesSearch(room,search))} resetKey={search}>{room => <section className="admin-wallet-room" key={room.id}><div className="admin-row wallet-admin"><span><b>{room.name} · #{room.orderNumber}</b><small>{room.payer ? `Payer: ${room.payer}` : t("Payer not selected")}</small></span><span><small>{t("Total")}</small><b>{money(room.totalMinor, room.currency)}</b></span><span><small>{t("Confirmed")}</small><b>{money(room.confirmedPaidMinor, room.currency)}</b></span><span><small>{t("Outstanding")}</small><b>{money(room.outstandingMinor, room.currency)}</b></span></div>{room.wallets.map(wallet => <div className="admin-wallet-person" key={wallet.memberId}><b>{wallet.name}</b><span>{t("Order")}{money(wallet.totalMinor, room.currency)}</span><span>{t("Paid")}{money(wallet.paidMinor, room.currency)}</span><span>{wallet.balanceMinor < 0 ? 'Refund' : 'Due'} {money(Math.abs(wallet.balanceMinor), room.currency)}</span></div>)}</section>}</PagedList></div>}
+      {tab === 'restaurants' && <AdminRestaurants language={language} restaurants={dashboard.restaurants} search={search} save={saveRestaurant} remove={restaurantId => mutate('/admin/restaurant', { action: 'delete', restaurantId })} />}
+      {tab === 'settings' && <AdminSettingsPanel settings={dashboard.settings} search={search} save={settings => mutate('/admin/settings', settings)} />}
     </fieldset>
-  </main>;
+  </main></MobilePageLayout>;
 }
 
 function AdminRoomRow({ room, onCancel, onDelete }) {
@@ -65,12 +69,12 @@ function AdminRoomRow({ room, onCancel, onDelete }) {
   return <div className="admin-row"><span><b>{room.name} · {room.code}</b><small>{room.restaurant}{t("· Order #")}{room.orderNumber} · {room.members}{t("members")}</small></span><span className={`status ${active ? 'live' : ''}`}>{room.phase}</span><b>{money(room.totalMinor, room.currency)}</b>{onCancel && cancellable && <button className="link danger" onClick={onCancel}>{t("Cancel room")}</button>}{onDelete && room.canDelete && <button className="link danger" onClick={onDelete}>{t("Delete room")}</button>}</div>;
 }
 
-function AdminRestaurants({ restaurants, save, remove, language }) {
+function AdminRestaurants({ restaurants, save, remove, language, search = '' }) {
   const [message, setMessage] = useState('');
   const [editing, setEditing] = useState(restaurants[0] ? clone(restaurants[0]) : blankRestaurant());
   useEffect(() => { const latest = restaurants.find(value => value.id === editing.id); if (latest) setEditing(clone(latest)); }, [restaurants]);
   return <div className="admin-restaurant-layout">
-    <aside className="card admin-restaurant-list"><button type="button" className="primary wide" onClick={() => setEditing(blankRestaurant())}>{t("Add restaurant")}</button>{restaurants.map(restaurant => <button type="button" className={editing.id === restaurant.id ? 'active' : ''} onClick={() => setEditing(clone(restaurant))} key={restaurant.id}><b>{restaurant.name}</b><small>{restaurant.menu.items.length}{t("items")}</small></button>)}</aside>
+    <aside className="card admin-restaurant-list"><button type="button" className="primary wide" onClick={() => setEditing(blankRestaurant())}>{t("Add restaurant")}</button><PagedList items={restaurants.filter(value => matchesSearch(value,search))} resetKey={search}>{restaurant => <button type="button" className={editing.id === restaurant.id ? 'active' : ''} onClick={() => setEditing(clone(restaurant))} key={restaurant.id}><b>{restaurant.name}</b><small>{restaurant.menu.items.length}{t("items")}</small></button>}</PagedList></aside>
     <section className="card stack">
       <div className="section-title compact"><h2>{t("Restaurant and menu")}</h2>{restaurants.some(value => value.id === editing.id) && <button type="button" className="link danger" onClick={() => remove(editing.id)}>{t("Delete restaurant")}</button>}</div>
       <div className="form-grid two"><label>{t("English name")}<input value={editing.name} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label><label>{t("Arabic name")}<input dir="rtl" value={editing.nameAr || ''} onChange={event => setEditing({ ...editing, nameAr: event.target.value })} /></label><label>{t("Phone with country code")}<input placeholder="+20 10 1234 5678" value={editing.contact.phoneE164 || ''} onChange={event => setEditing({ ...editing, contact: { ...editing.contact, phoneE164: event.target.value || null } })} /></label><label>{t("Currency")}<select value={editing.currency} onChange={event => setEditing(changeRestaurantCurrency(editing, event.target.value))}>{CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}</select></label><label>{t(`Default delivery fee · ${editing.currency}`)}<MenuMoneyInput currency={editing.currency} value={editing.pricing.defaultDeliveryFeeMinor} onChange={value => setEditing({ ...editing, pricing: { ...editing.pricing, defaultDeliveryFeeMinor: value } })} label={`Default delivery fee in ${editing.currency}`} /></label></div>
@@ -82,12 +86,12 @@ function AdminRestaurants({ restaurants, save, remove, language }) {
   </div>;
 }
 
-function AdminSettingsPanel({ settings, save }) {
+function AdminSettingsPanel({ settings, save, search = '' }) {
   const [form, setForm] = useState(settings);
-  return <section className="card stack admin-settings"><h2>{t("Website options")}</h2><label className="check"><input type="checkbox" checked={form.registrationsEnabled} onChange={event => setForm({ ...form, registrationsEnabled: event.target.checked })} />{t("Allow new user registration")}</label><label className="check"><input type="checkbox" checked={form.roomCreationEnabled} onChange={event => setForm({ ...form, roomCreationEnabled: event.target.checked })} />{t("Allow new room creation")}</label><label>{t("Maintenance message")}<textarea value={form.maintenanceMessage} onChange={event => setForm({ ...form, maintenanceMessage: event.target.value })} maxLength="500" /></label><button className="primary" onClick={() => save(form)}>{t("Save website options")}</button></section>;
+  return <section className="card stack admin-settings"><h2>{t("Website options")}</h2><div className="stack" hidden={!matchesSearch([t("Allow new user registration"),settings.registrationsEnabled],search)}><label className="check"><input type="checkbox" checked={form.registrationsEnabled} onChange={event => setForm({ ...form, registrationsEnabled: event.target.checked })} />{t("Allow new user registration")}</label></div><div className="stack" hidden={!matchesSearch([t("Allow new room creation"),settings.roomCreationEnabled],search)}><label className="check"><input type="checkbox" checked={form.roomCreationEnabled} onChange={event => setForm({ ...form, roomCreationEnabled: event.target.checked })} />{t("Allow new room creation")}</label></div><div className="stack" hidden={!matchesSearch([t("Maintenance message"),settings.maintenanceMessage],search)}><label>{t("Maintenance message")}<textarea value={form.maintenanceMessage} onChange={event => setForm({ ...form, maintenanceMessage: event.target.value })} maxLength="500" /></label></div><button className="primary" onClick={() => save(form)}>{t("Save website options")}</button></section>;
 }
 
-export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy, onSupport }) {
+export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy, onSupport, externalSearch }) {
   const [search, setSearch] = useState('');
   const [create, setCreate] = useState({ name: '', email: '', password: '', phone: '', language: 'en' });
   return <div className="stack">
@@ -100,8 +104,8 @@ export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy, onS
       <label>{t('Phone with country code')}<input type="tel" placeholder="+20 10 1234 5678" required value={create.phone} onChange={e => setCreate({ ...create, phone: e.target.value })} /></label>
       <label>{t('Temporary password')}<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={create.password} onChange={e => setCreate({ ...create, password: e.target.value })} /></label>
     </div><button className="primary" disabled={busy}>{t('Create user')}</button></form></details>
-    <section className="card stack"><h2>{t('Users')}</h2><label>{t('Search users')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
-      {users.filter(person => [person.name, person.email, person.phone, person.id].some(value => String(value || '').toLowerCase().includes(search.toLowerCase()))).map(person => <AdminUserCard key={person.id} person={person} rooms={rooms} self={person.id === currentUserId} mutate={mutate} busy={busy} onSupport={onSupport} />)}
+    <section className="card stack"><h2>{t('Users')}</h2>{externalSearch === undefined && <label>{t('Search users')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>}
+      <PagedList items={users.filter(person => matchesSearch([person.name,person.email,person.phone,person.id],externalSearch ?? search))} resetKey={externalSearch ?? search}>{person => <AdminUserCard key={person.id} person={person} self={person.id === currentUserId} rooms={rooms} mutate={mutate} busy={busy} onSupport={onSupport} />}</PagedList>
     </section>
   </div>;
 }
@@ -155,9 +159,9 @@ function AdminUserCard({ person, self, rooms, mutate, busy, onSupport }) {
   </article>;
 }
 export function AdminBlockRequests({ requests, mutate, busy }) {
-  return <section className="card stack"><h2>{t('Block requests')}</h2><p>{t('Room owners request a block for their room. The user can still sign in. Only an admin can approve the request.')}</p>{!requests.length && <p>{t('No block requests.')}</p>}{requests.map(request => <article key={request.id} className="admin-person stack"><b>{request.userName} · {request.durationHours} {t('hours')}</b><small>{request.requesterName} · {request.roomName} · {new Date(request.createdAt).toLocaleString()}</small><p>{request.reason}</p><span className="status">{t(request.status)}</span>{request.status === 'pending' && <div className="hero-actions"><button disabled={busy} className="primary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'approve' })}>{t('Approve block')}</button><button disabled={busy} className="secondary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'reject' })}>{t('Reject request')}</button></div>}</article>)}</section>;
+  return <section className="card stack"><h2>{t('Block requests')}</h2><p>{t('Room owners request a block for their room. The user can still sign in. Only an admin can approve the request.')}</p>{!requests.length && <p>{t('No block requests.')}</p>}<PagedList items={requests}>{request => <article key={request.id} className="admin-person stack"><b>{request.userName} · {request.durationHours} {t('hours')}</b><small>{request.requesterName} · {request.roomName} · {new Date(request.createdAt).toLocaleString()}</small><p>{request.reason}</p><span className="status">{t(request.status)}</span>{request.status === 'pending' && <div className="hero-actions"><button disabled={busy} className="primary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'approve' })}>{t('Approve block')}</button><button disabled={busy} className="secondary" onClick={() => mutate('/admin/block-request', { requestId: request.id, action: 'reject' })}>{t('Reject request')}</button></div>}</article>}</PagedList></section>;
 }
-export function AdminCleanup({ request, onChanged, initialFilter = 'age', roomsOnly = false }) {
+export function AdminCleanup({ request, onChanged, initialFilter = 'age', roomsOnly = false, search = '' }) {
   const [scope, setScope] = useState('closedRooms'), [days, setDays] = useState('30');
   const [filter, setFilter] = useState(initialFilter), [fromDate, setFromDate] = useState(''), [toDate, setToDate] = useState('');
   const [preview, setPreview] = useState(null), [confirmation, setConfirmation] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
@@ -167,7 +171,7 @@ export function AdminCleanup({ request, onChanged, initialFilter = 'age', roomsO
   try { selection = cleanupSelection({ scope, filter, days, fromDate, toDate, timeZone }); } catch (error) { validation = error.message; }
   const resetPreview = () => { requestVersion.current++; setPreview(null); setConfirmation(''); setMessage(''); };
   const run = async remove => {
-    if (busy || !selection) return;
+    if (busy || !selection || remove && search.trim()) return;
     const version = ++requestVersion.current;
     setBusy(true); setMessage('');
     try {
@@ -187,7 +191,7 @@ export function AdminCleanup({ request, onChanged, initialFilter = 'age', roomsO
     {filter === 'date' && <p className="fine">{t('Based on last room activity. Both dates are included. Time zone:')} <b dir="ltr">{timeZone}</b></p>}
     {validation && (filter === 'age' || fromDate && toDate) && <p className="form-message" role="alert">{t(validation)}</p>}
     <button disabled={busy || !selection} className="secondary" onClick={() => run(false)}>{t('Preview cleanup')}</button>
-    {preview && <div className="stack"><b>{preview.count} {t('records selected')}</b><div className="admin-cleanup-targets">{preview.targets.map(room => <article key={`${room.id}:${room.orderNumber}`}><span><b>{room.name} · #{room.orderNumber}</b><small>{room.restaurant} · {t(room.phase || '')}</small></span>{room.updatedAt != null && <time dateTime={new Date(room.updatedAt).toISOString()}>{new Date(room.updatedAt).toLocaleString(undefined, { timeZone })}</time>}</article>)}</div>{preview.count === 0 && <p className="muted">{t('No rooms or orders match this selection.')}</p>}{preview.count > 0 && <><label>{t('Type DELETE to confirm')}<input disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" dir="ltr" /></label><button disabled={busy || !selection || confirmation !== 'DELETE'} className="primary danger" onClick={() => run(true)}>{t('Delete selected data')}</button></>}</div>}
+    {preview && <div className="stack"><b>{preview.count} {t('records selected')}</b><div className="admin-cleanup-targets"><PagedList items={preview.targets.filter(room => matchesSearch(room,search))} resetKey={search}>{room => <article key={`${room.id}:${room.orderNumber}`}><span><b>{room.name} · #{room.orderNumber}</b><small>{room.restaurant} · {t(room.phase || '')}</small></span>{room.updatedAt != null && <time dateTime={new Date(room.updatedAt).toISOString()}>{new Date(room.updatedAt).toLocaleString(undefined, { timeZone })}</time>}</article>}</PagedList></div>{preview.count === 0 && <p className="muted">{t('No rooms or orders match this selection.')}</p>}{preview.count > 0 && <>{search.trim() && <p>{t('Clear search to review the full cleanup selection before deleting.')}</p>}<label>{t('Type DELETE to confirm')}<input disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" dir="ltr" /></label><button disabled={busy || !selection || confirmation !== 'DELETE' || !!search.trim()} className="primary danger" onClick={() => run(true)}>{t('Delete selected data')}</button></>}</div>}
     {message && <p role="status">{message}</p>}
   </section>;
 }

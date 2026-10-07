@@ -40,6 +40,22 @@ struct GroupScreen: View {
                 if !Task.isCancelled { store.controller.dismissFeedback(id: feedback.id) }
             }
         }
+        .sheet(isPresented: Binding(get: { state.walletHistoryPrompt != nil }, set: { if !$0 { store.dispatch(.dismissWalletHistory) } })) {
+            if let prompt = state.walletHistoryPrompt {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: FoodSpacing.s16) {
+                            Text(prompt.subtitle).font(.headline); Text(prompt.balance).font(.title3)
+                            Button(state.rtl ? "تحديث" : "Refresh") { store.dispatch(.refreshWalletHistory) }.disabled(prompt.loading)
+                            ForEach(prompt.cards, id: \.id) { card in GroupCardContent(card: card,busy:false,dispatch:store.dispatch) }
+                            if prompt.loading { ProgressView() }
+                            if !prompt.error.isEmpty { Text(prompt.error).foregroundStyle(.red); Button(state.rtl ? "إعادة المحاولة" : "Retry") { store.dispatch(.refreshWalletHistory) }.disabled(prompt.loading) }
+                            if prompt.hasMore { Button(state.rtl ? "تحميل معاملات أقدم" : "Load older transactions") { store.dispatch(.loadWalletHistory) }.disabled(prompt.loading) }
+                        }.padding()
+                    }.navigationTitle(prompt.title).toolbar { ToolbarItem(placement: .cancellationAction) { Button(state.rtl ? "إغلاق" : "Close") { store.dispatch(.dismissWalletHistory) } } }
+                }.presentationDetents([.large]).environment(\.layoutDirection,state.rtl ? .rightToLeft : .leftToRight)
+            }
+        }
         .sheet(isPresented: Binding(get: { state.reminderEmailPrompt != nil }, set: { if !$0 { store.dispatch(.dismissReminderEmail) } })) {
             VStack(alignment: .leading, spacing: FoodSpacing.s16) {
                 Text(state.rtl ? "إيميل المستلم" : "Recipient email").font(.title2)

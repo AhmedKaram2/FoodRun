@@ -104,13 +104,23 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             reply.room?.let { signalRoom(it.id) }
         }
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
-        else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
-        else if(c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) db.transaction {
+        else if(c.kind == CommandKind.SET_NOTIFICATION_PREFERENCES) db.transaction {
             val uid = accounts.userId(c.identityToken)
-            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false)))
+            val preferences = requireNotNull(c.notificationPreferences) { "Choose your notification preferences." }
+            val digest = hash("$uid:preferences:" + orderJson.encodeToString(preferences))
+            db.previous(c.commandId,digest)?.let { accounts.home(c.identityToken) } ?: run {
+                db.putRecord("notification-preferences:$uid",orderJson.encodeToString(preferences))
+                val reply = accounts.home(c.identityToken)
+                db.record(c.commandId,digest,reply); support.record(c); signalHome(); reply
+            }
+        }
+        else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
+        else if(c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) db.transaction {
+            val uid = accounts.userId(c.identityToken)
+            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
             db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
                 val reply = friends.execute(c)
-                if(c.kind != CommandKind.FRIEND_LOOKUP) { db.record(c.commandId, digest, reply); support.record(c); signalHome() }
+                if(c.kind !in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH)) { db.record(c.commandId, digest, reply); support.record(c); signalHome() }
                 reply
             }
         }
@@ -118,14 +128,14 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             val uid = accounts.userId(c.identityToken)
             val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
-                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false)))
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
             db.previous(c.commandId, digest)?.let {
                 val current = accounts.home(c.identityToken)
                 if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
             } ?: run {
                 val result = wallets.execute(c, actor)
                 val reply = if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = result.home) else result
-                if(c.kind !in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT)) {
+                if(c.kind !in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.WALLET_HISTORY)) {
                     db.record(c.commandId, digest, reply); support.record(c); signalHome()
                 }
                 reply
@@ -145,7 +155,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -156,8 +166,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                     CommandKind.REMIND_PAYMENT -> {
                         val actor = authenticate(c.roomId, c.token)
                         val room = requireNotNull(db.room(c.roomId))
-                        emails.remind(room, actor, c)
-                        projection(room, actor).copy(code = "REMINDER_QUEUED")
+                        val status = emails.remind(room, actor, c)
+                        projection(room, actor).copy(code = status)
                     }
                     else -> {
                         val actor = authenticate(c.roomId, c.token)
@@ -545,7 +555,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun token(): String = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(random::nextBytes))
     private fun uuid() = UUID.randomUUID().toString()
     companion object {
-        private val WALLET_COMMANDS = setOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.WALLET_TOP_UP,
+        private val WALLET_COMMANDS = setOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.WALLET_HISTORY, CommandKind.WALLET_TOP_UP,
             CommandKind.WALLET_REVIEW_TOP_UP, CommandKind.PAY_WITH_WALLET, CommandKind.WALLET_DECLARE_BATCH, CommandKind.WALLET_REVIEW_BATCH)
         private const val MAX_CURRENT_BYTES = 2 * 1024 * 1024 - 16 * 1024
         private const val MAX_REPLY_BYTES = 4 * 1024 * 1024 - 1024

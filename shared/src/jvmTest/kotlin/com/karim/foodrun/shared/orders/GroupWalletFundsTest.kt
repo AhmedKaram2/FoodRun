@@ -123,4 +123,30 @@ class GroupWalletFundsTest {
         assertEquals(CommandKind.PAY_WITH_WALLET, device.sent!!.kind); assertEquals(1500L, device.sent!!.amount)
         assertEquals("room-token", device.sent!!.token); assertEquals("identity-token", device.sent!!.identityToken)
     }
+
+    @Test fun walletHistoryUsesPrivateAccountHubAndLateReplyCannotReopenDismissedPopup() {
+        val device = Device(); val c = controller(device); val balance = WalletBalance("me","Me","holder","Holder","AED",500)
+        c.library = c.library.copy(home = home.copy(wallet = WalletSnapshot(balances = listOf(balance))))
+        device.deferred = true; val key = orderJson.encodeToString(WalletKey("me","holder","AED"))
+        c.dispatch(GroupAction.OPEN_WALLET_HISTORY,key)
+        assertEquals(CommandKind.WALLET_HISTORY,device.sent!!.kind); assertEquals(hub,device.hub); assertNull(c.library.pending); assertFalse(c.busy)
+        val callback = device.callback!!
+        c.dispatch(GroupAction.DISMISS_WALLET_HISTORY)
+        callback.complete(orderJson.encodeToString(RoomReply(walletHistory = WalletHistory(balance,emptyList()))),"")
+        assertNull(c.state.walletHistoryPrompt)
+        c.dispatch(GroupAction.OPEN_WALLET_HISTORY,key)
+        device.callback!!.complete(orderJson.encodeToString(RoomReply(walletHistory = WalletHistory(balance,emptyList()))),"")
+        assertTrue(c.state.walletHistoryPrompt!!.balance.contains("5.00"))
+        c.page = GroupPage.HOME; assertNull(c.state.walletHistoryPrompt); c.page = GroupPage.PROFILE; assertNull(c.state.walletHistoryPrompt)
+    }
+    @Test fun notificationPreferencesSaveOnTheAccountHubWithoutChangingProfileIdentity() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.OPEN_NOTIFICATION_PREFERENCES)
+        c.update(GroupFieldKey.PUSH_NOTIFICATIONS,"false"); c.update(GroupFieldKey.EMAIL_NOTIFICATIONS,"false")
+        device.response = RoomReply(home = home.copy(notificationPreferences = NotificationPreferences(false,false)))
+        c.dispatch(GroupAction.SAVE_NOTIFICATION_PREFERENCES)
+        assertEquals(CommandKind.SET_NOTIFICATION_PREFERENCES,device.sent!!.kind); assertEquals(hub,device.hub)
+        assertEquals(NotificationPreferences(false,false),device.sent!!.notificationPreferences)
+        assertEquals("me",c.library.home!!.profile.userId); assertEquals(GroupPage.PROFILE,c.page)
+    }
 }

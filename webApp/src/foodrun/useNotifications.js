@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import app from '../firebase';
 import { notificationRequest } from './notifications.js';
 
-export function useNotifications({ hub, identityToken, user, language = 'en', supportMode = false }) {
+export function useNotifications({ hub, identityToken, user, home, language = 'en', supportMode = false }) {
+  const pushAllowed = home?.notificationPreferences?.pushEnabled !== false;
   const [items, setItems] = useState([]), [error, setError] = useState(''), [available, setAvailable] = useState(false), [enabled, setEnabled] = useState(false);
   const epoch = useRef(0), pushToken = useRef('');
   const call = useCallback(async fields => {
@@ -16,6 +17,7 @@ export function useNotifications({ hub, identityToken, user, language = 'en', su
     const generation = epoch.current;
     try {
       if (!identityToken || supportMode) return;
+      if(!pushAllowed) { if(ask) throw Error('Push notifications are disabled in your profile preferences.'); return; }
       if (!import.meta.env.VITE_FIREBASE_VAPID_KEY) { if (ask) throw Error('Browser push setup is being completed. Your updates are available in this inbox.'); return; }
       if (!('Notification' in window) || !('serviceWorker' in navigator)) throw Error('Notifications are unavailable in this browser.');
       const permission = ask ? await Notification.requestPermission() : Notification.permission;
@@ -32,7 +34,7 @@ export function useNotifications({ hub, identityToken, user, language = 'en', su
       if (generation !== epoch.current) return;
       pushToken.current = token; setEnabled(true); localStorage.setItem('foodrun-push-enabled', 'true');
     } catch (failure) { if (generation === epoch.current) setError(failure.message); }
-  }, [identityToken, call, language, supportMode]);
+  }, [identityToken, call, language, supportMode, pushAllowed]);
   const disable = useCallback(async () => {
     if(supportMode) return;
     ++epoch.current;
@@ -55,7 +57,8 @@ export function useNotifications({ hub, identityToken, user, language = 'en', su
     ++epoch.current; setItems([]); setError(''); setAvailable(false); setEnabled(false);
     if (!identityToken || !user?.uid) return;
     refresh();
-    if (!supportMode && localStorage.getItem('foodrun-push-enabled') === 'true') enable(false);
+    if (!supportMode && pushAllowed && (localStorage.getItem('foodrun-push-enabled') === 'true' || window.Notification?.permission==='granted')) enable(false);
+    if (!supportMode && !pushAllowed) disable();
     const interval = setInterval(refresh, 15000);
     const message = event => { if (event.data?.type === 'foodrun-notifications-updated') refresh(); };
     navigator.serviceWorker?.addEventListener('message', message);
@@ -63,6 +66,6 @@ export function useNotifications({ hub, identityToken, user, language = 'en', su
     return () => {
       ++epoch.current; clearInterval(interval); window.removeEventListener('focus', refresh); navigator.serviceWorker?.removeEventListener('message', message);
     };
-  }, [hub, identityToken, user?.uid, refresh, enable, supportMode]);
+  }, [hub, identityToken, user?.uid, refresh, enable, disable, supportMode, pushAllowed]);
   return { items, error, available, configured: !supportMode && !!import.meta.env.VITE_FIREBASE_VAPID_KEY, enabled, enable, disable, refresh, read: id => call({ action: 'read', notificationId: id }).catch(failure => setError(failure.message)) };
 }

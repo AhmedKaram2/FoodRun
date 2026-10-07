@@ -12,6 +12,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
     internal val walletFunds = GroupWalletFunds(this)
+    internal val walletHistory = GroupWalletHistory(this)
     internal val friends = GroupFriends(this)
     internal val walletAnnouncement = GroupWalletAnnouncement(this)
     internal val smartDefaults = GroupSmartDefaults(this)
@@ -80,7 +81,7 @@ class GroupController(val platform: GroupPlatform) {
     }
     fun observe(observer: GroupObserver) { this.observer = observer; publish() }
     fun removeObserver(observer: GroupObserver) { if (this.observer === observer) this.observer = null }
-    fun close() { stopHomeWatching(); watching?.cancel(); watching = null; observer = null; generation++ }
+    fun close() { walletHistory.dismiss(); stopHomeWatching(); watching?.cancel(); watching = null; observer = null; generation++ }
     fun openNotification(id: String, action: String) { notifications.openFromPush(id, action) }
     fun foreground() { active = true; notifications.refresh(); notifications.register(false); startHomeWatching(); if (session != null) startWatching() }
     fun background() { active = false; stopHomeWatching(); watching?.cancel(); watching = null; online = false; generation++; publish() }
@@ -113,6 +114,7 @@ class GroupController(val platform: GroupPlatform) {
                 }
                 if (key == GroupFieldKey.RESTAURANT_EMIRATE && value != text(key)) draft.remove(GroupFieldKey.RESTAURANT_AREA)
                 draft[key] = value.take(if (key == GroupFieldKey.JSON_MENU) MenuValidation.MAX_BYTES else if (key == GroupFieldKey.RECEIPT_PHOTO) 600_000 else if (key in listOf(GroupFieldKey.PHOTO, GroupFieldKey.ADMIN_PHOTO)) 180_000 else 4000)
+                if(key == GroupFieldKey.FRIEND_EMAIL) friends.search()
                 administration.cleanupFilterChanged(key)
                 if (key == GroupFieldKey.WALLET_SEARCH) walletFunds.searchChanged()
                 if (key == GroupFieldKey.RESTAURANT_POLL && value == "true") openPollRestaurants()
@@ -121,8 +123,17 @@ class GroupController(val platform: GroupPlatform) {
         publish()
     }
     fun dispatch(action: GroupAction, value: String = "") {
-        if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
+        if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH, GroupAction.DISMISS_WALLET_HISTORY)) return
         try { error = ""; when (action) {
+            GroupAction.OPEN_NOTIFICATION_PREFERENCES -> {
+                val preferences = library.home?.notificationPreferences ?: NotificationPreferences()
+                draft[GroupFieldKey.PUSH_NOTIFICATIONS] = preferences.pushEnabled.toString(); draft[GroupFieldKey.EMAIL_NOTIFICATIONS] = preferences.emailEnabled.toString(); page = GroupPage.NOTIFICATION_PREFERENCES
+            }
+            GroupAction.SAVE_NOTIFICATION_PREFERENCES -> send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.SET_NOTIFICATION_PREFERENCES, notificationPreferences = NotificationPreferences(flag(GroupFieldKey.PUSH_NOTIFICATIONS),flag(GroupFieldKey.EMAIL_NOTIFICATIONS))),returnPage = GroupPage.PROFILE)
+            GroupAction.OPEN_WALLET_HISTORY -> walletHistory.open(value)
+            GroupAction.DISMISS_WALLET_HISTORY -> walletHistory.dismiss()
+            GroupAction.LOAD_WALLET_HISTORY -> walletHistory.more()
+            GroupAction.REFRESH_WALLET_HISTORY -> walletHistory.refresh()
             GroupAction.FRIENDS_ACTION -> friends.dispatch(value)
             GroupAction.WALLET_FUNDS_ACTION -> walletFunds.dispatch(value)
             GroupAction.PAY_WITH_WALLET -> walletFunds.pay(value)
@@ -426,6 +437,7 @@ class GroupController(val platform: GroupPlatform) {
             joinTimerMinutes = if(flag(GroupFieldKey.JOIN_TIMER)) (text(GroupFieldKey.JOIN_TIMER_MINUTES).toIntOrNull()?.takeIf { it in 1..1440 } ?: error("Choose between 1 and 1440 minutes.")) else 0))
     }
     private fun back() {
+        if(walletHistory.prompt != null) { walletHistory.dismiss(); return }
         if (page == GroupPage.SELECTION_OVERRIDE) { selectionOverride.close(); return }
         if(page in listOf(GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY)) { menuEditor.back(); return }
         if(page in listOf(GroupPage.ADMIN_USER, GroupPage.ADMIN_CONFIRM) || page == GroupPage.RESTAURANT && administration.editingRestaurant) {
@@ -446,7 +458,7 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
-            GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> GroupPage.PROFILE
+            GroupPage.NOTIFICATION_PREFERENCES, GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> GroupPage.PROFILE
             GroupPage.WHEEL_PROTECTION -> GroupPage.ROOM
             GroupPage.PAYMENT, GroupPage.REORDER, GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
@@ -499,17 +511,17 @@ class GroupController(val platform: GroupPlatform) {
             text = if (action == GroupAction.WALLET_REJECT) "Payment was not received." else if (payer) "Refund sent" else "Payment sent"), returnPage = page)
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
-        val friendCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)
+        val accountCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP, CommandKind.SET_NOTIFICATION_PREFERENCES)
         val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.FRIEND_LOOKUP)
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
-        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_") || friendCommand) library.identityHub else library.selectedHub)
+        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_") || accountCommand) library.identityHub else library.selectedHub)
         val outgoing = if (sameHub(library.identityHub, hub) && library.identityToken.isNotEmpty()) c.copy(identityToken = library.identityToken) else c
         replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
         try { platform.request(hub, encodeCommand(outgoing), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
-                if((c.kind.name.startsWith("WALLET_") || friendCommand) && library.identityToken != outgoing.identityToken) return
+                if((c.kind.name.startsWith("WALLET_") || accountCommand) && library.identityToken != outgoing.identityToken) return
                 busy = false
                 if (error.isNotBlank()) {
                     online = false
@@ -715,7 +727,9 @@ class GroupController(val platform: GroupPlatform) {
             snapshots = library.snapshots.filterKeys { it !in home.deletedRoomIds && it !in changedMemberIds },
             restaurants = catalog.restaurants,
             managedRestaurantIds = catalog.managedIds)
+        val preferencesChanged = library.home?.notificationPreferences != home.notificationPreferences
         if (updated != library) replaceLibrary(updated)
+        if(preferencesChanged) { if(home.notificationPreferences?.pushEnabled == false) notifications.disable() else notifications.register(false) }
         if (refreshedSession != null && refreshedSession != session) {
             if (refreshedSession.memberId != session?.memberId) { reply = null; selectedItem = null; editingCartLineId = null; selectedAccount = null }
             session = refreshedSession
@@ -853,7 +867,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null || reply?.room?.joinDeadlineAt?.let { it > 0 } == true) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true, notificationPreferencesDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

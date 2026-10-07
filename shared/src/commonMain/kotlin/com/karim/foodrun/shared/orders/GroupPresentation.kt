@@ -91,6 +91,12 @@ internal class GroupPresentation(private val c: GroupController) {
                 field(GroupFieldKey.BLOCK_REASON, ui("Reason"), multiline = true)
                 button("Send block request", GroupAction.REQUEST_BLOCK, primary = true, enabled = candidates.isNotEmpty() && c.text(GroupFieldKey.BLOCK_REASON).trim().length in 5..300)
             }
+            GroupPage.NOTIFICATION_PREFERENCES -> {
+                title = tr("Notification preferences", "تفضيلات الإشعارات")
+                field(GroupFieldKey.PUSH_NOTIFICATIONS,tr("App and website push notifications", "الإشعارات الفورية للتطبيق والموقع"),toggle = true)
+                field(GroupFieldKey.EMAIL_NOTIFICATIONS,tr("Receive email invitations and reminders", "استلام الدعوات والتذكيرات بالبريد الإلكتروني"),toggle = true)
+                button(tr("Save notification preferences", "حفظ تفضيلات الإشعارات"),GroupAction.SAVE_NOTIFICATION_PREFERENCES,primary = true)
+            }
             GroupPage.FRIENDS -> { title = tr("Friend groups", "مجموعات الأصدقاء"); subtitle = tr("Choose a favourite group when creating a room to email invitations.", "اختر مجموعة مفضلة عند إنشاء غرفة لإرسال الدعوات بالبريد."); append(c.friends.content()) }
             GroupPage.HOME -> home()
             GroupPage.PROFILE -> profile()
@@ -130,6 +136,7 @@ internal class GroupPresentation(private val c: GroupController) {
             inviteSummary = if (c.page == GroupPage.ROOM && room != null) roomInvitation(room, "", language).lines().drop(1).take(2).joinToString("\n") else "",
             canOverrideSelection = c.page == GroupPage.ROOM && c.selectionOverride.available,
             reminderEmailPrompt = c.paymentReminders.prompt,
+            walletHistoryPrompt = c.walletHistory.prompt,
             hasPendingEmailReminders = c.paymentReminders.hasPending,
             feedback = c.feedbacks.current?.let { it.copy(message = ui(it.message)) },
             hasJoinTimer = c.page == GroupPage.ROOM && (room?.joinDeadlineAt ?: 0) > c.platform.now() + c.serverOffset(),
@@ -193,6 +200,7 @@ internal class GroupPresentation(private val c: GroupController) {
         if(c.library.home == null) button(tr("Create account", "إنشاء حساب"), GroupAction.REGISTER)
         else {
             button(tr("Save profile", "حفظ الملف الشخصي"), GroupAction.SAVE_PROFILE, primary = true)
+            button(tr("Notification preferences", "تفضيلات الإشعارات"),GroupAction.OPEN_NOTIFICATION_PREFERENCES)
             dashboardCards("profile-dashboard:")
             val favorites = c.library.home!!.profile.favoriteOrders
             favorites.forEach { favorite ->

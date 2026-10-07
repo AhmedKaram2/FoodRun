@@ -25,10 +25,11 @@ internal class GroupPaymentReminders(private val c: GroupController) {
     }
     fun accept(command: RoomCommand, code: String) {
         val key = "${command.roomId}:${command.expectedOrderNumber}:${command.memberId}"
-        val state = when (code) { "REMINDER_SENT" -> "sent"; "REMINDER_QUEUED", "REMINDER_PENDING" -> "pending"; else -> "failed" }
+        val state = when (code) { "REMINDER_SENT" -> "sent"; "REMINDER_NOTIFIED" -> "notified"; "REMINDER_QUEUED", "REMINDER_PENDING" -> "pending"; else -> "failed" }
         states[key] = state
         if (state == "failed") { c.paymentReminderTimes.remove(key); c.error = "Email could not be sent. Please try again." }
         else c.paymentReminderTimes.getOrPut(key) { c.platform.now() }
+        if(state == "notified") c.success("Reminder sent in the app; recipient emails are disabled.")
         if (state == "sent") c.success("Email reminder sent")
         if (state == "pending") commands[key] = command.copy(text = "") else commands.remove(key)
         if (state != "failed" && recipientCommand?.let { it.roomId == command.roomId && it.memberId == command.memberId } == true) dismiss()
@@ -64,8 +65,8 @@ internal fun GroupController.paymentReminderButtons(room: Room, actorId: String,
         platform.now() - it < PaymentReminderRules.COOLDOWN_MS
     } == true
     val title = if (library.language == "ar") {
-        if (queued && status == "sent") "تم إرسال تذكير الإيميل" else if (queued) "جاري إرسال تذكير الإيميل…" else "ابعت تذكير بالدفع بالإيميل"
-    } else if (queued && status == "sent") "Email reminder sent" else if (queued) "Sending email reminder…" else "Send payment reminder"
+        if(queued && status == "notified") "تم إرسال التذكير في التطبيق" else if (queued && status == "sent") "تم إرسال تذكير الإيميل" else if (queued) "جاري إرسال تذكير الإيميل…" else "ابعت تذكير بالدفع بالإيميل"
+    } else if(queued && status == "notified") "Reminder sent in app" else if (queued && status == "sent") "Email reminder sent" else if (queued) "Sending email reminder…" else "Send payment reminder"
     return listOf(GroupButton(title, if (wallet) GroupAction.WALLET_REMIND_PAYMENT else GroupAction.REMIND_PAYMENT,
         if (wallet) "${room.id}|${receipt.memberId}" else receipt.memberId, enabled = !busy && !queued && (wallet || online)))
 }

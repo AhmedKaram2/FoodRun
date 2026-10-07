@@ -169,6 +169,7 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
         completionHandler([.banner, .sound])
     }
     func now() -> Int64 { Int64(Date().timeIntervalSince1970 * 1_000) }
+    func schedule(delayMillis: Int64, callback: GroupScheduledCallback) { DispatchQueue.main.asyncAfter(deadline: .now() + Double(delayMillis) / 1_000) { callback.run() } }
     func localOffsetSeconds(timeMillis: Int64) -> Int32 {
         Int32(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: Double(timeMillis) / 1_000)))
     }

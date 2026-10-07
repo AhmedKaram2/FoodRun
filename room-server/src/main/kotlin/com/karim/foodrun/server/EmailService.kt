@@ -30,6 +30,7 @@ internal object EmailContacts {
     val recipientAddress: String = "",
     val friendGroupId: String = "",
     val friendGroupOwnerId: String = "",
+    val recipientUserId: String = "",
 )
 internal data class EmailDelivery(val job: EmailJob, val address: String)
 internal enum class EmailResult { SENT, RETRY, FAILED }
@@ -41,6 +42,7 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
     // Explicit friend invitations and requested payment reminders are the only email types.
     private fun allowed(job: EmailJob) = job.friendGroupId.isNotEmpty() || job.reminderMemberId.isNotEmpty() && job.reminderPayerId.isNotEmpty() && job.invitationId.isEmpty()
     fun friendInvitation(ownerId: String, group: FriendGroup, member: FriendContact, commandId: String, ownerName: String, room: Room? = null, groupOwnerId: String = ownerId) {
+        if(member.email.isEmpty() || !NotificationPreferencesStore.emailAllowed(db,member.userId,member.email)) return
         require(enabled) { "Email invitations are not available on this server yet." }
         val id = RoomService.hash("friend:$commandId:${member.email}:${room?.id.orEmpty()}")
         if(db.record("email-job:$id") != null || db.record("email-result:$id") != null) return
@@ -50,29 +52,38 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         val body = if(room == null) "$ownerName added you to the friend group ${group.name}. Join Intrvioo using this email to order food together: $link"
         else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (room poll)" else ""}\nRoom code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
         db.putRecord("email-job:$id", orderJson.encodeToString(EmailJob(id, ownerId, room?.id.orEmpty(), room?.orderNumber ?: 0,
-            subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id, friendGroupOwnerId = groupOwnerId.takeUnless { it == ownerId }.orEmpty())))
+            subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id, friendGroupOwnerId = groupOwnerId.takeUnless { it == ownerId }.orEmpty(), recipientUserId = member.userId)))
     }
-    fun remind(room: Room, actorId: String, command: RoomCommand) {
-        require(enabled) { "Email reminders are not available on this server yet." }
+    fun remind(room: Room, actorId: String, command: RoomCommand): String {
         require(room.payerId == actorId) { "Only the chosen payer can send payment reminders." }
         require(command.expectedOrderNumber == room.orderNumber && command.expectedRevision == room.revision) { "The bill changed. Refresh the room and try again." }
         val receipt = Billing.receipts(room).singleOrNull { it.memberId == command.memberId }
         require(receipt != null && PaymentReminderRules.eligible(room, actorId, receipt)) { "Reminders are only available for unpaid balances with no payment awaiting confirmation." }
         val uid = requireNotNull(db.record("member-user:${room.id}:${receipt.memberId}")) { "This member needs to sign in again before receiving email reminders." }
+        val key = "email-reminder:${PaymentReminderRules.key(room, receipt.memberId)}"
+        val previous = db.record(key)?.toLong()
+        require(previous == null || clock() - previous >= PaymentReminderRules.COOLDOWN_MS) { "A reminder was already queued for this person. Please wait 24 hours before sending another." }
+        val jobId = RoomService.hash("reminder:${command.commandId}")
+        if(!NotificationPreferencesStore.read(db,uid).emailEnabled) {
+            db.putRecord(key,clock().toString()); db.putRecord("email-reminder-job:${PaymentReminderRules.key(room,receipt.memberId)}",jobId)
+            db.putRecord("email-result:$jobId","${clock()}:notified")
+            NotificationService(db,clock).reminder(room,receipt.memberId,command.commandId,"${room.name} · ${Money.format(receipt.balance,receipt.currency)}")
+            return "REMINDER_NOTIFIED"
+        }
+        require(enabled) { "Email reminders are not available on this server yet." }
         val recipient = if (EmailContacts.address(db, uid) != null) "" else command.text.trim().also {
             if (it.isEmpty()) throw ReminderEmailRequired()
             require(EmailContacts.valid(it)) { "Enter a valid email address." }
         }
-        val key = "email-reminder:${PaymentReminderRules.key(room, receipt.memberId)}"
-        val previous = db.record(key)?.toLong()
-        require(previous == null || clock() - previous >= PaymentReminderRules.COOLDOWN_MS) { "A reminder was already queued for this person. Please wait 24 hours before sending another." }
         val job = EmailJob(RoomService.hash("reminder:${command.commandId}"), uid, room.id, room.orderNumber,
             PaymentReminderEmail.SUBJECT, PaymentReminderEmail.body(room, receipt), clock(),
-            reminderMemberId = receipt.memberId, reminderPayerId = actorId, recipientAddress = recipient)
+            reminderMemberId = receipt.memberId, reminderPayerId = actorId, recipientAddress = recipient, recipientUserId = uid)
         require(accessible(job)) { "This member is not available for payment reminders." }
         db.putRecord("email-job:${job.id}", orderJson.encodeToString(job))
         db.putRecord(key, clock().toString())
         db.putRecord("email-reminder-job:${PaymentReminderRules.key(room, receipt.memberId)}", job.id)
+        NotificationService(db,clock).reminder(room,receipt.memberId,command.commandId,"${room.name} · ${Money.format(receipt.balance,receipt.currency)}")
+        return "REMINDER_QUEUED"
     }
     private fun accessible(job: EmailJob): Boolean {
         if (db.record("profile:${job.userId}") == null || AccountRestrictions.current(db, job.userId, clock()) != null ||
@@ -107,6 +118,7 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
     fun status(id: String): String = when (db.record("email-result:$id")?.substringAfter(':')) {
         "sent" -> "REMINDER_SENT"
         "failed" -> "REMINDER_FAILED"
+        "notified" -> "REMINDER_NOTIFIED"
         else -> if (db.record("email-job:$id") != null) "REMINDER_PENDING" else "REMINDER_FAILED"
     }
     fun pending(dailyLimit: Int, jobId: String? = null): EmailDelivery? {
@@ -119,6 +131,9 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         for ((key, body) in jobs) {
             val job = orderJson.decodeFromString<EmailJob>(body)
             val address = job.recipientAddress.takeIf(EmailContacts::valid) ?: EmailContacts.address(db, job.userId)
+            if(address != null && !NotificationPreferencesStore.emailAllowed(db,job.recipientUserId,address)) {
+                db.deleteRecord(key); db.putRecord("email-result:${job.id}","${clock()}:notified"); continue
+            }
             if (!allowed(job) || job.createdAt < now - 86_400_000 || !accessible(job) || address == null) {
                 db.deleteRecord(key)
                 failReminder(job)

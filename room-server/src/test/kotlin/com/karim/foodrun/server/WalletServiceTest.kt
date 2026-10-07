@@ -326,4 +326,37 @@ class WalletServiceTest {
             assertNull(s.f.db.pendingCloud())
         }
     }
+
+    @Test fun walletHistoryIsPrivatePagedAndDoesNotChangeAnyFunds() = Setup().use { s ->
+        repeat(25) { s.credit(amount = 100); s.f.now++ }
+        val key = WalletKey("Alice","Holder","AED")
+        fun read(user: RoomReply, cursor: String = "") = s.send(user,CommandKind.WALLET_HISTORY) { it.copy(walletKey = key,walletHistoryCursor = cursor) }.walletHistory!!
+        val before = s.f.db.records("wallet:")
+        val first = read(s.a); assertEquals(20,first.transactions.size); assertEquals(2500,first.balance.available)
+        assertTrue(first.nextCursor.isNotEmpty()); val second = read(s.holder,first.nextCursor)
+        assertEquals(5,second.transactions.size); assertEquals(25,(first.transactions + second.transactions).map { it.id }.toSet().size)
+        assertTrue(second.nextCursor.isEmpty()); assertEquals(before,s.f.db.records("wallet:"))
+        assertFalse(s.f.service.execute(s.command(s.stranger,CommandKind.WALLET_HISTORY).copy(walletKey = key)).ok)
+        assertFalse(s.f.service.execute(s.command(s.a,CommandKind.WALLET_HISTORY).copy(walletKey = key.copy(currency = "USD"),walletHistoryCursor = first.nextCursor)).ok)
+        assertFalse(s.f.service.execute(s.command(s.a,CommandKind.WALLET_HISTORY).copy(walletKey = key,walletHistoryCursor = "invalid")).ok)
+    }
+    @Test fun walletHistoryShowsOnlyThisCustomersPartOfCashBatchWithoutDoubleDebit() = Setup().use { s ->
+        s.credit(); s.credit(s.b); val bill = s.bill(); s.pay(s.a,bill.room!!.id); s.pay(s.b,bill.room!!.id); s.approveClaims(bill.room!!.id)
+        s.declare(4000)
+        val history = s.send(s.a,CommandKind.WALLET_HISTORY) { it.copy(walletKey = WalletKey("Alice","Holder","AED")) }.walletHistory!!
+        assertEquals(8500,history.balance.available)
+        val cash = history.transactions.single { it.kind == WalletTransactionKind.CASH_TRANSFER }
+        assertEquals(1500,cash.amount); assertEquals(0,cash.balanceChange); assertEquals(1,cash.orders.size)
+        assertEquals(WalletTransactionStatus.SENT,cash.status)
+        assertEquals(8500,history.transactions.sumOf { it.balanceChange })
+    }
+    @Test fun rejectedWalletClaimShowsReturnedFundsAndCurrentBalance() = Setup().use { s ->
+        s.credit(); val bill = s.bill(); s.pay(s.a,bill.room!!.id)
+        val transfer = s.f.db.room(bill.room!!.id)!!.transfers.single { it.id.startsWith("wallet-") }
+        s.f.execute(s.roomCommand(s.recipient,bill.room!!.id,CommandKind.REJECT_TRANSFER).copy(transferId = transfer.id,text = "Not received"))
+        val history = s.send(s.a,CommandKind.WALLET_HISTORY) { it.copy(walletKey = WalletKey("Alice","Holder","AED")) }.walletHistory!!
+        assertEquals(10000,history.balance.available)
+        val returned = history.transactions.single { it.kind == WalletTransactionKind.PAYMENT }
+        assertEquals(WalletTransactionStatus.RETURNED,returned.status); assertEquals(0,returned.balanceChange); assertTrue(returned.resolvedAt > 0)
+    }
 }

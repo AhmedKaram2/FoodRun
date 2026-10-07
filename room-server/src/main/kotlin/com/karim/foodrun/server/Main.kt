@@ -67,6 +67,7 @@ fun main() {
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
     val db = RoomDatabase(directory, FirestoreStore.configured())
     AccountMergeRepair.configured(db)
+    InitialFriendGroup.configured(db)?.let { println("Initial friend group created with $it current users.") }
     SessionReset.apply(db, SessionReset.cutoff())?.let { (accounts, rooms) ->
         println("FoodRun session reset completed: $accounts account sessions and $rooms room sessions revoked.")
     }
@@ -303,6 +304,7 @@ fun Application.hubRoutes(
             var halfItemDetails = false
             var friendsDetails = false
             var friendMembershipDetails = false
+            var notificationPreferencesDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
@@ -319,6 +321,7 @@ fun Application.hubRoutes(
                 halfItemDetails = command.halfItemDetails
                 friendsDetails = command.friendsDetails
                 friendMembershipDetails = command.friendMembershipDetails
+                notificationPreferencesDetails = command.notificationPreferencesDetails
                 withContext(Dispatchers.IO) {
                     val result = service.execute(command)
                     if (command.kind == CommandKind.REMIND_PAYMENT && result.ok && result.code == "REMINDER_QUEUED" && reminderSender != null)
@@ -331,7 +334,7 @@ fun Application.hubRoutes(
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails, friendMembershipDetails)), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails, friendMembershipDetails, notificationPreferencesDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -361,7 +364,7 @@ fun Application.hubRoutes(
                     }
                     // Room edits signal HOME globally. Do not resend the whole catalog when
                     // this user's home payload did not actually change.
-                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails, request.friendMembershipDetails)
+                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails, request.friendMembershipDetails, request.notificationPreferencesDetails)
                     if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome) {
                         send(Frame.Text(orderJson.encodeToString(projected)))
                         lastHome = projected.home

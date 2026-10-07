@@ -61,9 +61,10 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
     root.render(<RoomScreen {...props} roomId={room.id} />);
     return { ok: true };
   };
-  root.render(screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
+  const auditNode = screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
     : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <ProfileScreen {...props} />
-    : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />);
+    : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />;
+  root._auditComponent = {key:screen,node:auditNode}; root.render(auditNode);
   await pause(); return measureAudit();
 }
 export function measureAudit() {
@@ -966,8 +967,9 @@ export async function runFriendsTimerAudit() {
   const fixture = {...data, home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},friendGroups:[group]}, walletQuery:async (kind, fields) => ({friendContact:{email:fields.text,userId:fields.text==='bob@example.test'?'bob':'',name:fields.text==='bob@example.test'?'Bob':''}}), setNotice:()=>{}};
   root.render(<FriendGroups data={fixture} onBack={()=>{}} />); await pause();
   setValue(host.querySelector('input'), 'Lunch group');
-  setValue(host.querySelector('input[type=email]'), 'new@example.test'); await pause();
-  find('Add by email','إضافة بالبريد').click(); await pause();
+  setValue(host.querySelector('input[role=combobox]'), 'new@example.test'); await pause();
+  await new Promise(resolve => setTimeout(resolve,400));
+  const pick = host.querySelector('.friend-search-person'); if(pick) pick.click(); else [...host.querySelectorAll('button')].find(value => value.textContent.includes(ar ? 'دعوة بالبريد' : 'Invite by email')).click(); await pause();
   assert(host.textContent.includes(ar ? 'تُرسل دعوة التسجيل' : 'Sign-up invitation'), 'Missing signup invitation state');
   button('Save').click(); await pause();
   assert(commands.at(-1)?.kind==='SAVE_FRIEND_GROUP' && commands.at(-1).fields.friendGroup.members[0].email==='new@example.test','Group save lost members');
@@ -1005,13 +1007,14 @@ export async function runGroupMembershipAudit() {
   const find = (en, arabic, scope = host) => { const node = [...scope.querySelectorAll('button')].find(value => value.textContent.trim() === (ar ? arabic : en)); assert(node, 'Missing '+en); return node; };
   const group = {id:'owned',name:'Office friends',favourite:true,revision:4,members:[{email:'bob@example.test',userId:'bob',name:'Bob'},{email:'charlie@example.test',userId:'charlie',name:'Charlie'}]};
   const joined = {ownerId:'alice',ownerName:'Alice',group:{...group,id:'joined',name:'Friday lunch'}};
-  const fixture = {...data,home:{...data.home,friendGroups:[group],joinedFriendGroups:[joined]},walletQuery:async (kind, fields)=>({friendContact:{email:fields.text,userId:'dana',name:'Dana'}})};
+  const fixture = {...data,home:{...data.home,friendGroups:[group],joinedFriendGroups:[joined]},walletQuery:async (kind, fields)=> kind === 'FRIEND_SEARCH' ? ({friendContacts:[{email:'dana@example.test',userId:'dana',name:'Dana'}]}) : ({friendContact:{email:fields.text,userId:'dana',name:'Dana'}})};
   root.render(<FriendGroups data={fixture} onBack={()=>{}} />); await pause();
   button('Edit').click(); await pause();
   setValue(host.querySelector('input'), 'Team lunch'); await pause();
   button('Remove').click(); await pause();
-  setValue(host.querySelector('input[type=email]'), 'dana@example.test'); await pause();
-  find('Add by email','إضافة بالبريد').click(); await pause();
+  setValue(host.querySelector('input[role=combobox]'), 'dana@example.test'); await pause();
+  await new Promise(resolve => setTimeout(resolve,400));
+  const pick = host.querySelector('.friend-search-person'); if(pick) pick.click(); else [...host.querySelectorAll('button')].find(value => value.textContent.includes(ar ? 'دعوة بالبريد' : 'Invite by email')).click(); await pause();
   button('Save').click(); await pause();
   const saved = commands.at(-1); assert(saved?.kind==='SAVE_FRIEND_GROUP' && saved.fields.friendGroup.name==='Team lunch' && saved.fields.friendGroup.revision===4,'Owner edit lost name or revision');
   assert(saved.fields.friendGroup.members.map(value=>value.userId).join(',')==='charlie,dana','Owner add/remove did not update members');
@@ -1047,4 +1050,68 @@ export async function runWalletApprovalAudit() {
   assert(commands.at(-1)?.kind==='WALLET_REVIEW_BATCH' && commands.at(-1).fields.flag===true,'Group approval did not settle all sides');
   const measurement=measureAudit(); assert(!measurement.overflow,'Wallet approval overflow');
   return {passed:true,language:getLanguage(),width:innerWidth,overflow:measurement.overflow};
+}
+
+export async function runMobilePagesAudit() {
+  const {default:MobilePageLayout} = await import('../src/foodrun/MobilePageLayout.jsx');
+  const {AdminCleanup} = await import('../src/foodrun/AdminApp.jsx');
+  const {default:AdminApp} = await import('../src/foodrun/AdminApp.jsx');
+  const {default:NotificationPreferences} = await import('../src/foodrun/NotificationPreferences.jsx');
+  const screens = [], wrap = async () => {
+    const elements = [...host.children];
+    // Mount the same layout that surrounds every authenticated route.
+    const component = root._auditComponent;
+    if(component) { root.render(<MobilePageLayout pageKey={component.key}>{component.node}</MobilePageLayout>); await pause(); }
+    for(const tab of host.querySelectorAll('.mobile-section-tabs button')) { tab.click(); await pause(); assert(!measureAudit().overflow,'Mobile tab overflow'); }
+    return elements;
+  };
+  for(const screen of ['home','create','join','profile','library','payment-create','room']) {
+    await mountAudit(screen,'FULFILLED');
+    const component = root._auditComponent;
+    await wrap();
+    assert(!measureAudit().overflow,screen+' overflow');
+    if(screen === 'create' && innerWidth <= 640) {
+      const panel = host.querySelector('[data-mobile-section="room"]'), roomName = panel.querySelector('input');
+      setValue(roomName,''); await pause();
+      const event = new Event('invalid',{bubbles:false,cancelable:true}); roomName.dispatchEvent(event); await pause();
+      assert(panel.dataset.mobileHidden==='false','Invalid hidden form field did not reveal its mobile tab');
+    }
+    screens.push({screen,tabs:host.querySelectorAll('.mobile-section-tabs button').length,overflow:false});
+  }
+  const bank = {id:'bank',holder:'Holder',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED',method:'BANK'};
+  const balance = {customerId:'audit-only',customerName:'Audit User',holderId:'holder',holderName:'Holder',currency:'AED',available:5000};
+  let historyReads = 0;
+  const transactions = Array.from({length:25},(_,index)=>({id:'top-up:'+index,kind:'TOP_UP',status:'CONFIRMED',amount:200,currency:'AED',balanceChange:200,createdAt:Date.now()-index*1000,fromName:'Audit User',toName:'Holder',note:'Reference '+index,account:bank,orders:[]}));
+  const walletData = {...data,home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},wallet:{balances:[balance],topUps:[],payments:[],batches:[]}},walletQuery:async(kind,fields)=>{ assert(kind==='WALLET_HISTORY','History used mutation');historyReads++;return {walletHistory:{balance,transactions:fields.walletHistoryCursor?transactions.slice(20):transactions.slice(0,20),nextCursor:fields.walletHistoryCursor?'':'older'}};}};
+  root.render(<WalletFunds data={walletData}/>); await pause(); host.querySelector('.wallet-selectable').click(); await pause();
+  let dialog = document.querySelector('.wallet-history-dialog[open]'); assert(dialog,'Wallet history popup missing'); assert(dialog.textContent.includes('Holder') && dialog.textContent.includes('Reference 0'),'Missing transaction details');
+  [...dialog.querySelectorAll('button')].find(node=>node.textContent.includes(getLanguage()==='ar'?'تحميل معاملات أقدم':'Load older transactions')).click(); await pause();
+  assert(historyReads===2 && dialog.textContent.includes('Reference 24'),'Wallet older page missing'); assert(!measureAudit().overflow,'Wallet popup overflow');
+  dialog.querySelector('button').click(); await pause(); assert(!document.querySelector('.wallet-history-dialog[open]'),'Wallet popup did not close');
+  commands.length=0; root.render(<NotificationPreferences data={{...data,home:{...data.home,notificationPreferences:{pushEnabled:true,emailEnabled:true}}}}/>); await pause();
+  host.querySelectorAll('input[type=checkbox]').forEach(node=>node.click()); await pause(); host.querySelector('button').click(); await pause();
+  assert(commands.at(-1)?.kind==='SET_NOTIFICATION_PREFERENCES' && !commands.at(-1).fields.notificationPreferences.pushEnabled && !commands.at(-1).fields.notificationPreferences.emailEnabled,'Preference toggles not saved');
+  const savedFetch = window.fetch;
+  const rooms = Array.from({length:18},(_,index)=>({id:'room'+index,name:'Room '+index,code:String(100000+index),phase:'LOBBY',currency:'AED',totalMinor:0,confirmedPaidMinor:0,outstandingMinor:0,wallets:[],members:2,restaurant:'Kitchen',orderNumber:1,revision:1,canDelete:false}));
+  const dashboard = {users:Array.from({length:18},(_,index)=>({id:'user'+index,name:'User '+index,email:'user'+index+'@example.test',phone:'',disabled:false})),rooms,archivedOrders:rooms,restaurants:loadRestaurants(),blockRequests:[],settings:{registrationsEnabled:true,roomCreationEnabled:true,maintenanceMessage:''}};
+  window.fetch = async (url,...args)=>String(url).includes('/admin/dashboard')?{ok:true,json:async()=>dashboard}:savedFetch(url,...args);
+  try {
+    root.render(<AdminApp language={getLanguage()} user={{uid:'owner',email:'1ahmedkaram1@gmail.com',emailVerified:true,getIdToken:async()=> 'fixture'}} onBack={()=>{}}/>); await pause(); await pause();
+    for(const tab of host.querySelectorAll('.admin-tabs button')) {
+      tab.click(); await pause(); const search = host.querySelector('.admin-search input'); assert(search,'Admin search missing');
+      setValue(search,'no-match-example'); await pause(); assert(!measureAudit().overflow,'Admin tab overflow');
+      setValue(search,''); await pause(); assert(!measureAudit().overflow,'Admin full tab overflow');
+    }
+    const usersTab = [...host.querySelectorAll('.admin-tabs button')].find(node=>node.textContent===t('Users'));usersTab.click(); await pause();
+    assert(host.querySelectorAll('.admin-person').length===8 && host.querySelector('.list-pagination'),'Admin pagination missing');
+    setValue(host.querySelector('.admin-search input'),'user17@example.test'); await pause();assert(host.querySelectorAll('.admin-person').length===1 && host.textContent.includes('User 17'),'Admin email search failed');
+  } finally { window.fetch = savedFetch; }
+  const cleanupCalls = [];
+  const request = async(path,selection)=>{cleanupCalls.push(path); return {...selection,count:18,targets:rooms,previewToken:'fixture-preview'};};
+  root.render(<AdminCleanup request={request} onChanged={()=>{}} search=""/>);await pause();
+  button('Preview cleanup').click();await pause();
+  setValue(host.querySelector('input[autocomplete=off]'),'DELETE');await pause();
+  root.render(<AdminCleanup request={request} onChanged={()=>{}} search="Room 17"/>);await pause();
+  const remove = button('Delete selected data');assert(remove.disabled,'Filtered cleanup can delete unseen records');remove.click();await pause();assert(cleanupCalls.length===1,'Filtered cleanup sent delete request');
+  return {passed:true,language:getLanguage(),width:innerWidth,screens,walletHistory:true,notificationPreferences:true,adminSearchTabs:9,adminPagination:true,overflow:false};
 }

@@ -31,7 +31,7 @@ export function PaymentReminderButton({ room, receipt, memberId, data }) {
   };
   return <>
     <button type="button" className="secondary" disabled={data.busy || coolingDown || !data.online[room.id]} onClick={() => send()}>
-      {t(state === 'sent' && coolingDown ? 'Email reminder sent' : state === 'pending' && coolingDown ? 'Sending email reminder…' : 'Send payment reminder')}
+      {t(state === 'notified' && coolingDown ? 'Reminder sent in app' : state === 'sent' && coolingDown ? 'Email reminder sent' : state === 'pending' && coolingDown ? 'Sending email reminder…' : 'Send payment reminder')}
     </button>
     {open && createPortal(<dialog ref={dialog} className="card poll-dialog" aria-labelledby={`reminder-email-${receipt.memberId}`} onCancel={event => { if (data.busy) event.preventDefault(); else setOpen(false); }}>
       <form className="stack" onSubmit={event => { event.preventDefault(); send(email); }}>

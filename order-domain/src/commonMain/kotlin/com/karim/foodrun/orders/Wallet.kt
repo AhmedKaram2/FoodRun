@@ -17,3 +17,12 @@ import kotlinx.serialization.Serializable
 @Serializable data class WalletSnapshot(val balances: List<WalletBalance> = emptyList(), val topUps: List<WalletTopUp> = emptyList(),
     val payments: List<WalletPayment> = emptyList(), val batches: List<WalletBatch> = emptyList())
 @Serializable data class WalletRecipient(val person: FoodPerson, val accounts: List<ReceivingAccount>)
+@Serializable data class WalletKey(val customerId: String, val holderId: String, val currency: String)
+@Serializable enum class WalletTransactionKind { TOP_UP, PAYMENT, CASH_TRANSFER }
+@Serializable enum class WalletTransactionStatus { PENDING, CONFIRMED, REJECTED, APPROVAL_PENDING, OWING, SENT, SETTLED, RETURNED }
+@Serializable data class WalletTransactionOrder(val roomName: String, val orderNumber: Long, val amount: Long)
+@Serializable data class WalletTransaction(val id: String, val kind: WalletTransactionKind, val amount: Long, val currency: String,
+    val status: WalletTransactionStatus, val balanceChange: Long, val createdAt: Long, val resolvedAt: Long = 0,
+    val fromName: String, val toName: String, val note: String = "", val account: ReceivingAccount? = null,
+    val orders: List<WalletTransactionOrder> = emptyList())
+@Serializable data class WalletHistory(val balance: WalletBalance, val transactions: List<WalletTransaction>, val nextCursor: String = "")

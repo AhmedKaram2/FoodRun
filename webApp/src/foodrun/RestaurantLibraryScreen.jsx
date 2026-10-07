@@ -1,3 +1,4 @@
+import PagedList, { matchesSearch } from './PagedList.jsx';
 import { t } from './i18n.js';
 import MenuEditor, { MenuMoneyInput } from './MenuEditor';
 import { useState } from 'react';
@@ -10,6 +11,7 @@ const MANAGED_KEY = 'foodrun-server-catalog-v1';
 function managedRestaurantIds() { try { return JSON.parse(localStorage.getItem(MANAGED_KEY) || '[]'); } catch { return []; } }
 
 export default function RestaurantLibraryScreen({ onBack, language = 'en', data, room }) {
+  const [search,setSearch] = useState('');
   const [restaurants, setRestaurants] = useRestaurantLibrary();
   const [draft, setDraft] = useState(blankRestaurant);
   const { feedback, setError: setMessage, setNotice, dismissFeedback } = useFeedback();
@@ -61,15 +63,15 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
     catch (error) { setMessage(error.message); }
   };
   return <Page title={t("Restaurants & menus")} subtitle={room ? t('Add a restaurant for this room and everyone using Intrvioo.') : t("Add restaurant details, menu items, and prices to the shared Intrvioo list.")} onBack={onBack}>
-    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t('ROOM OWNER') : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('Enter the restaurant basics, use Quick Add for each item and price, then publish once.')}</p></div><button type="button" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
+    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t('ROOM OWNER') : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('Enter the restaurant basics, use Quick Add for each item and price, then publish once.')}</p></div><button type="button" data-mobile-target="editor" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
     <div className="library-layout">
-      <aside className="card library-list">
+      <aside data-mobile-section="list" data-mobile-label={t("Restaurants & menus")} className="card library-list">
         <div className="section-title compact"><div><p className="eyebrow">{t("AVAILABLE RESTAURANTS")}</p><h3>{restaurants.length} {language === 'ar' ? 'مطاعم' : t("restaurants")}</h3></div><button aria-label={t('Add restaurant')} className="icon-button" type="button" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>＋</button></div>
         {restaurants.length === 0 && <p className="muted">{t("Add your first restaurant or import a menu from Intrvioo mobile.")}</p>}
-        {restaurants.map(restaurant => <button type="button" className={`restaurant-row ${draft.id === restaurant.id ? 'active' : ''}`} key={restaurant.id} onClick={() => { setDraft(clone(restaurant)); clearMessage(); }}><span><b>{restaurant.name}</b><small>{restaurant.menu.items.length} {t("menu items ·")} {restaurant.currency}</small></span><strong>›</strong></button>)}
+        <label>{t("Search")}<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><PagedList items={restaurants.filter(value => matchesSearch([value.name,value.nameAr,value.area,value.emirate,value.cuisine],search))} resetKey={search}>{restaurant => <button type="button" data-mobile-target="editor" className={`restaurant-row ${draft.id === restaurant.id ? 'active' : ''}`} key={restaurant.id} onClick={() => { setDraft(clone(restaurant)); clearMessage(); }}><span><b>{restaurant.name}</b><small>{restaurant.menu.items.length} {t("menu items ·")} {restaurant.currency}</small></span><strong>›</strong></button>}</PagedList>
         <label className="upload wide">{t("Import Intrvioo JSON")}<input type="file" accept="application/json,.json" onChange={event => importFile(event.target.files?.[0])} /></label>
       </aside>
-      <form className="stack" onInvalid={event => { let node = event.target.parentElement; while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; } }} onSubmit={save}>
+      <form data-mobile-section="editor" data-mobile-label={t("Edit restaurant")} className="stack" onInvalid={event => { let node = event.target.parentElement; while (node) { if (node.tagName === 'DETAILS') node.open = true; node = node.parentElement; } }} onSubmit={save}>
         <section className="card editor-card stack">
           <div className="section-title compact"><div><p className="eyebrow">{t("STEP 1 · RESTAURANT")}</p><h2>{draft.name || t("New restaurant")}</h2>{shared && <small className="shared-badge">✓ {t('Shared')}</small>}</div>{restaurants.some(item => item.id === draft.id) && !shared && <button type="button" className="link danger" onClick={() => { saveList(restaurants.filter(item => item.id !== draft.id)); setDraft(blankRestaurant()); }}>{t("Delete")}</button>}</div>
           <div className="form-grid three"><label>{t("Restaurant name")}<input value={draft.name} onChange={e => set('name', e.target.value)} required /></label><label>{t("Arabic name")}<input dir="rtl" value={draft.nameAr || ''} onChange={e => set('nameAr', e.target.value)} /></label><label>{t("Branch")}<input value={draft.branchName} onChange={e => set('branchName', e.target.value)} /></label><label>{t("Currency")}<select value={draft.currency} onChange={e => set('currency', e.target.value)}>{CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}</select></label></div>

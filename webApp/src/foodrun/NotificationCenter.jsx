@@ -1,3 +1,4 @@
+import PagedList from './PagedList.jsx';
 import React, { useState } from 'react';
 import { t, getLanguage } from './i18n.js';
 import { notificationTarget } from './notifications.js';
@@ -7,11 +8,11 @@ const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
 
 export function NotificationCenter({ notifications, onOpen, onBack }) {
   return <main className="page-shell stack notification-center"><div className="section-title"><h1>{t('Notifications')}</h1><button className="secondary" onClick={onBack}>{t('Back')}</button></div>
-    <section className="card stack"><p>{tx('Orders, payments, and the next action for your table.', 'الطلبات والمدفوعات والخطوة التالية لغرفتك.')}</p>
+    <section data-mobile-section="settings" data-mobile-label={t("Notifications")} className="card stack"><p>{tx('Orders, payments, and the next action for your table.', 'الطلبات والمدفوعات والخطوة التالية لغرفتك.')}</p>
       <div className="hero-actions">{notifications.configured === false ? <p>{tx("Browser push setup is being completed. Your updates are available in this inbox.", "جارٍ استكمال إشعارات المتصفح. تحديثاتك متاحة في صندوق الإشعارات هنا.")}</p> : <button className="primary" onClick={() => notifications.enable()}>{notifications.enabled ? tx('Notifications enabled', 'الإشعارات مفعلة') : t('Enable notifications')}</button>}{notifications.enabled && <button className="secondary" onClick={notifications.disable}>{tx('Turn off device notifications', 'إيقاف إشعارات هذا الجهاز')}</button>}</div>
       {notifications.error && <p role="alert">{notifications.error}</p>}</section>
     {notifications.items.length === 0 && <section className="card"><p>{tx('Your order and payment updates will appear here.', 'ستظهر تحديثات الطلبات والمدفوعات هنا.')}</p></section>}
-    {notifications.items.map(item => <article className="card stack" key={item.id}><div className="section-title"><h2>{item.title}</h2>{!item.read && <span className="status live">{tx('New', 'جديد')}</span>}</div><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString(getLanguage() === 'ar' ? 'ar-AE' : 'en-AE')}</small><div className="hero-actions">{item.actions.map(action => <button className="secondary" key={action.id} onClick={() => onOpen(item, action.id)}>{action.title}</button>)}<button className="link" onClick={() => notifications.read(item.id)}>{tx('Mark read', 'تحديد كمقروء')}</button></div></article>)}
+    <section data-mobile-section="inbox" data-mobile-label={tx("Inbox", "الوارد")} className="stack"><PagedList items={notifications.items}>{item => <article className="card stack" key={item.id}><div className="section-title"><h2>{item.title}</h2>{!item.read && <span className="status live">{tx('New', 'جديد')}</span>}</div><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString(getLanguage() === 'ar' ? 'ar-AE' : 'en-AE')}</small><div className="hero-actions">{item.actions.map(action => <button className="secondary" key={action.id} onClick={() => onOpen(item, action.id)}>{action.title}</button>)}<button className="link" onClick={() => notifications.read(item.id)}>{tx('Mark read', 'تحديد كمقروء')}</button></div></article>}</PagedList></section>
   </main>;
 }
 

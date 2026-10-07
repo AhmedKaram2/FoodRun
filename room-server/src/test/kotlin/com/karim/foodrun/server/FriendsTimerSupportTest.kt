@@ -73,6 +73,7 @@ class FriendsTimerSupportTest {
         assertEquals(addresses, delivered)
         assertNull(f.service.nextEmail(100))
         assertEquals(room.id, home(f, bob).invitations.single().roomId)
+        assertTrue(f.service.notificationRequest(NotificationRequest(owner.identityToken),true).notifications.any { it.kind == "friend_room_created" && it.roomId == room.id })
         assertTrue(home(f, bob).rooms.none { it.roomId == room.id })
     }
     @Test fun anyMemberCanAnnounceJoinedGroupAndMatchingGroupIdsDoNotNotifyAnotherGroup() = RoomFixture(Provider(), emailEnabled = true).use { f ->
@@ -230,5 +231,50 @@ class FriendsTimerSupportTest {
         f.now += 30 * 60_000; f.restart()
         assertFalse(f.service.execute(command(f, expiring, CommandKind.HOME)).ok)
         assertFalse(f.service.execute(change.copy(commandId = f.id(), token = expiring.home!!.rooms.single().token, identityToken = "")).ok)
+    }
+
+    @Test fun searchFindsNamesAndEmailsButKeepsHiddenProfilesPrivate() = RoomFixture(Provider(),emailEnabled = true).use { f ->
+        val alice = login(f,"Alice"); login(f,"Bob"); val hidden = login(f,"Hidden")
+        val profile = hidden.home!!.profile; f.db.putRecord("profile:Hidden",orderJson.encodeToString(profile.copy(discoverable = false)))
+        val names = f.execute(command(f,alice,CommandKind.FRIEND_SEARCH).copy(text = "bo")).friendContacts!!
+        assertEquals("Bob",names.single().userId)
+        assertEquals("Bob",f.execute(command(f,alice,CommandKind.FRIEND_SEARCH).copy(text = "bob@example.test")).friendContacts!!.single().userId)
+        assertTrue(f.execute(command(f,alice,CommandKind.FRIEND_SEARCH).copy(text = "Hidden")).friendContacts!!.isEmpty())
+        assertTrue(f.execute(command(f,alice,CommandKind.FRIEND_SEARCH).copy(text = "b")).friendContacts!!.isEmpty())
+    }
+    @Test fun preferencesStopGroupEmailsAndPushOnEveryPlatformButKeepInboxUpdates() = RoomFixture(Provider(),emailEnabled = true).use { f ->
+        val alice = login(f,"Alice"); val bob = login(f,"Bob")
+        listOf("web","android","ios").forEach { platform ->
+            f.service.notificationRequest(NotificationRequest(bob.identityToken,"register",token = "fixture-push-token-123456-$platform",platform = platform,installationId = "fixture-installation-123456-$platform"),true)
+        }
+        f.execute(command(f,alice,CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group","Friends",members = listOf(FriendContact("bob@example.test")))))
+        assertEquals(1,f.db.records("push-job:").size)
+        assertEquals(3,orderJson.decodeFromString<PushJob>(f.db.records("push-job:").single().second).devices.size)
+        val create = command(f,alice,CommandKind.CREATE).copy(name = "Alice",text = "Lunch",restaurant = f.restaurant,friendGroupId = "group")
+        f.execute(create)
+        assertEquals(1,f.db.records("email-job:").size)
+        val preferences = command(f,bob,CommandKind.SET_NOTIFICATION_PREFERENCES).copy(notificationPreferences = NotificationPreferences(false,false))
+        val result = f.execute(preferences); f.execute(preferences); f.restart(); f.execute(preferences)
+        assertEquals(NotificationPreferences(false,false),home(f,bob).notificationPreferences)
+        assertNull(f.service.nextPush()); assertNull(f.service.nextEmail(100))
+        assertTrue(f.service.notificationRequest(NotificationRequest(bob.identityToken),true).notifications.any { it.kind == "friend_room_invitation" })
+        val oldClient = orderJson.encodeToString(result.forClient(false)); assertFalse("notificationPreferences" in oldClient)
+        f.execute(create.copy(commandId = f.id(),text = "Second lunch"))
+        assertTrue(f.db.records("email-job:").isEmpty()); assertTrue(f.db.records("push-job:").isEmpty())
+    }
+    @Test fun initialBreakfastGroupIncludesCanonicalUsersWithoutEmailAndRunsOnlyOnce() = RoomFixture(Provider(),emailEnabled = true).use { f ->
+        val owner = f.execute(RoomCommand(commandId = f.id(),kind = CommandKind.IDENTITY,identity = IdentityRequest(IdentityAction.REGISTER,email = AdminService.ADMIN_EMAIL,password = "fixture-password",profile = FoodProfile(name = "Owner"))))
+        login(f,"Bob")
+        f.db.putRecord("profile:NoEmail",orderJson.encodeToString(FoodProfile("NoEmail","No email user")))
+        f.db.putRecord("profile:OldBob",orderJson.encodeToString(FoodProfile("OldBob","Duplicate Bob")))
+        f.db.putRecord("account-alias:OldBob","Bob")
+        val request = InitialFriendGroup.Request("breakfast-initial","مجموعة الفطار")
+        val count = InitialFriendGroup.apply(f.db,request) { f.now }
+        val group = home(f,owner).friendGroups.single()
+        assertEquals(4,count); assertEquals(4,group.members.size); assertTrue(group.members.any { it.userId == "NoEmail" && it.email.isEmpty() })
+        assertFalse(group.members.any { it.userId == "OldBob" }); assertTrue(group.favourite)
+        assertNull(InitialFriendGroup.apply(f.db,request) { f.now }); f.restart()
+        f.execute(command(f,owner,CommandKind.DELETE_FRIEND_GROUP).copy(friendGroupId = request.id))
+        assertNull(InitialFriendGroup.apply(f.db,request) { f.now }); assertTrue(home(f,owner).friendGroups.isEmpty())
     }
 }

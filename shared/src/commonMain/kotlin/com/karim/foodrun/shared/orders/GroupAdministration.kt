@@ -151,6 +151,7 @@ internal class GroupAdministration(private val c: GroupController) {
             require(to >= from) { "The end date must be on or after the start date." }
         }
         if(delete) {
+            require(c.text(GroupFieldKey.ADMIN_SEARCH).isBlank()) { "Clear search to review the full cleanup selection before deleting." }
             require(preview?.scope == scope && preview?.olderThanDays == days && preview?.fromDate == from && preview?.toDate == to && (!dateRange || preview?.timeZone == zone)) { "Preview this selection again." }
             require(c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE") { "Type DELETE to confirm this cleanup." }
         }
@@ -164,16 +165,16 @@ internal class GroupAdministration(private val c: GroupController) {
         val tabs = listOf("overview" to tr("Overview", "نظرة عامة"), "users" to tr("Users", "المستخدمون"), "restaurants" to tr("Restaurants", "المطاعم"), "rooms" to tr("Rooms", "الغرف"), "history" to tr("Order history", "سجل الطلبات"), "wallets" to tr("Wallets", "المحافظ"), "blocks" to tr("Block requests", "طلبات الحظر"), "cleanup" to tr("Cleanup", "تنظيف البيانات"), "settings" to tr("Settings", "الإعدادات"))
         cards += GroupCard("admin-tabs", tr("Administration", "الإدارة"), buttons = tabs.map { GroupButton(it.second, GroupAction.ADMIN_TAB, it.first, enabled = tab != it.first) })
         if(tab == "rooms") cards += GroupCard("admin-clear-rooms", tr("Clear rooms by date", "مسح الغرف حسب التاريخ"), buttons = listOf(button("Clear rooms by date", "مسح الغرف حسب التاريخ", GroupAction.ADMIN_TAB, "cleanup-date")))
-        val search = c.text(GroupFieldKey.ADMIN_SEARCH)
+        val search = c.text(GroupFieldKey.ADMIN_SEARCH).trim()
+        fields += field(GroupFieldKey.ADMIN_SEARCH, "Search this tab", "ابحث في هذا القسم")
         when(tab) {
             "overview" -> {
                 cards += GroupCard("admin-overview", tr("Overview", "نظرة عامة"), "${d.users.size} ${tr("users", "مستخدمين")} · ${d.rooms.size} ${tr("rooms", "غرف")} · ${d.restaurants.size} ${tr("restaurants", "مطاعم")}")
                 cards += d.activity.take(50).mapIndexed { i, event -> GroupCard("activity:$i", event.action, "${event.target}\n${event.actorId}") }
             }
             "users" -> {
-                fields += field(GroupFieldKey.ADMIN_SEARCH, "Search users", "ابحث عن مستخدم")
                 buttons += button("Create user", "إنشاء مستخدم", GroupAction.ADMIN_NEW_USER)
-                cards += d.users.filter { search.isBlank() || it.name.contains(search, true) || it.phone.contains(search) }.map { person -> GroupCard("admin-user:${person.id}", person.name, person.phone,
+                cards += d.users.filter { search.isBlank() || it.name.contains(search, true) || it.phone.contains(search) || it.email.contains(search,true) || it.id.contains(search,true) }.map { person -> GroupCard("admin-user:${person.id}", person.name, person.phone,
                     if(person.removed) tr("Removed", "محذوف") else if(person.disabled) tr("Blocked", "محظور") else "",
                     if(person.removed) listOf(button("Restore", "استعادة", GroupAction.ADMIN_ACTION, "restore|${person.id}")) else listOf(button("Edit all details", "تعديل جميع البيانات", GroupAction.ADMIN_USER, person.id),
                         button("Block", "حظر", GroupAction.ADMIN_ACTION, "block|${person.id}"), button("Unblock", "إلغاء الحظر", GroupAction.ADMIN_ACTION, "unblock|${person.id}"), button("Remove user", "إزالة المستخدم", GroupAction.ADMIN_ACTION, "remove|${person.id}", destructive = true))) }
@@ -206,12 +207,14 @@ internal class GroupAdministration(private val c: GroupController) {
                 } else fields += field(GroupFieldKey.ADMIN_DAYS, "Older than days", "أقدم من عدد أيام")
                 cards += GroupCard("cleanup-help", tr("Review rooms before clearing", "راجع الغرف قبل المسح"), tr("The range uses last activity and includes both dates. Active orders and unsettled payments are protected.", "الفترة حسب آخر نشاط وتشمل يوم البداية والنهاية. الطلبات النشطة والمدفوعات غير المسددة محمية."))
                 buttons += button("Preview selection", "معاينة البيانات", GroupAction.ADMIN_PREVIEW_CLEANUP)
-                preview?.let { p -> cards += GroupCard("cleanup-count", "${p.count} ${tr("records", "سجلات")}", p.targets.take(30).joinToString("\n") { "${it.name} · #${it.orderNumber}" })
-                    if(p.count > 0) { fields += field(GroupFieldKey.ADMIN_CONFIRMATION, "Type DELETE to confirm", "اكتب DELETE للتأكيد"); buttons += button("Delete selected data", "حذف البيانات المحددة", GroupAction.ADMIN_DELETE_CLEANUP, destructive = true).copy(enabled = c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE") } }
+                preview?.let { p -> cards += GroupCard("cleanup-count", "${p.count} ${tr("records", "سجلات")}", p.targets.filter { search.isBlank() || it.name.contains(search,true) || it.restaurant.contains(search,true) }.take(30).joinToString("\n") { "${it.name} · #${it.orderNumber}" })
+                    if(p.count > 0) { fields += field(GroupFieldKey.ADMIN_CONFIRMATION, "Type DELETE to confirm", "اكتب DELETE للتأكيد"); buttons += button("Delete selected data", "حذف البيانات المحددة", GroupAction.ADMIN_DELETE_CLEANUP, destructive = true).copy(enabled = c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE" && search.isBlank()) } }
             }
         }
         buttons += button("Refresh", "تحديث", GroupAction.OPEN_ADMIN)
-        return GroupFlowContent(fields, cards, buttons)
+        val searchableFields = fields.filter { it.key == GroupFieldKey.ADMIN_SEARCH || tab != "settings" || search.isBlank() || it.label.contains(search,true) || it.value.contains(search,true) }
+        val searchableCards = if(search.isBlank() || tab in listOf("users","cleanup")) cards else cards.filter { it.id == "admin-tabs" || it.title.contains(search,true) || it.detail.contains(search,true) || it.badge.contains(search,true) }
+        return GroupFlowContent(searchableFields, searchableCards, buttons)
     }
     private fun userContent(): GroupFlowContent {
         val fields = mutableListOf(field(GroupFieldKey.ADMIN_NAME, "Name", "الاسم"), field(GroupFieldKey.ADMIN_PHONE, "Phone", "رقم الهاتف"), field(GroupFieldKey.ADMIN_LANGUAGE, "Language", "اللغة", choices = listOf(GroupChoice("en", "English"), GroupChoice("ar", "العربية"))))

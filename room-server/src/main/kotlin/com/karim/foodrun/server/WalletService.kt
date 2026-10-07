@@ -11,6 +11,7 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         require(c.userId.length <= 128 && c.currency.length <= 3 && c.text.length <= if (c.kind == CommandKind.WALLET_PEOPLE) 254 else 160) { "Invalid wallet details." }
         Money.precision(c.currency)
         when (c.kind) {
+            CommandKind.WALLET_HISTORY -> return RoomReply(walletHistory = WalletHistoryService(db).read(c, uid))
             CommandKind.WALLET_PEOPLE -> {
                 val query = c.text.trim()
                 if (query.isEmpty()) return RoomReply(walletPeople = emptyList())
@@ -130,6 +131,8 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         val result = if(command.kind == CommandKind.REJECT_TRANSFER) {
             require(value.status == WalletPaymentStatus.OWING && value.batchId.isEmpty()) { "Review the holder's pending transfer before rejecting this wallet payment." }
             db.putRecord("wallet:cancelled-payment:${value.id}", orderJson.encodeToString(value))
+            db.putRecord("wallet:cancelled-at:${value.id}", clock().toString())
+            if(command.text.isNotBlank()) db.putRecord("wallet:cancelled-note:${value.id}", command.text)
             db.deleteRecord("wallet:payment:${value.id}")
             after.copy(walletPayments = after.walletPayments.filterNot { it.id == value.id })
         } else {

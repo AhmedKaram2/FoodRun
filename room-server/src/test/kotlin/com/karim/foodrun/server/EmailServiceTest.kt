@@ -150,4 +150,16 @@ class EmailServiceTest {
         assertNull(GmailEmailSender.configured { null })
         assertFailsWith<IllegalArgumentException> { GmailEmailSender.configured { if (it == "FOODRUN_EMAIL_ENABLED") "true" else null } }
     }
+
+    @Test fun optedOutRecipientGetsAppReminderWithoutEmailAndRepeatIsIdempotent() = RoomFixture(Identity(),emailEnabled = true).use { f ->
+        val member = f.placed(); f.pay()
+        val user = login(f,"Member")
+        f.execute(RoomCommand(commandId = f.id(),kind = CommandKind.SET_NOTIFICATION_PREFERENCES,identityToken = user.identityToken,notificationPreferences = NotificationPreferences(false,false)))
+        val command = f.command(f.owner,CommandKind.REMIND_PAYMENT).copy(memberId = member.memberId)
+        assertEquals("REMINDER_NOTIFIED",f.execute(command).code); assertEquals("REMINDER_NOTIFIED",f.execute(command).code)
+        assertTrue(f.db.records("email-job:").isEmpty()); assertNull(f.service.nextPush())
+        val inbox = f.service.notificationRequest(NotificationRequest(user.identityToken),true).notifications
+        assertEquals(1,inbox.count { it.kind == "payment_reminder" })
+        assertFalse(f.service.execute(command.copy(commandId = f.id())).ok)
+    }
 }

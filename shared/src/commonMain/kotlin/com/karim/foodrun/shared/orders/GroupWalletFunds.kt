@@ -69,13 +69,14 @@ internal class GroupWalletFunds(private val c: GroupController) {
         val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
         return GroupButton("${tr("Pay with wallet", "الدفع بالمحفظة")} · ${Money.format(receipt.balance, receipt.currency)}", GroupAction.PAY_WITH_WALLET, room.id, enabled = balance >= receipt.balance)
     }
-    fun clear() { people = emptyList(); recipient = null; selectedUser = ""; batchRecipient = "" }
+    fun clear() { c.walletHistory.dismiss(); people = emptyList(); recipient = null; selectedUser = ""; batchRecipient = "" }
     fun topUpButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {
         if (payButton(room, memberId, receipt)?.enabled != false) return null
         val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
         val shortfall = receipt.balance - balance
         return action("${tr("Top up", "اشحن")} · ${Money.format(shortfall, receipt.currency)}", "charge|${receipt.currency}|$shortfall")
     }
+    private fun historySelection(value: WalletBalance) = GroupButton(tr("View transactions", "عرض المعاملات"), GroupAction.OPEN_WALLET_HISTORY, orderJson.encodeToString(WalletKey(value.customerId,value.holderId,value.currency)))
     fun cards(prefix: String): List<GroupCard> {
         if(c.library.home?.wallet == null) return emptyList()
         val cards = mutableListOf<GroupCard>()
@@ -83,8 +84,8 @@ internal class GroupWalletFunds(private val c: GroupController) {
         cards += GroupCard("${prefix}wallet-funds", tr("Wallet balance", "رصيد المحفظة"),
             mine.groupBy { it.currency }.map { (currency, values) -> Money.format(values.sumOf { it.available }, currency) }.joinToString("\n").ifEmpty { tr("No confirmed balance yet", "لا يوجد رصيد مؤكد بعد") },
             buttons = listOf(action(tr("Charge wallet", "شحن المحفظة"), "charge")))
-        mine.forEach { cards += GroupCard("${prefix}wallet-held:${it.holderId}:${it.currency}", "${tr("Held by", "لدى")} ${it.holderName}", Money.format(it.available, it.currency)) }
-        wallet.balances.filter { it.holderId == uid && it.customerId != uid }.forEach { cards += GroupCard("${prefix}wallet-holding:${it.customerId}:${it.currency}", "${tr("Money I hold for", "أموال لدي تخص")} ${it.customerName}", Money.format(it.available, it.currency), tr("Available for their orders", "متاح لطلباتهم")) }
+        mine.forEach { cards += GroupCard("${prefix}wallet-held:${it.holderId}:${it.currency}", "${tr("Held by", "لدى")} ${it.holderName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
+        wallet.balances.filter { it.holderId == uid && it.customerId != uid }.forEach { cards += GroupCard("${prefix}wallet-holding:${it.customerId}:${it.currency}", "${tr("Money I hold for", "أموال لدي تخص")} ${it.customerName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
         wallet.topUps.forEach { topUp ->
             val buttons = if(topUp.holderId == uid && topUp.status == WalletStatus.PENDING) listOf(action(tr("Confirm received", "تأكيد الاستلام"), "top-up-yes|${topUp.id}"), action(tr("Not received", "لم أستلم"), "top-up-no|${topUp.id}")) else emptyList()
             cards += GroupCard("${prefix}wallet-top-up:${topUp.id}", "${topUp.customerName} → ${topUp.holderName}",
@@ -92,7 +93,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                     WalletStatus.PENDING -> tr("Awaiting receipt confirmation", "بانتظار تأكيد الاستلام")
                     WalletStatus.CONFIRMED -> tr("Wallet credited", "تم شحن المحفظة")
                     WalletStatus.REJECTED -> tr("Not received", "لم يتم الاستلام")
-                }, buttons)
+                }, buttons + GroupButton(tr("View transactions", "عرض المعاملات"),GroupAction.OPEN_WALLET_HISTORY,orderJson.encodeToString(WalletKey(topUp.customerId,topUp.holderId,topUp.currency))))
         }
         wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.status == WalletPaymentStatus.OWING }.groupBy { it.recipientId to it.currency }.forEach { (_, values) ->
             cards += GroupCard("${prefix}wallet-group:${values.first().id}", "${tr("Pay", "ادفع إلى")} ${values.first().recipientName}",

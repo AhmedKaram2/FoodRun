@@ -67,6 +67,10 @@ For website releases, include the existing `zai` and `ziina` Netlify functions e
 
 ## Delivery behavior and validation
 
+Registered recipients also receive an in-app notification and a push to their registered Android, iOS, or browser devices. Group creators included in the recipient list receive a room-ready notification; other members receive a join action. Unknown email recipients receive the email invitation until they register.
+
+Profile preferences independently control email and push across all devices. Delivery workers check preferences again before sending queued jobs. Disabling either channel keeps the in-app inbox available. A payment reminder sent to an email-opted-out recipient returns `REMINDER_NOTIFIED`, preserves the existing cooldown, and sends an in-app update. Older clients omit these preference fields through capability projection.
+
 - A single-recipient message is queued with the originating room transaction. Provider requests happen outside the room lock. Gmail/network errors do not roll back orders or payments.
 - The worker reserves each attempt durably and limits attempts in a rolling 24-hour window. It retries temporary errors up to six attempts and expires undelivered messages after 24 hours. Duplicate room commands do not create duplicate email jobs. A timeout after Gmail accepted a message can still cause a duplicate on retry: Gmail does not provide an exactly-once send key.
 - Disabled Gmail API or permission errors fail immediately rather than leaving a reminder waiting for retries. Enable Gmail API in the project that owns the sender's OAuth client; valid OAuth credentials alone do not enable the API.

@@ -133,4 +133,7 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val joinedFriendGroups: List<FriendGroupMembership> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val notificationPreferences: NotificationPreferences? = null,
 )

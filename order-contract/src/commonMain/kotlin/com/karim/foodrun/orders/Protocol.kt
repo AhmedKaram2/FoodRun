@@ -5,8 +5,8 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    FRIEND_LOOKUP, SAVE_FRIEND_GROUP, DELETE_FRIEND_GROUP, LEAVE_FRIEND_GROUP,
-    WALLET_PEOPLE, WALLET_RECIPIENT, WALLET_TOP_UP, WALLET_REVIEW_TOP_UP, PAY_WITH_WALLET, WALLET_DECLARE_BATCH, WALLET_REVIEW_BATCH,
+    FRIEND_LOOKUP, FRIEND_SEARCH, SAVE_FRIEND_GROUP, DELETE_FRIEND_GROUP, LEAVE_FRIEND_GROUP, SET_NOTIFICATION_PREFERENCES,
+    WALLET_PEOPLE, WALLET_RECIPIENT, WALLET_HISTORY, WALLET_TOP_UP, WALLET_REVIEW_TOP_UP, PAY_WITH_WALLET, WALLET_DECLARE_BATCH, WALLET_REVIEW_BATCH,
     CREATE_PAYMENT_ROOM, UPDATE_PAYMENT_RECEIPT, UPDATE_PAYMENT_SHARE, RECORD_PAYMENT, IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
     VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
     UNLOCK_SELECTION_OVERRIDE, SET_SELECTION_OVERRIDE,
@@ -95,6 +95,18 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val friendGroupOwnerId: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletKey: WalletKey? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletHistoryCursor: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val notificationPreferences: NotificationPreferences? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val notificationPreferencesDetails: Boolean = false,
 
 )
 @Serializable data class OrderProgress(
@@ -130,6 +142,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val friendContact: FriendContact? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val walletHistory: WalletHistory? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val friendContacts: List<FriendContact>? = null,
 
 )
 /** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */

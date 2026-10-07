@@ -56,6 +56,13 @@ struct GroupCardContent: View {
     private var compactDetail: Bool { card.id == "order-summary" && card.detail.components(separatedBy: "\n").count > 4 }
     private var member: Bool { card.id.hasPrefix("member:") || card.id.hasPrefix("invite:") }
     var body: some View {
+        Group {
+            if let selection = card.selection {
+                Button { dispatch(selection.action, selection.value) } label: { content }.buttonStyle(.plain).disabled(busy || !selection.enabled)
+            } else { content }
+        }
+    }
+    private var content: some View {
         VStack(alignment: .leading, spacing: FoodSpacing.s14) {
             HStack(alignment: .top, spacing: FoodSpacing.s12) {
                 if member {

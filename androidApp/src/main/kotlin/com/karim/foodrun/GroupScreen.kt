@@ -1,6 +1,8 @@
 package com.karim.foodrun
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -97,6 +99,21 @@ fun GroupScreen(controller: GroupController) {
     LaunchedEffect(state.page) { focus.clearFocus() }
     BackHandler(state.canGoBack) { controller.dispatch(GroupAction.BACK, "") }
     CompositionLocalProvider(LocalLayoutDirection provides if(state.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    state.walletHistoryPrompt?.let { prompt ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { controller.dispatch(GroupAction.DISMISS_WALLET_HISTORY) }) {
+            FoodCard {
+                Column(Modifier.heightIn(max = 640.dp).verticalScroll(rememberScrollState()).padding(FoodSpacing.Large), verticalArrangement = Arrangement.spacedBy(FoodSpacing.Medium)) {
+                    Text(prompt.title, style = FoodType.DialogTitle)
+                    Text(prompt.subtitle); Text(prompt.balance, style = FoodType.Person)
+                    Row { TextButton(onClick = { controller.dispatch(GroupAction.DISMISS_WALLET_HISTORY) }) { Text(if(state.rtl) "إغلاق" else "Close") }; TextButton(enabled = !prompt.loading, onClick = { controller.dispatch(GroupAction.REFRESH_WALLET_HISTORY) }) { Text(if(state.rtl) "تحديث" else "Refresh") } }
+                    prompt.cards.forEach { GroupCardContent(it,false,controller) }
+                    if(prompt.loading) Text(if(state.rtl) "جارٍ التحميل…" else "Loading…")
+                    if(prompt.error.isNotEmpty()) { Text(prompt.error,color = FoodColors.Orange); TextButton(enabled = !prompt.loading, onClick = { controller.dispatch(GroupAction.REFRESH_WALLET_HISTORY) }) { Text(if(state.rtl) "إعادة المحاولة" else "Retry") } }
+                    if(prompt.hasMore) TextButton(enabled = !prompt.loading,onClick = { controller.dispatch(GroupAction.LOAD_WALLET_HISTORY) }) { Text(if(state.rtl) "تحميل معاملات أقدم" else "Load older transactions") }
+                }
+            }
+        }
+    }
     state.reminderEmailPrompt?.let { prompt ->
         AlertDialog(onDismissRequest = { controller.dispatch(GroupAction.DISMISS_REMINDER_EMAIL) },
             title = { Text(if (state.rtl) "إيميل المستلم" else "Recipient email") },

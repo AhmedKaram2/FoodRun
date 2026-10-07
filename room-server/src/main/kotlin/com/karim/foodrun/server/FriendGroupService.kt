@@ -45,10 +45,14 @@ internal class FriendGroupService(private val db: RoomDatabase, private val acco
     fun inviteRoom(c: RoomCommand, room: Room) {
         if(c.friendGroupId.isEmpty()) return
         val uid = accounts.userId(c.identityToken)
-        val group = requireNotNull(db.record("friend-group:$uid:${c.friendGroupId}")) { "Choose one of your friend groups." }
+        val groupOwnerId = c.friendGroupOwnerId.ifEmpty { uid }
+        require(groupOwnerId.length in 1..128 && c.friendGroupId.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Choose a valid friend group." }
+        val group = requireNotNull(db.record("friend-group:$groupOwnerId:${c.friendGroupId}")) { "This friend group is no longer available." }
             .let { orderJson.decodeFromString<FriendGroup>(it) }
+        require(canAnnounce(db, groupOwnerId, group, uid)) { "You are no longer a member of this friend group." }
         val ownerName = accounts.paymentRoomProfile(uid).name
-        group.members.map { contact(db, it.email) }.forEach { member ->
+        val groupOwner = if(groupOwnerId != uid) EmailContacts.searchAddress(db, groupOwnerId)?.let { contact(db, it) } else null
+        (group.members + listOfNotNull(groupOwner)).distinctBy { it.email }.map { contact(db, it.email) }.forEach { member ->
             if(member.userId.isNotEmpty() && member.userId != uid && AccountRestrictions.current(db, member.userId, clock()) == null) {
                 val id = UUID.nameUUIDFromBytes("${c.commandId}:${member.userId}".toByteArray()).toString()
                 val invitation = FoodInvitation(id, member.userId, room.id, room.name, ownerName, room.orderNumber)
@@ -56,10 +60,12 @@ internal class FriendGroupService(private val db: RoomDatabase, private val acco
                 notifications.wallet(member.userId, id, "friend_room_invitation", "You're invited to ${room.name}" to "دعوة للانضمام إلى ${room.name}",
                     "$ownerName invited you. Room code: ${room.code}." to "دعاك $ownerName. رمز الغرفة: ${room.code}.")
             }
-            emails.friendInvitation(uid, group, member, c.commandId, ownerName, room)
+            emails.friendInvitation(uid, group, member, c.commandId, ownerName, room, groupOwnerId)
         }
     }
     companion object {
+        fun canAnnounce(db: RoomDatabase, ownerId: String, group: FriendGroup, uid: String): Boolean =
+            db.record("profile:$ownerId") != null && (ownerId == uid || group.members.any { isMember(db, it, uid) })
         fun groups(db: RoomDatabase, uid: String): List<FriendGroup> = db.records("friend-group:$uid:")
             .map { resolved(db, orderJson.decodeFromString<FriendGroup>(it.second)) }.sortedBy { it.name.lowercase() }
         fun joined(db: RoomDatabase, uid: String): List<FriendGroupMembership> = db.records("friend-group:").mapNotNull { (key, body) ->

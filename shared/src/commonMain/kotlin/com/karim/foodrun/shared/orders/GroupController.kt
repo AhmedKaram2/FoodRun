@@ -419,8 +419,10 @@ class GroupController(val platform: GroupPlatform) {
         val names = text(GroupFieldKey.EXPECTED_NAMES).split(',').map { it.trim() }.filter { it.isNotEmpty() }
         val fees = fees(r.currency)
         val destination = if(flag(GroupFieldKey.DELIVERY)) text(GroupFieldKey.DESTINATION).trim().ifBlank { "The selected orderer will arrange delivery with the restaurant." } else ""
+        val groupChoice = if(nextOrder) "" else text(GroupFieldKey.FRIEND_GROUP_CHOICE)
+        val group = if(groupChoice.isEmpty()) null else requireNotNull(library.home?.roomFriendGroups()?.singleOrNull { it.selectionKey() == groupChoice }) { "This friend group is no longer available. Choose a group again." }
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, friendGroupId = text(GroupFieldKey.FRIEND_GROUP_CHOICE),
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, friendGroupId = group?.group?.id.orEmpty(), friendGroupOwnerId = group?.ownerId.orEmpty(),
             joinTimerMinutes = if(flag(GroupFieldKey.JOIN_TIMER)) (text(GroupFieldKey.JOIN_TIMER_MINUTES).toIntOrNull()?.takeIf { it in 1..1440 } ?: error("Choose between 1 and 1440 minutes.")) else 0))
     }
     private fun back() {

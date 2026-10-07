@@ -75,6 +75,50 @@ class FriendsTimerSupportTest {
         assertEquals(room.id, home(f, bob).invitations.single().roomId)
         assertTrue(home(f, bob).rooms.none { it.roomId == room.id })
     }
+    @Test fun anyMemberCanAnnounceJoinedGroupAndMatchingGroupIdsDoNotNotifyAnotherGroup() = RoomFixture(Provider(), emailEnabled = true).use { f ->
+        val alice = login(f, "Alice"); val bob = login(f, "Bob"); login(f, "Charlie"); val other = login(f, "Other")
+        f.execute(command(f, alice, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Office", favourite = false, members = listOf(FriendContact("bob@example.test"), FriendContact("charlie@example.test"), FriendContact("new@example.test")))))
+        f.execute(command(f, bob, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Bob's group", members = listOf(FriendContact("other@example.test")))))
+        val signup = f.service.nextEmail(100)!!; f.service.finishEmail(signup, EmailResult.SENT)
+        val create = command(f, bob, CommandKind.CREATE).copy(name = "Bob", text = "Member's lunch", restaurant = f.restaurant, friendGroupId = "group", friendGroupOwnerId = "Alice")
+        val room = f.execute(create).room!!
+        f.execute(create); f.restart(); f.execute(create)
+        val addresses = mutableSetOf<String>()
+        repeat(4) {
+            val delivery = f.service.nextEmail(100)!!
+            assertTrue(addresses.add(delivery.address))
+            assertEquals("Bob", delivery.job.userId)
+            assertEquals("Alice", delivery.job.friendGroupOwnerId)
+            assertTrue(delivery.job.body.contains("Bob created Member's lunch"))
+            assertTrue(delivery.job.body.contains("https://intrvioo.com/?room=${room.code}"))
+            f.service.finishEmail(delivery, EmailResult.SENT)
+        }
+        assertEquals(setOf("alice@example.test", "bob@example.test", "charlie@example.test", "new@example.test"), addresses)
+        assertNull(f.service.nextEmail(100))
+        assertEquals("Bob", home(f, alice).invitations.single().invitedBy)
+        assertTrue(home(f, other).invitations.isEmpty())
+        assertEquals("Bob's group", home(f, bob).friendGroups.single().name)
+        assertEquals("Office", home(f, bob).joinedFriendGroups.single().group.name)
+        val roomCount = f.db.activeRoomCount()
+        assertFalse(f.service.execute(create.copy(commandId = f.id(), identityToken = other.identityToken)).ok)
+        f.execute(command(f, bob, CommandKind.LEAVE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroupId = "group"))
+        assertFalse(f.service.execute(create.copy(commandId = f.id())).ok)
+        assertEquals(roomCount, f.db.activeRoomCount())
+        assertNull(f.service.nextEmail(100))
+    }
+    @Test fun removingAnnouncingMemberCancelsQueuedEmailsAndRevokesAnnouncementAccess() = RoomFixture(Provider(), emailEnabled = true).use { f ->
+        val alice = login(f, "Alice"); val bob = login(f, "Bob"); login(f, "Charlie")
+        f.execute(command(f, alice, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Friends", members = listOf(FriendContact("bob@example.test"), FriendContact("charlie@example.test")))))
+        val create = command(f, bob, CommandKind.CREATE).copy(name = "Bob", text = "Lunch", restaurant = f.restaurant, friendGroupId = "group", friendGroupOwnerId = "Alice")
+        f.execute(create)
+        assertEquals(3, f.db.records("email-job:").size)
+        val group = home(f, alice).friendGroups.single()
+        f.execute(command(f, alice, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = group.copy(members = group.members.filter { it.userId != "Bob" })))
+        f.restart()
+        assertNull(f.service.nextEmail(100))
+        assertTrue(f.db.records("email-job:").isEmpty())
+        assertFalse(f.service.execute(create.copy(commandId = f.id())).ok)
+    }
     @Test fun unselectedGroupsSendNoRoomEmailAndRemovedGroupRevokesPendingInvitations() = RoomFixture(Provider(), emailEnabled = true).use { f ->
         val owner = login(f, "Alice")
         f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Friends", members = listOf(FriendContact("new@example.test")))))

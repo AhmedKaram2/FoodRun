@@ -50,11 +50,11 @@ class GroupFriendsTest {
         c.library = c.library.copy(selectedHub = c.library.identityHub)
         c.page = GroupPage.SETUP
         c.update(GroupFieldKey.NAME, "Me"); c.update(GroupFieldKey.ROOM_NAME, "Lunch")
-        c.update(GroupFieldKey.FRIEND_GROUP_CHOICE, "friends"); c.update(GroupFieldKey.JOIN_TIMER, "true"); c.update(GroupFieldKey.JOIN_TIMER_MINUTES, "5")
-        assertEquals(listOf("", "friends"), c.state.fields.single { it.key == GroupFieldKey.FRIEND_GROUP_CHOICE }.choices.map { it.value })
+        c.update(GroupFieldKey.FRIEND_GROUP_CHOICE, "me:friends"); c.update(GroupFieldKey.JOIN_TIMER, "true"); c.update(GroupFieldKey.JOIN_TIMER_MINUTES, "5")
+        assertEquals(listOf("", "me:friends"), c.state.fields.single { it.key == GroupFieldKey.FRIEND_GROUP_CHOICE }.choices.map { it.value })
         c.dispatch(GroupAction.CREATE_ROOM)
         val command = device.requests.last().second
-        assertEquals("friends", command.friendGroupId); assertEquals(5, command.joinTimerMinutes)
+        assertEquals("friends", command.friendGroupId); assertEquals("me", command.friendGroupOwnerId); assertEquals(5, command.joinTimerMinutes)
         val room = Room("room", "123456", "me", "Lunch", restaurant, members = listOf(Member("me", "Me", approved = true)), joinDeadlineAt = 6000)
         c.session = StoredSession(c.library.identityHub!!, "room", "token", "me", "Lunch")
         c.reply = RoomReply(room = room, serverTime = 1000); c.page = GroupPage.ROOM
@@ -63,6 +63,29 @@ class GroupFriendsTest {
         device.time = 6000; c.tickAccessBlock()
         assertFalse(c.state.hasJoinTimer)
         assertTrue(c.state.cards.single { it.id == "join-timer" }.detail.contains("New joins are closed"))
+    }
+    @Test fun joinedGroupsAppearForRoomCreationAndMatchingIdsKeepTheirOwners() {
+        val device = Device(); val c = controller(device)
+        c.library = c.library.copy(selectedHub = c.library.identityHub, home = c.library.home!!.copy(joinedFriendGroups = listOf(
+            FriendGroupMembership(favourite.copy(favourite = false), "alice", "Alice"), FriendGroupMembership(favourite, "charlie", "Charlie"))))
+        c.selectedRestaurant = RestaurantExport(exportId = "restaurant", restaurant = Restaurant("restaurant", "Kitchen", contact = RestaurantContact("+971501234567")))
+        c.page = GroupPage.SETUP; c.update(GroupFieldKey.NAME, "Me"); c.update(GroupFieldKey.ROOM_NAME, "Lunch")
+        assertEquals(listOf("", "me:friends", "alice:friends", "charlie:friends"), c.state.fields.single { it.key == GroupFieldKey.FRIEND_GROUP_CHOICE }.choices.map { it.value })
+        c.update(GroupFieldKey.FRIEND_GROUP_CHOICE, "alice:friends"); c.dispatch(GroupAction.CREATE_ROOM)
+        val sent = device.requests.last().second
+        assertEquals(CommandKind.CREATE, sent.kind)
+        assertEquals("friends", sent.friendGroupId)
+        assertEquals("alice", sent.friendGroupOwnerId)
+    }
+    @Test fun leavingSelectedGroupBeforeCreationRequiresChoosingAgain() {
+        val device = Device(); val c = controller(device)
+        c.library = c.library.copy(selectedHub = c.library.identityHub, home = c.library.home!!.copy(joinedFriendGroups = listOf(FriendGroupMembership(favourite, "alice", "Alice"))))
+        c.selectedRestaurant = RestaurantExport(exportId = "restaurant", restaurant = Restaurant("restaurant", "Kitchen", contact = RestaurantContact("+971501234567")))
+        c.page = GroupPage.SETUP; c.update(GroupFieldKey.NAME, "Me"); c.update(GroupFieldKey.ROOM_NAME, "Lunch")
+        c.update(GroupFieldKey.FRIEND_GROUP_CHOICE, "alice:friends")
+        c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = emptyList()))
+        c.dispatch(GroupAction.CREATE_ROOM)
+        assertTrue(device.requests.isEmpty())
     }
     @Test fun membersCanViewAndLeaveWithoutOwnerEditingControls() {
         val device = Device(); val c = controller(device)

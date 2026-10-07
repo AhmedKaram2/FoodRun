@@ -29,6 +29,7 @@ internal object EmailContacts {
     val reminderMemberId: String = "", val reminderPayerId: String = "",
     val recipientAddress: String = "",
     val friendGroupId: String = "",
+    val friendGroupOwnerId: String = "",
 )
 internal data class EmailDelivery(val job: EmailJob, val address: String)
 internal enum class EmailResult { SENT, RETRY, FAILED }
@@ -39,7 +40,7 @@ internal class ReminderEmailRequired : IllegalArgumentException("Enter an email 
 internal class EmailService(private val db: RoomDatabase, private val clock: () -> Long, private val enabled: Boolean) {
     // Explicit friend invitations and requested payment reminders are the only email types.
     private fun allowed(job: EmailJob) = job.friendGroupId.isNotEmpty() || job.reminderMemberId.isNotEmpty() && job.reminderPayerId.isNotEmpty() && job.invitationId.isEmpty()
-    fun friendInvitation(ownerId: String, group: FriendGroup, member: FriendContact, commandId: String, ownerName: String, room: Room? = null) {
+    fun friendInvitation(ownerId: String, group: FriendGroup, member: FriendContact, commandId: String, ownerName: String, room: Room? = null, groupOwnerId: String = ownerId) {
         require(enabled) { "Email invitations are not available on this server yet." }
         val id = RoomService.hash("friend:$commandId:${member.email}:${room?.id.orEmpty()}")
         if(db.record("email-job:$id") != null || db.record("email-result:$id") != null) return
@@ -49,7 +50,7 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         val body = if(room == null) "$ownerName added you to the friend group ${group.name}. Join Intrvioo using this email to order food together: $link"
         else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (room poll)" else ""}\nRoom code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
         db.putRecord("email-job:$id", orderJson.encodeToString(EmailJob(id, ownerId, room?.id.orEmpty(), room?.orderNumber ?: 0,
-            subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id)))
+            subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id, friendGroupOwnerId = groupOwnerId.takeUnless { it == ownerId }.orEmpty())))
     }
     fun remind(room: Room, actorId: String, command: RoomCommand) {
         require(enabled) { "Email reminders are not available on this server yet." }
@@ -77,8 +78,11 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         if (db.record("profile:${job.userId}") == null || AccountRestrictions.current(db, job.userId, clock()) != null ||
             AccountRestrictions.forRoom(db, job.userId, job.roomId, clock()) != null) return false
         if(job.friendGroupId.isNotEmpty()) {
-            val group = db.record("friend-group:${job.userId}:${job.friendGroupId}")?.let { orderJson.decodeFromString<FriendGroup>(it) } ?: return false
-            if(group.members.none { it.email.equals(job.recipientAddress, true) }) return false
+            val groupOwnerId = job.friendGroupOwnerId.ifEmpty { job.userId }
+            val group = db.record("friend-group:$groupOwnerId:${job.friendGroupId}")?.let { orderJson.decodeFromString<FriendGroup>(it) } ?: return false
+            if(!FriendGroupService.canAnnounce(db, groupOwnerId, group, job.userId)) return false
+            if(group.members.none { it.email.equals(job.recipientAddress, true) } &&
+                !(job.roomId.isNotEmpty() && EmailContacts.searchAddress(db, groupOwnerId)?.equals(job.recipientAddress, true) == true)) return false
             if(job.roomId.isEmpty()) return true
             val invitedRoom = db.room(job.roomId) ?: return false
             return invitedRoom.orderNumber == job.orderNumber && invitedRoom.phase == RoomPhase.LOBBY &&

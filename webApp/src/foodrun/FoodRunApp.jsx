@@ -1,4 +1,5 @@
 import FriendGroups from './FriendGroups.jsx';
+import { friendGroupKey, roomFriendGroups } from './friendGroups.js';
 import RoomJoinTimer from './RoomJoinTimer.jsx';
 import HomeBanner from './HomeBanner.jsx';
 import WalletAnnouncement from './WalletAnnouncement.jsx';
@@ -72,7 +73,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.5/FoodRun-Android-1.6.5.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.6/FoodRun-Android-1.6.6.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -319,7 +320,7 @@ function AppDownloads({ compact = false }) {
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.5 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.6 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -653,6 +654,7 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
+  const groups = roomFriendGroups(data.home);
   const [restaurants, setRestaurants] = useRestaurantLibrary();
   const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', friendGroupId: '', joinTimer: false, joinTimerMinutes: '10', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
   const suggestedRoomName = useRef(form.room);
@@ -678,12 +680,14 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
       let reply;
       if (mode === 'join') reply = await data.send('JOIN', { code: form.code.trim(), name: form.memberName.trim() });
       else {
+        const group = groups.find(value => friendGroupKey(value) === form.friendGroupId);
+        if(form.friendGroupId && !group) throw Error(tx('This friend group is no longer available. Choose a group again.', 'لم تعد مجموعة الأصدقاء متاحة. اختر المجموعة من جديد.'));
         const pollRestaurants = form.restaurantPoll ? selectedPollRestaurants(restaurants, pollIds).map(clone) : [];
         const restaurant = form.restaurantPoll ? pollRestaurants[0] : chosen ? clone(chosen) : normalizeRestaurant({ ...blankRestaurant(), name: form.restaurant.trim(), contact: { phoneE164: form.phone.trim(), whatsappE164: null, address: null } });
         if (!chosen && !form.restaurantPoll) { const next = [...restaurants, restaurant]; setRestaurants(next); storeRestaurants(next); }
         reply = await data.send('CREATE', {
           name: form.memberName.trim(), text: form.room === suggestedRoomName.current ? mealRoomName() : form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
-          selectionStyle: form.selectionStyle, friendGroupId: form.friendGroupId, joinTimerMinutes: form.joinTimer ? Number(form.joinTimerMinutes) : 0, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
+          selectionStyle: form.selectionStyle, friendGroupId: group?.group.id || '', friendGroupOwnerId: group?.ownerId || '', joinTimerMinutes: form.joinTimer ? Number(form.joinTimerMinutes) : 0, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
           fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
       }
@@ -700,7 +704,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         {chosen && !form.restaurantPoll && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
         <label>{t("Room name")}<input value={form.room} enterKeyHint="next" onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required /><span className="field-help">{tx('Suggested for today’s meal. Change it to any group name.', 'اسم مقترح لوجبة اليوم. يمكنك تغييره إلى اسم مجموعتك.')}</span></label>
         <label>{tx('Selection animation', 'طريقة عرض الاختيار')}<select value={form.selectionStyle} onChange={e => setForm({ ...form, selectionStyle: e.target.value })}><option value="wheel">{tx('Wheel', 'العجلة')}</option><option value="names">{tx('Running names', 'الأسماء المتحركة')}</option></select></label>
-        <label>{tx('Invite favourite friend group', 'دعوة مجموعة أصدقاء مفضلة')}<select value={form.friendGroupId} onChange={event => setForm({ ...form, friendGroupId: event.target.value })}><option value="">{tx('No group', 'بدون مجموعة')}</option>{(data.home.friendGroups || []).filter(group => group.favourite).map(group => <option key={group.id} value={group.id}>{group.name} · {group.members.length}</option>)}</select><small>{tx('Everyone in this group receives an email with the room details and join link.', 'يتلقى أعضاء المجموعة بريداً بتفاصيل الغرفة ورابط الانضمام.')}</small></label>
+        <label>{tx('Invite favourite friend group', 'دعوة مجموعة أصدقاء مفضلة')}<select value={form.friendGroupId} onChange={event => setForm({ ...form, friendGroupId: event.target.value })}><option value="">{tx('No group', 'بدون مجموعة')}</option>{groups.map(value => <option key={friendGroupKey(value)} value={friendGroupKey(value)}>{value.group.name} · {value.ownerName} · {value.group.members.length}</option>)}</select><small>{tx('Your favourite groups and groups you joined are available. Everyone receives an email with the room details and join link.', 'يمكنك اختيار مجموعاتك المفضلة أو المجموعات التي انضممت إليها. يتلقى الجميع بريداً بتفاصيل الغرفة ورابط الانضمام.')}</small></label>
         <label className="check"><input type="checkbox" checked={form.joinTimer} onChange={event => setForm({ ...form, joinTimer: event.target.checked })} />{tx('Start the wheel after a join timer', 'بدء العجلة بعد مهلة الانضمام')}</label>
         {form.joinTimer && <label>{tx('Join time in minutes', 'مهلة الانضمام بالدقائق')}<input type="number" required min={1} max={1440} step={1} value={form.joinTimerMinutes} onChange={event => setForm({ ...form, joinTimerMinutes: event.target.value })} /><small>{tx('Starts when the room is created. New joins close and the wheel starts when time runs out.', 'تبدأ عند إنشاء الغرفة. يُغلق الانضمام وتبدأ العجلة تلقائياً عند انتهاء الوقت.')}</small></label>}
         <div className="segmented delivery-choice" role="group" aria-label={tx('Order type', 'نوع الطلب')}><button type="button" aria-pressed={!form.deliveryMode} className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>{t("Pickup")}</button><button type="button" aria-pressed={form.deliveryMode} className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>{t("Delivery")}</button></div>

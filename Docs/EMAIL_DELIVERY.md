@@ -4,9 +4,9 @@ FoodRun sends email from **foodruncollection@gmail.com** when the chosen payer u
 
 ## Friend group invitations
 
-Creating a room with a selected favourite group queues an individual email to every address currently in that group. The message includes the creator, room name, restaurant, pickup/delivery details, room code, optional join deadline and a link to join. Registered members also see an invitation in the app. Receiving an invitation does not join a room automatically. Creating a room without a selected group sends no group email.
+Room creation lists your favourite groups and all groups you joined. Any current member can select a joined group to announce a new room; owners retain group editing rights. Creating a room with a selected group queues an individual email to every address currently in that group. The message includes the creator, room name, restaurant, pickup/delivery details, room code, optional join deadline and a link to join. Registered members also see an invitation in the app. A member-created room also notifies the group owner, using their saved account email when available. The message identifies the actual room creator. Receiving an invitation does not join a room automatically. Creating a room without a selected group sends no group email.
 
-Owners can rename groups and add or remove members. Added users can view their joined groups and leave. Leaving or being removed stops future group invitations and cancels queued invitations that have not been delivered; it does not remove existing room memberships, orders or wallet records. The worker also discards a room invitation if its join window has closed. Replaying a create command after reconnect or restart does not enqueue another invitation to the same address.
+Owners can rename groups and add or remove members. Added users can view their joined groups and leave. Leaving or being removed stops future group invitations and revokes the ability to announce to that group. Pending announcements from a creator who is no longer a member are cancelled before delivery; it does not remove existing room memberships, orders or wallet records. The worker also discards a room invitation if its join window has closed. Replaying a create command after reconnect or restart does not enqueue another invitation to the same address.
 
 ## Collection reminder button
 

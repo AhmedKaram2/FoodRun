@@ -240,7 +240,7 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         if (!c.nextOrder) {
             field(GroupFieldKey.ROOM_NAME, tr("Room name", "اسم الغرفة"))
-            fields += GroupField(GroupFieldKey.FRIEND_GROUP_CHOICE, tr("Invite favourite friend group", "دعوة مجموعة أصدقاء مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_CHOICE), choices = listOf(GroupChoice("", tr("No group", "بدون مجموعة"))) + c.library.home?.friendGroups.orEmpty().filter { it.favourite }.map { GroupChoice(it.id, it.name) })
+            fields += GroupField(GroupFieldKey.FRIEND_GROUP_CHOICE, tr("Invite favourite friend group", "دعوة مجموعة أصدقاء مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_CHOICE), choices = listOf(GroupChoice("", tr("No group", "بدون مجموعة"))) + c.library.home?.roomFriendGroups().orEmpty().map { GroupChoice(it.selectionKey(), "${it.group.name} · ${it.ownerName}") })
             field(GroupFieldKey.JOIN_TIMER, tr("Start the wheel after a join timer", "بدء العجلة بعد مهلة الانضمام"), toggle = true)
             if(c.flag(GroupFieldKey.JOIN_TIMER)) field(GroupFieldKey.JOIN_TIMER_MINUTES, tr("Join time in minutes · 1–1440", "مهلة الانضمام بالدقائق · 1–1440"))
             fields += GroupField(GroupFieldKey.SELECTION_STYLE, tr("Selection animation", "طريقة عرض الاختيار"), c.text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, choices = listOf(GroupChoice("wheel", tr("Wheel", "العجلة")), GroupChoice("names", tr("Running names", "الأسماء المتحركة"))))

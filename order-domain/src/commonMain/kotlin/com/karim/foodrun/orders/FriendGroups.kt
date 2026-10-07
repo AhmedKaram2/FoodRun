@@ -9,3 +9,8 @@ import kotlinx.serialization.Serializable
     val revision: Long = 0,
 )
 @Serializable data class FriendGroupMembership(val group: FriendGroup, val ownerId: String, val ownerName: String)
+
+fun FriendGroupMembership.selectionKey(): String = "$ownerId:${group.id}"
+fun HomePayload.roomFriendGroups(): List<FriendGroupMembership> =
+    (friendGroups.filter { it.favourite }.map { FriendGroupMembership(it, profile.userId, profile.name) } + joinedFriendGroups)
+        .distinctBy { it.selectionKey() }

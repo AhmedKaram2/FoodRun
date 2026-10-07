@@ -1225,7 +1225,7 @@ function FoodRunClient({ useData = useFoodRun } = {}) {
   const [supportSession, setSupportSession] = useState(null);
   const baseData = useData({ supportSession, onSupportEnd: () => setSupportSession(null) });
   const [walletTopUpRequest, setWalletTopUpRequest] = useState(null);
-  const data = { ...baseData, walletTopUpRequest, clearWalletTopUp: () => setWalletTopUpRequest(null), openWallet: request => { setWalletTopUpRequest(request); setPage('profile'); } };
+  const data = { ...baseData, supportMode: !!supportSession, walletTopUpRequest, clearWalletTopUp: () => setWalletTopUpRequest(null), openWallet: request => { setWalletTopUpRequest(request); setPage('profile'); } };
   const notifications = useNotifications({ ...data, language: uiLanguage });
   const [notificationAction, setNotificationAction] = useState(null);
   const notificationLink = useRef(new URLSearchParams(window.location.search));

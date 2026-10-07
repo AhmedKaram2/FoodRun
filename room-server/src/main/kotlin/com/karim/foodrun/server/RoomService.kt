@@ -27,8 +27,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         return synchronized(this) { emails.status(jobId) }
     }
-    @Synchronized fun notificationRequest(request: NotificationRequest, pushAvailable: Boolean): NotificationReply =
-        db.transaction { notifications.request(accounts.userId(request.identityToken), request, pushAvailable) }
+    @Synchronized fun notificationRequest(request: NotificationRequest, pushAvailable: Boolean): NotificationReply = db.transaction {
+        val switched = support.requireActive(request.identityToken) != null
+        require(!switched || request.action !in listOf("register", "unregister")) { "Return to your own account to change device notifications." }
+        notifications.request(accounts.userId(request.identityToken), request, pushAvailable && !switched)
+    }
     @Synchronized internal fun nextPush(): PushDelivery? = db.transaction { notifications.pending() }
     @Synchronized internal fun finishPush(delivery: PushDelivery, result: PushResult) = db.transaction { notifications.delivered(delivery, result) }
     fun validateFirebaseSignIn(token: String) { requireNotNull(identityProvider) { "Firebase is unavailable." }.exchange(token) }

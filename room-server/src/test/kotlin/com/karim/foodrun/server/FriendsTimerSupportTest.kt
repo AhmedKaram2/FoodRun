@@ -101,6 +101,8 @@ class FriendsTimerSupportTest {
         assertNotEquals(normal, borrowed)
         assertEquals(normal, home(f, target).rooms.single().token)
         assertFails { f.service.nativeAdminToken(support.identityToken) }
+        assertFalse(f.service.notificationRequest(NotificationRequest(support.identityToken), true).pushAvailable)
+        assertFails { f.service.notificationRequest(NotificationRequest(support.identityToken, action = "register", token = "fixture-push-token", installationId = "owner-device"), true) }
         val change = RoomCommand(commandId = f.id(), kind = CommandKind.READY, roomId = f.owner.room!!.id, token = borrowed, expectedOrderNumber = 1,
             identityToken = support.identityToken, flag = true, eligible = true)
         f.execute(change)

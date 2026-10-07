@@ -151,7 +151,8 @@ internal fun GroupController.quickAddMenuItem(itemId: String) {
     val item = room().restaurant.menu.items.single { it.id == itemId }
     require(item.available && item.variants.isEmpty() && item.optionGroupIds.isEmpty()) { "Choose this item's size and extras first." }
     val cart = myCart()
-    val existing = cart.lines.firstOrNull { it.itemId == itemId && it.variantId == null && it.optionIds.isEmpty() && it.notes.isEmpty() && it.description.isEmpty() }
+    val existing = cart.lines.firstOrNull { it.itemId == itemId && it.variantId == null && it.optionIds.isEmpty() && it.notes.isEmpty() && it.description.isEmpty() &&
+        room().halfItemOffers.none { offer -> offer.memberId == me() && offer.lineId == it.id } }
     if (existing != null) { changeCartQuantity(existing.id, 1); return }
     val next = cart.copy(lines = cart.lines + CartLine(id = platform.uuid(), itemId = itemId, quantity = 1))
     Billing.lines(room().restaurant, next)

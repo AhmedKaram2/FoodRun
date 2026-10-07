@@ -26,9 +26,9 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
     val combined = linkedMapOf<Pair<String, String>, Int>()
     receipts.flatMap { it.lines }.forEach { line ->
         val key = localizedReceiptDescription(room, line, language) to line.notes
-        combined[key] = (combined[key] ?: 0) + line.quantity
+        combined[key] = (combined[key] ?: 0) + (line.restaurantQuantity ?: line.quantity)
     }
-    val lines = combined.map { (key, quantity) ->
+    val lines = combined.filterValues { it > 0 }.map { (key, quantity) ->
         val (description, notes) = key
         val itemText = if(description.any(Char::isDigit)) {
             "$description — ${if(language == "ar") "الكمية" else "Quantity"}: ${quantityText(quantity)}"
@@ -37,7 +37,7 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
     }
     val address = (if(room.deliveryMode) room.destination else room.restaurant.contact.address.orEmpty()).trim()
         .ifBlank { if(language == "ar") "العنوان يحدد لاحقاً" else "Address to be confirmed" }
-    val total = receipts.flatMap { it.lines }.sumOf { it.quantity }
+    val total = receipts.flatMap { it.lines }.sumOf { it.restaurantQuantity ?: it.quantity }
     val addressLine = if(language == "ar") "العنوان: $address" else "Address: $address"
     val totalLine = if(language == "ar") "إجمالي السندويشات: ${quantityText(total)}" else "Total sandwiches: ${quantityText(total)}"
     return (listOf(addressLine, "") + lines + totalLine).joinToString("\n")
@@ -376,6 +376,7 @@ internal class GroupPresentation(private val c: GroupController) {
             card("pending-join", tr("Waiting for approval", "في انتظار الموافقة"), tr("The organizer or selected person must approve your join request.", "يجب أن يوافق المنظم أو الشخص المختار على طلب انضمامك."))
             button(tr("Refresh", "تحديث"), GroupAction.REFRESH); return
         }
+        halfItemOffers(r, me)
         if(!me.guest && !me.participating && r.phase != RoomPhase.LOBBY) {
             card("viewing-order", ui("You’re in the room"), ui("You’re viewing this order. You can join when the next order opens."))
         }
@@ -575,15 +576,42 @@ internal class GroupPresentation(private val c: GroupController) {
         val priced = runCatching { Billing.lines(r.restaurant, cart) }.getOrNull()
         cart.lines.forEachIndexed { index, line ->
             val name = line.description.ifEmpty { r.restaurant.menu.items.single { it.id == line.itemId }.localizedName(language) }
-            val total = if(line.description.isNotEmpty() && line.unitPrice == null) null else priced?.getOrNull(index)?.amount
-            card("cart:${line.id}", "${line.quantity} × $name", line.notes,
+            val offer = r.halfItemOffers.firstOrNull { it.memberId == c.me() && it.lineId == line.id }
+            val shared = offer?.acceptedById != null
+            val wholeTotal = if(line.description.isNotEmpty() && line.unitPrice == null) null else priced?.getOrNull(index)?.amount
+            val total = wholeTotal?.let { if (shared) it - it / 2 else it }
+            card("cart:${line.id}", "${if (shared) "½" else line.quantity.toString()} × $name", line.notes,
                 total?.let { Money.format(it, r.restaurant.currency) } ?: tr("Awaiting price", "بانتظار السعر"),
-                listOf(GroupButton("−", GroupAction.DECREASE_CART_QUANTITY, line.id),
+                if (offer != null) emptyList() else listOf(GroupButton(tr("Half", "نصف"), GroupAction.REQUEST_HALF_ITEM, line.id),
+                    GroupButton("−", GroupAction.DECREASE_CART_QUANTITY, line.id),
                     GroupButton("+", GroupAction.INCREASE_CART_QUANTITY, line.id, enabled = line.quantity < 99),
                     GroupButton(tr("Edit", "تعديل"), GroupAction.EDIT_CART_ITEM, line.id),
                     GroupButton(tr("Remove", "حذف"), GroupAction.REMOVE_CART_ITEM, line.id, destructive = true)))
         }
+        r.halfItemOffers.filter { it.acceptedById == c.me() }.forEach { offer ->
+            card("cart:half:${offer.id}", "½ × ${localizedReceiptDescription(r, offer.line, language)}", offer.line.notes,
+                Money.format(offer.line.amount / 2, r.restaurant.currency))
+        }
         c.reply?.receipts?.firstOrNull { it.memberId == c.me() }?.let { card("estimate", tr("Your estimated total", "إجمالي طلبك المتوقع"), it.totalText) }
+    }
+    private fun halfItemOffers(r: Room, me: Member) {
+        val open = r.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING) &&
+            (r.deadline == 0L || c.serverNow() <= r.deadline)
+        r.halfItemOffers.forEach { offer ->
+            val requester = r.members.firstOrNull { it.id == offer.memberId }?.name.orEmpty()
+            val recipient = r.members.firstOrNull { it.id == offer.acceptedById }?.name.orEmpty()
+            val shared = offer.acceptedById != null
+            val actions = mutableListOf<GroupButton>()
+            if (open && !shared && offer.memberId != me.id && !me.guest && me.participating)
+                actions += GroupButton(tr("Take the other half", "آخذ النصف الآخر"), GroupAction.ACCEPT_HALF_ITEM, offer.id, primary = true)
+            if (open && me.id in listOf(offer.memberId, offer.acceptedById))
+                actions += GroupButton(if (offer.memberId == me.id) tr("Keep the whole item", "آخذ الصنف كاملاً") else tr("Release my half", "إلغاء حصتي من النصف"), GroupAction.CANCEL_HALF_ITEM, offer.id)
+            val status = if (shared) "$requester ½ + $recipient ½" else "$requester · " +
+                tr("If nobody accepts, the requester keeps the whole item and pays the full price.", "إذا لم يقبل أحد، يأخذ صاحب الطلب الصنف كاملاً ويدفع سعره بالكامل.")
+            val title = if (shared) tr("Shared: half each", "تمت المشاركة: نصف لكل شخص")
+                else if (open) tr("Another half is available", "النصف الآخر متاح") else tr("Full item assigned to requester", "الصنف كاملاً لصاحب الطلب")
+            card("half-item:${offer.id}", title, "${localizedReceiptDescription(r, offer.line, language)}\n${offer.line.notes}\n$status", actions = actions)
+        }
     }
     private fun item() {
         val i = c.selectedItem ?: return; val r = c.room(); title = i.localizedName(language); subtitle = i.localizedDescription(language)
@@ -728,7 +756,7 @@ internal class GroupPresentation(private val c: GroupController) {
             tr("${rows.size} current rooms · $uniquePast unique previous orders · ${c.library.home?.profile?.favoriteOrders?.size ?: 0} favorites", "${rows.size} غرف حالية · $uniquePast طلبات سابقة مختلفة · ${c.library.home?.profile?.favoriteOrders?.size ?: 0} مفضلة"))
     }
 
-    private fun receiptSummary(receipt: Receipt): String = receipt.lines.take(3).joinToString(" · ") { "${it.quantity} × ${it.description}" } +
+    private fun receiptSummary(receipt: Receipt): String = receipt.lines.take(3).joinToString(" · ") { "${if (it.halfShare) "½" else it.quantity.toString()} × ${it.description}" } +
         if(receipt.lines.size > 3) tr(" · +${receipt.lines.size - 3} more", " · +${receipt.lines.size - 3} إضافية") else ""
     private fun favoriteSummary(favorite: FavoriteOrder): String = favorite.lines.take(3).joinToString(" · ") { "${it.quantity} × ${it.label}" } +
         if(favorite.lines.size > 3) tr(" · +${favorite.lines.size - 3} more", " · +${favorite.lines.size - 3} إضافية") else ""
@@ -742,7 +770,7 @@ internal class GroupPresentation(private val c: GroupController) {
             card("receipt:$prefix${receipt.memberId}", "${receipt.name} · ${receipt.totalText}", receiptDetail(receipt, prefix.isEmpty()) + recipient, "Revision ${receipt.revision}", actions)
         }
     }
-    private fun receiptDetail(r: Receipt, currentOrder: Boolean = true): String = (r.lines.map { "${it.quantity} × ${it.description} · ${Money.format(it.amount, r.currency)}${if(it.notes.isNotBlank()) "\n${it.notes}" else ""}" } + listOf("Delivery ${Money.format(r.delivery, r.currency)} · Service/adjustment ${Money.format(r.service, r.currency)}", "Discount ${Money.format(r.discount, r.currency)} · Tax ${Money.format(r.tax, r.currency)}", "Total ${r.totalText}", GroupSettlementPresentation.receiptBalanceText(r, if(currentOrder) c.reply?.room?.payerId else null, language))).joinToString("\n")
+    private fun receiptDetail(r: Receipt, currentOrder: Boolean = true): String = (r.lines.map { "${if (it.halfShare) "½" else it.quantity.toString()} × ${it.description} · ${Money.format(it.amount, r.currency)}${if(it.notes.isNotBlank()) "\n${it.notes}" else ""}" } + listOf("Delivery ${Money.format(r.delivery, r.currency)} · Service/adjustment ${Money.format(r.service, r.currency)}", "Discount ${Money.format(r.discount, r.currency)} · Tax ${Money.format(r.tax, r.currency)}", "Total ${r.totalText}", GroupSettlementPresentation.receiptBalanceText(r, if(currentOrder) c.reply?.room?.payerId else null, language))).joinToString("\n")
     fun receiptText(value: String): String {
         val parts = value.split(':')
         val past = if (parts.first() == "past") c.reply!!.history.single { it.number == parts[1].toLong() } else null

@@ -1,3 +1,4 @@
+import { restaurantQuantity } from './halfItems.js';
 const name = (value, language) => language === 'ar' && value?.nameAr ? value.nameAr : value?.name || '';
 
 export function groupedOrderLines(room, receipts, language = 'en') {
@@ -9,9 +10,9 @@ export function groupedOrderLines(room, receipts, language = 'en') {
     const description = item ? [name(item, language), variant && name(variant, language), ...options.map(value => name(value, language))].filter(Boolean).join(' · ') : line.description;
     const key = `${description}\u0000${line.notes || ''}`;
     const previous = grouped.get(key) || { ...line, description, quantity: 0, amount: 0 };
-    grouped.set(key, { ...previous, quantity: previous.quantity + line.quantity, amount: previous.amount + line.amount });
+    grouped.set(key, { ...previous, halfShare: false, quantity: previous.quantity + restaurantQuantity(line), amount: previous.amount + line.amount });
   });
-  return [...grouped.values()];
+  return [...grouped.values()].filter(line => line.quantity > 0);
 }
 
 export function restaurantOrderText(room, receipts, language = 'ar') {
@@ -27,7 +28,7 @@ export function restaurantOrderText(room, receipts, language = 'ar') {
   });
   const address = (room.deliveryMode ? room.destination : room.restaurant.contact?.address)?.trim()
     || (language === 'ar' ? 'العنوان يحدد لاحقاً' : 'Address to be confirmed');
-  const total = receipts.flatMap(receipt => receipt.lines).reduce((sum, line) => sum + line.quantity, 0);
+  const total = receipts.flatMap(receipt => receipt.lines).reduce((sum, line) => sum + restaurantQuantity(line), 0);
   const addressLabel = language === 'ar' ? 'العنوان' : 'Address';
   const totalLabel = language === 'ar' ? 'إجمالي السندويشات' : 'Total sandwiches';
   return [`${addressLabel}: ${address}`, '', ...lines, `${totalLabel}: ${quantityText(total)}`].join('\n');

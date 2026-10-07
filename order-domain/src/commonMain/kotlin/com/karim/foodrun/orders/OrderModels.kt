@@ -70,6 +70,16 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
 @Serializable data class ReceiptLine(
     val description: String, val quantity: Int, val amount: Long, val notes: String = "",
     val itemId: String = "", val variantId: String? = null, val optionIds: List<String> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val halfShare: Boolean = false,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val restaurantQuantity: Int? = null,
+)
+@Serializable data class HalfItemOffer(
+    val id: String, val memberId: String, val lineId: String, val line: ReceiptLine,
+    val acceptedById: String? = null,
 )
 @Serializable data class Receipt(val memberId: String, val name: String, val lines: List<ReceiptLine>, val food: Long, val delivery: Long, val service: Long, val discount: Long, val tax: Long, val total: Long, val paid: Long, val balance: Long, val revision: Long, val currency: String) {
     val totalText: String get() = Money.format(total, currency)
@@ -125,6 +135,9 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val walletPayments: List<WalletPayment> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val halfItemOffers: List<HalfItemOffer> = emptyList(),
 ) {
     val shouldStayLive: Boolean get() = phase.ongoing || autoArchivedAt > 0 && paymentsPending
     val settlementOpen: Boolean get() = phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) ||

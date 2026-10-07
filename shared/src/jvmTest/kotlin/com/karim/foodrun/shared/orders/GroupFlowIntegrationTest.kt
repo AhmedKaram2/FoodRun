@@ -110,6 +110,32 @@ class GroupFlowIntegrationTest {
         }
 
     }
+    @Test fun halfItemSharingUsesVisibleNativeCardsExactReceiptsAndWholeRestaurantCopy() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Hassan", host, bus)
+        host.dispatch(GroupAction.QUICK_ADD_ITEM, "burger"); bus.drain(); bus.sync()
+        val line = host.myCart().lines.single()
+        assertTrue(host.state.cards.single { it.id == "cart:${line.id}" }.buttons.any { it.action == GroupAction.REQUEST_HALF_ITEM })
+        host.dispatch(GroupAction.REQUEST_HALF_ITEM, line.id); bus.drain(); bus.sync()
+        val offer = host.room().halfItemOffers.single()
+        val attention = member.state.topCards.single { it.id == "half-item:${offer.id}" }
+        assertTrue(attention.buttons.any { it.action == GroupAction.ACCEPT_HALF_ITEM })
+        member.dispatch(GroupAction.ACCEPT_HALF_ITEM, offer.id); bus.drain(); bus.sync()
+        assertEquals("", member.state.error)
+        assertEquals(1750L, host.reply!!.receipts.single().food)
+        assertEquals(1750L, member.reply!!.receipts.single().food)
+        assertTrue(host.state.cards.single { it.id == "cart:${line.id}" }.title.startsWith("½"))
+        assertTrue(member.state.cards.single { it.id == "cart:half:${offer.id}" }.title.startsWith("½"))
+        host.dispatch(GroupAction.QUICK_ADD_ITEM, "burger"); bus.drain(); bus.sync()
+        assertEquals("", host.state.error)
+        assertEquals(2, host.myCart().lines.size)
+        collecting(host, member, bus)
+        val copied = restaurantReadyText(host.room(), host.reply!!.receipts, "en")
+        assertTrue(copied.contains("2 Burger")); assertTrue(copied.endsWith("Total sandwiches: 2"))
+        host.dispatch(GroupAction.SET_LANGUAGE, "ar")
+        assertTrue(host.state.topCards.single { it.id == "half-item:${offer.id}" }.title.contains("نصف"))
+    }
+
     @Test fun paidWheelOptionUsesOwnerApprovalAndPaymentConfirmationInTheNativeFlow() = Bus().use { bus ->
         val (host, _) = bus.phone(); val (member, _) = bus.phone()
         create(host, bus); join(member, "Hassan", host, bus)

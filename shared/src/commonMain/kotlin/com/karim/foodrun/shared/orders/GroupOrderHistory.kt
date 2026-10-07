@@ -179,7 +179,8 @@ internal fun GroupController.confirmReorder() {
         val index = merged.indexOfFirst { existing ->
             existing.itemId == incoming.itemId && existing.variantId == incoming.variantId &&
                 existing.optionIds.sorted() == incoming.optionIds.sorted() && existing.notes == incoming.notes &&
-                existing.description == incoming.description
+                existing.description == incoming.description &&
+                currentRoom.halfItemOffers.none { offer -> offer.memberId == me() && offer.lineId == existing.id }
         }
         if (index < 0) merged += incoming
         else {

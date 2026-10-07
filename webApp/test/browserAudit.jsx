@@ -129,6 +129,40 @@ function setValue(node, value) {
   node.dispatchEvent(new Event(node instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 }
 const button = text => [...host.querySelectorAll('button')].find(node => node.textContent === t(text));
+export async function runHalfItemAudit() {
+  commands.length = 0;
+  const restaurant = { ...loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba'), openOrdering: true };
+  const members = [{ id: 'me', name: 'Requester', approved: true, participating: true, eligible: true },
+    { id: 'friend', name: 'Recipient', approved: true, participating: true, eligible: true }];
+  const line = { id: 'sandwich', itemId: '', quantity: 1, description: 'Falafel sandwich / سندويش طعمية', notes: 'No onions', unitPrice: 501, optionIds: [], variantId: null };
+  const cart = { memberId: 'me', revision: 1, lines: [line], submitted: true };
+  const base = { restaurant, members, carts: [cart], halfItemOffers: [] };
+  await mountAudit('room', 'COLLECTING', { room: base });
+  assert(button('Half'), 'Half button is not visible'); button('Half').click(); await pause();
+  assert(commands.at(-1)?.kind === 'REQUEST_HALF_ITEM' && commands.at(-1).fields.text === line.id, 'Half button did not request the selected item');
+  const offer = { id: 'half-offer', memberId: 'me', lineId: line.id, line: { ...line, amount: 501 }, acceptedById: null };
+  await mountAudit('room', 'COLLECTING', { memberId: 'friend', room: { ...base, halfItemOffers: [offer] } });
+  assert(host.querySelector('.half-item-offers')?.textContent.includes(t('Another half is available')), 'Other member did not see the offer');
+  assert(button('Take the other half'), 'Acceptance button is not visible'); button('Take the other half').click(); await pause();
+  assert(commands.at(-1)?.kind === 'ACCEPT_HALF_ITEM' && commands.at(-1).fields.text === offer.id, 'Acceptance did not identify the offer');
+  const accepted = { ...offer, acceptedById: 'friend' };
+  const receipt = (id, amount, quantity) => ({ memberId: id, name: id, currency: 'AED', lines: [{ ...offer.line, amount, halfShare: true, restaurantQuantity: quantity }],
+    food: amount, delivery: 0, service: 0, discount: 0, tax: 0, total: amount, totalText: `AED ${(amount / 100).toFixed(2)}`, paid: 0, balance: amount, balanceText: `AED ${(amount / 100).toFixed(2)}` });
+  const receipts = [receipt('me', 251, 1), receipt('friend', 250, 0)];
+  await mountAudit('room', 'COLLECTING', { room: { ...base, halfItemOffers: [accepted] }, receipts });
+  assert(host.querySelector('.cart-review')?.textContent.includes('½ ×'), 'Requester cart did not display a half');
+  assert(host.querySelector('.cart-review')?.textContent.includes('AED 2.51'), 'Requester cart did not show its split food cost');
+  const summary = host.querySelector('.summary-items');
+  assert(summary?.textContent.includes('1 ×') && !summary?.textContent.includes('2 ×'), 'Restaurant summary duplicated the sandwich');
+  await mountAudit('room', 'COLLECTING', { memberId: 'friend', room: { ...base, halfItemOffers: [accepted] }, receipts: [receipts[1]] });
+  assert(host.querySelector('.cart-review')?.textContent.includes('½ ×') && host.querySelector('.cart-review')?.textContent.includes('AED 2.50'), 'Recipient cart did not show its half and cost');
+  assert(button('Release my half'), 'Recipient cannot release its half');
+  const measured = measureAudit(); assert(!measured.overflow, 'Half sharing causes horizontal overflow');
+  await mountAudit('room', 'PLACED', { room: { ...base, halfItemOffers: [offer] } });
+  assert(host.querySelector('.half-item-offers')?.textContent.includes(t('Full item assigned to requester')), 'Unclaimed item does not explain the whole-item fallback');
+  assert(!button('Take the other half'), 'Closed ordering still offers acceptance');
+  return { passed: ['Half control', 'attention for another member', 'accept command', 'half each', 'exact split cost', 'one restaurant item', 'release control', 'full-item fallback'], language: getLanguage(), ...measured };
+}
 export async function runPollPricingAudit() {
   commands.length = 0;
   const catalog = loadRestaurants();

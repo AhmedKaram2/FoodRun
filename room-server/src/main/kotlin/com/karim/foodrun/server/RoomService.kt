@@ -96,7 +96,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             val uid = accounts.userId(c.identityToken)
             val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
-                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false)))
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false)))
             db.previous(c.commandId, digest)?.let {
                 val current = accounts.home(c.identityToken)
                 if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
@@ -123,7 +123,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -410,6 +410,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             lastChosenMemberId = null, lastChosenName = "",
             wheelProtections = emptyList(), wheelProtectionAccounts = emptyList(),
             walletPayments = emptyList(),
+            halfItemOffers = emptyList(),
         ) else room.copy(
             // Legacy clients use this field as a payment gate. All members are exempt:
             // Owner and payer price changes apply directly without another approval cycle.

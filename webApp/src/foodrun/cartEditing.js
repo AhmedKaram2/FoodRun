@@ -2,7 +2,7 @@ export function addMenuLine(lines, incoming) {
   if (!Number.isInteger(incoming.quantity) || incoming.quantity < 1 || incoming.quantity > 99) throw Error('Choose a quantity between 1 and 99.');
   const same = line => line.itemId === incoming.itemId && (line.variantId || '') === (incoming.variantId || '') &&
     JSON.stringify([...(line.optionIds || [])].sort()) === JSON.stringify([...(incoming.optionIds || [])].sort()) &&
-    (line.notes || '') === (incoming.notes || '') && (line.description || '') === (incoming.description || '');
+    !line.halfOffered && (line.notes || '') === (incoming.notes || '') && (line.description || '') === (incoming.description || '');
   const existing = lines.find(same);
   if (!existing) return [...lines, incoming];
   if (existing.quantity + incoming.quantity > 99) throw Error('Choose a quantity between 1 and 99.');

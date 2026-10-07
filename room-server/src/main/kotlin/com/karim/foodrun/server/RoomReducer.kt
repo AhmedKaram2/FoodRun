@@ -120,10 +120,12 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                         require(target.id != r.payerId) { "Choose another ordering person before removing this member." }
                         val cart = r.carts.singleOrNull { it.memberId == target.id }
                         require(r.phase == RoomPhase.LOBBY || cart?.submitted != true) { "This member already submitted an order and cannot be removed from today's bill." }
+                        require(r.halfItemOffers.none { it.acceptedById != null && (it.memberId == target.id || it.acceptedById == target.id) }) { "Cancel this member's shared halves before removing them." }
                         r.copy(
                             members = r.members.map { if (it.id == target.id) it.copy(removed = true) else it },
                             expectedNames = r.expectedNames.filterNot { it.equals(target.name, true) },
                             carts = r.carts.filterNot { it.memberId == target.id },
+                            halfItemOffers = r.halfItemOffers.filterNot { it.memberId == target.id },
                             restaurantVotes = r.restaurantVotes.filterNot { it.memberId == target.id },
                             quoteRevision = r.quoteRevision + if (cart == null) 0 else 1,
                         )
@@ -132,6 +134,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PARTICIPATE -> {
                 require(!actor.guest) { "View-only guests cannot order." }; phase(RoomPhase.LOBBY)
+                require(c.flag || r.halfItemOffers.none { it.memberId == actorId || it.acceptedById == actorId }) { "Cancel your half-item offers before skipping this order." }
                 require(c.flag || r.wheelProtections.none { it.memberId == actorId && it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }) { "Finish or cancel your pending wheel payment before skipping this order." }
                 r.copy(members = r.members.map { if (it.id == actorId) it.copy(participating = c.flag, ready = c.flag, eligible = c.flag && (!it.participating || it.eligible), lastSeen = if(c.flag) now else it.lastSeen) else it })
             }
@@ -158,6 +161,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     restaurant = winner,
                     restaurantPollOpen = false,
                     carts = emptyList(),
+                    halfItemOffers = emptyList(),
                     fees = FeePolicy(winner.pricing.defaultDeliveryFeeMinor, winner.pricing.defaultServiceFeeMinor, automaticDelivery = r.deliveryMode),
                     quoteRevision = r.quoteRevision + 1,
                 )
@@ -220,8 +224,49 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     })
                 })
                 val cart = sanitized.copy(revision = old.revision + 1, submitted = false, confirmedQuote = -1)
+                r.halfItemOffers.filter { it.memberId == actorId }.forEach { offer ->
+                    require(cart.lines.singleOrNull { it.id == offer.lineId } == old.lines.single { it.id == offer.lineId }) {
+                        "Cancel the half-item offer before editing or removing this item."
+                    }
+                }
                 Billing.lines(r.restaurant, cart)
                 r.copy(carts = r.carts.filterNot { it.memberId == actorId } + cart, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
+            }
+            CommandKind.REQUEST_HALF_ITEM, CommandKind.ACCEPT_HALF_ITEM, CommandKind.CANCEL_HALF_ITEM -> {
+                orderer(); phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING); fresh()
+                require(!r.restaurantPollOpen && r.paymentRoom == null) { "Half items are available after choosing the restaurant." }
+                require(r.deadline == 0L || now <= r.deadline) { "The ordering deadline has passed. Ask the organizer to reopen." }
+                when (c.kind) {
+                    CommandKind.REQUEST_HALF_ITEM -> {
+                        require(r.halfItemOffers.size < 100) { "This order has reached its half-item offer limit." }
+                        val cart = r.carts.singleOrNull { it.memberId == actorId } ?: error("Add the item to your order first.")
+                        val line = cart.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")
+                        require(r.halfItemOffers.none { it.memberId == actorId && it.lineId == line.id }) { "This item already has a half offer." }
+                        val offered = if (line.quantity == 1) line else line.copy(id = id(), quantity = 1)
+                        val updated = cart.copy(revision = cart.revision + 1, confirmedQuote = -1,
+                            lines = if (line.quantity == 1) cart.lines else cart.lines.map { if (it.id == line.id) it.copy(quantity = it.quantity - 1) else it } + offered)
+                        val receiptLine = Billing.lines(r.restaurant, MemberCart(actorId, lines = listOf(offered))).single()
+                        r.copy(carts = r.carts.map { if (it.memberId == actorId) updated else it },
+                            halfItemOffers = r.halfItemOffers + HalfItemOffer(id(), actorId, offered.id, receiptLine), quoteRevision = r.quoteRevision + 1)
+                    }
+                    CommandKind.ACCEPT_HALF_ITEM -> {
+                        val offer = r.halfItemOffers.singleOrNull { it.id == c.text } ?: error("This half is no longer available.")
+                        require(offer.memberId != actorId && offer.acceptedById == null) { "This half has already been taken or belongs to you." }
+                        require(r.orderingMembers.any { it.id == offer.memberId }) { "This requester is no longer ordering." }
+                        val carts = if (r.carts.any { it.memberId == actorId }) r.carts else r.carts + MemberCart(actorId, submitted = true)
+                        r.copy(halfItemOffers = r.halfItemOffers.map { if (it.id == offer.id) it.copy(acceptedById = actorId) else it },
+                            carts = carts.map { if (it.memberId in listOf(actorId, offer.memberId)) it.copy(revision = it.revision + 1, confirmedQuote = -1) else it },
+                            quoteRevision = r.quoteRevision + 1)
+                    }
+                    else -> {
+                        val offer = r.halfItemOffers.singleOrNull { it.id == c.text } ?: error("Half-item offer not found.")
+                        require(actorId == offer.memberId || actorId == offer.acceptedById) { "Only the people sharing this item can cancel their half." }
+                        r.copy(halfItemOffers = if (actorId == offer.memberId) r.halfItemOffers.filterNot { it.id == offer.id }
+                            else r.halfItemOffers.map { if (it.id == offer.id) it.copy(acceptedById = null) else it },
+                            carts = r.carts.map { if (it.memberId in listOf(offer.memberId, offer.acceptedById)) it.copy(revision = it.revision + 1, confirmedQuote = -1) else it },
+                            quoteRevision = r.quoteRevision + 1)
+                    }
+                }.also { Billing.receipts(it) }
             }
             CommandKind.PRICE_ITEM -> {
                 require(actorId == r.ownerId || actorId == r.payerId) { "Only the room owner or selected payer can edit item prices." }
@@ -386,6 +431,10 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             else -> error("Unsupported room action.")
         }
         require(r.audit.size < 10000 || c.kind in listOf(CommandKind.CANCEL, CommandKind.ARCHIVE, CommandKind.NEXT_ORDER)) { "This order has reached its action limit. Archive or cancel it before starting the next order in this room." }
-        return result.copy(revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, c.text.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND, CommandKind.DECLARE_WHEEL_PAYMENT) } ?: "", now))
+        val offers = result.halfItemOffers.map { offer ->
+            val cart = result.carts.single { it.memberId == offer.memberId }
+            offer.copy(line = Billing.lines(result.restaurant, cart)[cart.lines.indexOfFirst { it.id == offer.lineId }])
+        }
+        return result.copy(halfItemOffers = offers, revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, c.text.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND, CommandKind.DECLARE_WHEEL_PAYMENT) } ?: "", now))
     }
 }

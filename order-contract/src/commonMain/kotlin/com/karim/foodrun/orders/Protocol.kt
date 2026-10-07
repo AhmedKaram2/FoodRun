@@ -10,7 +10,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
     VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
     UNLOCK_SELECTION_OVERRIDE, SET_SELECTION_OVERRIDE,
     REQUEST_WHEEL_PROTECTION, REVIEW_WHEEL_PROTECTION, DECLARE_WHEEL_PAYMENT, CONFIRM_WHEEL_PAYMENT,
-    ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
+    ACCEPT_DUTY, DECLINE_DUTY, SHARE_ACCOUNT, CART, REQUEST_HALF_ITEM, ACCEPT_HALF_ITEM, CANCEL_HALF_ITEM, SUBMIT_CART, REVIEW, CONFIRM_QUOTE,
     REOPEN, SET_FEES, UPDATE_RESTAURANT, PLACE, PAY_RESTAURANT, FULFILL, DECLARE_TRANSFER, CONFIRM_TRANSFER,
     REJECT_TRANSFER, DECLARE_REFUND, CONFIRM_REFUND, ADJUST_BILL, APPROVE_ADJUSTMENT, HANDOVER, ARCHIVE, CANCEL, REMIND_PAYMENT, PAYMENT_REMINDER_STATUS,
 }
@@ -67,6 +67,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val walletDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val halfItemDetails: Boolean = false,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val userId: String = "",

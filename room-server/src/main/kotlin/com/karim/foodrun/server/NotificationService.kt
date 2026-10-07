@@ -88,6 +88,16 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
             room.orderingMembers.forEach { add(room, it.id, "${command.commandId}:$kind", kind, title, room.name to room.name, actions) }
         }
         when(command.kind) {
+            CommandKind.REQUEST_HALF_ITEM -> room.halfItemOffers.firstOrNull { offer -> before.halfItemOffers.none { it.id == offer.id } }?.let { offer ->
+                room.activeMembers.filter { it.id != actor }.forEach { member ->
+                    add(room, member.id, command.commandId, "half_item_available", "Half an item is available" to "نصف صنف متاح للمشاركة",
+                        "$name · ${offer.line.description} · ${room.name}" to "$name · ${offer.line.description} · ${room.name}", listOf("open"))
+                }
+            }
+            CommandKind.ACCEPT_HALF_ITEM -> room.halfItemOffers.singleOrNull { it.id == command.text }?.let { offer ->
+                add(room, offer.memberId, command.commandId, "half_item_accepted", "Your other half was taken" to "تم قبول النصف الآخر",
+                    "$name · ${offer.line.description}" to "$name · ${offer.line.description}", listOf("open"))
+            }
             CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY, CommandKind.HANDOVER -> payer("selected", "You are the chosen person" to "أنت المسؤول عن الطلب", listOf("order"))
             CommandKind.SUBMIT_CART -> {
                 if (actor != room.payerId) payer("order_submitted", "An order was submitted" to "تم إرسال طلب شخص")

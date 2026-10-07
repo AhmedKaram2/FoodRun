@@ -20,6 +20,7 @@ enum class GroupAction { WALLET_FUNDS_ACTION, PAY_WITH_WALLET, MENU_OPEN, MENU_E
     WALLET_PAY, WALLET_REFUND, WALLET_CONFIRM, WALLET_REJECT, WALLET_COPY, COPY_RESTAURANT_PHONE, GOOGLE_SIGN_IN, SELECT_PAYER,
     REUSE_ORDER, FAVORITE_ORDER, REMOVE_FAVORITE_ORDER, COPY_PAYMENT_DETAILS, USE_REMAINING_AMOUNT, MORE_PREVIOUS_ORDERS,
     QUICK_ADD_ITEM, INCREASE_CART_QUANTITY, DECREASE_CART_QUANTITY, REMIND_PAYMENT, WALLET_REMIND_PAYMENT,
+    REQUEST_HALF_ITEM, ACCEPT_HALF_ITEM, CANCEL_HALF_ITEM,
     OPEN_WHEEL_PROTECTION, REQUEST_WHEEL_PROTECTION, APPROVE_WHEEL_PROTECTION, REJECT_WHEEL_PROTECTION,
     DECLARE_WHEEL_PAYMENT, CONFIRM_WHEEL_PAYMENT, REJECT_WHEEL_PAYMENT, COPY_WHEEL_ACCOUNT,
 }
@@ -72,7 +73,7 @@ data class GroupState(
     val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
     val topCards: List<GroupCard> get() = if (profileDetailsFolded) cards.filter { it.id in setOf("profile-dashboard:wallet-funds", "profile-dashboard:wallet-summary") }
         else if(page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) cards.filter {
-        it.id in setOf("notification-action", "order-summary", "wallet-summary", "my-payment-status", "restaurant-balance", "placement-blocked", "settlement-next-step")
+        it.id.startsWith("half-item:") || it.id in setOf("notification-action", "order-summary", "wallet-summary", "my-payment-status", "restaurant-balance", "placement-blocked", "settlement-next-step")
     } else emptyList()
     val sections: List<GroupSection> get() = GroupLayout.sections(page, cards.filterNot { it in topCards }).map { it.copy(title = GroupUiText.translate(it.title, rtl)) }
 }

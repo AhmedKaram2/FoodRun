@@ -1,9 +1,16 @@
 package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.RoomReply
+import com.karim.foodrun.orders.Receipt
+
+private fun Receipt.withoutHalfDetails(): Receipt = copy(lines = lines.map {
+    it.copy(quantity = it.restaurantQuantity ?: it.quantity, halfShare = false, restaurantQuantity = null)
+})
 
 /** Preserve the wire schema accepted by each released generation of native clients. */
-internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false): RoomReply = copy(
+internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false, halfItemDetails: Boolean = false): RoomReply = copy(
+    receipts = if (halfItemDetails) receipts else receipts.map { it.withoutHalfDetails() },
+    history = if (halfItemDetails) history else history.map { it.copy(receipts = it.receipts.map { receipt -> receipt.withoutHalfDetails() }) },
     walletRecipient = walletRecipient.takeIf { walletDetails }, walletPeople = walletPeople.takeIf { walletDetails },
     home = home?.let { it.copy(profile = if (multiplePaymentDetails) it.profile else it.profile.copy(paymentAccounts = emptyList()),
         wallet = it.wallet.takeIf { walletDetails },
@@ -17,6 +24,7 @@ internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetai
         autoArchiveFrom = if (autoArchiveDetails) value.autoArchiveFrom else null,
         paymentsPending = autoArchiveDetails && value.paymentsPending,
         walletPayments = if(walletDetails) value.walletPayments else emptyList(),
+        halfItemOffers = if (halfItemDetails) value.halfItemOffers else emptyList(),
         selectionStyle = if(visualSelectionDetails) value.selectionStyle else "wheel",
         lastChosenMemberId = value.lastChosenMemberId.takeIf { selectionDetails },
         lastChosenName = if(selectionDetails) value.lastChosenName else "",

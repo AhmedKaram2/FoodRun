@@ -1,2 +1,5 @@
 @import './foodrun-base.css';
 @import './brand.css';
+.half-item-offers { border: 2px solid var(--primary, #7856c6); }
+.half-item-offer + .half-item-offer { border-top: 1px solid #ded9ea; margin-top: 1rem; padding-top: 1rem; }
+.half-item-offer { overflow-wrap: anywhere; }

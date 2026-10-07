@@ -25,7 +25,9 @@ import { roomInvitation } from './roomInvitation.js';
 import { deliveryDestination } from './roomSetup';
 import { menuCategories, defaultMenuCategory, browsedMenuItems } from './menuBrowsing';
 import { canAccessAdmin } from './adminAccess';
-import { addMenuLine, changeQuantity, menuLineTotal, cartFoodTotal } from './cartEditing';
+import { addMenuLine, changeQuantity, menuLineTotal } from './cartEditing';
+import HalfItemOffers from './HalfItemOffers.jsx';
+import { halfItemCartLines, portionQuantity, halfItemsOpen } from './halfItems.js';
 import WheelProtection from './WheelProtection.jsx';
 import WalletFunds, { WalletPaymentOption } from './WalletFunds.jsx';
 import { settlementOpen } from './roomLifecycle.js';
@@ -192,7 +194,7 @@ function roomInviteLink(room, hub) {
 function receiptText(room, receipt) {
   const account = room.account ? `Pay to: ${room.account.holder} · ${room.account.bank}\n${room.account.identifier}` : 'Receiving account not shared yet';
   return [`Intrvioo · ${room.name} · order #${room.orderNumber}`, room.restaurant.name, receipt.name,
-    ...receipt.lines.map(line => `${line.quantity} × ${line.description} · ${money(line.amount, receipt.currency)}${line.notes ? ` — ${line.notes}` : ''}`),
+    ...receipt.lines.map(line => `${portionQuantity(line)} × ${line.description} · ${money(line.amount, receipt.currency)}${line.notes ? ` — ${line.notes}` : ''}`),
     `Total: ${receipt.totalText}`, `Paid: ${money(receipt.paid, receipt.currency)}`, `To pay: ${receipt.balanceText}`, account].join('\n');
 }
 
@@ -419,7 +421,7 @@ function favoriteKey(favorite) {
 }
 
 function orderSummary(lines, max = 3) {
-  const text = lines.slice(0, max).map(line => `${line.quantity} × ${line.label || line.description}`).join(' · ');
+  const text = lines.slice(0, max).map(line => `${portionQuantity(line)} × ${line.label || line.description}`).join(' · ');
   return text + (lines.length > max ? ` · +${lines.length - max} more` : '');
 }
 
@@ -713,9 +715,9 @@ function cartLineDescription(room, line) {
   return [localizedName(menuItem), variant && localizedName(variant), ...optionNames].filter(Boolean).join(' · ');
 }
 
-function OrderLine({ line, label, currency, canPrice, onPrice, onEdit, onRemove, onQuantity, restaurant }) {
+function OrderLine({ line, label, currency, canPrice, onPrice, onEdit, onRemove, onQuantity, onHalf, restaurant }) {
   const lineTotal = line.amount ?? (restaurant ? menuLineTotal(restaurant, line) : line.unitPrice == null ? null : line.unitPrice * line.quantity);
-  return <div className="order-line"><div><b>{line.quantity} × {label || line.description}</b>{line.notes && <small>{line.notes}</small>}</div><div>{lineTotal == null ? <span className="status">{t("Awaiting price")}</span> : <b>{money(lineTotal, currency)}</b>}{canPrice && <button type="button" className="link" onClick={onPrice}>{line.unitPrice == null ? t("Add price") : 'Change'}</button>}{onQuantity && <QuantityControl value={line.quantity} min={0} onChange={value => onQuantity(value - line.quantity)} />}{onEdit && <button type="button" className="link" onClick={onEdit}>{t("Edit")}</button>}{onRemove && <button type="button" className="link danger" onClick={onRemove}>{t("Remove")}</button>}</div></div>;
+  return <div className="order-line"><div><b>{portionQuantity(line)} × {label || line.description}</b>{line.notes && <small>{line.notes}</small>}</div><div>{lineTotal == null ? <span className="status">{t("Awaiting price")}</span> : <b>{money(lineTotal, currency)}</b>}{canPrice && <button type="button" className="link" onClick={onPrice}>{line.unitPrice == null ? t("Add price") : 'Change'}</button>}{onHalf && <button type="button" className="secondary" onClick={onHalf}>{t("Half")}</button>}{onQuantity && <QuantityControl value={line.quantity} min={0} onChange={value => onQuantity(value - line.quantity)} />}{onEdit && <button type="button" className="link" onClick={onEdit}>{t("Edit")}</button>}{onRemove && <button type="button" className="link danger" onClick={onRemove}>{t("Remove")}</button>}</div></div>;
 }
 
 function OrderProgress({ room, receipts, payer }) {
@@ -796,7 +798,7 @@ function MenuItemForm({ room, editing, onSave, onCancel, lines = [] }) {
   </article>;
 }
 
-function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], favorites = [], onFavorite, onSave, onSubmit }) {
+function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], favorites = [], onFavorite, onSave, onSubmit, onHalf }) {
   const [editingId, setEditingId] = useState('');
   const [custom, setCustom] = useState({ description: '', quantity: '1', notes: '' });
   const [reuseMessage, setReuseMessage] = useState('');
@@ -812,7 +814,7 @@ function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], f
   const cancel = () => { setEditingId(''); setCustom({ description: '', quantity: '1', notes: '' }); };
   const saveLine = async line => {
     let lines;
-    try { lines = editingId ? cart.lines.map(current => current.id === editingId ? line : current) : addMenuLine(cart.lines, line); }
+    try { lines = editingId ? cart.lines.map(current => current.id === editingId ? line : current) : addMenuLine(cart.lines.map(current => ({ ...current, halfOffered: (room.halfItemOffers || []).some(offer => offer.memberId === cart.memberId && offer.lineId === current.id) })), line).map(({ halfOffered, ...current }) => current); }
     catch (error) { setReuseError(true); setReuseMessage(error.message); return null; }
     const result = await onSave(lines);
     if (result) cancel();
@@ -834,7 +836,8 @@ function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], f
     cartReview.current?.focus();
     cartReview.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-  const foodTotal = cartFoodTotal(room.restaurant, cart.lines);
+  const displayLines = halfItemCartLines(room, cart);
+  const foodTotal = displayLines.some(line => line.amount == null) ? null : displayLines.reduce((sum, line) => sum + line.amount, 0);
   return <section id="room-menu" className="stack order-editor">
     {lastOrder && <article className="card smart-reorder last-order" aria-labelledby="last-order-title">
       <div className="section-title compact"><div><p className="eyebrow">{localizedName(room.restaurant)}</p><h2 id="last-order-title">{t('Your last order')}</h2></div>
@@ -842,7 +845,7 @@ function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], f
       <p>{orderSummary(lastOrder.receipt.lines)}</p>
       <button className="primary" disabled={!!reorderSource} onClick={() => addSavedOrder(lastOrder.receipt.lines)}>{t('Reorder')}</button>
     </article>}
-    {reorderSource && <ReorderReview restaurant={room.restaurant} source={reorderSource} cartLines={cart.lines} onSave={onSave} onApplied={reordered} onCancel={() => setReorderSource(null)} />}
+    {reorderSource && <ReorderReview restaurant={room.restaurant} source={reorderSource} cartLines={cart.lines.map(line => ({ ...line, halfOffered: (room.halfItemOffers || []).some(offer => offer.memberId === cart.memberId && offer.lineId === line.id) }))} onSave={lines => onSave(lines.map(({ halfOffered, ...line }) => line))} onApplied={reordered} onCancel={() => setReorderSource(null)} />}
     <article className="card early-order"><p className="eyebrow">{t("YOUR SANDWICHES")}</p><h2>{t("Add now. Change any time before totals.")}</h2><p className="muted">{t("Your order stays editable before, during, and after the spin. Saving an edit keeps it in this room after refresh.")}</p></article>
     {(matchingFavorites.length > 0 || previous.length > 0) && <article className="card smart-reorder"><p className="eyebrow">{t("FAST ADD")}</p><h2>{t("Favorites & unique previous orders")}</h2><p className="muted">{t("Exact repeats appear once. Any change to quantity, size, extras, or notes remains a separate choice.")}</p><div className="saved-order-list">{matchingFavorites.map(favorite => <div className="saved-order-row" key={favorite.id}><span><b>★ {favorite.title}</b><small>{orderSummary(favorite.lines)}</small></span><button className="primary" disabled={!!reorderSource} onClick={() => addSavedOrder(favorite.lines)}>{t("Add all")}</button></div>)}{previous.map(choice => <div className="saved-order-row" key={choice.key}><span><b>{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</b><small>{orderSummary(choice.receipt.lines)}</small></span><span className="saved-order-buttons"><button className="primary" disabled={!!reorderSource} onClick={() => addSavedOrder(choice.receipt.lines)}>{t("Add all")}</button><button className="secondary" onClick={() => onFavorite(choice)}>{t("☆ Favorite")}</button></span></div>)}</div></article>}
     {room.restaurant.menu.items.length > 0 && (!editing || !editing.description) && <MenuItemForm key={`${room.restaurant.id}:${editing?.id || 'new-menu'}`} room={room} lines={cart.lines} editing={editing} onSave={saveLine} onCancel={cancel} />}
@@ -850,7 +853,13 @@ function MemberOrderPanel({ room, cart, lastOrder = null, previousOrders = [], f
     <article className="card cart-review" ref={cartReview} tabIndex={-1} aria-label={t('Review your cart')}>
       {reuseMessage && <p role="status" className={reuseError ? 'form-message' : 'success-message'}>{t(reuseMessage)}</p>}
       {!!reorderIssues.length && <div className="form-message"><b>{t('Not added to your cart')}</b><ul>{reorderIssues.map(entry => <li key={entry.line.id}>{entry.line.quantity} × {entry.label}: {t(entry.issue)}</li>)}</ul></div>}
-      <div className="section-title compact"><div><p className="eyebrow">{t("MY ORDER")}</p><h2>{cart.lines.length ? tf('{count} items', { count: cart.lines.length }) : t("Nothing added yet")}</h2></div><span className="cart-food-total"><small>{t('Food subtotal')}</small><b>{foodTotal == null ? t('Awaiting price') : <bdi>{money(foodTotal, room.restaurant.currency)}</bdi>}</b></span></div>{cart.lines.map(line => <OrderLine key={line.id} label={cartLineDescription(room, line)} line={line} restaurant={room.restaurant} currency={room.restaurant.currency} onQuantity={delta => onSave(changeQuantity(cart.lines, line.id, delta))} onEdit={() => edit(line)} onRemove={() => onSave(cart.lines.filter(value => value.id !== line.id))} />)}<button className="primary wide" onClick={onSubmit}>{cart.submitted ? t("Save my updated order") : cart.lines.length ? t("Submit my food order") : t("No food this time")}</button>{cart.submitted && <p className="success-message">{t("✓ Saved. You can still edit and submit changes before totals are reviewed.")}</p>}</article>
+      <div className="section-title compact"><div><p className="eyebrow">{t("MY ORDER")}</p><h2>{displayLines.length ? tf('{count} items', { count: displayLines.length }) : t("Nothing added yet")}</h2></div><span className="cart-food-total"><small>{t('Food subtotal')}</small><b>{foodTotal == null ? t('Awaiting price') : <bdi>{money(foodTotal, room.restaurant.currency)}</bdi>}</b></span></div>{displayLines.map(line => {
+        const offered = line.receivedHalf || (room.halfItemOffers || []).some(offer => offer.memberId === cart.memberId && offer.lineId === line.id);
+        return <OrderLine key={line.id} label={cartLineDescription(room, line)} line={line} restaurant={room.restaurant} currency={room.restaurant.currency}
+          onHalf={!offered && halfItemsOpen(room) ? () => onHalf(line.id) : undefined}
+          onQuantity={!offered ? delta => onSave(changeQuantity(cart.lines, line.id, delta)) : undefined}
+          onEdit={!offered ? () => edit(line) : undefined} onRemove={!offered ? () => onSave(cart.lines.filter(value => value.id !== line.id)) : undefined} />;
+      })}<button className="primary wide" onClick={onSubmit}>{cart.submitted ? t("Save my updated order") : displayLines.length ? t("Submit my food order") : t("No food this time")}</button>{cart.submitted && <p className="success-message">{t("✓ Saved. You can still edit and submit changes before totals are reviewed.")}</p>}</article>
   </section>;
 }
 
@@ -967,7 +976,7 @@ function OrderSummary({ room, receipts, className = '' }) {
     <ul className="summary-items">{(expanded ? lines : lines.slice(0, 4)).map((line, index) => <li key={index}><span className="summary-quantity">{line.quantity} ×</span><div><b>{line.description}</b>{line.notes && <small>{line.notes}</small>}</div><strong>{money(line.amount, room.restaurant.currency)}</strong></li>)}</ul>
     {lines.length > 4 && <button type="button" className="link summary-more" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? tx('Show less', 'عرض أقل') : tx(`View all ${lines.length} items`, `عرض كل الأصناف (${lines.length})`)}</button>}
     {!lines.length && <p>{t('No food yet')}</p>}
-    <details className="orders-by-person"><summary>{t('Orders by person')}</summary>{receipts.map(receipt => <div className="person-order-summary" key={receipt.memberId}><div><b>{receipt.name}</b><strong>{money(receipt.total, receipt.currency)}</strong></div>{receipt.lines.map((line, index) => <p key={index}>{line.quantity} × {line.description}{line.notes ? ` — ${line.notes}` : ''}</p>)}</div>)}</details>
+    <details className="orders-by-person"><summary>{t('Orders by person')}</summary>{receipts.map(receipt => <div className="person-order-summary" key={receipt.memberId}><div><b>{receipt.name}</b><strong>{money(receipt.total, receipt.currency)}</strong></div>{receipt.lines.map((line, index) => <p key={index}>{portionQuantity(line)} × {line.description}{line.notes ? ` — ${line.notes}` : ''}</p>)}</div>)}</details>
   </article>;
 }
 
@@ -1111,6 +1120,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   const settling = settlementOpen(room);
   const myCart = room.carts.find(cart => cart.memberId === me.id) || { memberId: me.id, revision: 0, lines: [], submitted: false, confirmedQuote: -1 };
   const winner = room.members.find(member => member.id === room.spin?.winnerId);
+  const requestHalf = lineId => data.send('REQUEST_HALF_ITEM', { text: lineId }, room.id);
   const saveCart = lines => data.send('CART', { cart: { ...myCart, lines }, expectedRevision: myCart.revision }, room.id);
   const selected = winner && room.phase === 'ACCEPTING';
   const orderingOpen = ['LOBBY','PREPARING_SPIN','SPINNING','ACCEPTING','COLLECTING'].includes(room.phase) && !room.restaurantPollOpen;
@@ -1147,6 +1157,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
     </nav>}
     <fieldset disabled={data.busy} className="room-fieldset" aria-busy={data.busy}><div className="room-layout">
       <section className="room-main stack">
+        <HalfItemOffers room={room} me={me} data={data} describe={line => cartLineDescription(room, line)} />
         {settling && <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} />}
         {payer && ['COLLECTING','REVIEW'].includes(room.phase) && <>
           <OrderSummary room={room} receipts={reply.receipts} className="collected-orders" />
@@ -1164,8 +1175,8 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
         {me.approved && !me.guest && !me.participating && room.phase !== 'LOBBY' && <article className="card notice-card"><h2>{t("You’re in the room")}</h2><p>{t("You’re viewing this order. You can join when the next order opens.")}</p></article>}
         {me.approved && room.phase === 'LOBBY' && <><article className="card"><div className="section-title compact"><div><p className="eyebrow">{t("WHO’S IN?")}</p><h2>{t("Join today’s order")}</h2></div><span>{orderingMembers.length}</span></div>{!me.guest && <div className="hero-actions"><button className={me.participating ? 'secondary' : 'primary'} onClick={() => data.send('PARTICIPATE', { flag: !me.participating }, room.id)}>{me.participating ? t("Skip this order") : t("Join this order")}</button></div>}<p className="muted">{t('Joining is automatic before selection. After selection, the room creator or selected person approves new joiners.')}</p>{owner && !room.restaurantPollOpen && <div className="stack"><div className="segmented"><button type="button" className={payerMode === 'wheel' ? 'active' : ''} onClick={() => setPayerMode('wheel')}>{t('Use the wheel')}</button><button type="button" className={payerMode === 'direct' ? 'active' : ''} disabled={paidReduction} onClick={() => setPayerMode('direct')}>{t('Choose person directly')}</button></div>{payerMode === 'direct' ? <><label>{t('Ordering person')}<select value={selectedPayerId} onChange={event => setPayerChoice(event.target.value)}>{selectableMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><button className="primary wide" disabled={!selectedPayerId || paidReduction || pendingWheelPayment} onClick={() => data.send('SELECT_PAYER', { memberId: selectedPayerId }, room.id)}>{t('Choose person directly')}</button></> : <button className="primary wide" disabled={!canSpin} onClick={() => data.send('PREPARE_SPIN', {}, room.id)}>{t('Spin to choose the payer')}</button>}</div>}</article>{room.restaurantPollOpen && <RestaurantPoll room={room} me={me} owner={owner} data={data} />}</>}
         {me.approved && !me.guest && me.participating && orderingOpen && (payer
-          ? <details className="card order-edit-options" open={!myCart?.submitted || undefined}><summary>{tx('Your food order', 'طلب طعامك')}</summary><MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} /></details>
-          : <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />)}
+          ? <details className="card order-edit-options" open={!myCart?.submitted || undefined}><summary>{tx('Your food order', 'طلب طعامك')}</summary><MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onHalf={requestHalf} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} /></details>
+          : <MemberOrderPanel key={`${room.orderNumber}:${room.restaurant.id}`} room={room} cart={myCart} lastOrder={lastRestaurantOrder(data, room.restaurant)} previousOrders={previousOrders} favorites={favorites} onFavorite={saveFavorite} onSave={saveCart} onHalf={requestHalf} onSubmit={() => data.send('SUBMIT_CART', { expectedRevision: myCart.revision }, room.id)} />)}
 
         {owner && !payer && room.phase === 'COLLECTING' && <FeeEditor key={`${room.quoteRevision}:${room.fees.delivery}:${room.fees.service}:${room.fees.discount}`} room={room} data={data} />}
         {room.phase === 'REVIEW' && <details className="card payment-breakdown"><summary>{t('Order details')}</summary>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}<PaymentDetails account={room.account} accounts={room.accounts} data={data} />{owner && !payer && <FeeEditor key={room.quoteRevision} room={room} data={data} />}</details>}

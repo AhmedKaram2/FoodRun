@@ -11,7 +11,7 @@ export function receiptArchive(previous, reply, now = Date.now()) {
     const { name, currency, food, delivery, service, tax, discount, adjustment, total, paid, balance, lines } = receipt;
     records.set(id, { id, roomId: room.id, roomName: room.name, orderNumber, restaurant, phase, completedAt,
       savedAt: now, receipt: { name, currency, food, delivery, service, tax, discount, adjustment, total, paid, balance,
-        lines: (lines || []).map(({ description, quantity, amount, notes }) => ({ description, quantity, amount, notes })) } });
+        lines: (lines || []).map(({ description, quantity, amount, notes, halfShare, restaurantQuantity }) => ({ description, quantity, amount, notes, halfShare, restaurantQuantity })) } });
   };
   (reply.history || []).forEach(order => add(order.number, order.restaurantName, order.receipts, 'ARCHIVED', order.completedAt));
   if (['PLACED', 'FULFILLED', 'ARCHIVED'].includes(room.phase)) add(room.orderNumber, room.restaurant.name, reply.receipts, room.phase, room.updatedAt);

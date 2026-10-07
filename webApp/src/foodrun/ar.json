@@ -683,5 +683,16 @@
   "Transfer the money outside Intrvioo. Your balance updates after the holder confirms receipt.": "حوّل الفلوس خارج إنترفيوو. الرصيد بيتضاف بعد ما صاحب المحفظة يؤكد الاستلام.",
   "Choose Pay with wallet when paying your share.": "اختار الدفع بالمحفظة وقت دفع حصتك.",
   "Got it": "تمام، فهمت",
-  "Open wallet": "افتح المحفظة"
+  "Open wallet": "افتح المحفظة",
+  "Half": "نصف",
+  "Share half an item": "مشاركة نصف صنف",
+  "Shared: half each": "تمت المشاركة: نصف لكل شخص",
+  "Another half is available": "النصف الآخر متاح",
+  "Full item assigned to requester": "الصنف كاملاً لصاحب الطلب",
+  "If nobody accepts, the requester keeps the whole item and pays the full price.": "إذا لم يقبل أحد، يأخذ صاحب الطلب الصنف كاملاً ويدفع سعره بالكامل.",
+  "Food share": "حصة الطعام",
+  "Delivery and fees are shown separately in your receipt.": "تظهر رسوم التوصيل والرسوم الأخرى منفصلة في إيصالك.",
+  "Take the other half": "آخذ النصف الآخر",
+  "Keep the whole item": "آخذ الصنف كاملاً",
+  "Release my half": "إلغاء حصتي من النصف"
 }

@@ -1,3 +1,4 @@
+import { portionQuantity } from './halfItems.js';
 import { money } from './client';
 import { t as translate } from './i18n.js';
 
@@ -13,7 +14,7 @@ export default function OfflineReceipts({ receipts, onBack, onClear, language = 
     <div className="grid two">{receipts.map(record => <article className="card" key={record.id}>
       <h2>{record.restaurant}</h2><p>{record.roomName} · #{record.orderNumber}</p>
       <p className="muted">{t('Last downloaded', 'آخر حفظ')}: {new Date(record.savedAt).toLocaleString(language === 'ar' ? 'ar-AE' : 'en-AE')}</p>
-      {record.receipt.lines.map((line, index) => <p key={index}>{line.quantity} × {line.description} · {money(line.amount, record.receipt.currency)}{line.notes && <small> · {line.notes}</small>}</p>)}
+      {record.receipt.lines.map((line, index) => <p key={index}>{portionQuantity(line)} × {line.description} · {money(line.amount, record.receipt.currency)}{line.notes && <small> · {line.notes}</small>}</p>)}
       <hr /><p>{t('Total', 'الإجمالي')}: {money(record.receipt.total, record.receipt.currency)}</p>
       <p>{t('Confirmed paid', 'المدفوع المؤكد')}: {money(record.receipt.paid, record.receipt.currency)}</p>
       <b>{t('Balance at last sync', 'الرصيد عند آخر مزامنة')}: {money(record.receipt.balance, record.receipt.currency)}</b>

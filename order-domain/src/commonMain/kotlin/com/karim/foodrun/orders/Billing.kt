@@ -54,7 +54,21 @@ object Billing {
         require(room.adjustment in -MenuValidation.MAX_MONEY..MenuValidation.MAX_MONEY) { "Invalid bill adjustment." }
         val carts = room.carts.filter { c -> room.orderingMembers.any { it.id == c.memberId } }
         require(carts.map { it.memberId }.distinct().size == carts.size) { "Duplicate member carts." }
-        val lines = carts.associate { it.memberId to lines(room.restaurant, it) }
+        val lines = carts.associate { it.memberId to lines(room.restaurant, it).toMutableList() }
+        require(room.halfItemOffers.size <= 100 && room.halfItemOffers.map { it.id }.distinct().size == room.halfItemOffers.size &&
+            room.halfItemOffers.map { it.memberId to it.lineId }.distinct().size == room.halfItemOffers.size) { "Invalid half-item offers." }
+        room.halfItemOffers.forEach { offer ->
+            val source = carts.singleOrNull { it.memberId == offer.memberId } ?: error("Half-item requester is no longer ordering.")
+            val index = source.lines.indexOfFirst { it.id == offer.lineId }
+            require(index >= 0 && source.lines[index].quantity == 1) { "A half-item offer must refer to one whole item." }
+            val recipient = offer.acceptedById ?: return@forEach
+            require(recipient != offer.memberId && recipient in lines) { "Half-item recipient is no longer ordering." }
+            val original = lines.getValue(offer.memberId)[index]
+            // Keep every minor unit: the requester pays any odd remainder.
+            val secondHalf = original.amount / 2
+            lines.getValue(offer.memberId)[index] = original.copy(amount = original.amount - secondHalf, halfShare = true, restaurantQuantity = 1)
+            lines.getValue(recipient).add(original.copy(amount = secondHalf, halfShare = true, restaurantQuantity = 0))
+        }
         val foods = lines.filterValues { it.isNotEmpty() }.mapValues { it.value.sumOf { line -> line.amount } }
         val totalFood = foods.values.sum()
         MenuValidation.price(totalFood)

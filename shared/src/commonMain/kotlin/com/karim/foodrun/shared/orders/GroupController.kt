@@ -293,6 +293,9 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.INCREASE_CART_QUANTITY -> changeCartQuantity(value, 1)
             GroupAction.DECREASE_CART_QUANTITY -> changeCartQuantity(value, -1)
             GroupAction.REMOVE_CART_ITEM -> { val cart = myCart(); command(CommandKind.CART, cart = cart.copy(lines = cart.lines.filterNot { it.id == value }), revision = cart.revision) }
+            GroupAction.REQUEST_HALF_ITEM -> command(CommandKind.REQUEST_HALF_ITEM, text = value)
+            GroupAction.ACCEPT_HALF_ITEM -> command(CommandKind.ACCEPT_HALF_ITEM, text = value)
+            GroupAction.CANCEL_HALF_ITEM -> command(CommandKind.CANCEL_HALF_ITEM, text = value)
             GroupAction.OPEN_ACCOUNT -> {
                 reply?.room?.account?.let { selectedAccount = it; seedAccount(it) }
                 if (reply?.room?.account == null) library.home?.profile?.payment?.let { selectedAccount = it; seedAccount(it) }
@@ -553,6 +556,13 @@ class GroupController(val platform: GroupPlatform) {
         val needsSave = library.snapshots[room.id]?.deletedHistoryNumbers != next.deletedHistoryNumbers || library.snapshots[room.id]?.room?.revision != room.revision || platform.now() - (library.snapshots[room.id]?.serverTime ?: 0) > 60000
         offset = next.serverTime - (sentAt + platform.now()) / 2
         val previousRoom = reply?.room
+        room.halfItemOffers.filter { it.memberId != s.memberId && it.acceptedById == null }.forEach { offer ->
+            if (room.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)) {
+                val requester = room.members.firstOrNull { it.id == offer.memberId }?.name.orEmpty()
+                alert("half:${room.id}:${room.orderNumber}:${offer.id}",
+                    if (library.language == "ar") "النصف الآخر متاح" else "Another half is available", "$requester · ${offer.line.description}")
+            }
+        }
         val changedOrder = previousRoom?.id != room.id || previousRoom.orderNumber != room.orderNumber
         if (page == GroupPage.SELECTION_OVERRIDE && (changedOrder || room.phase != RoomPhase.LOBBY)) selectionOverride.close()
         if (page == GroupPage.WHEEL_PROTECTION && changedOrder) { page = GroupPage.ROOM; draft.remove(GroupFieldKey.WHEEL_PAYMENT_REFERENCE) }
@@ -819,7 +829,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

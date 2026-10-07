@@ -1,6 +1,12 @@
 # FoodRun email delivery
 
-FoodRun sends email from **foodruncollection@gmail.com** only when the chosen payer explicitly uses **Send payment reminder**. Android, iOS and web use the same server command and durable queue. Invitations and room/order/payment status changes stay in the app and push notifications; they do not create emails. The worker discards older queued invitation and status emails before delivery.
+FoodRun sends email from **foodruncollection@gmail.com** when the chosen payer uses **Send payment reminder**, when a group owner invites a new email address to join Intrvioo, or when a room creator selects a friend group to notify. Android, iOS and web use the same server commands and durable queue. Other room/order/payment status changes stay in the app and push notifications.
+
+## Friend group invitations
+
+Creating a room with a selected favourite group queues an individual email to every address currently in that group. The message includes the creator, room name, restaurant, pickup/delivery details, room code, optional join deadline and a link to join. Registered members also see an invitation in the app. Receiving an invitation does not join a room automatically. Creating a room without a selected group sends no group email.
+
+Owners can rename groups and add or remove members. Added users can view their joined groups and leave. Leaving or being removed stops future group invitations and cancels queued invitations that have not been delivered; it does not remove existing room memberships, orders or wallet records. The worker also discards a room invitation if its join window has closed. Replaying a create command after reconnect or restart does not enqueue another invitation to the same address.
 
 ## Collection reminder button
 
@@ -66,7 +72,7 @@ For website releases, include the existing `zai` and `ziina` Netlify functions e
 - Disabled Gmail API or permission errors fail immediately rather than leaving a reminder waiting for retries. Enable Gmail API in the project that owns the sender's OAuth client; valid OAuth credentials alone do not enable the API.
 - The default 100-attempt limit leaves room under personal Gmail limits; messages sent manually from the same account also count toward Google's limits. Gmail may reject mail below this cap. [Gmail limits](https://support.google.com/mail/answer/22839)
 - Delivery receipts store only a job ID, timestamp and `sent`/`failed` result and are retained for 30 days. `sent` means Gmail accepted the message, not that it reached the recipient's inbox. Logs never include addresses, message content or credentials.
-- Messages contain notification text and a link to the app. Session tokens, join codes, receipt photos and bank/payment credentials are not included. Actions require opening the app and signing in.
+- Messages contain notification text and a link to the app. Group room invitations include the room join code. Session tokens, receipt photos and bank/payment credentials are not included. Actions require opening the app and signing in.
 - Render Free can sleep while idle, so pending retries resume when the service wakes. This setup does not promise immediate email while the server is asleep.
 
-After deployment, use two controlled test accounts to complete an order, then press **Send payment reminder** for an unpaid balance and verify its inbox delivery. Confirm that inviting, selecting, placing, arriving and confirming payment produce no email. This is a separate live check: local tests use fake identities and fake Gmail responses and deliver no email to real users.
+After deployment, use controlled test accounts to select a friend group when creating a room and verify each recipient's invitation and join link. Also complete an order, then press **Send payment reminder** for an unpaid balance and verify its inbox delivery. Creating a room without a selected group and selecting, placing, arriving and confirming payment do not create email. Inbox delivery is a separate live check: local tests use fake identities and fake Gmail responses and deliver no email to real users.

@@ -117,7 +117,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             buildMap {
                 AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
                 memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }
-            }, wallet = WalletService.snapshot(db, uid), friendGroups = FriendGroupService.groups(db, uid)), serverTime = clock())
+            }, wallet = WalletService.snapshot(db, uid), friendGroups = FriendGroupService.groups(db, uid), joinedFriendGroups = FriendGroupService.joined(db, uid)), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)

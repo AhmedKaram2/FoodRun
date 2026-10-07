@@ -991,6 +991,34 @@ export async function runFriendsTimerAudit() {
   return {passed:true,language:getLanguage(),width:innerWidth,overflow:measureAudit().overflow,groupEmail:true,roomTimer:true,adminEmailSearch:true};
 }
 
+export async function runGroupMembershipAudit() {
+  await mountAudit('home'); commands.length = 0;
+  const ar = getLanguage() === 'ar';
+  const find = (en, arabic, scope = host) => { const node = [...scope.querySelectorAll('button')].find(value => value.textContent.trim() === (ar ? arabic : en)); assert(node, 'Missing '+en); return node; };
+  const group = {id:'owned',name:'Office friends',favourite:true,revision:4,members:[{email:'bob@example.test',userId:'bob',name:'Bob'},{email:'charlie@example.test',userId:'charlie',name:'Charlie'}]};
+  const joined = {ownerId:'alice',ownerName:'Alice',group:{...group,id:'joined',name:'Friday lunch'}};
+  const fixture = {...data,home:{...data.home,friendGroups:[group],joinedFriendGroups:[joined]},walletQuery:async (kind, fields)=>({friendContact:{email:fields.text,userId:'dana',name:'Dana'}})};
+  root.render(<FriendGroups data={fixture} onBack={()=>{}} />); await pause();
+  button('Edit').click(); await pause();
+  setValue(host.querySelector('input'), 'Team lunch'); await pause();
+  button('Remove').click(); await pause();
+  setValue(host.querySelector('input[type=email]'), 'dana@example.test'); await pause();
+  find('Add by email','إضافة بالبريد').click(); await pause();
+  button('Save').click(); await pause();
+  const saved = commands.at(-1); assert(saved?.kind==='SAVE_FRIEND_GROUP' && saved.fields.friendGroup.name==='Team lunch' && saved.fields.friendGroup.revision===4,'Owner edit lost name or revision');
+  assert(saved.fields.friendGroup.members.map(value=>value.userId).join(',')==='charlie,dana','Owner add/remove did not update members');
+  find('View group','عرض المجموعة').click(); await pause();
+  const details = [...host.querySelectorAll('section[aria-label]')].find(value=>value.getAttribute('aria-label')===(ar?'تفاصيل المجموعة':'Group details'));
+  assert(details?.textContent.includes('Alice') && details.textContent.includes('bob@example.test'),'Member cannot view group and members');
+  assert(!host.querySelector('input') && ![...details.querySelectorAll('button')].some(value=>['Edit','Remove','Save'].some(label=>value.textContent.trim()===t(label))),'Joined group exposed editing controls');
+  find('Leave group','مغادرة المجموعة',details).click(); await pause();
+  assert(commands.at(-1)?.kind==='LEAVE_FRIEND_GROUP' && commands.at(-1).fields.friendGroupId==='joined' && commands.at(-1).fields.friendGroupOwnerId==='alice','Member leave targeted wrong group');
+  root.render(<FriendGroups data={{...fixture,home:{...fixture.home,joinedFriendGroups:[]}}} onBack={()=>{}} />); await pause();
+  assert(!host.textContent.includes('Friday lunch'),'Left group is still listed');
+  assert(!measureAudit().overflow,'Group membership screen overflows');
+  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false,ownerEditing:true,memberView:true,memberLeave:true};
+}
+
 export async function runWalletApprovalAudit() {
   const bank = {id:'bank',holder:'Payer',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED',method:'BANK'};
   const payment = {id:'request',customerId:'customer',customerName:'Customer',holderId:'payer-user',holderName:'Payer',recipientId:'payer-user',recipientName:'Payer',roomId:'audit-room',roomName:'Lunch',orderNumber:1,memberId:'customer-member',amount:700,currency:'AED',status:'OWING'};

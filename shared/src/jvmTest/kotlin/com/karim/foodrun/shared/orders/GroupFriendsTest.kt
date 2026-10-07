@@ -64,4 +64,38 @@ class GroupFriendsTest {
         assertFalse(c.state.hasJoinTimer)
         assertTrue(c.state.cards.single { it.id == "join-timer" }.detail.contains("New joins are closed"))
     }
+    @Test fun membersCanViewAndLeaveWithoutOwnerEditingControls() {
+        val device = Device(); val c = controller(device)
+        val joined = FriendGroupMembership(favourite.copy(revision = 3), "owner", "Owner")
+        c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = listOf(joined)))
+        c.dispatch(GroupAction.FRIENDS_ACTION, "open")
+        assertTrue(c.state.cards.any { it.id == "friend-joined:owner:friends" })
+        c.dispatch(GroupAction.FRIENDS_ACTION, "view|owner|friends")
+        assertTrue(c.state.fields.isEmpty())
+        assertTrue(c.state.cards.any { it.title == "Bob" && it.detail == "bob@example.test" })
+        assertEquals(listOf("leave|owner|friends", "open"), c.state.buttons.map { it.value })
+        c.dispatch(GroupAction.FRIENDS_ACTION, "leave|owner|friends")
+        val leave = device.requests.last().second
+        assertEquals(CommandKind.LEAVE_FRIEND_GROUP, leave.kind)
+        assertEquals("owner", leave.friendGroupOwnerId)
+        assertEquals("friends", leave.friendGroupId)
+        assertTrue(leave.friendMembershipDetails)
+        device.requests.last().third.complete(orderJson.encodeToString(RoomReply(home = c.library.home!!.copy(joinedFriendGroups = emptyList()))), "")
+        assertEquals(GroupPage.FRIENDS, c.page)
+        assertTrue(c.state.cards.none { it.id.startsWith("friend-joined:") })
+    }
+    @Test fun ownerEditsKeepTheGroupRevisionAndRevokedMembershipClosesDetails() {
+        val device = Device(); val c = controller(device)
+        c.library = c.library.copy(home = c.library.home!!.copy(friendGroups = listOf(favourite.copy(revision = 4))))
+        c.dispatch(GroupAction.FRIENDS_ACTION, "edit|friends")
+        c.update(GroupFieldKey.FRIEND_GROUP_NAME, "Renamed")
+        c.dispatch(GroupAction.FRIENDS_ACTION, "save")
+        assertEquals(4L, device.requests.last().second.friendGroup!!.revision)
+        assertEquals("Renamed", device.requests.last().second.friendGroup!!.name)
+        c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = listOf(FriendGroupMembership(favourite, "owner", "Owner"))))
+        c.dispatch(GroupAction.FRIENDS_ACTION, "view|owner|friends")
+        c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = emptyList()))
+        assertTrue(c.state.cards.none { it.id == "friend-view" })
+        assertTrue(c.state.fields.any { it.key == GroupFieldKey.FRIEND_GROUP_NAME })
+    }
 }

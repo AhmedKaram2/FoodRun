@@ -15,7 +15,7 @@ class FriendsTimerSupportTest {
     }
     private fun login(f: RoomFixture, name: String) = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
         identity = IdentityRequest(IdentityAction.REGISTER, email = "$name@example.test", password = "fixture-password", profile = FoodProfile(name = name))))
-    private fun command(f: RoomFixture, user: RoomReply, kind: CommandKind) = RoomCommand(commandId = f.id(), kind = kind, identityToken = user.identityToken, friendsDetails = true)
+    private fun command(f: RoomFixture, user: RoomReply, kind: CommandKind) = RoomCommand(commandId = f.id(), kind = kind, identityToken = user.identityToken, friendsDetails = true, friendMembershipDetails = true)
     private fun home(f: RoomFixture, user: RoomReply) = f.execute(command(f, user, CommandKind.HOME)).home!!
 
     @Test fun groupsArePrivateAndEmailsResolveAccountsWithoutTrustingSubmittedIds() = RoomFixture(Provider(), emailEnabled = true).use { f ->
@@ -47,16 +47,88 @@ class FriendsTimerSupportTest {
         assertFalse(f.service.execute(command(f, owner, CommandKind.FRIEND_LOOKUP).copy(text = "not-an-email")).ok)
         assertTrue(orderJson.encodeToString(reply.forClient(false)).let { "friendGroups" !in it && "friendContact" !in it })
     }
+    @Test fun creatingRoomEmailsEverySelectedGroupMemberOnceWithDetailsAndJoinLink() = RoomFixture(Provider(), emailEnabled = true).use { f ->
+        val owner = login(f, "Alice"); val bob = login(f, "Bob"); login(f, "Charlie")
+        val addresses = setOf("alice@example.test", "bob@example.test", "charlie@example.test", "new@example.test")
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Lunch friends", members = addresses.map { FriendContact(it) })))
+        val signup = f.service.nextEmail(100)!!
+        assertEquals("new@example.test", signup.address)
+        f.service.finishEmail(signup, EmailResult.SENT)
+        val create = command(f, owner, CommandKind.CREATE).copy(name = "Alice", text = "Friday lunch", restaurant = f.restaurant, friendGroupId = "group", joinTimerMinutes = 5, flag = true, destination = "Office")
+        val room = f.execute(create).room!!
+        f.execute(create); f.restart(); f.execute(create)
+        assertEquals(addresses.size, f.db.records("email-job:").size)
+        val delivered = mutableSetOf<String>()
+        repeat(addresses.size) {
+            val email = f.service.nextEmail(100)!!
+            assertTrue(delivered.add(email.address))
+            assertEquals(room.id, email.job.roomId)
+            assertTrue(email.job.body.contains("Alice created Friday lunch"))
+            assertTrue(email.job.body.contains(room.restaurant.name))
+            assertTrue(email.job.body.contains("Delivery · Office"))
+            assertTrue(email.job.body.contains("https://intrvioo.com/?room=${room.code}"))
+            assertTrue(email.job.body.contains("Join before"))
+            f.service.finishEmail(email, EmailResult.SENT)
+        }
+        assertEquals(addresses, delivered)
+        assertNull(f.service.nextEmail(100))
+        assertEquals(room.id, home(f, bob).invitations.single().roomId)
+        assertTrue(home(f, bob).rooms.none { it.roomId == room.id })
+    }
     @Test fun unselectedGroupsSendNoRoomEmailAndRemovedGroupRevokesPendingInvitations() = RoomFixture(Provider(), emailEnabled = true).use { f ->
         val owner = login(f, "Alice")
         f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Friends", members = listOf(FriendContact("new@example.test")))))
         val sent = f.service.nextEmail(100)!!; f.service.finishEmail(sent, EmailResult.SENT)
         f.execute(command(f, owner, CommandKind.CREATE).copy(name = "Alice", text = "Private lunch", restaurant = f.restaurant))
         assertNull(f.service.nextEmail(100))
-        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Friends", members = listOf(FriendContact("another@example.test")))))
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = home(f, owner).friendGroups.single().copy(members = listOf(FriendContact("another@example.test")))))
         f.execute(command(f, owner, CommandKind.DELETE_FRIEND_GROUP).copy(friendGroupId = "group"))
         assertNull(f.service.nextEmail(100))
         assertTrue(f.db.records("email-job:").isEmpty())
+    }
+    @Test fun ownerCanRenameAddAndRemoveWhileMembersCanOnlyViewAndLeave() = RoomFixture(Provider(), emailEnabled = true).use { f ->
+        val owner = login(f, "Alice"); val bob = login(f, "Bob"); val charlie = login(f, "Charlie"); val outsider = login(f, "Outsider")
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Original", members = listOf(FriendContact("bob@example.test")))))
+        val first = home(f, owner).friendGroups.single()
+        assertEquals("Alice", home(f, bob).joinedFriendGroups.single().ownerId)
+        assertEquals("Alice", home(f, bob).joinedFriendGroups.single().ownerName)
+        assertTrue(home(f, outsider).joinedFriendGroups.isEmpty())
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = first.copy(name = "Friday lunch", members = first.members + FriendContact("charlie@example.test"))))
+        assertEquals("Friday lunch", home(f, bob).joinedFriendGroups.single().group.name)
+        assertEquals(2, home(f, charlie).joinedFriendGroups.single().group.members.size)
+        val updated = home(f, owner).friendGroups.single()
+        assertFalse(f.service.execute(command(f, bob, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroup = updated.copy(name = "Forged rename"))).ok)
+        assertFalse(f.service.execute(command(f, bob, CommandKind.DELETE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroupId = "group")).ok)
+        assertFalse(f.service.execute(command(f, outsider, CommandKind.LEAVE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroupId = "group")).ok)
+        val leave = command(f, bob, CommandKind.LEAVE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroupId = "group")
+        f.execute(leave); f.restart(); f.execute(leave)
+        assertTrue(home(f, bob).joinedFriendGroups.isEmpty())
+        assertEquals(listOf("Charlie"), home(f, owner).friendGroups.single().members.map { it.userId })
+        assertFalse(f.service.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = updated)).ok)
+        assertEquals(listOf("Charlie"), home(f, owner).friendGroups.single().members.map { it.userId })
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = home(f, owner).friendGroups.single().copy(name = "Empty group", members = emptyList())))
+        assertTrue(home(f, charlie).joinedFriendGroups.isEmpty())
+        assertEquals("Empty group", home(f, owner).friendGroups.single().name)
+        val modern = f.execute(command(f, owner, CommandKind.HOME))
+        val legacy = modern.forClient(false, friendsDetails = true)
+        assertEquals(0L, legacy.home!!.friendGroups.single().revision)
+        assertTrue(legacy.home!!.joinedFriendGroups.isEmpty())
+        assertFalse(orderJson.encodeToString(legacy).contains("joinedFriendGroups"))
+    }
+    @Test fun signingUpRevealsInvitedGroupAndLeavingStopsFutureInvitesWithoutRemovingRoomMembership() = RoomFixture(Provider(), emailEnabled = true).use { f ->
+        val owner = login(f, "Alice")
+        f.execute(command(f, owner, CommandKind.SAVE_FRIEND_GROUP).copy(friendGroup = FriendGroup("group", "Friends", members = listOf(FriendContact("bob@example.test")))))
+        val bob = login(f, "Bob")
+        assertEquals("group", home(f, bob).joinedFriendGroups.single().group.id)
+        val joined = f.execute(command(f, bob, CommandKind.JOIN).copy(name = "Bob", code = f.owner.room!!.code))
+        val normalMembership = home(f, bob).rooms.single()
+        f.execute(command(f, bob, CommandKind.LEAVE_FRIEND_GROUP).copy(friendGroupOwnerId = "Alice", friendGroupId = "group"))
+        assertNull(f.service.nextEmail(100))
+        assertEquals(normalMembership, home(f, bob).rooms.single())
+        assertEquals(joined.memberId, f.service.snapshot(f.owner.room!!.id, joined.token).memberId)
+        f.execute(command(f, owner, CommandKind.CREATE).copy(name = "Alice", text = "Next lunch", restaurant = f.restaurant, friendGroupId = "group"))
+        assertTrue(home(f, bob).invitations.isEmpty())
+        assertNull(f.service.nextEmail(100))
     }
     @Test fun timerSurvivesRestartSpinsOnceAndClosesOnlyNewJoins() = RoomFixture(Provider()).use { f ->
         val owner = login(f, "Alice"); val bob = login(f, "Bob"); val late = login(f, "Late")

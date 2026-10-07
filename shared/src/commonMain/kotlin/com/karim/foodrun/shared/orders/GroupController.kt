@@ -497,7 +497,7 @@ class GroupController(val platform: GroupPlatform) {
             text = if (action == GroupAction.WALLET_REJECT) "Payment was not received." else if (payer) "Refund sent" else "Payment sent"), returnPage = page)
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
-        val friendCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP)
+        val friendCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)
         val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.FRIEND_LOOKUP)
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
@@ -851,7 +851,7 @@ class GroupController(val platform: GroupPlatform) {
         }
     }
     fun tickAccessBlock() { if (accessBlock != null || reply?.room?.joinDeadlineAt?.let { it > 0 } == true) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

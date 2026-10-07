@@ -12,6 +12,7 @@ import java.util.Base64
 /** Invites and account sessions are hub-local; profiles and room records persist in the existing Firebase project. */
 class AccountService(private val db: RoomDatabase, private val provider: IdentityProvider?, private val rooms: RoomService, private val clock: () -> Long) {
     private val memberships = AccountMemberships(db)
+    private val support = SupportSessions(db, clock)
     private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
     private var lastProfileSyncKey = ""
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
@@ -24,8 +25,11 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             AccountRestrictions.requireAllowed(db, AccountAliases.resolve(db, it.userId), clock())
         }
     }
-    fun userId(token: String): String = AccountAliases.resolve(db, session(token).userId)
-    internal fun firebaseIdToken(token: String): String = identity(RoomService.hash(token), session(token)).idToken
+    fun userId(token: String): String = support.requireActive(token)?.userId ?: AccountAliases.resolve(db, session(token).userId)
+    internal fun firebaseIdToken(token: String): String {
+        require(support.find(token) == null) { "Return to the owner account to access administration." }
+        return identity(RoomService.hash(token), session(token)).idToken
+    }
     private fun profile(uid: String) = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: FoodProfile(userId = uid)
     internal fun withSavedPayment(room: Room): Room {
         if (room.account != null || room.phase !in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) return room
@@ -60,7 +64,14 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val uid = userId(token)
         val room = result.room ?: return
         require(result.token.isNotEmpty())
-        memberships.save(uid, room, result.memberId, result.token)
+        if(support.requireActive(token) != null) {
+            support.protect(token, result.token)
+            if(db.record("membership:$uid:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it).token == result.token } != false) {
+                val normal = SupportSessions.freshToken()
+                db.addSession(RoomService.hash(normal), room.id, result.memberId)
+                memberships.save(uid, room, result.memberId, normal)
+            }
+        } else memberships.save(uid, room, result.memberId, result.token)
     }
     internal fun paymentRoomProfile(uid: String): FoodProfile {
         AccountRestrictions.requireAllowed(db, uid, clock())
@@ -79,7 +90,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     fun linked(token: String, roomId: String): AccountRoom? {
         val uid = userId(token)
         val room = db.room(roomId) ?: return null
-        return memberships.find(uid, room)?.let { restoreSession(uid, room, it) }
+        return memberships.find(uid, room)?.let { if(support.requireActive(token) != null) support.roomToken(token, it) else restoreSession(uid, room, it) }
     }
     private fun restoreSession(uid: String, room: Room, member: AccountRoom): AccountRoom {
         val restored = if (member.token.isNotEmpty() && db.session(RoomService.hash(member.token)) == (member.roomId to member.memberId)) member
@@ -92,7 +103,9 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     }
     fun home(token: String): RoomReply = db.transaction {
         val uid = userId(token)
-        val memberships = memberships.all(uid).map { member -> restoreSession(uid, requireNotNull(db.room(member.roomId)), member) }
+        val memberships = memberships.all(uid).map { member ->
+            if(support.requireActive(token) != null) support.roomToken(token, member) else restoreSession(uid, requireNotNull(db.room(member.roomId)), member)
+        }
             .map { member -> val room = requireNotNull(db.room(member.roomId)); member.copy(phase = room.phase, orderNumber = room.orderNumber, paymentsPending = RoomExpiry.paymentsPending(room)) }
             .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
         val invitations = db.records("invitation:$uid:").map { orderJson.decodeFromString<FoodInvitation>(it.second) }
@@ -104,7 +117,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             buildMap {
                 AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
                 memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }
-            }, wallet = WalletService.snapshot(db, uid)), serverTime = clock())
+            }, wallet = WalletService.snapshot(db, uid), friendGroups = FriendGroupService.groups(db, uid)), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)
@@ -149,11 +162,12 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             return home(token).copy(identityToken = token)
         }
         if (request.action == IdentityAction.SIGN_OUT) {
+            if(support.find(c.identityToken) != null) { support.end(c.identityToken); return RoomReply() }
             db.deleteRecord("identity:${RoomService.hash(c.identityToken)}")
             return RoomReply()
         }
-        val saved = session(c.identityToken)
-        val uid = AccountAliases.resolve(db, saved.userId)
+        val uid = userId(c.identityToken)
+        val saved = if(support.find(c.identityToken) == null) session(c.identityToken) else null
         return when(request.action) {
             IdentityAction.SAVE_PROFILE -> {
                 val incoming = requireNotNull(request.profile)
@@ -185,6 +199,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             }
             IdentityAction.ENABLE_CLOUD -> {
                 if (db.cloudDurable) return home(c.identityToken)
+                requireNotNull(saved) { "Return to your own account to connect cloud storage." }
                 require(saved.refreshToken.isNotEmpty()) { "Sign in from the mobile app with email and password before connecting persistent hub storage." }
                 val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) }
                 if (owner != null) {

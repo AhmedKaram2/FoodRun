@@ -9,7 +9,11 @@ import kotlinx.serialization.Serializable
     val paymentBank: String = "", val paymentIdentifier: String = "",
     val blockedUntil: Long = 0, val blockReason: String = "", val removed: Boolean = false, val roomBlocks: Map<String, AccessBlock> = emptyMap(),
     val profile: FoodProfile? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val email: String = "",
 )
+@Serializable data class AdminSupportRequest(val userId: String)
 @Serializable data class AdminWalletView(val memberId: String, val name: String, val totalMinor: Long, val paidMinor: Long, val balanceMinor: Long)
 @Serializable data class AdminRoomView(
     val id: String, val code: String, val name: String, val phase: String, val orderNumber: Long,

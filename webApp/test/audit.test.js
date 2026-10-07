@@ -241,10 +241,10 @@ test('admin visibility requires the verified allowed account', async () => {
   assert.equal(canAccessAdmin({ email: 'other@gmail.com', emailVerified: true }), false);
   assert.equal(canAccessAdmin({ email: '1AHMEDKARAM1@gmail.com', emailVerified: true }), true);
 });
-test('wallet retains money due until recipient approval and exposes the pending claim', () => {
+test("wallet separates money still to send from the recipient's pending confirmation", () => {
   const room = { id: 'room', name: 'Lunch', phase: 'FULFILLED', payerId: 'payer', members: [{ id: 'payer', name: 'Payer' }], transfers: [{ id: 'claim', memberId: 'me', amount: 500, status: 'DECLARED' }] };
   const data = { sessions: { room: { roomId: 'room', memberId: 'me' } }, rooms: { room: { room, receipts: [receipt] } } };
-  assert.equal(userDashboard(data).toPay, 1200);
+  assert.equal(userDashboard(data).toPay, 700);
   assert.equal(userDashboard(data).entries[0].pending.amount, 500);
   data.sessions.room.memberId = 'payer';
   assert.equal(userDashboard(data).toReceive, 1200);
@@ -257,7 +257,7 @@ test('wallet retains money due until recipient approval and exposes the pending 
 test('automatic archive keeps unpaid and refund balances in the user wallet', () => {
   const room = { id: 'room', name: 'Lunch', phase: 'ARCHIVED', autoArchivedAt: 86400000, autoArchiveFrom: 'FULFILLED', payerId: 'payer', members: [{ id: 'payer', name: 'Payer' }], transfers: [{ id: 'claim', memberId: 'me', amount: 500, status: 'DECLARED' }] };
   const data = { sessions: { room: { roomId: 'room', memberId: 'me' } }, rooms: { room: { room, receipts: [receipt] } } };
-  assert.equal(userDashboard(data).toPay, 1200);
+  assert.equal(userDashboard(data).toPay, 700);
   assert.equal(userDashboard(data).entries[0].pending.id, 'claim');
   data.sessions.room.memberId = 'payer';
   assert.equal(userDashboard(data).toReceive, 1200);

@@ -63,7 +63,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.PAY_WITH_WALLET, roomId = roomId, token = session.token,
             expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, amount = receipt.balance), returnPage = if(c.page == GroupPage.HOME || c.page == GroupPage.PROFILE) c.page else GroupPage.PAYMENT)
     }
-    private fun group() = wallet.payments.filter { it.holderId == uid && it.recipientId == batchRecipient && it.currency == batchCurrency && it.status == WalletPaymentStatus.OWING }
+    private fun group() = wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == batchRecipient && it.currency == batchCurrency && it.status == WalletPaymentStatus.OWING }
     fun payButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {
         if(c.library.home?.wallet == null || receipt.balance <= 0 || receipt.memberId != memberId || room.payerId == memberId || !room.restaurantPaid || !room.settlementOpen || room.transfers.any { it.memberId == memberId && it.status == TransferStatus.DECLARED }) return null
         val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
@@ -94,7 +94,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                     WalletStatus.REJECTED -> tr("Not received", "لم يتم الاستلام")
                 }, buttons)
         }
-        wallet.payments.filter { it.holderId == uid && it.status == WalletPaymentStatus.OWING }.groupBy { it.recipientId to it.currency }.forEach { (_, values) ->
+        wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.status == WalletPaymentStatus.OWING }.groupBy { it.recipientId to it.currency }.forEach { (_, values) ->
             cards += GroupCard("${prefix}wallet-group:${values.first().id}", "${tr("Pay", "ادفع إلى")} ${values.first().recipientName}",
                 "${Money.format(values.sumOf { it.amount }, values.first().currency)}\n" + values.joinToString("\n") { "${it.customerName} · ${it.roomName} #${it.orderNumber} · ${Money.format(it.amount, it.currency)}" },
                 buttons = listOf(action(tr("Pay full group amount", "دفع كامل المبلغ المجمع"), "batch|${values.first().id}")))
@@ -111,12 +111,12 @@ internal class GroupWalletFunds(private val c: GroupController) {
         return cards
     }
     fun status(payment: WalletPayment) = when(payment.status) {
-        WalletPaymentStatus.OWING -> tr("Wallet paid; holder still needs to send cash", "تم الدفع بالمحفظة؛ على الشخص إرسال النقد")
+        WalletPaymentStatus.OWING -> if(payment.holderId == payment.recipientId || c.library.snapshots[payment.roomId]?.room?.transfers?.any { it.id == "wallet-${payment.id}" && it.status == TransferStatus.DECLARED } == true) tr("Awaiting wallet approval", "بانتظار الموافقة على المحفظة") else tr("Wallet paid; holder still needs to send cash", "تم الدفع بالمحفظة؛ على الشخص إرسال النقد")
         WalletPaymentStatus.SENT -> tr("Cash sent; awaiting recipient confirmation", "أُرسل النقد؛ بانتظار تأكيد المستلم")
         WalletPaymentStatus.SETTLED -> tr("Cash settled", "تمت تسوية النقد")
     }
     fun roomCards(room: Room): List<GroupCard> {
-        val payments = room.walletPayments
+        val payments = room.walletPayments.filter { payment -> payment.status != WalletPaymentStatus.SETTLED && room.transfers.none { it.id == "wallet-${payment.id}" && it.status == TransferStatus.DECLARED } }
         val cards = payments.map { payment -> GroupCard("wallet-custody:${payment.id}",
             "${payment.holderName} · ${Money.format(payment.amount, payment.currency)}",
             tr("On behalf of ${payment.customerName} · pay to ${payment.recipientName}", "نيابة عن ${payment.customerName} · الدفع إلى ${payment.recipientName}"), status(payment)) }.toMutableList()

@@ -127,4 +127,7 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val wallet: WalletSnapshot? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val friendGroups: List<FriendGroup> = emptyList(),
 )

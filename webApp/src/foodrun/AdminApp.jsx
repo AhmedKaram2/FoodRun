@@ -24,7 +24,7 @@ async function adminRequest(path, user, body) {
   return value;
 }
 
-export default function AdminApp({ language, user, onBack }) {
+export default function AdminApp({ language, user, onBack, onSupport }) {
   const [dashboard, setDashboard] = useState(null);
   const [tab, setTab] = useState('overview');
   const [message, setMessage] = useState('');
@@ -44,7 +44,7 @@ export default function AdminApp({ language, user, onBack }) {
     {message && <div className="banner error">{message}</div>}
     <fieldset disabled={busy} className="admin-content room-fieldset">
       {tab === 'overview' && <><div className="admin-metrics"><article><small>{t("Registered users")}</small><b>{dashboard.users.length}</b></article><article><small>{t("Rooms")}</small><b>{dashboard.rooms.length}</b></article><article><small>{t("Saved orders")}</small><b>{dashboard.archivedOrders.length}</b></article><article><small>{t("Current order value")}</small>{totals.length ? totals.map(([currency, total]) => <b key={currency}>{money(total, currency)}</b>) : <b>{money(0, 'AED')}</b>}</article></div><div className="card"><h2>{t("Current activity")}</h2>{dashboard.rooms.slice(0, 10).map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} key={room.id} />)}</div></>}
-      {tab === 'users' && <AdminUsers users={dashboard.users} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} />}
+      {tab === 'users' && <AdminUsers users={dashboard.users} currentUserId={user.uid} rooms={dashboard.rooms} mutate={mutate} busy={busy} onSupport={async userId => { const reply = await mutate('/admin/support/start', { userId }); if(reply?.identityToken) onSupport?.(reply); }} />}
       {tab === 'rooms' && <><details className="card admin-room-cleanup"><summary>{t('Clear rooms by date')}</summary><AdminCleanup request={(path, body) => adminRequest(path, user, body)} onChanged={refresh} initialFilter="date" roomsOnly /></details><div className="card"><h2>{t("Live and saved rooms")}</h2>{dashboard.rooms.map(room => <AdminRoomRow room={room} onCancel={() => mutate('/admin/room', { roomId: room.id, action: 'cancel' })} onDelete={() => {
         const confirmation = window.prompt(t('Delete this room and its history? Enter the room code:') + ' ' + room.code);
         if (confirmation === room.code) mutate('/admin/room', { roomId: room.id, action: 'delete', expectedRevision: room.revision, confirmation });
@@ -87,7 +87,7 @@ function AdminSettingsPanel({ settings, save }) {
   return <section className="card stack admin-settings"><h2>{t("Website options")}</h2><label className="check"><input type="checkbox" checked={form.registrationsEnabled} onChange={event => setForm({ ...form, registrationsEnabled: event.target.checked })} />{t("Allow new user registration")}</label><label className="check"><input type="checkbox" checked={form.roomCreationEnabled} onChange={event => setForm({ ...form, roomCreationEnabled: event.target.checked })} />{t("Allow new room creation")}</label><label>{t("Maintenance message")}<textarea value={form.maintenanceMessage} onChange={event => setForm({ ...form, maintenanceMessage: event.target.value })} maxLength="500" /></label><button className="primary" onClick={() => save(form)}>{t("Save website options")}</button></section>;
 }
 
-export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy }) {
+export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy, onSupport }) {
   const [search, setSearch] = useState('');
   const [create, setCreate] = useState({ name: '', email: '', password: '', phone: '', language: 'en' });
   return <div className="stack">
@@ -101,11 +101,11 @@ export function AdminUsers({ users, currentUserId, rooms = [], mutate, busy }) {
       <label>{t('Temporary password')}<input type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={create.password} onChange={e => setCreate({ ...create, password: e.target.value })} /></label>
     </div><button className="primary" disabled={busy}>{t('Create user')}</button></form></details>
     <section className="card stack"><h2>{t('Users')}</h2><label>{t('Search users')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
-      {users.filter(person => [person.name, person.phone, person.id].some(value => String(value || '').toLowerCase().includes(search.toLowerCase()))).map(person => <AdminUserCard key={person.id} person={person} rooms={rooms} self={person.id === currentUserId} mutate={mutate} busy={busy} />)}
+      {users.filter(person => [person.name, person.email, person.phone, person.id].some(value => String(value || '').toLowerCase().includes(search.toLowerCase()))).map(person => <AdminUserCard key={person.id} person={person} rooms={rooms} self={person.id === currentUserId} mutate={mutate} busy={busy} onSupport={onSupport} />)}
     </section>
   </div>;
 }
-function AdminUserCard({ person, self, rooms, mutate, busy }) {
+function AdminUserCard({ person, self, rooms, mutate, busy, onSupport }) {
   const [duration, setDuration] = useState('24'), [reason, setReason] = useState('');
   const [scopeRoomId, setScopeRoomId] = useState('');
   const source = person.profile || { name: person.name || '', phone: person.phone || '', photo: '', language: person.language || 'en', discoverable: person.discoverable ?? true };
@@ -124,6 +124,8 @@ function AdminUserCard({ person, self, rooms, mutate, busy }) {
     } catch (error) { setMessage(error.message); }
   };
   return <article className="admin-person stack"><div className="section-title"><div><b>{person.name || t('Incomplete profile')}</b><small>{person.phone || person.id}</small></div><span className={`status ${person.disabled ? '' : 'live'}`}>{t(person.removed ? 'Removed' : person.disabled ? 'Blocked' : 'Active')}</span></div>
+    {person.email && <small><bdi>{person.email}</bdi></small>}
+    {!self && !person.disabled && !person.removed && onSupport && <button type="button" className="primary" disabled={busy} onClick={() => onSupport(person.id)}>{t('Sign in as this user')}</button>}
     {!person.removed && <><button className="secondary" type="button" onClick={() => setEditing(!editing)}>{t(editing ? 'Close editor' : 'Edit user details')}</button>
       {editing && <form className="stack admin-profile-editor" onSubmit={save}>
         <div className="form-grid two">

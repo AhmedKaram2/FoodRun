@@ -1,7 +1,7 @@
 import { t } from './i18n.js';
 import { reminderKey } from './paymentReminders.js';
 import { useFeedback } from './useFeedback.js';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
@@ -20,14 +20,15 @@ function invitedHub() {
 }
 function sessionStorageKey(userId, hub) { return `foodrun-sessions-v1:${userId}:${hub}`; }
 
-export function useFoodRun() {
+export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
   const [accessBlock, setAccessBlock] = useState(null);
   const [joinBlock, setJoinBlock] = useState(null);
   const [roomBlocks, setRoomBlocks] = useState({});
   const readBlock = reply => {
+    if(reply?.code === 'SUPPORT_ENDED') { onSupportEnd?.(); return; }
     if (reply?.code === 'REAUTH_REQUIRED') {
       setNotice(t('Please sign in again to reconnect your FoodRun account.'));
-      signOut(auth).catch(() => setError(t('Please sign out and sign in again.')));
+      if(supportSession) onSupportEnd?.(); else signOut(auth).catch(() => setError(t('Please sign out and sign in again.')));
       return;
     }
     if (reply?.accessBlock) {
@@ -36,7 +37,8 @@ export function useFoodRun() {
     }
     if (reply?.home) setRoomBlocks(Object.fromEntries(Object.entries(reply.home.roomAccessBlocks || {}).map(([id, block]) => [id, { ...block, serverTime: reply.serverTime || Date.now(), receivedAt: Date.now() }])));
   };
-  const [user, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
+  const [firebaseUser, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
+  const user = useMemo(() => supportSession ? { uid: supportSession.home.profile.userId, email: '', emailVerified: false, displayName: supportSession.home.profile.name } : firebaseUser, [firebaseUser, supportSession]);
   const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [connectionState, setConnectionState] = useState('');
@@ -57,6 +59,7 @@ export function useFoodRun() {
     try { if ('Notification' in window && Notification.permission === 'granted') /* The server delivers system notifications through Firebase. */ void 0; } catch { /* In-app notice remains available on browsers without notification constructors. */ }
   }, []);
   useEffect(() => onAuthStateChanged(auth, next => {
+    if(!next) onSupportEnd?.();
     if (authUser.current && authUser.current !== next?.uid) {
       ++alive.current;
       clearUserReceiptArchives(authUser.current).catch(() => {});
@@ -69,14 +72,15 @@ export function useFoodRun() {
     setConnectionState(''); setError('');
     if (!user || !hub) return;
     try {
-      pending.current = JSON.parse(sessionStorage.getItem(`foodrun-pending:${user.uid}:${hub}`) || 'null');
+      pending.current = supportSession ? null : JSON.parse(sessionStorage.getItem(`foodrun-pending:${user.uid}:${hub}`) || 'null');
       if (pending.current) setError(t("A saved request needs confirmation. Retry it before making another change."));
     } catch { pending.current = null; }
-    try { setSessions(JSON.parse(localStorage.getItem(sessionStorageKey(user.uid, hub)) || '{}')); } catch { setSessions({}); }
+    try { if(!supportSession) setSessions(JSON.parse(localStorage.getItem(sessionStorageKey(user.uid, hub)) || '{}')); } catch { setSessions({}); }
     let cancelled = false;
     const current = () => !cancelled && epoch === alive.current;
     const stop = accountConnection({
       signIn: async signal => {
+        if(supportSession) return request(hub, command('HOME', { identityToken: supportSession.identityToken }), signal).then(reply => ({ ...reply, identityToken: supportSession.identityToken }));
         const firebaseToken = await user.getIdToken();
         signal.throwIfAborted();
         return request(hub, command('IDENTITY', { identity: { action: 'FIREBASE_SIGN_IN', firebaseToken } }), signal);
@@ -96,20 +100,21 @@ export function useFoodRun() {
       onError: error => { if (current()) { readBlock(error); setError(error.message); } },
     });
     return () => { cancelled = true; stop(); };
-  }, [user, hub, hubRevision, alert]);
+  }, [user, hub, hubRevision, alert, supportSession]);
   useEffect(() => {
     let cancelled = false;
     setOfflineReceipts([]);
-    if (user && hub) readReceiptArchive(user.uid, hub).then(value => { if (!cancelled) setOfflineReceipts(value); }).catch(() => {});
+    if (user && hub && !supportSession) readReceiptArchive(user.uid, hub).then(value => { if (!cancelled) setOfflineReceipts(value); }).catch(() => {});
     return () => { cancelled = true; };
   }, [user?.uid, hub]);
   const cacheReceipt = reply => {
+    if(supportSession) return;
     const epoch = alive.current;
     saveReceiptArchive(user.uid, hub, reply).then(value => { if (epoch === alive.current) setOfflineReceipts(value); }).catch(() => setNotice(t("Receipts could not be saved offline. Check browser storage permissions."), true));
   };
   useEffect(() => {
     if (!user || !hub || sessionScope !== sessionStorageKey(user.uid, hub)) return;
-    localStorage.setItem(sessionStorageKey(user.uid, hub), JSON.stringify(sessions));
+    if(!supportSession) localStorage.setItem(sessionStorageKey(user.uid, hub), JSON.stringify(sessions));
   }, [user, hub, sessions, sessionScope]);
   const connections = useRef(null);
   const sessionKey = Object.values(sessions).map(s => `${s.roomId}:${s.token}:${s.memberId}:${s.phase}:${s.orderNumber}`).sort().join('|');
@@ -148,8 +153,10 @@ export function useFoodRun() {
   const pendingKey = user && hub ? `foodrun-pending:${user.uid}:${hub}` : '';
   const savePending = payload => {
     // Persist before sending, so refresh cannot turn a lost acknowledgement into a second order/payment.
-    if (payload) sessionStorage.setItem(pendingKey, JSON.stringify(payload));
-    else sessionStorage.removeItem(pendingKey);
+    if(!supportSession) {
+      if (payload) sessionStorage.setItem(pendingKey, JSON.stringify(payload));
+      else sessionStorage.removeItem(pendingKey);
+    }
     pending.current = payload;
   };
   const accept = (reply, olderPage = false) => {
@@ -167,7 +174,7 @@ export function useFoodRun() {
     const epoch = alive.current;
     inFlight.current = true; setBusy(true); setError('');
     try {
-      if (!['IDENTITY', 'SNAPSHOT', 'WALLET_PEOPLE', 'WALLET_RECIPIENT'].includes(payload.kind)) savePending(payload);
+      if (!['IDENTITY', 'SNAPSHOT', 'WALLET_PEOPLE', 'WALLET_RECIPIENT', 'FRIEND_LOOKUP'].includes(payload.kind)) savePending(payload);
       const reply = await request(hub, payload);
       if (epoch !== alive.current) return null;
       savePending(null); accept(reply, olderPage);

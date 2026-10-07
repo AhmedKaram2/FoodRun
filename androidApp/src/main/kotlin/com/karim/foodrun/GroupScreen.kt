@@ -90,8 +90,8 @@ fun GroupScreen(controller: GroupController) {
     LaunchedEffect(state.hasPendingEmailReminders) {
         while (state.hasPendingEmailReminders) { kotlinx.coroutines.delay(5000); controller.tickPaymentReminders() }
     }
-    LaunchedEffect(state.accessBlocked) {
-        while (state.accessBlocked) { kotlinx.coroutines.delay(1000); controller.tickAccessBlock() }
+    LaunchedEffect(state.accessBlocked, state.hasJoinTimer) {
+        while (state.accessBlocked || state.hasJoinTimer) { kotlinx.coroutines.delay(1000); controller.tickAccessBlock() }
     }
     val focus = LocalFocusManager.current
     LaunchedEffect(state.page) { focus.clearFocus() }

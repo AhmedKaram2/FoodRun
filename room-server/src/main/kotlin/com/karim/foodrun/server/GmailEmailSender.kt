@@ -62,7 +62,8 @@ internal class GmailEmailSender(
         }
         // Payment actions require sign-in; room IDs and credentials never appear in mail links.
         val link = "${appUrl.trimEnd('/')}?hub=${URLEncoder.encode(apiUrl.trimEnd('/'), Charsets.UTF_8)}"
-        val body = "${job.body}\n\nIntrvioo: $link\n\nIntrvioo sends this payment reminder at the chosen payer's request.\nReply to this email if you need help."
+        val reason = if(job.friendGroupId.isNotEmpty()) "Intrvioo sends this invitation at the friend group creator's request." else "Intrvioo sends this payment reminder at the chosen payer's request."
+        val body = "${job.body}\n\nIntrvioo: $link\n\n$reason\nReply to this email if you need help."
         return listOf("From: Intrvioo <$SENDER>", "To: ${delivery.address}", "Subject: $encodedTitle",
             "Date: ${DateTimeFormatter.RFC_1123_DATE_TIME.format(Instant.ofEpochMilli(job.createdAt).atOffset(ZoneOffset.UTC))}",
             "Message-ID: <foodrun-${job.id}@gmail.com>", "Auto-Submitted: auto-generated", "MIME-Version: 1.0",

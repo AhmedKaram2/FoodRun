@@ -53,7 +53,29 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         }
         return accounts.home(c.identityToken)
     }
-    private fun pay(c: RoomCommand, uid: String, actor: String) {
+    /** Only automatically spend confirmed cash already held by this order's chosen payer. */
+    fun autoPayHeldByPayer(room: Room, commandId: String): Room {
+        if (!room.settlementOpen || !room.restaurantPaid || room.phase == RoomPhase.ARCHIVED || room.account == null) return room
+        val payerId = room.payerId ?: return room
+        val recipientId = db.record("member-user:${room.id}:$payerId") ?: return room
+        if (db.record("profile:$recipientId") == null) return room
+        var current = room
+        Billing.receipts(room).filter { it.memberId != payerId && it.balance > 0 }.forEach { receipt ->
+            val customerId = db.record("member-user:${room.id}:${receipt.memberId}") ?: return@forEach
+            if (customerId == recipientId || db.record("profile:$customerId") == null ||
+                AccountRestrictions.forRoom(db, customerId, room.id, clock()) != null ||
+                current.transfers.any { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }) return@forEach
+            val available = snapshot(db, customerId).balances.filter {
+                it.customerId == customerId && it.holderId == recipientId && it.currency == receipt.currency
+            }.sumOf { it.available }
+            if (available < receipt.balance) return@forEach
+            current = pay(RoomCommand(commandId = RoomService.hash("$commandId:auto-wallet:${receipt.memberId}").take(40),
+                kind = CommandKind.PAY_WITH_WALLET, roomId = room.id, expectedRevision = current.revision,
+                expectedOrderNumber = current.orderNumber, amount = receipt.balance), customerId, receipt.memberId, automatic = true)
+        }
+        return current
+    }
+    private fun pay(c: RoomCommand, uid: String, actor: String, automatic: Boolean = false): Room {
         val room = requireNotNull(db.room(c.roomId))
         require(db.record("member-user:${room.id}:$actor") == uid) { "Sign in with the account that owns this room membership." }
         require(room.orderNumber == c.expectedOrderNumber && room.revision == c.expectedRevision) { "The order changed. Refresh and try again." }
@@ -64,7 +86,7 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         require(receipt.balance > 0 && c.amount == receipt.balance) { "Pay the current remaining amount with your wallet." }
         val recipientId = requireNotNull(db.record("member-user:${room.id}:${room.payerId}")) { "The selected person must link their account before wallet payment." }
         val recipient = accounts.paymentRoomProfile(recipientId)
-        val funds = snapshot(db, uid).balances.filter { it.customerId == uid && it.currency == receipt.currency && it.available > 0 }
+        val funds = snapshot(db, uid).balances.filter { it.customerId == uid && it.currency == receipt.currency && it.available > 0 && (!automatic || it.holderId == recipientId) }
             .sortedWith(compareByDescending<WalletBalance> { it.holderId == recipientId }.thenByDescending { it.available }.thenBy { it.holderId })
         require(funds.sumOf { it.available } >= receipt.balance) { "Your confirmed wallet balance is too low. Top up or pay directly." }
         var left = receipt.balance
@@ -72,26 +94,56 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
             if (left == 0L) null else {
                 val amount = minOf(left, fund.available); left -= amount
                 WalletPayment(id(), uid, receipt.name, fund.holderId, fund.holderName, recipientId, recipient.name, room.id, room.name,
-                    room.orderNumber, actor, amount, receipt.currency, if(fund.holderId == recipientId) WalletPaymentStatus.SETTLED else WalletPaymentStatus.OWING, createdAt = clock())
+                    room.orderNumber, actor, amount, receipt.currency, WalletPaymentStatus.OWING, createdAt = clock())
             }
         }
         allocations.forEach { value ->
             put(value)
-            if(value.status != WalletPaymentStatus.SETTLED) {
+            if(value.holderId != value.recipientId) {
                 notifications.wallet(value.holderId, value.id, "wallet_payment_due",
                     "Wallet payment to send" to "دفعة محفظة للإرسال", "${value.customerName} → ${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.customerName} ← ${value.recipientName} · ${Money.format(value.amount, value.currency)}")
                 notifications.wallet(value.recipientId, value.id, "wallet_payment_assigned",
                     "Collect from the wallet holder" to "استلم من حامل أموال المحفظة",
                     "${value.holderName} owes ${Money.format(value.amount, value.currency)} on behalf of ${value.customerName}" to "${value.holderName} عليه ${Money.format(value.amount, value.currency)} نيابة عن ${value.customerName}")
             }
+            notifications.wallet(value.recipientId, value.id, "wallet_payment_approval",
+                "Approve wallet payment" to "الموافقة على دفعة المحفظة",
+                "${value.customerName} · ${Money.format(value.amount, value.currency)} · ${value.holderName}" to "${value.customerName} · ${Money.format(value.amount, value.currency)} · ${value.holderName}")
         }
         val updated = room.copy(walletPayments = room.walletPayments + allocations, transfers = room.transfers + allocations.map {
-            Transfer("wallet-${it.id}", actor, it.amount, "Wallet · ${it.holderName}", requireNotNull(room.account), status = TransferStatus.CONFIRMED, createdAt = clock())
-        }, revision = room.revision + 1, updatedAt = clock(), audit = room.audit + AuditEntry(c.commandId, actor, "PAY_WITH_WALLET", "Wallet funds allocated; holders remain responsible for cash settlement.", clock()))
+            Transfer("wallet-${it.id}", actor, it.amount, "Wallet · ${it.holderName}", requireNotNull(room.account), status = TransferStatus.DECLARED, createdAt = clock())
+        }, revision = room.revision + 1, updatedAt = clock(), audit = room.audit + AuditEntry(c.commandId, actor,
+            if(automatic) "PAY_WITH_WALLET_AUTO" else "PAY_WITH_WALLET", if(automatic) "Automatically settled from confirmed wallet money already held by the chosen payer." else "Wallet funds allocated; holders remain responsible for cash settlement.", clock()))
         db.save(updated); changed(room.id)
+        if (automatic) {
+            val body = "${Money.format(receipt.balance, receipt.currency)} · ${recipient.name}"
+            notifications.wallet(uid, c.commandId, "wallet_payment_auto", "Wallet payment sent for approval" to "تم إرسال دفعة المحفظة للموافقة", body to body)
+            notifications.wallet(recipientId, c.commandId, "wallet_payment_auto", "Wallet money you hold was applied to this order" to "تم استخدام أموال محفظة لديك لهذا الطلب",
+                "${receipt.name} · ${Money.format(receipt.balance, receipt.currency)}" to "${receipt.name} · ${Money.format(receipt.balance, receipt.currency)}")
+        }
+        return updated
+    }
+    /** The normal receipt approval also updates wallet custody, in the same durable transaction. */
+    fun reviewClaim(before: Room, after: Room, command: RoomCommand): Room {
+        if(command.kind !in listOf(CommandKind.CONFIRM_TRANSFER, CommandKind.REJECT_TRANSFER) || !command.transferId.startsWith("wallet-")) return after
+        val value = before.walletPayments.singleOrNull { "wallet-${it.id}" == command.transferId } ?: return after
+        val result = if(command.kind == CommandKind.REJECT_TRANSFER) {
+            require(value.status == WalletPaymentStatus.OWING && value.batchId.isEmpty()) { "Review the holder's pending transfer before rejecting this wallet payment." }
+            db.putRecord("wallet:cancelled-payment:${value.id}", orderJson.encodeToString(value))
+            db.deleteRecord("wallet:payment:${value.id}")
+            after.copy(walletPayments = after.walletPayments.filterNot { it.id == value.id })
+        } else {
+            val approved = if(value.holderId == value.recipientId) value.copy(status = WalletPaymentStatus.SETTLED) else value
+            put(approved)
+            after.copy(walletPayments = after.walletPayments.map { if(it.id == value.id) approved else it })
+        }
+        notifications.wallet(value.customerId, command.commandId, "wallet_payment_reviewed",
+            if(command.kind == CommandKind.REJECT_TRANSFER) "Wallet payment declined; funds returned" to "تم رفض دفعة المحفظة وإعادة الرصيد" else "Wallet payment approved" to "تمت الموافقة على دفعة المحفظة",
+            "${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.recipientName} · ${Money.format(value.amount, value.currency)}")
+        return result
     }
     private fun declareBatch(c: RoomCommand, uid: String) {
-        val pending = payments(db).filter { it.holderId == uid && it.recipientId == c.userId && it.currency == c.currency && it.status == WalletPaymentStatus.OWING }.sortedBy { it.id }
+        val pending = payments(db).filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == c.userId && it.currency == c.currency && it.status == WalletPaymentStatus.OWING }.sortedBy { it.id }
         require(pending.isNotEmpty() && pending.size <= 500) { "There are no wallet payments to send in this group." }
         val total = pending.sumOf { it.amount }
         require(c.amount == total) { "The group amount changed. Refresh before marking the full payment sent." }
@@ -121,7 +173,9 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
             require(group.all { it.orderNumber == room.orderNumber && room.walletPayments.any { current -> current.id == it.id } }) { "This wallet payment belongs to another order." }
             val byId = group.associateBy { it.id }
             group.forEach(::put)
-            db.save(room.copy(walletPayments = room.walletPayments.map { byId[it.id] ?: it }, revision = room.revision + 1, updatedAt = clock()))
+            db.save(room.copy(walletPayments = room.walletPayments.map { byId[it.id] ?: it }, transfers = room.transfers.map { transfer ->
+                if(transfer.status == TransferStatus.DECLARED && group.any { "wallet-${it.id}" == transfer.id && it.status == WalletPaymentStatus.SETTLED }) transfer.copy(status = TransferStatus.CONFIRMED) else transfer
+            }, revision = room.revision + 1, updatedAt = clock()))
             changed(roomId)
         }
     }

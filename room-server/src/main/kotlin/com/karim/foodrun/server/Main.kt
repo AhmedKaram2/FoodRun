@@ -215,6 +215,18 @@ fun Application.hubRoutes(
                 call.respondText(orderJson.encodeToString(admin.dashboard()), ContentType.Application.Json)
             } catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Admin request failed.")}}", ContentType.Application.Json, HttpStatusCode.Unauthorized) }
         }
+        post("/admin/support/start") {
+            if(!allow(call.request.local.remoteHost, 30)) { call.respond(HttpStatusCode.TooManyRequests); return@post }
+            call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+            try {
+                val bytes = call.receiveChannel().readRemaining(2001).readByteArray()
+                require(bytes.size <= 2000) { "Support request is too large." }
+                val request = orderJson.decodeFromString<AdminSupportRequest>(bytes.toString(Charsets.UTF_8))
+                val reply = withContext(Dispatchers.IO) { requireNotNull(admin).startSupport(call.request.headers[HttpHeaders.Authorization], request) }
+                call.respondText(orderJson.encodeToString(reply), ContentType.Application.Json)
+            } catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) { call.respondText("{\"error\":${orderJson.encodeToString(error.message ?: "Could not switch account.")}}", ContentType.Application.Json, HttpStatusCode.Unauthorized) }
+        }
         post("/admin/settings") {
             try {
                 val serviceAdmin = requireNotNull(admin); serviceAdmin.authorize(call.request.headers[HttpHeaders.Authorization])
@@ -289,6 +301,7 @@ fun Application.hubRoutes(
             var autoArchiveDetails = false
             var walletDetails = false
             var halfItemDetails = false
+            var friendsDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
@@ -303,6 +316,7 @@ fun Application.hubRoutes(
                 autoArchiveDetails = command.autoArchiveDetails
                 walletDetails = command.walletDetails
                 halfItemDetails = command.halfItemDetails
+                friendsDetails = command.friendsDetails
                 withContext(Dispatchers.IO) {
                     val result = service.execute(command)
                     if (command.kind == CommandKind.REMIND_PAYMENT && result.ok && result.code == "REMINDER_QUEUED" && reminderSender != null)
@@ -315,7 +329,7 @@ fun Application.hubRoutes(
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails)), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -345,7 +359,7 @@ fun Application.hubRoutes(
                     }
                     // Room edits signal HOME globally. Do not resend the whole catalog when
                     // this user's home payload did not actually change.
-                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails)
+                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails)
                     if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome) {
                         send(Frame.Text(orderJson.encodeToString(projected)))
                         lastHome = projected.home

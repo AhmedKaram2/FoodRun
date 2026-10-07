@@ -26,7 +26,7 @@ class AdminService(
             "cleanup-delete" -> cleanup(orderJson.decodeFromString(request.payload), actor.userId)
             else -> error("Unsupported admin action.")
         }
-        return NativeAdminReply(dashboard = dashboard(), preview = preview)
+        return NativeAdminReply(dashboard = dashboard().let { it.copy(users = it.users.map { user -> user.copy(email = "") }) }, preview = preview)
     }
     fun authorize(header: String?): CloudIdentity {
         require(header?.startsWith("Bearer ") == true) { "Sign in with the administrator account." }
@@ -34,6 +34,10 @@ class AdminService(
         require(identity.emailVerified && identity.email.equals(ADMIN_EMAIL, ignoreCase = true)) { "This account cannot access administration." }
         synchronized(rooms) { AccountRestrictions.requireAllowed(db, identity.userId, clock()) }
         return identity
+    }
+    fun startSupport(header: String?, request: AdminSupportRequest): RoomReply {
+        require(request.userId.length in 1..128) { "Choose a registered user." }
+        return rooms.startSupport(authorize(header), request.userId)
     }
 
     fun settings(): AdminSettings = synchronized(rooms) { db.record(SETTINGS)?.let { orderJson.decodeFromString(it) } ?: AdminSettings() }
@@ -228,7 +232,7 @@ class AdminService(
                     val value = orderJson.decodeFromString<AccountRestriction>(body)
                     val roomId = key.substringAfterLast(':')
                     if(value.until == 0L || value.until > clock()) roomId to AccountRestrictions.block(value, roomId) else null
-                }.toMap(), profile = it)
+                }.toMap(), profile = it, email = EmailContacts.searchAddress(db, it.userId).orEmpty())
         }.sortedBy { it.name },
         rooms = db.allRooms().map(::roomView).sortedByDescending { it.updatedAt },
         archivedOrders = db.allHistory().map(::roomView).sortedByDescending { it.updatedAt },

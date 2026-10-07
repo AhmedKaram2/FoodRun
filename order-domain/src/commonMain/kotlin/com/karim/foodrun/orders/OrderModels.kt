@@ -138,6 +138,12 @@ val RoomPhase.ongoing: Boolean get() = this != RoomPhase.ARCHIVED && this != Roo
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val halfItemOffers: List<HalfItemOffer> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val joinDeadlineAt: Long = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val joinTimerFinishedAt: Long = 0,
 ) {
     val shouldStayLive: Boolean get() = phase.ongoing || autoArchivedAt > 0 && paymentsPending
     val settlementOpen: Boolean get() = phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) ||

@@ -16,8 +16,8 @@ test('available wallet balances stay separated by owner, holder and currency', (
 });
 test('wallet allocation clears the customer debt while cash remains collectible from the holder', () => {
   const room = { payerId:'payer', walletPayments:[
-    {memberId:'alice',amount:1500,status:'OWING'}, {memberId:'bob',amount:2500,status:'SENT'}, {memberId:'alice',amount:300,status:'SETTLED'},
-  ] };
+    {id:'a',memberId:'alice',amount:1500,status:'OWING'}, {id:'b',memberId:'bob',amount:2500,status:'SENT'}, {id:'c',memberId:'alice',amount:300,status:'SETTLED'},
+  ], transfers:[{id:'wallet-a',status:'CONFIRMED'},{id:'wallet-b',status:'CONFIRMED'},{id:'wallet-c',status:'CONFIRMED'}] };
   const receipts = [{memberId:'payer',paid:0},{memberId:'alice',paid:2000,balance:0},{memberId:'bob',paid:2500,balance:0}];
   assert.equal(roomWalletPending(room), 4000);
   assert.equal(roomWalletPending(room,'alice'), 1500);

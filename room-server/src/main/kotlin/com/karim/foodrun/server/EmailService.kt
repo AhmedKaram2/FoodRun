@@ -10,6 +10,7 @@ internal object EmailContacts {
     fun capture(db: RoomDatabase, identity: CloudIdentity, now: Long) {
         // The authenticated provider's account email can be searched privately. Only a
         // verified address is eligible for automatic reminder delivery below.
+        if(valid(identity.email)) db.putRecord("account-email:${RoomService.hash(identity.email.lowercase())}", identity.userId)
         val searchKey = "wallet-search-email:${identity.userId}"
         if (valid(identity.email)) db.putRecord(searchKey, identity.email) else db.deleteRecord(searchKey)
         val key = "email-contact:${identity.userId}"
@@ -27,6 +28,7 @@ internal object EmailContacts {
     val attempts: Int = 0, val nextAt: Long = 0,
     val reminderMemberId: String = "", val reminderPayerId: String = "",
     val recipientAddress: String = "",
+    val friendGroupId: String = "",
 )
 internal data class EmailDelivery(val job: EmailJob, val address: String)
 internal enum class EmailResult { SENT, RETRY, FAILED }
@@ -35,8 +37,20 @@ internal class ReminderEmailRequired : IllegalArgumentException("Enter an email 
 
 /** Enqueued in the room transaction; Gmail runs outside the room lock. */
 internal class EmailService(private val db: RoomDatabase, private val clock: () -> Long, private val enabled: Boolean) {
-    // Also discard status and invitation emails queued by earlier server versions.
-    private fun allowed(job: EmailJob) = job.reminderMemberId.isNotEmpty() && job.reminderPayerId.isNotEmpty() && job.invitationId.isEmpty()
+    // Explicit friend invitations and requested payment reminders are the only email types.
+    private fun allowed(job: EmailJob) = job.friendGroupId.isNotEmpty() || job.reminderMemberId.isNotEmpty() && job.reminderPayerId.isNotEmpty() && job.invitationId.isEmpty()
+    fun friendInvitation(ownerId: String, group: FriendGroup, member: FriendContact, commandId: String, ownerName: String, room: Room? = null) {
+        require(enabled) { "Email invitations are not available on this server yet." }
+        val id = RoomService.hash("friend:$commandId:${member.email}:${room?.id.orEmpty()}")
+        if(db.record("email-job:$id") != null || db.record("email-result:$id") != null) return
+        val site = (System.getenv("FOODRUN_EMAIL_APP_URL") ?: "https://intrvioo.com").trimEnd('/')
+        val link = if(room == null) site else "$site/?room=${room.code}${System.getenv("FOODRUN_EMAIL_API_URL")?.let { "&hub=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()}"
+        val subject = if(room == null) "$ownerName invited you to Intrvioo" else "$ownerName invited you to ${room.name}"
+        val body = if(room == null) "$ownerName added you to the friend group ${group.name}. Join Intrvioo using this email to order food together: $link"
+        else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (room poll)" else ""}\nRoom code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
+        db.putRecord("email-job:$id", orderJson.encodeToString(EmailJob(id, ownerId, room?.id.orEmpty(), room?.orderNumber ?: 0,
+            subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id)))
+    }
     fun remind(room: Room, actorId: String, command: RoomCommand) {
         require(enabled) { "Email reminders are not available on this server yet." }
         require(room.payerId == actorId) { "Only the chosen payer can send payment reminders." }
@@ -62,6 +76,14 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
     private fun accessible(job: EmailJob): Boolean {
         if (db.record("profile:${job.userId}") == null || AccountRestrictions.current(db, job.userId, clock()) != null ||
             AccountRestrictions.forRoom(db, job.userId, job.roomId, clock()) != null) return false
+        if(job.friendGroupId.isNotEmpty()) {
+            val group = db.record("friend-group:${job.userId}:${job.friendGroupId}")?.let { orderJson.decodeFromString<FriendGroup>(it) } ?: return false
+            if(group.members.none { it.email.equals(job.recipientAddress, true) }) return false
+            if(job.roomId.isEmpty()) return true
+            val invitedRoom = db.room(job.roomId) ?: return false
+            return invitedRoom.orderNumber == job.orderNumber && invitedRoom.phase == RoomPhase.LOBBY &&
+                (invitedRoom.joinDeadlineAt == 0L || invitedRoom.joinDeadlineAt > clock())
+        }
         val room = db.room(job.roomId) ?: return false
         if (room.orderNumber != job.orderNumber) return false
         if (job.reminderMemberId.isNotEmpty()) {

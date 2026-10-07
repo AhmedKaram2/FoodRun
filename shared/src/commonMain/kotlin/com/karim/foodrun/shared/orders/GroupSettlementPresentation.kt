@@ -39,6 +39,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                         receipt.memberId == me -> tr("Your own contribution", "حصتك الشخصية")
                         receipt.balance < 0 -> tr("Refund due ${money(-receipt.balance)}", "مبلغ مرتجع مستحق ${money(-receipt.balance)}")
                         receipt.balance == 0L && WalletSettlement.pending(r, receipt.memberId) > 0 -> tr("Paid by wallet · holder payment pending", "مدفوع بالمحفظة · بانتظار دفع حامل الأموال")
+                        claim != null && receipt.amountStillToSend(r) == 0L -> tr("Awaiting recipient confirmation", "بانتظار تأكيد المستلم")
                         receipt.balance == 0L -> tr("Settled", "تمت التسوية")
                         else -> tr("Still owes ${money(receipt.balance)}", "المتبقي عليه ${money(receipt.balance)}")
                     }
@@ -51,6 +52,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val status = when {
             own.balance < 0 -> tr("Owed back to you ${money(-own.balance)}", "لك مبلغ مرتجع ${money(-own.balance)}")
             own.balance == 0L && WalletSettlement.pending(r, me) > 0 -> tr("Paid by wallet · holder payment pending", "مدفوع بالمحفظة · بانتظار دفع حامل الأموال")
+            own.amountStillToSend(r) == 0L && pending.any { it.memberId == me } -> tr("Awaiting recipient confirmation", "بانتظار تأكيد المستلم")
             own.balance == 0L -> tr("Settled", "تمت التسوية")
             else -> tr("You need to pay ${money(own.balance)}", "عليك دفع ${money(own.balance)}")
         }

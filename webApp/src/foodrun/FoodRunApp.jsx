@@ -1,3 +1,5 @@
+import FriendGroups from './FriendGroups.jsx';
+import RoomJoinTimer from './RoomJoinTimer.jsx';
 import HomeBanner from './HomeBanner.jsx';
 import WalletAnnouncement from './WalletAnnouncement.jsx';
 import { BrandLogo, BrandMark, TogetherArt } from './Brand.jsx';
@@ -70,7 +72,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.3/FoodRun-Android-1.6.3.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.4/FoodRun-Android-1.6.4.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -317,7 +319,7 @@ function AppDownloads({ compact = false }) {
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.3 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.4 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -478,6 +480,7 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
       {dashboard.paymentHistory.slice(0, compact ? 3 : 30).map(entry => <article className="payment-history-row" key={entry.key}>
         <h4>{entry.restaurantName} · #{entry.number}</h4><small>{entry.roomName} · {new Date(entry.at).toLocaleDateString(uiLanguage === 'ar' ? 'ar-EG' : 'en-AE')}</small>
         <p>{t("Order")} {money(entry.receipt.total, entry.receipt.currency)} · {t("Paid")} {money(entry.receipt.paid, entry.receipt.currency)}</p>
+        {entry.pending && <p>{tx('Sent · awaiting recipient confirmation', 'تم الإرسال · بانتظار تأكيد المستلم')} · {money(entry.pending.amount, entry.receipt.currency)}</p>}
         <button className="secondary" onClick={() => openRoom(entry.roomId)}>{t("Order and payment details")}</button>
       </article>)}
     </section>
@@ -567,6 +570,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
     {home.wallet && <WalletAnnouncement key={home.profile.userId || data.user?.uid} userId={home.profile.userId || data.user?.uid} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
+    <button className="secondary" onClick={() => setPage('friends')}>{tx('Friend groups', 'مجموعات الأصدقاء')}</button>
     <HomeBanner rtl={uiLanguage === 'ar'} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
     <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
       <button className="home-shortcut" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}><span aria-hidden="true">↔</span><span><b>{t("Payment room")}</b><small>{tx('Keep every share clear', 'حساب كل واحد واضح')}</small></span><span aria-hidden="true">↗</span></button>
@@ -650,7 +654,7 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
+  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', friendGroupId: '', joinTimer: false, joinTimerMinutes: '10', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
   const suggestedRoomName = useRef(form.room);
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
@@ -679,7 +683,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         if (!chosen && !form.restaurantPoll) { const next = [...restaurants, restaurant]; setRestaurants(next); storeRestaurants(next); }
         reply = await data.send('CREATE', {
           name: form.memberName.trim(), text: form.room === suggestedRoomName.current ? mealRoomName() : form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
-          selectionStyle: form.selectionStyle, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
+          selectionStyle: form.selectionStyle, friendGroupId: form.friendGroupId, joinTimerMinutes: form.joinTimer ? Number(form.joinTimerMinutes) : 0, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
           fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
       }
@@ -696,6 +700,9 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         {chosen && !form.restaurantPoll && <div className="selected-restaurant"><span><b>{localizedName(chosen)}</b><small>{chosen.menu.items.length ? `${chosen.menu.items.length} ${tx('saved menu items and prices', 'صنفاً محفوظاً بأسعاره')}` : tx('Open order for custom items', 'طلب مفتوح للأصناف المخصصة')}</small></span><strong>{chosen.currency}</strong></div>}
         <label>{t("Room name")}<input value={form.room} enterKeyHint="next" onChange={e => setForm({ ...form, room: e.target.value })} placeholder={t("Friday lunch club")} required /><span className="field-help">{tx('Suggested for today’s meal. Change it to any group name.', 'اسم مقترح لوجبة اليوم. يمكنك تغييره إلى اسم مجموعتك.')}</span></label>
         <label>{tx('Selection animation', 'طريقة عرض الاختيار')}<select value={form.selectionStyle} onChange={e => setForm({ ...form, selectionStyle: e.target.value })}><option value="wheel">{tx('Wheel', 'العجلة')}</option><option value="names">{tx('Running names', 'الأسماء المتحركة')}</option></select></label>
+        <label>{tx('Invite favourite friend group', 'دعوة مجموعة أصدقاء مفضلة')}<select value={form.friendGroupId} onChange={event => setForm({ ...form, friendGroupId: event.target.value })}><option value="">{tx('No group', 'بدون مجموعة')}</option>{(data.home.friendGroups || []).filter(group => group.favourite).map(group => <option key={group.id} value={group.id}>{group.name} · {group.members.length}</option>)}</select><small>{tx('Everyone in this group receives an email with the room details and join link.', 'يتلقى أعضاء المجموعة بريداً بتفاصيل الغرفة ورابط الانضمام.')}</small></label>
+        <label className="check"><input type="checkbox" checked={form.joinTimer} onChange={event => setForm({ ...form, joinTimer: event.target.checked })} />{tx('Start the wheel after a join timer', 'بدء العجلة بعد مهلة الانضمام')}</label>
+        {form.joinTimer && <label>{tx('Join time in minutes', 'مهلة الانضمام بالدقائق')}<input type="number" required min={1} max={1440} step={1} value={form.joinTimerMinutes} onChange={event => setForm({ ...form, joinTimerMinutes: event.target.value })} /><small>{tx('Starts when the room is created. New joins close and the wheel starts when time runs out.', 'تبدأ عند إنشاء الغرفة. يُغلق الانضمام وتبدأ العجلة تلقائياً عند انتهاء الوقت.')}</small></label>}
         <div className="segmented delivery-choice" role="group" aria-label={tx('Order type', 'نوع الطلب')}><button type="button" aria-pressed={!form.deliveryMode} className={!form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: false })}>{t("Pickup")}</button><button type="button" aria-pressed={form.deliveryMode} className={form.deliveryMode ? 'active' : ''} onClick={() => setForm({ ...form, deliveryMode: true })}>{t("Delivery")}</button></div>
         {form.deliveryMode && <DeliveryRule />}
         {form.deliveryMode && <label>{tx("Delivery address · optional", "عنوان التوصيل · اختياري")}<input autoComplete="street-address" value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })} maxLength={1000} /><span className="field-help">{tx("Leave blank and the selected orderer will arrange delivery with the restaurant.", "اتركه فارغاً وسيتولى الشخص المختار ترتيب التوصيل مع المطعم.")}</span></label>}
@@ -951,6 +958,8 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   useEffect(() => setValue(minorInput(Math.abs(receipt.balance), receipt.currency)), [receipt.balance, receipt.currency]);
   if (receipt.memberId === room.payerId) return <p className="field-help">{t("Your own share")} · {money(receipt.total, receipt.currency)}</p>;
   const canConfirm = pending && (pending.refund ? pending.memberId === memberId : payer);
+  const walletPayment = pending?.id.startsWith('wallet-') ? room.walletPayments?.find(payment => `wallet-${payment.id}` === pending.id) : null;
+  const walletBatch = walletPayment?.status === 'SENT' ? data.home.wallet?.batches?.find(batch => batch.id === walletPayment.batchId && batch.status === 'PENDING' && batch.recipientId === data.home.profile.userId) : null;
   const canDeclare = room.restaurantPaid && !pending && (payer ? receipt.balance < 0 : receipt.memberId === memberId && receipt.balance > 0);
   const submit = async event => {
     event.preventDefault(); setError('');
@@ -963,8 +972,9 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   return <div className="payment-actions stack">
     {payer && <RecordPayment room={room} receipt={receipt} data={data} />}
     <PaymentReminderButton room={room} receipt={receipt} memberId={memberId} data={data} />
-    {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference} · {pending.recipient?.bank} · <bdi>{pending.recipient?.identifier}</bdi> · {t('Awaiting confirmation')}</p>}
-    {canConfirm && <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => data.send(pending.refund ? 'CONFIRM_REFUND' : 'CONFIRM_TRANSFER', { transferId: pending.id }, room.id)}>{t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => data.send('REJECT_TRANSFER', { transferId: pending.id, text: 'Payment was not received or the details do not match.' }, room.id)}>{t('Not received')}</button></div>}
+    {pending && <p className="field-help">{money(pending.amount, receipt.currency)} · {pending.reference}{!walletPayment && <> · {pending.recipient?.bank} · <bdi>{pending.recipient?.identifier}</bdi></>} · {t('Awaiting confirmation')}</p>}
+    {walletBatch && <p>{walletBatch.holderName} · {money(walletBatch.amount, walletBatch.currency)} · {tx('Full wallet transfer', 'تحويل المحفظة بالكامل')}</p>}
+    {canConfirm && <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={() => walletBatch ? data.send('WALLET_REVIEW_BATCH', { transferId: walletBatch.id, flag: true }) : data.send(pending.refund ? 'CONFIRM_REFUND' : 'CONFIRM_TRANSFER', { transferId: pending.id }, room.id)}>{walletBatch ? `${t('Confirm received')} · ${money(walletBatch.amount, walletBatch.currency)}` : walletPayment ? tx('Approve wallet payment', 'الموافقة على دفعة المحفظة') : t('Confirm received')}</button><button className="secondary" disabled={data.busy} onClick={() => walletBatch ? data.send('WALLET_REVIEW_BATCH', { transferId: walletBatch.id, flag: false }) : data.send('REJECT_TRANSFER', { transferId: pending.id, text: 'Payment was not received or the details do not match.' }, room.id)}>{walletPayment && !walletBatch ? t('Decline') : t('Not received')}</button></div>}
     <WalletPaymentOption data={data} room={room} receipt={receipt} canPay={canDeclare && !payer} />
     {canDeclare && <form className="stack" onSubmit={submit}>{!payer && methods.length > 1 && <label>{t('Payment method')}<select value={accountId} onChange={event => setAccountChoice(event.target.value)}>{methods.map(method => <option key={method.id} value={method.id}>{t(method.method === 'AANI' ? 'Aani' : 'Bank account')} · {method.bank} · {method.identifier}</option>)}</select></label>}<div className="form-grid two"><label>{t('Amount sent')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Payment note (optional)')}<input value={reference} onChange={event => setReference(event.target.value)} maxLength={160} placeholder={t('Bank transfer or cash')} /></label></div><button className="primary wide" disabled={data.busy}>{payer ? t('Mark refund sent') : t('Mark paid')}</button></form>}
     {!room.restaurantPaid && receipt.balance !== 0 && <p className="field-help">{t('Waiting for restaurant payment to be recorded.')}</p>}
@@ -1156,6 +1166,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   </Page>;
   return <Page title={<SelectionOverride key={`${data.user?.uid}:${data.hub}:${room.id}:${room.orderNumber}`} room={room} data={data} language={uiLanguage} />} subtitle={tf('Order #{number} · {phase} · code {code}', { number: room.orderNumber, phase: t(phaseLabel[room.phase]), code: room.code })} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t("● Live") : t("Offline")}</span>}>
     {room.autoArchivedAt > 0 && <article className="card"><h2>{t('Archived after 24 hours')}</h2><p>{t('Unpaid balances and pending payments remain due. You can still pay, confirm receipt and send payment reminders.')}</p></article>}
+    <RoomJoinTimer room={room} serverTime={reply.serverTime} />
     {!settling && <OrderProgress room={room} receipts={reply.receipts} payer={payer} />}
     {payer && ['COLLECTING','REVIEW','PLACED','FULFILLED'].includes(room.phase) && <nav className="payer-quick-nav" aria-label={tx('Order shortcuts', 'اختصارات الطلب')}>
       <span>{t('Order')} #{room.orderNumber}<strong>{money(reply.receipts.reduce((sum, receipt) => sum + receipt.total, 0), room.restaurant.currency)}</strong></span>
@@ -1211,7 +1222,8 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
 }
 
 function FoodRunClient({ useData = useFoodRun } = {}) {
-  const baseData = useData();
+  const [supportSession, setSupportSession] = useState(null);
+  const baseData = useData({ supportSession, onSupportEnd: () => setSupportSession(null) });
   const [walletTopUpRequest, setWalletTopUpRequest] = useState(null);
   const data = { ...baseData, walletTopUpRequest, clearWalletTopUp: () => setWalletTopUpRequest(null), openWallet: request => { setWalletTopUpRequest(request); setPage('profile'); } };
   const notifications = useNotifications({ ...data, language: uiLanguage });
@@ -1276,19 +1288,20 @@ function FoodRunClient({ useData = useFoodRun } = {}) {
   const offlineAction = data.user && <button className="secondary" onClick={() => setPage('offline')}>{tx('Downloaded receipts', 'الإيصالات المحفوظة')}</button>;
   if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><BrandMark />{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{offlineAction}</div>{alerts}</>;
   if (!data.user) return <AuthScreen ready={data.authReady} allowRegistration={siteConfig.registrationsEnabled} />;
-  if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
+  if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onSupport={reply => { window.history.replaceState({}, '', '/'); setSupportSession(reply); setPage('home'); }} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
   if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
   const home = data.home;
   let content;
   if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
   else if (page === 'downloads') content = <Page title={t("Get Intrvioo")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
+  else if (page === 'friends') content = <FriendGroups data={data} onBack={() => setPage('home')} />;
   else if (page === 'profile') content = <ProfileScreen data={data} openRoom={openRoom} onBack={closeRoom} onSaved={() => setPage(inviteCode ? 'join' : 'home')} />;
   else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} data={data} room={restaurantRoomId ? data.rooms[restaurantRoomId]?.room : null} onBack={() => { setPage(restaurantRoomId ? 'room' : 'home'); setRestaurantRoomId(''); }} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></></HomeNavigation.Provider>;
+  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></></HomeNavigation.Provider>;
 }
 
 export default function FoodRunApp() {

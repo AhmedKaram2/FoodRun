@@ -61,7 +61,8 @@ export function userDashboard(data) {
       const key = `${session.roomId}:${order.number}`;
       if (!receipt || seen.has(key)) continue;
       seen.add(key);
-      paymentHistory.push({ key, roomId: session.roomId, roomName: room?.name || session.roomName || '', number: order.number, restaurantName: order.restaurantName, at: order.completedAt || 0, receipt });
+      const pending = room && order.number === room.orderNumber ? (room.transfers || []).find(value => value.memberId === receipt.memberId && String(value.status).toLowerCase() === 'declared') : null;
+      paymentHistory.push({ key, roomId: session.roomId, roomName: room?.name || session.roomName || '', number: order.number, restaurantName: order.restaurantName, at: order.completedAt || 0, receipt, pending });
     }
     if (!room) return;
     currentOrders.push({ room, session, reply });
@@ -70,15 +71,19 @@ export function userDashboard(data) {
     const payerName = room.members.find(member => member.id === room.payerId)?.name || 'selected payer';
     if (payer) {
       (reply.receipts || []).filter(receipt => receipt.memberId !== session.memberId && receipt.balance !== 0).forEach(receipt => {
-        if (receipt.balance > 0) toReceive += receipt.balance; else toPay += -receipt.balance;
-        entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === receipt.memberId && String(value.status).toLowerCase() === 'declared'), kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
+        const pending = (room.transfers || []).find(value => value.memberId === receipt.memberId && String(value.status).toLowerCase() === 'declared');
+        const amount = receipt.balance < 0 ? Math.max(0, -receipt.balance - (pending?.refund ? pending.amount : 0)) : receipt.balance;
+        if (receipt.balance > 0) toReceive += amount; else toPay += amount;
+        if(amount) entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount, currency: receipt.currency, pending, kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
       });
     } else {
       const receipt = (reply.receipts || []).find(value => value.memberId === session.memberId);
       if (!receipt || receipt.balance === 0) return;
-      if (receipt.balance > 0) toPay += receipt.balance; else toReceive += -receipt.balance;
+      const pending = (room.transfers || []).find(value => value.memberId === session.memberId && String(value.status).toLowerCase() === 'declared');
+      const amount = receipt.balance > 0 ? Math.max(0, receipt.balance - (pending && !pending.refund ? pending.amount : 0)) : -receipt.balance;
+      if (receipt.balance > 0) toPay += amount; else toReceive += amount;
       const recipient = payerName;
-      entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount: Math.abs(receipt.balance), currency: receipt.currency, pending: (room.transfers || []).find(value => value.memberId === session.memberId && String(value.status).toLowerCase() === 'declared'), kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
+      if(amount) entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount, currency: receipt.currency, pending, kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
     }
   });
   currentOrders.sort((a, b) => (b.room.createdAt || 0) - (a.room.createdAt || 0));

@@ -4,7 +4,7 @@ import { getLanguage, t } from './i18n.js';
 const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
 
 export default function WalletCustody({ room, data }) {
-  const payments = room.walletPayments || [];
+  const payments = (room.walletPayments || []).filter(payment => payment.status !== 'SETTLED' && !(room.transfers || []).some(transfer => transfer.id === `wallet-${payment.id}` && String(transfer.status).toLowerCase() === 'declared'));
   if (!payments.length) return null;
   const userId = data.home.profile.userId;
   const batchIds = new Set(payments.filter(value => value.status === 'SENT').map(value => value.batchId));

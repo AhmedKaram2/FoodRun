@@ -5,6 +5,7 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
+    FRIEND_LOOKUP, SAVE_FRIEND_GROUP, DELETE_FRIEND_GROUP,
     WALLET_PEOPLE, WALLET_RECIPIENT, WALLET_TOP_UP, WALLET_REVIEW_TOP_UP, PAY_WITH_WALLET, WALLET_DECLARE_BATCH, WALLET_REVIEW_BATCH,
     CREATE_PAYMENT_ROOM, UPDATE_PAYMENT_RECEIPT, UPDATE_PAYMENT_SHARE, RECORD_PAYMENT, IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
     VOTE_RESTAURANT, FINALIZE_RESTAURANT, PREPARE_SPIN, SELECT_PAYER, ACK_SPIN, ABORT_PREPARE,
@@ -76,6 +77,18 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val currency: String = "AED",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val friendsDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val friendGroup: FriendGroup? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val friendGroupId: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val joinTimerMinutes: Int = 0,
 
 )
 @Serializable data class OrderProgress(
@@ -108,6 +121,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val walletPeople: List<FoodPerson>? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val friendContact: FriendContact? = null,
 
 )
 /** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */

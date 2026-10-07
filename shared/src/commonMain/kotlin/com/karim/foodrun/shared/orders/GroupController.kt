@@ -12,6 +12,7 @@ class GroupController(val platform: GroupPlatform) {
     internal val paymentReminders = GroupPaymentReminders(this)
     internal val notifications = GroupNotifications(this)
     internal val walletFunds = GroupWalletFunds(this)
+    internal val friends = GroupFriends(this)
     internal val walletAnnouncement = GroupWalletAnnouncement(this)
     internal val smartDefaults = GroupSmartDefaults(this)
     internal var page = GroupPage.HOME
@@ -122,6 +123,7 @@ class GroupController(val platform: GroupPlatform) {
     fun dispatch(action: GroupAction, value: String = "") {
         if (busy && action !in listOf(GroupAction.BACK, GroupAction.REFRESH)) return
         try { error = ""; when (action) {
+            GroupAction.FRIENDS_ACTION -> friends.dispatch(value)
             GroupAction.WALLET_FUNDS_ACTION -> walletFunds.dispatch(value)
             GroupAction.PAY_WITH_WALLET -> walletFunds.pay(value)
             GroupAction.OPEN_WHEEL_PROTECTION -> wheelProtection.open()
@@ -239,6 +241,7 @@ class GroupController(val platform: GroupPlatform) {
                 smartDefaults.seed()
                 selectedRestaurant?.let { seedFees(it.restaurant) }
                 draft[GroupFieldKey.SELECTION_STYLE] = "wheel"
+                draft[GroupFieldKey.JOIN_TIMER] = "false"; draft[GroupFieldKey.JOIN_TIMER_MINUTES] = "10"; draft[GroupFieldKey.FRIEND_GROUP_CHOICE] = ""
             }; joinMode = action == GroupAction.JOIN; nextOrder = false; page = GroupPage.CONNECT; seedHub() }
             GroupAction.USE_INTERNET -> {
                 draft[GroupFieldKey.PAIRING_LINK] = ""
@@ -417,7 +420,8 @@ class GroupController(val platform: GroupPlatform) {
         val fees = fees(r.currency)
         val destination = if(flag(GroupFieldKey.DELIVERY)) text(GroupFieldKey.DESTINATION).trim().ifBlank { "The selected orderer will arrange delivery with the restaurant." } else ""
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }))
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, friendGroupId = text(GroupFieldKey.FRIEND_GROUP_CHOICE),
+            joinTimerMinutes = if(flag(GroupFieldKey.JOIN_TIMER)) (text(GroupFieldKey.JOIN_TIMER_MINUTES).toIntOrNull()?.takeIf { it in 1..1440 } ?: error("Choose between 1 and 1440 minutes.")) else 0))
     }
     private fun back() {
         if (page == GroupPage.SELECTION_OVERRIDE) { selectionOverride.close(); return }
@@ -493,16 +497,17 @@ class GroupController(val platform: GroupPlatform) {
             text = if (action == GroupAction.WALLET_REJECT) "Payment was not received." else if (payer) "Refund sent" else "Payment sent"), returnPage = page)
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
-        val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT)
+        val friendCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP)
+        val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.FRIEND_LOOKUP)
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
-        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_")) library.identityHub else library.selectedHub)
+        val hub = if (retry) requireNotNull(library.pendingHub ?: requestSession?.hub ?: library.selectedHub) else requestSession?.hub ?: requireNotNull(if(c.kind.name.startsWith("WALLET_") || friendCommand) library.identityHub else library.selectedHub)
         val outgoing = if (sameHub(library.identityHub, hub) && library.identityToken.isNotEmpty()) c.copy(identityToken = library.identityToken) else c
         replaceLibrary(library.copy(pending = outgoing, pendingHub = hub)); busy = true; publish()
         val sentAt = platform.now()
         try { platform.request(hub, encodeCommand(outgoing), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
-                if(c.kind.name.startsWith("WALLET_") && library.identityToken != outgoing.identityToken) return
+                if((c.kind.name.startsWith("WALLET_") || friendCommand) && library.identityToken != outgoing.identityToken) return
                 busy = false
                 if (error.isNotBlank()) {
                     online = false
@@ -535,6 +540,7 @@ class GroupController(val platform: GroupPlatform) {
                     next.home?.let { acceptHome(it, hub) }
                     if (c.kind == CommandKind.CREATE) next.room?.let(smartDefaults::remember)
                     walletFunds.accept(next, outgoing)
+                    friends.accept(next, outgoing)
                     if(next.room != null) accept(next, sentAt)
                     replaceLibrary(library.copy(pending = null, pendingHub = null))
                     if (c.kind == CommandKind.REMIND_PAYMENT) paymentReminders.accept(outgoing, next.code)
@@ -844,8 +850,8 @@ class GroupController(val platform: GroupPlatform) {
             publish()
         }
     }
-    fun tickAccessBlock() { if (accessBlock != null) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true))
+    fun tickAccessBlock() { if (accessBlock != null || reply?.room?.joinDeadlineAt?.let { it > 0 } == true) publish() }
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

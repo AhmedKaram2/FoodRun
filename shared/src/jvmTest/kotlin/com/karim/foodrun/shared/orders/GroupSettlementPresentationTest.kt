@@ -60,7 +60,7 @@ class GroupSettlementPresentationTest {
     @Test fun walletCustodyShowsHolderLiabilityAndOffersRecipientConfirmationInTheRoom() {
         val payment = WalletPayment("wallet-payment", "customer", "Hassan", "holder", "Ahmed", "payer-user", "Karim", "room", "Lunch", 1, "member", 1000, "AED", WalletPaymentStatus.SENT, "batch", 0)
         val batch = WalletBatch("batch", "holder", "Ahmed", "payer-user", "Karim", 1000, "AED", listOf(payment.id), account, "Sent", createdAt = 0)
-        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true, walletPayments = listOf(payment), transfers = listOf(transfer(status = TransferStatus.CONFIRMED)))
+        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true, walletPayments = listOf(payment), transfers = listOf(transfer(status = TransferStatus.CONFIRMED).copy(id = "wallet-${payment.id}")))
         val c = controller(due)
         c.library = c.library.copy(home = HomePayload(FoodProfile("payer-user", "Karim"), wallet = WalletSnapshot(payments = listOf(payment), batches = listOf(batch))))
         for (language in listOf("en", "ar")) {
@@ -385,13 +385,9 @@ class GroupSettlementPresentationTest {
         val member = controller(placed, "member")
         member.library = member.library.copy(home = HomePayload(FoodProfile(name = "Test member")), sessions = listOf(member.session!!), snapshots = mapOf(placed.id to member.reply!!))
         member.page = GroupPage.HOME
-        val payable = member.state.cards.single { it.id.startsWith("dashboard:wallet:") }
-        assertEquals("Karim", payable.title)
-        assertEquals("AED 10.00", payable.badge)
-        assertTrue(payable.buttons.any { it.action == GroupAction.RESUME })
-        assertTrue(payable.detail.contains("AE070331234567890123456"))
-        assertFalse(payable.buttons.any { it.action == GroupAction.WALLET_PAY })
-        assertTrue(member.state.cards.single { it.id == "dashboard:wallet-direction:false" }.badge.contains("10.00"))
+        assertTrue(member.state.cards.none { it.id.startsWith("dashboard:wallet:") })
+        assertTrue(member.state.cards.single { it.id == "dashboard:wallet-direction:false" }.badge.contains("0.00"))
+        assertTrue(member.state.cards.single { it.id.startsWith("dashboard:payment-history:") }.detail.contains("Sent · awaiting recipient confirmation"))
         val payer = controller(placed)
         payer.library = payer.library.copy(home = HomePayload(FoodProfile(name = "Test member")), sessions = listOf(payer.session!!), snapshots = mapOf(placed.id to payer.reply!!))
         payer.page = GroupPage.HOME

@@ -1,10 +1,13 @@
+import bundledRestaurants from '../src/foodrun/builtInRestaurants.json';
+import FriendGroups from '../src/foodrun/FriendGroups.jsx';
+import { AdminUsers } from '../src/foodrun/AdminApp.jsx';
 import { mealRoomName } from '../src/foodrun/smartDefaults.js';
 // Browser-only fixture harness. Run with Vite in an isolated browser profile:
 // await (await import('/test/browserAudit.jsx')).runCreateAudit()
 // It captures commands locally; no account, restaurant order, or payment is sent.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { FoodRunClient, CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants } from '../src/foodrun/FoodRunApp.jsx';
+import { FoodRunClient, CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants, normalizeRestaurant } from '../src/foodrun/FoodRunApp.jsx';
 import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx';
 import { t, getLanguage } from '../src/foodrun/i18n.js';
 import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
@@ -27,7 +30,8 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
   root?.unmount(); host?.remove();
   host = document.createElement('div'); host.id = 'audit-root'; document.body.append(host);
   root = createRoot(host);
-  const savedRestaurant = loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba');
+  const savedRestaurant = loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba') || loadRestaurants()[0] || normalizeRestaurant(bundledRestaurants[0]);
+  if(!loadRestaurants().some(value=>value.id===savedRestaurant.id)) storeRestaurants([...loadRestaurants(),savedRestaurant]);
   const restaurant = { ...savedRestaurant, contact: { ...savedRestaurant.contact, ...(options.contact || {}) } };
   const room = { id: 'audit-room', name: 'Audit room', code: '123456', ownerId: 'me', payerId: 'me', restaurant, phase, orderNumber: 1,
     members: [{ id: 'me', name: 'Audit User', approved: true, participating: true, eligible: true, ready: true }],
@@ -36,7 +40,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
     restaurantPaid: false, deliveryMode: false, destination: '', account: null, preparationId: '', preparedIds: [], pastSpins: [], spin: null,
   };
   Object.assign(room, options.room || {});
-  const roomData = { ...data, sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
+  const roomData = { ...data, ...(options.baseData || {}), sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
     rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
   const props = { data: options.data || (screen === 'room' || options.room ? roomData : data), onBack: () => {}, openRoom: () => {}, setPage: () => {} };
   if (options.send) roomData.send = options.send;
@@ -951,4 +955,60 @@ export async function runWalletAnnouncementAudit() {
   const result = { passed: ['first authenticated Home announcement', 'confirmed top-up explanation', 'persistent dismissal', 'return visits', 'separate accounts', 'open wallet', 'paid feature funding notice'], ...measureAudit() };
   localStorage.removeItem(walletAnnouncementKey(id)); localStorage.removeItem(walletAnnouncementKey(`${id}-other`));
   return result;
+}
+
+export async function runFriendsTimerAudit() {
+  await mountAudit('home');
+  commands.length = 0;
+  const ar = getLanguage() === 'ar';
+  const find = (en, arabic) => { const node = [...host.querySelectorAll('button')].find(node => node.textContent.trim() === (ar ? arabic : en)); assert(node, 'Missing button '+en+': '+[...host.querySelectorAll('button')].map(value=>value.textContent).join('|')); return node; };
+  const group = {id:'friends',name:'Office friends',favourite:true,members:[{email:'bob@example.test',userId:'bob',name:'Bob'}]};
+  const fixture = {...data, home:{...data.home,friendGroups:[group]}, walletQuery:async (kind, fields) => ({friendContact:{email:fields.text,userId:fields.text==='bob@example.test'?'bob':'',name:fields.text==='bob@example.test'?'Bob':''}}), setNotice:()=>{}};
+  root.render(<FriendGroups data={fixture} onBack={()=>{}} />); await pause();
+  setValue(host.querySelector('input'), 'Lunch group');
+  setValue(host.querySelector('input[type=email]'), 'new@example.test'); await pause();
+  find('Add by email','إضافة بالبريد').click(); await pause();
+  assert(host.textContent.includes(ar ? 'تُرسل دعوة التسجيل' : 'Sign-up invitation'), 'Missing signup invitation state');
+  button('Save').click(); await pause();
+  assert(commands.at(-1)?.kind==='SAVE_FRIEND_GROUP' && commands.at(-1).fields.friendGroup.members[0].email==='new@example.test','Group save lost members');
+  const groupsMeasure = measureAudit(); assert(!groupsMeasure.overflow, 'Friend groups overflow');
+  localStorage.setItem('foodrun-room-preferences:audit-only', JSON.stringify({restaurantId:loadRestaurants()[0].id}));
+  await mountAudit('create','LOBBY',{data:fixture});
+  const select = [...host.querySelectorAll('select')].find(node=>[...node.options].some(option=>option.value==='friends'));
+  assert(select,'Missing favourite group selector'); setValue(select,'friends'); await pause();
+  const timerLabel = [...host.querySelectorAll('label')].find(node=>node.textContent.includes(ar?'بدء العجلة بعد مهلة':'Start the wheel after a join timer'));
+  timerLabel.querySelector('input').click(); await pause();
+  setValue(host.querySelector('input[type=number]'),'5'); await pause();
+  host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); await pause();
+  assert(commands.at(-1)?.kind==='CREATE' && commands.at(-1).fields.friendGroupId==='friends' && commands.at(-1).fields.joinTimerMinutes===5,'Room lost group or timer');
+  assert(!measureAudit().overflow,'Timed room creation overflow');
+  let target = '';
+  root.render(<AdminUsers users={[{id:'owner',name:'Owner',email:'owner@example.test',phone:''},{id:'bob',name:'Bob',email:'bob@example.test',phone:''}]} currentUserId="owner" mutate={()=>{}} onSupport={id=>{target=id;}} />); await pause();
+  setValue(host.querySelector('input[type=search]'),'bob@example.test'); await pause();
+  assert(host.querySelectorAll('.admin-person').length===1,'Admin email search does not isolate user');
+  find('Sign in as this user','تسجيل الدخول باسم هذا المستخدم').click(); await pause();
+  assert(target==='bob','Support login selected wrong user');
+  return {passed:true,language:getLanguage(),width:innerWidth,overflow:measureAudit().overflow,groupEmail:true,roomTimer:true,adminEmailSearch:true};
+}
+
+export async function runWalletApprovalAudit() {
+  const bank = {id:'bank',holder:'Payer',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED',method:'BANK'};
+  const payment = {id:'request',customerId:'customer',customerName:'Customer',holderId:'payer-user',holderName:'Payer',recipientId:'payer-user',recipientName:'Payer',roomId:'audit-room',roomName:'Lunch',orderNumber:1,memberId:'customer-member',amount:700,currency:'AED',status:'OWING'};
+  const transfer = {id:'wallet-request',memberId:'customer-member',amount:700,status:'DECLARED',reference:'Wallet · Payer',recipient:bank};
+  const receipts = [{memberId:'me',name:'Payer',lines:[],total:0,food:0,paid:0,balance:0,currency:'AED',totalText:'AED 0.00',balanceText:'AED 0.00'}, {memberId:'customer-member',name:'Customer',lines:[],total:700,food:700,paid:0,balance:700,currency:'AED',totalText:'AED 7.00',balanceText:'AED 7.00'}];
+  const room = {members:[{id:'me',name:'Payer',approved:true,participating:true,eligible:true},{id:'customer-member',name:'Customer',approved:true,participating:true,eligible:true}],account:bank,restaurantPaid:true,walletPayments:[payment],transfers:[transfer]};
+  const baseData = {...data,home:{...data.home,profile:{...data.home.profile,userId:'payer-user'},wallet:{balances:[],topUps:[],payments:[payment],batches:[]}}};
+  commands.length=0;
+  await mountAudit('room','FULFILLED',{room,receipts,baseData});
+  const approve = [...host.querySelectorAll('button')].find(node=>node.textContent=== (getLanguage()==='ar'?'الموافقة على دفعة المحفظة':'Approve wallet payment'));
+  assert(approve,'Wallet request is not in normal payment approval list'); approve.click(); await pause();
+  assert(commands.at(-1)?.kind==='CONFIRM_TRANSFER' && commands.at(-1).fields.transferId==='wallet-request','Approval used wrong ledger action');
+  const sent = {...payment,holderId:'holder',holderName:'Ahmed',status:'SENT',batchId:'batch'};
+  const batch = {id:'batch',recipientId:'payer-user',holderId:'holder',holderName:'Ahmed',amount:1700,currency:'AED',paymentIds:['request','another-order'],status:'PENDING',account:bank};
+  await mountAudit('room','FULFILLED',{room:{...room,walletPayments:[sent]},receipts,baseData:{...baseData,home:{...baseData.home,wallet:{...baseData.home.wallet,payments:[sent],batches:[batch]}}}});
+  const full = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(t('Confirm received')) && node.textContent.includes('17.00'));
+  assert(full,'Normal confirmation does not show the full holder transfer'); full.click(); await pause();
+  assert(commands.at(-1)?.kind==='WALLET_REVIEW_BATCH' && commands.at(-1).fields.flag===true,'Group approval did not settle all sides');
+  const measurement=measureAudit(); assert(!measurement.overflow,'Wallet approval overflow');
+  return {passed:true,language:getLanguage(),width:innerWidth,overflow:measurement.overflow};
 }

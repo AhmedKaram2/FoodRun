@@ -10,6 +10,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private val emails = EmailService(db, clock, emailEnabled)
     private val notifications = NotificationService(db, clock)
     private val wallets = WalletService(db, accounts, notifications, clock, ::signalRoom)
+    private val friends = FriendGroupService(db, accounts, emails, notifications, clock)
+    private val support = SupportSessions(db, clock)
+    @Synchronized internal fun startSupport(actor: CloudIdentity, userId: String): RoomReply = db.transaction {
+        val token = support.start(actor, userId)
+        accounts.home(token).copy(identityToken = token)
+    }
     @Synchronized internal fun nextEmail(dailyLimit: Int): EmailDelivery? = db.transaction { emails.pending(dailyLimit) }
     @Synchronized internal fun finishEmail(delivery: EmailDelivery, result: EmailResult) = db.transaction { emails.delivered(delivery, result) }
     internal fun sendPaymentReminder(commandId: String, sender: EmailSender, dailyLimit: Int): String {
@@ -41,6 +47,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private var homeEvents = 1L
     private var eventSequence = 1L
     private var nextExpiryScanAt = 0L
+    private var nextTimerScanAt = 0L
+    private val timedRoomIds = mutableSetOf<String>()
     private val reducer = RoomReducer(::uuid, random::nextInt)
     init {
         // Admit members left waiting by older hubs without changing a locked order's participants.
@@ -62,6 +70,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 val repaired = recoverTaxResetSubmissions(room, db::recordedReply)
                 if (repaired != room) db.save(repaired.copy(updatedAt = clock()))
             }
+            db.allRooms().filter { it.joinDeadlineAt > 0 && it.phase == RoomPhase.LOBBY }.forEach { timedRoomIds += it.id }
         }
     }
     private fun admit(member: Member, phase: RoomPhase): Member {
@@ -81,22 +90,32 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160 && c.accountId.length <= 160) { "Invalid request identifier." }
         require(c.name.length <= 160 && c.text.length <= 500 && c.destination.length <= 1000 && c.expectedNames.size <= 30) { "Request fields exceed the supported length." }
         require(c.restaurants.size <= 12) { "A restaurant poll supports up to 12 choices." }
+        require(c.joinTimerMinutes in 0..1440) { "Choose a room timer between 1 and 1440 minutes, or leave it off." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
         expireDueRooms()
         if (c.roomId.isNotEmpty()) db.transaction { db.room(c.roomId)?.let(::archiveExpired) }
-        if (c.kind == CommandKind.IDENTITY) db.transaction { accounts.execute(c) }.also { reply ->
+        if (c.kind == CommandKind.IDENTITY) db.transaction { accounts.execute(c).also { reply -> if(reply.ok) support.record(c) } }.also { reply ->
             signalHome()
             reply.room?.let { signalRoom(it.id) }
         }
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
+        else if(c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP)) db.transaction {
+            val uid = accounts.userId(c.identityToken)
+            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false)))
+            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
+                val reply = friends.execute(c)
+                if(c.kind != CommandKind.FRIEND_LOOKUP) { db.record(c.commandId, digest, reply); support.record(c); signalHome() }
+                reply
+            }
+        }
         else if (c.kind in WALLET_COMMANDS) db.transaction {
             val uid = accounts.userId(c.identityToken)
             val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
-                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false)))
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false)))
             db.previous(c.commandId, digest)?.let {
                 val current = accounts.home(c.identityToken)
                 if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
@@ -104,7 +123,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 val result = wallets.execute(c, actor)
                 val reply = if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = result.home) else result
                 if(c.kind !in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT)) {
-                    db.record(c.commandId, digest, reply); signalHome()
+                    db.record(c.commandId, digest, reply); support.record(c); signalHome()
                 }
                 reply
             }
@@ -123,7 +142,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -142,10 +161,13 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         presence[actor] = clock()
                         val room = withPresence(finalizeSpin(requireNotNull(db.room(c.roomId))))
                         val changed = reducer.apply(room, actor, c, clock(), db.record(selectionOverrideKey(room)))
-                        val result = if (c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY)) accounts.withSavedPayment(changed) else changed
+                        var result = if (c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY)) accounts.withSavedPayment(changed) else changed
+                        result = wallets.reviewClaim(room, result, c)
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        if (c.kind in listOf(CommandKind.PAY_RESTAURANT, CommandKind.PRICE_ITEM, CommandKind.ADJUST_BILL, CommandKind.CONFIRM_TRANSFER, CommandKind.RECORD_PAYMENT))
+                            result = wallets.autoPayHeldByPayer(result, c.commandId)
                         if (result.spin?.id != room.spin?.id || c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.CANCEL, CommandKind.NEXT_ORDER))
                             clearSelectionOverride(room)
                         notifications.changed(room, result, actor, c)
@@ -155,10 +177,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                     }
                 }
                 if (c.identityToken.isNotEmpty() && reply.token.isNotEmpty()) accounts.link(c.identityToken, reply)
-                db.record(c.commandId, digest, reply); reply
+                db.record(c.commandId, digest, reply); support.record(c); reply
             }
         }
-    } catch (e: ReminderEmailRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REMINDER_EMAIL_REQUIRED", serverTime = clock()) }
+    } catch(e: SupportSessionEnded) { RoomReply(ok = false, error = e.message.orEmpty(), code = "SUPPORT_ENDED", serverTime = clock()) }
+      catch (e: ReminderEmailRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REMINDER_EMAIL_REQUIRED", serverTime = clock()) }
       catch (e: AccountBlockedException) { RoomReply(ok = false, error = e.message.orEmpty(), code = if(e.block.removed) "ACCOUNT_BLOCKED" else "ROOM_BLOCKED", accessBlock = e.block, serverTime = clock()) }
       catch (e: SignInRequired) { RoomReply(ok = false, error = e.message.orEmpty(), code = "REAUTH_REQUIRED", serverTime = clock()) }
       catch (e: IllegalArgumentException) { RoomReply(ok = false, error = e.message ?: "Invalid request.", code = "VALIDATION", serverTime = clock()) }
@@ -172,6 +195,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     @Synchronized fun tick() {
         expireDueRooms()
+        if(clock() >= nextTimerScanAt) {
+            val timers = timedRoomIds.mapNotNull(db::room)
+            timedRoomIds.retainAll(timers.filter { it.phase == RoomPhase.LOBBY }.map { it.id }.toSet())
+            db.transaction { timers.filter { it.phase == RoomPhase.LOBBY }.forEach(::startTimedWheel) }
+            nextTimerScanAt = minOf(clock() + 1000, timers.map { it.joinDeadlineAt }.filter { it > clock() }.minOrNull() ?: Long.MAX_VALUE)
+        }
         db.transaction { db.spinningRooms().forEach { room ->
             if (room.phase == RoomPhase.PREPARING_SPIN) {
                 val candidates = WheelProtectionRules.candidates(room)
@@ -200,6 +229,28 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         return archived
     }
     private fun withPresence(room: Room): Room = room.copy(members = room.members.map { member -> member.copy(lastSeen = presence[member.id] ?: member.lastSeen) })
+    private fun startTimedWheel(original: Room) {
+        val now = clock()
+        if(original.joinDeadlineAt == 0L || original.joinDeadlineAt > now) return
+        var room = original
+        if(room.joinTimerFinishedAt == 0L) {
+            room = room.copy(joinTimerFinishedAt = now, revision = room.revision + 1, updatedAt = now)
+            db.save(room); signalRoom(room.id)
+        }
+        if(room.phase != RoomPhase.LOBBY || room.payerId != null || room.pastSpins.isNotEmpty() || room.spin != null) return
+        if(room.restaurantPollOpen) room = reducer.apply(room, room.ownerId, RoomCommand(commandId = uuid(), kind = CommandKind.FINALIZE_RESTAURANT,
+            expectedRevision = room.revision, expectedOrderNumber = room.orderNumber), now)
+        // Unpaid reservations expire with the join window; declared payments still need review.
+        room = room.copy(expectedNames = room.expectedNames.filter { name -> room.orderingMembers.any { it.name.equals(name, true) } },
+            wheelProtections = room.wheelProtections.map { if(it.status in listOf(WheelProtectionStatus.REQUESTED, WheelProtectionStatus.AWAITING_PAYMENT)) it.copy(status = WheelProtectionStatus.REJECTED) else it })
+        val ready = runCatching { RoomRules.spinReady(room) }.isSuccess
+        if(ready) room = room.copy(phase = RoomPhase.SPINNING, preparationId = uuid(), preparedIds = emptyList(), spin = reducer.spin(room, now),
+            audit = room.audit + AuditEntry(uuid(), room.ownerId, "TIMED_WHEEL", "Join timer ended; shared selection started.", now))
+        if(room != original && room != db.room(room.id)) {
+            db.save(room.copy(revision = room.revision + 1, updatedAt = now)); signalRoom(room.id)
+            if(ready) clearSelectionOverride(room)
+        }
+    }
     private fun finalizeSpin(room: Room): Room {
         if (room.phase != RoomPhase.SPINNING || clock() < (room.spin?.endAt ?: Long.MAX_VALUE)) return room
         val winner = requireNotNull(room.spin).winnerId
@@ -231,8 +282,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         options.forEach(MenuValidation::validate)
         val room = Room(roomId, code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, (c.fees ?: FeePolicy()).copy(automaticDelivery = c.flag),
             members = listOf(person), createdAt = clock(), updatedAt = clock(), restaurantOptions = options,
-            restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1, selectionStyle = c.selectionStyle)
+            restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1, selectionStyle = c.selectionStyle,
+            joinDeadlineAt = if(c.joinTimerMinutes > 0) clock() + c.joinTimerMinutes * 60_000L else 0)
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
+        if(room.joinDeadlineAt > 0) { timedRoomIds += room.id; nextTimerScanAt = 0 }
+        friends.inviteRoom(c, room)
         signalRoom(room.id)
         val token = token(); db.addSession(hash(token), room.id, person.id)
         return projection(room, person.id).copy(token = token)
@@ -336,9 +390,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             accounts.linkPaymentMember(userId, room, ids.getValue(userId), token)
             if (userId == uid) ownerToken = token
         }
-        notifications.paymentRoom(room)
+        val settled = wallets.autoPayHeldByPayer(room, c.commandId)
+        notifications.paymentRoom(settled)
         signalRoom(room.id)
-        return projection(room, ownerId).copy(token = ownerToken)
+        return projection(settled, ownerId).copy(token = ownerToken)
     }
     private fun join(c: RoomCommand): RoomReply {
         MenuValidation.label(c.name)
@@ -350,6 +405,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 return projection(room, saved.memberId).copy(token = saved.token)
         }
         require(room.paymentRoom == null) { "Payment rooms are private to the people selected by the organizer." }
+        require(room.joinDeadlineAt == 0L || clock() < room.joinDeadlineAt) { "This room's join timer ended. Only existing members can resume this order." }
         require(room.members.count { !it.removed && it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
         val memberId = if (c.identityToken.isEmpty()) uuid() else AccountMemberships.memberId(room.id, accounts.userId(c.identityToken))
@@ -389,6 +445,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     private fun authenticate(roomId: String, token: String): String {
         require(token.length in 32..128) { "Room credentials are missing. Join or resume this order." }
+        support.validateRoom(token)
         val session = db.session(hash(token)) ?: error("Session was removed. Rejoin this room using its link or code.")
         require(session.first == roomId) { "This credential belongs to another room." }
         val userId = db.record("member-user:$roomId:${session.second}") ?: db.records("membership:").firstOrNull { (_, body) ->

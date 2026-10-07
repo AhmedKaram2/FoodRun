@@ -31,13 +31,23 @@ class WalletServiceTest {
             val value = topUp(customer, target, amount)
             send(target, CommandKind.WALLET_REVIEW_TOP_UP) { it.copy(transferId = value.id, flag = true) }
         }
-        fun bill(customers: List<Pair<RoomReply, Long>> = listOf(a to 1500L, b to 2500L)): RoomReply = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.CREATE_PAYMENT_ROOM,
+        fun billCommand(customers: List<Pair<RoomReply, Long>> = listOf(a to 1500L, b to 2500L)) = RoomCommand(commandId = f.id(), kind = CommandKind.CREATE_PAYMENT_ROOM,
             identityToken = recipient.identityToken, text = "Lunch receipt", name = "Kitchen", amount = customers.sumOf { it.second }, account = account.copy(holder = "Recipient"),
-            paymentRoom = PaymentRoomRequest(PaymentRoomDetails("Lunch"), listOf(PaymentShare("Recipient", "No food", 0)) + customers.map { PaymentShare(it.first.home!!.profile.userId, "Food", it.second) })))
+            paymentRoom = PaymentRoomRequest(PaymentRoomDetails("Lunch"), listOf(PaymentShare("Recipient", "No food", 0)) + customers.map { PaymentShare(it.first.home!!.profile.userId, "Food", it.second) }))
+        fun bill(customers: List<Pair<RoomReply, Long>> = listOf(a to 1500L, b to 2500L)): RoomReply = f.execute(billCommand(customers))
+        fun roomCommand(user: RoomReply, roomId: String, kind: CommandKind): RoomCommand {
+            val room = f.db.room(roomId)!!; val member = home(user).rooms.single { it.roomId == roomId }
+            return command(user, kind).copy(roomId = roomId, token = member.token, expectedRevision = room.revision, expectedOrderNumber = room.orderNumber)
+        }
         fun payCommand(user: RoomReply, roomId: String): RoomCommand {
             val room = f.db.room(roomId)!!; val member = home(user).rooms.single { it.roomId == roomId }
             val receipt = Billing.receipts(room).single { it.memberId == member.memberId }
             return command(user, CommandKind.PAY_WITH_WALLET).copy(roomId = roomId, token = member.token, expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, amount = receipt.balance)
+        }
+        fun approveClaims(roomId: String, payer: RoomReply = recipient) {
+            f.db.room(roomId)!!.transfers.filter { it.id.startsWith("wallet-") && it.status == TransferStatus.DECLARED }.forEach {
+                f.execute(roomCommand(payer, roomId, CommandKind.CONFIRM_TRANSFER).copy(transferId = it.id))
+            }
         }
         fun pay(user: RoomReply, roomId: String) = f.execute(payCommand(user, roomId))
         fun declare(amount: Long, user: RoomReply = holder) = send(user, CommandKind.WALLET_DECLARE_BATCH) { it.copy(userId = "Recipient", accountId = account.id, amount = amount, text = "Full group transfer") }.home!!.wallet!!.batches.first()
@@ -60,6 +70,82 @@ class WalletServiceTest {
         val inbox = s.f.service.notificationRequest(NotificationRequest(s.holder.identityToken), false)
         assertTrue(inbox.notifications.any { it.kind == "wallet_top_up" && it.body.contains("100.00") })
     }
+    @Test fun alreadyPaidOrderAutomaticallyUsesTheChosenPersonsConfirmedWalletCashOnce() = Setup().use { s ->
+        s.credit(target = s.recipient, amount = 2000)
+        val command = s.billCommand(listOf(s.a to 1500L, s.b to 500L))
+        val created = s.f.execute(command); val room = created.room!!
+        assertEquals(1500L, created.receipts.single { it.name == "Alice" }.balance)
+        assertEquals(0L, created.receipts.single { it.name == "Alice" }.amountStillToSend(room))
+        assertEquals(500L, created.receipts.single { it.name == "Bob" }.balance)
+        assertEquals(WalletPaymentStatus.OWING, room.walletPayments.single().status)
+        assertEquals("Recipient", room.walletPayments.single().holderId)
+        assertEquals(500L, s.home(s.a).wallet!!.balances.single().available)
+        assertEquals(0L, WalletSettlement.received(room, created.receipts))
+        s.approveClaims(room.id)
+        assertEquals(0L, Billing.receipts(s.f.db.room(room.id)!!).single { it.name == "Alice" }.balance)
+        assertEquals(WalletPaymentStatus.SETTLED, s.f.db.room(room.id)!!.walletPayments.single().status)
+        assertTrue(s.f.db.room(room.id)!!.audit.any { it.action == "PAY_WITH_WALLET_AUTO" })
+        assertTrue(s.f.service.notificationRequest(NotificationRequest(s.a.identityToken), false).notifications.any { it.kind == "wallet_payment_auto" })
+        s.f.restart(); s.f.execute(command)
+        assertEquals(1, WalletService.payments(s.f.db).size)
+        assertEquals(500L, s.home(s.a).wallet!!.balances.single().available)
+        assertFalse(s.f.service.execute(s.payCommand(s.a, room.id)).ok)
+    }
+
+    @Test fun foodOrdersUseHeldWalletCashOnlyAfterRestaurantPaymentIsRecorded() = Setup().use { s ->
+        val f = s.f
+        val member = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.JOIN, identityToken = s.a.identityToken,
+            code = f.owner.room!!.code, name = "Alice"))
+        f.start(member); f.send(f.owner, CommandKind.SHARE_ACCOUNT) { it.copy(account = f.account) }
+        val ownerLogin = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(IdentityAction.SIGN_IN, email = "fixture-owner@example.test", password = "fixture-password")))
+        s.credit(target = ownerLogin, amount = 1000)
+        f.cart(f.owner, 1); f.cart(member, 3)
+        f.send(f.owner, CommandKind.REVIEW); f.send(f.owner, CommandKind.PLACE)
+        assertEquals(300L, f.state(member).receipts.single().balance)
+        assertEquals(1000L, s.home(s.a).wallet!!.balances.single().available)
+        val payment = f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 400)
+        val paid = f.execute(payment)
+        assertEquals(300L, paid.receipts.single { it.memberId == member.memberId }.balance)
+        assertEquals(0L, paid.receipts.single { it.memberId == member.memberId }.amountStillToSend(paid.room!!))
+        s.approveClaims(paid.room!!.id, ownerLogin)
+        assertEquals(700L, s.home(s.a).wallet!!.balances.single().available)
+        assertEquals(WalletPaymentStatus.SETTLED, f.db.room(paid.room!!.id)!!.walletPayments.single().status)
+        f.restart(); f.execute(payment)
+        assertEquals(700L, s.home(s.a).wallet!!.balances.single().available)
+        assertEquals(1, WalletService.payments(f.db).size)
+    }
+
+    @Test fun automaticPaymentDoesNotUsePendingTopUpsInsufficientCashOrAnotherHolder() = Setup().use { s ->
+        s.credit(amount = 10000)
+        s.credit(target = s.recipient, amount = 1000)
+        s.topUp(target = s.recipient, amount = 1000)
+        val room = s.bill(listOf(s.a to 1500L)).room!!
+        assertTrue(room.walletPayments.isEmpty())
+        assertEquals(1500L, Billing.receipts(room).single { it.name == "Alice" }.balance)
+        assertEquals(11000L, s.home(s.a).wallet!!.balances.sumOf { it.available })
+        val paid = s.pay(s.a, room.id)
+        assertEquals(1500L, paid.receipts.single().balance)
+        assertEquals(0L, paid.receipts.single().amountStillToSend(paid.room!!))
+        s.approveClaims(room.id)
+        assertEquals(2, paid.room!!.walletPayments.size)
+    }
+
+    @Test fun pendingDirectClaimPreventsAutomaticDebitAndReceiptConfirmationPaysOnlyTheRemainder() = Setup().use { s ->
+        val room = s.bill(listOf(s.a to 1500L)).room!!
+        val claim = s.f.execute(s.roomCommand(s.a, room.id, CommandKind.DECLARE_TRANSFER).copy(amount = 500, text = "Cash sent")).room!!.transfers.single()
+        s.credit(target = s.recipient, amount = 1500)
+        s.f.execute(s.roomCommand(s.recipient, room.id, CommandKind.ADJUST_BILL).copy(amount = 0, text = "Final bill checked"))
+        assertTrue(s.f.db.room(room.id)!!.walletPayments.isEmpty())
+        assertEquals(1500L, s.home(s.a).wallet!!.balances.single().available)
+        val confirmed = s.f.execute(s.roomCommand(s.recipient, room.id, CommandKind.CONFIRM_TRANSFER).copy(transferId = claim.id))
+        assertEquals(1000L, confirmed.room!!.walletPayments.single().amount)
+        assertEquals(1000L, confirmed.receipts.single { it.name == "Alice" }.balance)
+        assertEquals(0L, confirmed.receipts.single { it.name == "Alice" }.amountStillToSend(confirmed.room!!))
+        s.approveClaims(room.id)
+        assertEquals(500L, s.home(s.a).wallet!!.balances.single().available)
+    }
+
     @Test fun rejectedTopUpsNeverCreditAndWrongCurrencyOrAccountCannotBeDeclared() = Setup().use { s ->
         val value = s.topUp()
         s.send(s.holder, CommandKind.WALLET_REVIEW_TOP_UP) { it.copy(transferId = value.id, flag = false) }
@@ -69,12 +155,37 @@ class WalletServiceTest {
         assertFalse(s.f.service.execute(s.command(s.a, CommandKind.WALLET_TOP_UP).copy(userId = "Holder", accountId = "forged", amount = 10000)).ok)
         assertFalse(s.f.service.execute(s.command(s.a, CommandKind.WALLET_TOP_UP).copy(userId = "Holder", accountId = s.account.id, amount = -1)).ok)
     }
+    @Test fun normalWalletApprovalTracksCashHolderAndDeclineReturnsBalanceOnce() = Setup().use { s ->
+        s.credit(amount = 2000)
+        val id = s.bill(listOf(s.a to 700L)).room!!.id
+        val request = s.pay(s.a, id)
+        val claim = request.room!!.transfers.single()
+        assertEquals(TransferStatus.DECLARED, claim.status)
+        assertEquals(0L, request.receipts.single().amountStillToSend(request.room!!))
+        assertEquals(1300L, s.home(s.a).wallet!!.balances.single().available)
+        val reject = s.roomCommand(s.recipient, id, CommandKind.REJECT_TRANSFER).copy(transferId = claim.id, text = "Wrong wallet payment")
+        assertFalse(s.f.service.execute(s.roomCommand(s.a, id, CommandKind.REJECT_TRANSFER).copy(transferId = claim.id, text = "Cannot approve myself")).ok)
+        s.f.execute(reject); s.f.restart(); s.f.execute(reject)
+        assertEquals(2000L, s.home(s.a).wallet!!.balances.single().available)
+        assertEquals(700L, Billing.receipts(s.f.db.room(id)!!).single { it.name == "Alice" }.balance)
+        assertEquals(1, s.f.db.records("wallet:cancelled-payment:").size)
+        s.pay(s.a, id); s.approveClaims(id)
+        val approved = s.f.db.room(id)!!
+        assertEquals(0L, Billing.receipts(approved).single { it.name == "Alice" }.balance)
+        assertEquals(0L, WalletSettlement.received(approved, Billing.receipts(approved)))
+        assertEquals(WalletPaymentStatus.OWING, approved.walletPayments.single().status)
+        val batch = s.declare(700)
+        s.send(s.recipient, CommandKind.WALLET_REVIEW_BATCH) { it.copy(transferId = batch.id, flag = true) }
+        assertEquals(700L, WalletSettlement.received(s.f.db.room(id)!!, Billing.receipts(s.f.db.room(id)!!)))
+        assertEquals(1300L, s.home(s.a).wallet!!.balances.single().available)
+    }
     @Test fun fullGroupTransferSettlesAllCustomersOnlyAfterRecipientConfirmation() = Setup().use { s ->
         s.credit(s.a); s.credit(s.b)
         val bill = s.bill(); val id = bill.room!!.id
         s.pay(s.a, id); s.pay(s.b, id)
         val room = s.f.db.room(id)!!
-        assertTrue(Billing.receipts(room).all { it.balance == 0L })
+        assertTrue(Billing.receipts(room).all { it.balance == 0L || it.amountStillToSend(room) == 0L })
+        assertTrue(room.transfers.all { it.status == TransferStatus.DECLARED })
         assertEquals(8500L, s.home(s.a).wallet!!.balances.single().available)
         assertEquals(7500L, s.home(s.b).wallet!!.balances.single().available)
         assertEquals(0L, WalletSettlement.received(room, Billing.receipts(room)))
@@ -108,7 +219,7 @@ class WalletServiceTest {
         assertEquals(8500L, s.home(s.a).wallet!!.balances.single().available)
         assertFalse(s.f.service.execute(s.command(s.recipient, CommandKind.WALLET_REVIEW_BATCH).copy(transferId = first.id, flag = true)).ok)
     }
-    @Test fun debitUsesMultipleHoldersAtomicallyAndCashAlreadyHeldByRecipientSettlesImmediately() = Setup().use { s ->
+    @Test fun debitUsesMultipleHoldersAtomicallyAndRecipientApprovesItsOwnHeldFunds() = Setup().use { s ->
         s.credit(amount = 1000); s.credit(target = s.second, amount = 700); s.credit(target = s.recipient, amount = 300)
         val id = s.bill(listOf(s.a to 1800L)).room!!.id
         val payment = s.payCommand(s.a, id)
@@ -116,7 +227,9 @@ class WalletServiceTest {
         val values = s.f.db.room(id)!!.walletPayments
         assertEquals(1800L, values.sumOf { it.amount })
         assertEquals(300L, values.single { it.holderId == "Recipient" }.amount)
-        assertEquals(WalletPaymentStatus.SETTLED, values.single { it.holderId == "Recipient" }.status)
+        assertEquals(WalletPaymentStatus.OWING, values.single { it.holderId == "Recipient" }.status)
+        s.approveClaims(id)
+        assertEquals(WalletPaymentStatus.SETTLED, s.f.db.room(id)!!.walletPayments.single { it.holderId == "Recipient" }.status)
         assertEquals(200L, s.home(s.a).wallet!!.balances.sumOf { it.available })
         assertFalse(s.f.service.execute(payment.copy(commandId = s.f.id())).ok)
     }
@@ -194,7 +307,8 @@ class WalletServiceTest {
         listOf(first, second).forEach { RoomRules.requireArchive(s.f.db.room(it)!!) }
         s.credit(s.a, s.recipient, 500)
         val third = s.bill(listOf(s.a to 500L)).room!!.id
-        s.pay(s.a, third)
+        s.approveClaims(third)
+        assertEquals(0L, Billing.receipts(s.f.db.room(third)!!).single { it.name == "Alice" }.balance)
         RoomRules.requireArchive(s.f.db.room(third)!!)
         assertEquals("Recipient", s.f.db.room(third)!!.walletPayments.single().holderId)
     }

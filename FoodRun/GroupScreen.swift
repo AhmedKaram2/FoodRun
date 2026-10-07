@@ -21,8 +21,8 @@ struct GroupScreen: View {
                 }
             } else { content }
         }
-        .task(id: state.accessBlocked) {
-            while state.accessBlocked && !Task.isCancelled {
+        .task(id: state.accessBlocked || state.hasJoinTimer) {
+            while (state.accessBlocked || state.hasJoinTimer) && !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 if !Task.isCancelled { store.controller.tickAccessBlock() }
             }

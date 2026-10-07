@@ -1,7 +1,9 @@
 // Bank transfers use an IBAN; Aani uses a UAE mobile alias. Never reuse one as the other.
+import { asciiDigits } from './phoneNumbers.js';
 export function uaePhone(value, mobileOnly = false) {
-  const digits = String(value || '').replace(/\D/g, '');
-  const local = digits.startsWith('00971') ? digits.slice(5) : digits.startsWith('971') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
+  const digits = asciiDigits(value).replace(/\D/g, '');
+  const national = digits.startsWith('00971') ? digits.slice(5) : digits.startsWith('971') ? digits.slice(3) : digits;
+  const local = national.startsWith('0') ? national.slice(1) : national;
   const valid = mobileOnly ? /^5\d{8}$/.test(local) : /^(?:[2-9]\d{7}|5\d{8})$/.test(local);
   if (!valid) throw Error(mobileOnly ? 'Enter a UAE mobile number, for example +971 50 123 4567.' : 'Enter a UAE phone number, for example +971 4 123 4567.');
   return `+971${local}`;

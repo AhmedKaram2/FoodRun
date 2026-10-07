@@ -126,8 +126,8 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             val pendingAdminName = db.record("admin:profile-name:${identity.userId}")
             val pendingProfile = db.record("profile-sync:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) }
             val savedProfile = (pendingProfile ?: cloud().profile(identity) ?: db.record("profile:${identity.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = identity.userId).let {
-                // Imported profile data must not prevent authentication. An unrepairable phone
-                // opens profile completion; strict validation still applies when the user saves.
+                // Imported contact data must not prevent authentication or room access.
+                // Invalid phones are left blank; supplied numbers are validated when saved.
                 it.copy(phone = runCatching { InternationalPhone.normalize(it.phone) }.getOrDefault(""))
             }.let { if (pendingAdminName == null) it else it.copy(name = pendingAdminName) }
             AccountRestrictions.requireAllowed(db, identity.userId, clock())

@@ -186,7 +186,7 @@ internal fun GroupFieldContent(field: GroupField, busy: Boolean, controller: Gro
             GroupFieldKey.EMAIL, GroupFieldKey.REMINDER_EMAIL -> KeyboardType.Email
             GroupFieldKey.SELECTION_PASSCODE -> KeyboardType.NumberPassword
             GroupFieldKey.HUB_URL, GroupFieldKey.PAIRING_LINK -> KeyboardType.Uri
-            GroupFieldKey.PHONE -> KeyboardType.Phone
+            GroupFieldKey.PHONE, GroupFieldKey.PROFILE_PHONE -> KeyboardType.Phone
             GroupFieldKey.QUANTITY, GroupFieldKey.ROOM_CODE -> KeyboardType.Number
             GroupFieldKey.JSON_MENU, GroupFieldKey.FINGERPRINT, GroupFieldKey.ACCOUNT_IDENTIFIER -> KeyboardType.Ascii
             // Decimal input does not request a signed number pad. Keep minus accessible for bill reductions.

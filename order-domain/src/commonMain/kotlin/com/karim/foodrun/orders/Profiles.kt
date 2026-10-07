@@ -7,13 +7,13 @@ import kotlinx.serialization.json.Json
 @Serializable enum class PaymentMethod { BANK, AANI }
 object UaePhone {
     fun normalize(value: String, mobileOnly: Boolean = false): String {
-        val digits = value.filter(Char::isDigit)
-        val local = when {
+        val digits = CountryDialCodes.ascii(value).filter { it in '0'..'9' }
+        val national = when {
             digits.startsWith("00971") -> digits.drop(5)
             digits.startsWith("971") -> digits.drop(3)
-            digits.startsWith("0") -> digits.drop(1)
             else -> digits
         }
+        val local = national.removePrefix("0")
         val validLandline = local.length == 8 && local.firstOrNull() in '2'..'9'
         val validMobile = local.length == 9 && local.startsWith('5')
         require(if (mobileOnly) validMobile else validLandline || validMobile) {
@@ -55,7 +55,7 @@ object InternationalPhone {
     val receivingAccounts: List<ReceivingAccount> get() = (listOfNotNull(payment) + paymentAccounts).distinctBy { it.id }
     fun validate() {
         MenuValidation.label(name)
-        InternationalPhone.normalize(phone)
+        if (phone.isNotBlank()) InternationalPhone.normalize(phone)
         require(photo.isEmpty() || photo.length <= 180_000 && (
             photo.matches(Regex("data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+")) ||
             photo.length <= 2000 && photo.startsWith("https://") && photo.none { it.isWhitespace() }
@@ -67,7 +67,7 @@ object InternationalPhone {
         require(favoriteOrders.size <= 30 && favoriteOrders.map { it.id }.distinct().size == favoriteOrders.size) { "Save up to 30 distinct favorite orders." }
         favoriteOrders.forEach(FavoriteOrder::validate)
     }
-    fun normalized(): FoodProfile = copy(phone = InternationalPhone.normalize(phone), payment = payment?.normalized(), paymentAccounts = paymentAccounts.filterNot { it.id == payment?.id }.map { it.normalized() })
+    fun normalized(): FoodProfile = copy(phone = if (phone.isBlank()) "" else InternationalPhone.normalize(phone), payment = payment?.normalized(), paymentAccounts = paymentAccounts.filterNot { it.id == payment?.id }.map { it.normalized() })
 }
 @Serializable data class FavoriteOrderLine(
     val itemId: String = "", val quantity: Int, val variantId: String? = null,

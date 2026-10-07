@@ -694,5 +694,9 @@
   "Delivery and fees are shown separately in your receipt.": "تظهر رسوم التوصيل والرسوم الأخرى منفصلة في إيصالك.",
   "Take the other half": "آخذ النصف الآخر",
   "Keep the whole item": "آخذ الصنف كاملاً",
-  "Release my half": "إلغاء حصتي من النصف"
+  "Release my half": "إلغاء حصتي من النصف",
+  "Country code": "رمز الدولة",
+  "Mobile number": "رقم الهاتف المحمول",
+  "Mobile number · optional": "رقم الهاتف المحمول · اختياري",
+  "Aani uses a UAE mobile number (+971).": "تستخدم آني رقم هاتف محمول إماراتي (+971)."
 }

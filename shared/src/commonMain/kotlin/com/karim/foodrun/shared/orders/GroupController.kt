@@ -96,6 +96,14 @@ class GroupController(val platform: GroupPlatform) {
                 require(library.pending == null) { "Retry the saved request before changing payment consent." }
                 if (member.eligible != (value == "true")) command(CommandKind.READY, flag = member.ready, eligible = value == "true")
             } else {
+                if (key == GroupFieldKey.PROFILE_COUNTRY && value != text(key))
+                    draft[GroupFieldKey.PROFILE_PHONE] = CountryDialCodes.split(text(GroupFieldKey.PROFILE_PHONE), text(key).ifBlank { "AE" }).second
+                if (key == GroupFieldKey.PROFILE_PHONE && (value.trim().startsWith("+") || value.trim().startsWith("00"))) {
+                    val parts = CountryDialCodes.split(value, text(GroupFieldKey.PROFILE_COUNTRY).ifBlank { "AE" })
+                    draft[GroupFieldKey.PROFILE_COUNTRY] = parts.first
+                    draft[GroupFieldKey.PROFILE_PHONE] = parts.second
+                    publish(); return
+                }
                 if (key == GroupFieldKey.AANI && value != text(key)) {
                     val previous = if (flag(GroupFieldKey.AANI)) GroupFieldKey.ACCOUNT_AANI_DRAFT else GroupFieldKey.ACCOUNT_IBAN_DRAFT
                     val next = if (value == "true") GroupFieldKey.ACCOUNT_AANI_DRAFT else GroupFieldKey.ACCOUNT_IBAN_DRAFT
@@ -619,7 +627,9 @@ class GroupController(val platform: GroupPlatform) {
     }
     private fun openProfile() {
         library.home?.profile?.let { profile ->
-            draft[GroupFieldKey.NAME] = profile.name; draft[GroupFieldKey.PROFILE_PHONE] = profile.phone
+            draft[GroupFieldKey.NAME] = profile.name
+            val phone = CountryDialCodes.split(profile.phone)
+            draft[GroupFieldKey.PROFILE_COUNTRY] = phone.first; draft[GroupFieldKey.PROFILE_PHONE] = phone.second
             draft[GroupFieldKey.PHOTO] = profile.photo; draft[GroupFieldKey.DISCOVERABLE] = profile.discoverable.toString()
             selectedAccount = profile.payment
             listOf(GroupFieldKey.ACCOUNT_HOLDER, GroupFieldKey.ACCOUNT_BANK, GroupFieldKey.ACCOUNT_IDENTIFIER, GroupFieldKey.ACCOUNT_IBAN_DRAFT, GroupFieldKey.ACCOUNT_AANI_DRAFT).forEach(draft::remove)
@@ -636,7 +646,7 @@ class GroupController(val platform: GroupPlatform) {
                 if(flag(GroupFieldKey.AANI)) "Aani" else text(GroupFieldKey.ACCOUNT_BANK).trim(), it,
                 method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
         }
-        return FoodProfile(name = name, phone = text(GroupFieldKey.PROFILE_PHONE).trim(), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
+        return FoodProfile(name = name, phone = CountryDialCodes.combine(text(GroupFieldKey.PROFILE_COUNTRY).ifBlank { "AE" }, text(GroupFieldKey.PROFILE_PHONE)), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
             discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language,
             favoriteOrders = library.home?.profile?.favoriteOrders.orEmpty()).normalized().also { it.validate() }
     }

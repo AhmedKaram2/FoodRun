@@ -4,6 +4,24 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class NativeFeatureTest {
+    @Test fun profileCountrySelectorAndAaniMobileEntryUseTheSameNormalizationAsTheServer() {
+        val device = Device(); val c = GroupController(device)
+        val hub = HubPairing("https://localhost:8443")
+        c.library = c.library.copy(selectedHub = hub, identityToken = "identity-token", identityHub = hub,
+            home = HomePayload(FoodProfile(name = "Google User")))
+        c.dispatch(GroupAction.OPEN_PROFILE)
+        assertTrue(c.state.fields.single { it.key == GroupFieldKey.PROFILE_COUNTRY }.choices.any { it.value == "EG" })
+        assertEquals("AE", c.state.fields.single { it.key == GroupFieldKey.AANI_COUNTRY }.value)
+        c.update(GroupFieldKey.PROFILE_COUNTRY, "EG")
+        c.update(GroupFieldKey.PROFILE_PHONE, "٠١٠١٢٣٤٥٦٧٨")
+        c.update(GroupFieldKey.ACCOUNT_IDENTIFIER, "٠٥٠١٢٣٤٥٦٧")
+        c.dispatch(GroupAction.SAVE_PROFILE)
+        val profile = requireNotNull(device.sent?.identity?.profile)
+        assertEquals("+201012345678", profile.phone)
+        assertEquals("+971501234567", profile.payment!!.identifier)
+        c.dispatch(GroupAction.BACK)
+        assertEquals(GroupPage.HOME, c.state.page)
+    }
     private class Device : GroupPlatform {
         var sent: RoomCommand? = null
         private var counter = 0

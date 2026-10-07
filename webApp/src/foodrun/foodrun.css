@@ -3,3 +3,9 @@
 .half-item-offers { border: 2px solid var(--primary, #7856c6); }
 .half-item-offer + .half-item-offer { border-top: 1px solid #ded9ea; margin-top: 1rem; padding-top: 1rem; }
 .half-item-offer { overflow-wrap: anywhere; }
+.phone-number-field { border: 0; padding: 0; margin: 0; min-width: 0; }
+.phone-number-field legend { margin-bottom: .4rem; font-weight: 600; }
+.phone-number-input { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; }
+.phone-number-input label { min-width: 0; }
+.phone-number-input select, .phone-number-input input { width: 100%; min-width: 0; }
+.phone-number-field small { display: block; margin-top: .4rem; }

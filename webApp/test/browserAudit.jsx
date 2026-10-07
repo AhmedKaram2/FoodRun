@@ -4,7 +4,7 @@ import { mealRoomName } from '../src/foodrun/smartDefaults.js';
 // It captures commands locally; no account, restaurant order, or payment is sent.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants } from '../src/foodrun/FoodRunApp.jsx';
+import { FoodRunClient, CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants } from '../src/foodrun/FoodRunApp.jsx';
 import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx';
 import { t, getLanguage } from '../src/foodrun/i18n.js';
 import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
@@ -129,6 +129,58 @@ function setValue(node, value) {
   node.dispatchEvent(new Event(node instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
 }
 const button = text => [...host.querySelectorAll('button')].find(node => node.textContent === t(text));
+export async function runOnboardingAudit() {
+  commands.length = 0;
+  const original = location.href;
+  const fixture = { ...data, authReady: true, home: { ...data.home, profile: { name: 'Google User', phone: '', favoriteOrders: [] } },
+    user: { uid: 'new-google-user', displayName: 'Google User' }, setError: () => {}, connect: () => {}, clearOfflineReceipts: () => {}, dismissFeedback: () => {} };
+  let current = fixture;
+  const useFixture = () => current;
+  const mount = async () => {
+    root?.unmount(); host?.remove(); document.getElementById('root').style.display = 'none';
+    host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+    root.render(<FoodRunClient useData={useFixture} />); await pause();
+  };
+  try {
+    history.replaceState({}, '', '/'); await mount();
+    assert(host.querySelector('.home-banner'), 'Google user with no phone was forced into Profile');
+    current = { ...fixture, sessions: { old: { roomId: 'old', roomName: 'Saved room', memberId: 'me' } } };
+    localStorage.setItem('foodrun-active-room-v1', JSON.stringify({ userId: fixture.user.uid, hub: fixture.hub, roomId: 'old' }));
+    await mount(); assert(host.querySelector('.home-banner'), 'A previously open room replaced the default Home screen');
+    current = fixture; localStorage.removeItem('foodrun-active-room-v1'); await mount();
+    button('Profile').click(); await pause();
+    assert(host.querySelector('.profile-grid'), 'Profile could not be opened');
+    assert(host.querySelector('.phone-country select')?.options.length > 200, 'Profile country selector is missing');
+    setValue(host.querySelector('.phone-country select'), 'EG'); await pause();
+    setValue(host.querySelector('.phone-national input'), '٠١٠١٢٣٤٥٦٧٨'); await pause();
+    button('Save profile').click(); await pause();
+    assert(commands.at(-1).fields.identity.profile.phone === '+201012345678', 'Profile national number did not use the selected country');
+    assert(host.querySelector('.home-banner'), 'Saving Profile did not return to Home');
+    button('Profile').click(); await pause();
+    host.querySelector('.wordmark').click(); await pause();
+    assert(host.querySelector('.home-banner'), 'Logo left an incomplete-profile user stuck');
+    button('Profile').click(); await pause();
+    current = { ...fixture, user: { uid: 'another-user', displayName: 'Another user' } };
+    root.render(<FoodRunClient useData={useFixture} />); await pause(); await pause();
+    assert(host.querySelector('.home-banner'), 'Another account inherited Profile as its initial screen');
+    current = fixture;
+    history.replaceState({}, '', '/?room=123456'); await mount();
+    assert(host.querySelector('h1')?.textContent === t('Join your people'), 'Invitation did not preserve its join screen');
+    const join = button('Request to join'); assert(join && !join.disabled, 'Missing contact phone still blocks room joining');
+    join.click(); await pause();
+    assert(commands.at(-1).kind === 'JOIN' && commands.at(-1).fields.code === '123456', 'Invitation code was lost');
+    history.replaceState({}, '', '/'); await mount();
+    button('Profile').click(); await pause();
+    host.querySelector('#receiving-details').open = true;
+    assert(host.querySelector('.payment-method-form .phone-country select')?.value === 'AE', 'Aani country code is not explicit');
+    setValue(host.querySelector('.payment-method-form .phone-national input'), '٠٥٠١٢٣٤٥٦٧'); await pause();
+    button('Save payment details').click(); await pause();
+    assert(commands.at(-1).fields.identity.profile.payment.identifier === '+971501234567', 'Arabic Aani mobile number was rejected or corrupted');
+    assert(commands.at(-1).fields.identity.profile.phone === '', 'Saving Aani invented a separate contact phone');
+    const measured = measureAudit(); assert(!measured.overflow, 'Country picker overflows on mobile');
+    return { passed: ['Home after Google sign-in', 'Profile save returns Home', 'logo Home navigation', 'account change resets Home', 'invitation code preserved', 'join without contact phone', 'country selector', 'Arabic Aani number'], language: getLanguage(), ...measured };
+  } finally { history.replaceState({}, '', original); }
+}
 export async function runHalfItemAudit() {
   commands.length = 0;
   const restaurant = { ...loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba'), openOrdering: true };

@@ -177,13 +177,16 @@ internal class GroupPresentation(private val c: GroupController) {
             button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
             button(tr("Sign in", "تسجيل الدخول"), GroupAction.SIGN_IN, primary = true); button(tr("Reset password", "إعادة تعيين كلمة المرور"), GroupAction.RESET_PASSWORD)
         }
-        field(GroupFieldKey.NAME, tr("Profile name", "الاسم في الملف الشخصي")); field(GroupFieldKey.PROFILE_PHONE, tr("Phone · with country code", "رقم الهاتف مع رمز الدولة"))
+        field(GroupFieldKey.NAME, tr("Profile name", "الاسم في الملف الشخصي"))
+        fields += GroupField(GroupFieldKey.PROFILE_COUNTRY, tr("Country code", "رمز الدولة"), c.text(GroupFieldKey.PROFILE_COUNTRY).ifBlank { "AE" },
+            choices = CountryDialCodes.all.map { GroupChoice(it.region, "${if (ar) it.nameAr else it.name} (+${it.code})") })
+        field(GroupFieldKey.PROFILE_PHONE, tr("Mobile number · optional", "رقم الهاتف المحمول · اختياري"))
         field(GroupFieldKey.PHOTO, tr("Profile photo", "صورة الملف الشخصي"))
         field(GroupFieldKey.DISCOVERABLE, tr("Allow people on this hub to invite me", "السماح لمستخدمي الخادم بدعوتي"), toggle = true)
         field(GroupFieldKey.AANI, tr("Receive payments with Aani", "استلام الدفعات عبر آني"), toggle = true)
         field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder · optional", "صاحب الحساب · اختياري"))
         if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name · optional", "اسم البنك · اختياري"))
-        field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("IBAN · optional"))
+        accountIdentifierField(optional = true)
         if(c.library.home == null) button(tr("Create account", "إنشاء حساب"), GroupAction.REGISTER)
         else {
             button(tr("Save profile", "حفظ الملف الشخصي"), GroupAction.SAVE_PROFILE, primary = true)
@@ -636,7 +639,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 GroupButton(ui("Delete saved account"), GroupAction.DELETE_ACCOUNT, a.id, destructive = true),
             ))
         }
-        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); field(GroupFieldKey.ACCOUNT_IDENTIFIER, if(c.flag(GroupFieldKey.AANI)) ui("UAE mobile registered with Aani") else ui("IBAN"))
+        field(GroupFieldKey.AANI, "Receive with Aani", toggle = true); field(GroupFieldKey.ACCOUNT_HOLDER, tr("Account holder", "صاحب الحساب")); if(!c.flag(GroupFieldKey.AANI)) field(GroupFieldKey.ACCOUNT_BANK, tr("Bank name", "اسم البنك")); accountIdentifierField()
         button("Save on this device", GroupAction.SAVE_ACCOUNT)
         if(c.reply?.room?.account?.let(c::accountMatchesDraft) == true) {
             subtitle = "This account is already shared with this order. Continue to ${if(c.reply?.room?.phase == RoomPhase.REVIEW) "review the totals" else "submit your food"}."
@@ -784,6 +787,14 @@ internal class GroupPresentation(private val c: GroupController) {
     fun restaurantOrderText(): String {
         val r = c.room(); require(r.payerId == c.me()) { "Only the payer can share the combined order." }
         return restaurantReadyText(r, c.reply!!.receipts, copyLanguage)
+    }
+    private fun accountIdentifierField(optional: Boolean = false) {
+        if (!c.flag(GroupFieldKey.AANI)) { field(GroupFieldKey.ACCOUNT_IDENTIFIER, ui(if (optional) "IBAN · optional" else "IBAN")); return }
+        fields += GroupField(GroupFieldKey.AANI_COUNTRY, tr("Country code", "رمز الدولة"), "AE",
+            choices = listOf(GroupChoice("AE", tr("United Arab Emirates (+971)", "الإمارات العربية المتحدة (+971)"))))
+        val raw = c.text(GroupFieldKey.ACCOUNT_IDENTIFIER)
+        val parts = CountryDialCodes.split(raw)
+        fields += GroupField(GroupFieldKey.ACCOUNT_IDENTIFIER, ui("UAE mobile registered with Aani"), if (parts.first == "AE") parts.second else raw)
     }
     private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
         account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }

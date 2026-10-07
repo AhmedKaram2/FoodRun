@@ -26,6 +26,7 @@ import { deliveryDestination } from './roomSetup';
 import { menuCategories, defaultMenuCategory, browsedMenuItems } from './menuBrowsing';
 import { canAccessAdmin } from './adminAccess';
 import { addMenuLine, changeQuantity, menuLineTotal } from './cartEditing';
+import PhoneInput from './PhoneInput.jsx';
 import HalfItemOffers from './HalfItemOffers.jsx';
 import { halfItemCartLines, portionQuantity, halfItemsOpen } from './halfItems.js';
 import WheelProtection from './WheelProtection.jsx';
@@ -33,7 +34,7 @@ import WalletFunds, { WalletPaymentOption } from './WalletFunds.jsx';
 import { settlementOpen } from './roomLifecycle.js';
 import { t, tf, setLanguage as setTranslationLanguage } from './i18n.js';
 import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from './orderHistory';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -53,6 +54,8 @@ import { dubaiRestaurants } from './dubaiRestaurants';
 import { mergeRestaurantCatalog, restoreRestaurantMetadata } from './restaurantCatalog';
 import { selectedPollRestaurants } from './restaurantPoll';
 import { validateMenu } from './menuValidation';
+
+const HomeNavigation = createContext(null);
 
 const AdminApp = lazy(() => import('./AdminApp'));
 const RestaurantLibraryScreen = lazy(() => import('./RestaurantLibraryScreen'));
@@ -480,12 +483,12 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
   </section>;
 }
 
-function ProfileScreen({ data, onBack, openRoom }) {
+function ProfileScreen({ data, onBack, openRoom, onSaved }) {
   const { profile } = data.home;
   const busy = data.busy, send = data.send;
   const setMessage = data.setError;
   const [form, setForm] = useState({
-    name: profile?.name || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
+    name: profile?.name || data.user?.displayName || auth.currentUser?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '',
     discoverable: profile?.discoverable ?? true,
   });
   const [dirty, setDirty] = useState(false);
@@ -493,7 +496,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
   useEffect(() => {
     if (!dirty && syncedProfile.current !== profile) {
       syncedProfile.current = profile;
-      setForm({ name: profile?.name || '', phone: profile?.phone || '', photo: profile?.photo || '', discoverable: profile?.discoverable ?? true });
+      setForm({ name: profile?.name || data.user?.displayName || '', phone: profile?.phone || '', photo: profile?.photo || '', discoverable: profile?.discoverable ?? true });
     }
   }, [profile, dirty]);
   const set = (key, value) => { setDirty(true); setForm(old => ({ ...old, [key]: value })); };
@@ -501,10 +504,10 @@ function ProfileScreen({ data, onBack, openRoom }) {
     event.preventDefault(); setMessage('');
     try {
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
-        ...profile, userId: '', name: form.name.trim(), phone: internationalPhone(form.phone), photo: form.photo,
+        ...profile, userId: '', name: form.name.trim(), phone: form.phone.trim() ? internationalPhone(form.phone) : '', photo: form.photo,
         payment: profile.payment, discoverable: form.discoverable, language: uiLanguage, favoriteOrders: profile?.favoriteOrders || [],
       } } });
-      if (reply) { setDirty(false); data.setNotice(t("Profile and payment details saved.")); }
+      if (reply) { setDirty(false); data.setNotice(t("Profile and payment details saved.")); onSaved?.(); }
     } catch (error) { setMessage(error.message); }
   };
   const [previousLimit, setPreviousLimit] = useState(10);
@@ -535,7 +538,7 @@ function ProfileScreen({ data, onBack, openRoom }) {
       <section className="card stack">
         <h3>{t("About you")}</h3>
         <label>{t("Profile name")}<input value={form.name} onChange={e => set('name', e.target.value)} required maxLength="160" /></label>
-        <label>{t("Phone with country code")}<input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+20 10 1234 5678" /></label>
+        <PhoneInput label={t("Mobile number · optional")} value={form.phone} onChange={value => set("phone", value)} />
         <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t("Let people on this hub invite me")}</label>
       </section>
       <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
@@ -547,8 +550,9 @@ function ProfileScreen({ data, onBack, openRoom }) {
 }
 
 function Page({ title, subtitle, onBack, actions, children }) {
+  const home = useContext(HomeNavigation);
   return <main className="app-shell">
-    <header className="topbar"><button className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={onBack}><BrandLogo /></button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
+    <header className="topbar"><button className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={home || onBack}><BrandLogo /></button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
     <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage === 'ar' ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("INTRVIOO / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     {children}
   </main>;
@@ -644,7 +648,7 @@ function RestaurantPicker({ restaurants, selectedId, onSelect, onClose, multiple
 export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', restaurant: '', phone: '', code: inviteCode, restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
+  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
   const suggestedRoomName = useRef(form.room);
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
@@ -666,13 +670,13 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
     event.preventDefault(); setMessage('');
     try {
       let reply;
-      if (mode === 'join') reply = await data.send('JOIN', { code: form.code.trim(), name: profile.name.trim() });
+      if (mode === 'join') reply = await data.send('JOIN', { code: form.code.trim(), name: form.memberName.trim() });
       else {
         const pollRestaurants = form.restaurantPoll ? selectedPollRestaurants(restaurants, pollIds).map(clone) : [];
         const restaurant = form.restaurantPoll ? pollRestaurants[0] : chosen ? clone(chosen) : normalizeRestaurant({ ...blankRestaurant(), name: form.restaurant.trim(), contact: { phoneE164: form.phone.trim(), whatsappE164: null, address: null } });
         if (!chosen && !form.restaurantPoll) { const next = [...restaurants, restaurant]; setRestaurants(next); storeRestaurants(next); }
         reply = await data.send('CREATE', {
-          name: profile.name.trim(), text: form.room === suggestedRoomName.current ? mealRoomName() : form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
+          name: form.memberName.trim(), text: form.room === suggestedRoomName.current ? mealRoomName() : form.room.trim(), restaurant, restaurants: form.restaurantPoll ? pollRestaurants : [restaurant], expectedNames: [], flag: form.deliveryMode,
           selectionStyle: form.selectionStyle, destination: deliveryDestination(form.deliveryMode, form.destination), deadline: 0,
           fees: { delivery: form.deliveryMode ? 0 : amount(form.delivery || '0', currency), automaticDelivery: form.deliveryMode, service: amount(form.service || '0', currency), discount: amount(form.discount || '0', currency), proportionalDelivery: form.proportionalDelivery },
         });
@@ -699,8 +703,8 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
         </div></details>
       </>}
       {message && <p className="form-message" role="alert">{message}</p>}
-      <div className="create-submit"><button className="primary" disabled={data.busy || !profile.name || !profile.phone || (mode !== 'join' && form.restaurantPoll && pollChoices.length < 2)}>{data.busy ? tx('Connecting…', 'جارٍ الاتصال…') : mode === 'join' ? tx('Request to join', 'طلب الانضمام') : tx('Create room', 'إنشاء الغرفة')}</button></div>
-      {(!profile.name || !profile.phone) && <p className="form-message">{t("Complete your name and phone in your profile first.")}</p>}
+      {!profile.name?.trim() && <label>{t("Profile name")}<input value={form.memberName} onChange={event => setForm({ ...form, memberName: event.target.value })} required maxLength={160} /></label>}
+      <div className="create-submit"><button className="primary" disabled={data.busy || !form.memberName.trim() || (mode !== 'join' && form.restaurantPoll && pollChoices.length < 2)}>{data.busy ? tx('Connecting…', 'جارٍ الاتصال…') : mode === 'join' ? tx('Request to join', 'طلب الانضمام') : tx('Create room', 'إنشاء الغرفة')}</button></div>
     </form>
     {restaurantPicker && <RestaurantPicker restaurants={restaurants} selectedId={form.restaurantId} multiple={form.restaurantPoll} selectedIds={pollIds} onSelect={form.restaurantPoll ? togglePollRestaurant : chooseRestaurant} onClose={() => { setRestaurantPicker(false); if (form.restaurantPoll && pollChoices.length) setForm(old => ({ ...old, room: old.room || tx('Our restaurant poll', 'تصويت مطعمنا') })); }} />}
   </Page>;
@@ -1203,8 +1207,8 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   </Page>;
 }
 
-function FoodRunClient() {
-  const baseData = useFoodRun();
+function FoodRunClient({ useData = useFoodRun } = {}) {
+  const baseData = useData();
   const [walletTopUpRequest, setWalletTopUpRequest] = useState(null);
   const data = { ...baseData, walletTopUpRequest, clearWalletTopUp: () => setWalletTopUpRequest(null), openWallet: request => { setWalletTopUpRequest(request); setPage('profile'); } };
   const notifications = useNotifications({ ...data, language: uiLanguage });
@@ -1216,7 +1220,13 @@ function FoodRunClient() {
   useEffect(() => { window.scrollTo({ top: 0 }); }, [page]);
   const [roomId, setRoomId] = useState('');
   const [restaurantRoomId, setRestaurantRoomId] = useState('');
-  const restoredRoom = useRef(false);
+  const previousUserId = useRef(data.user?.uid);
+  useEffect(() => {
+    if (previousUserId.current === data.user?.uid) return;
+    previousUserId.current = data.user?.uid;
+    setRoomId('');
+    setPage(window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : inviteCode ? 'join' : 'home');
+  }, [data.user?.uid, inviteCode]);
   useEffect(() => { fetch(`${PUBLIC_API_URL}/config`).then(response => response.ok ? response.json() : Promise.reject()).then(setSiteConfig).catch(() => {}); }, []);
   useEffect(() => {
     if (!data.home) return;
@@ -1250,14 +1260,6 @@ function FoodRunClient() {
   useEffect(() => { setNotificationAction(null); }, [data.user?.uid, data.hub]);
   const closeRoom = () => { localStorage.removeItem(ACTIVE_ROOM_KEY); setRoomId(''); setPage('home'); };
   useEffect(() => {
-    if (page === 'admin' || restoredRoom.current || inviteCode || !data.user || !data.hub) return;
-    let saved;
-    try { saved = JSON.parse(localStorage.getItem(ACTIVE_ROOM_KEY) || 'null'); } catch { saved = null; }
-    if (saved?.userId === data.user.uid && saved?.hub === data.hub && data.sessions[saved.roomId]) {
-      setRoomId(saved.roomId); setPage('room'); restoredRoom.current = true;
-    } else if (Object.keys(data.sessions).length > 0) restoredRoom.current = true;
-  }, [data.user, data.hub, data.sessions, inviteCode]);
-  useEffect(() => {
     if (roomId && data.home?.deletedRoomIds?.includes(roomId)) closeRoom();
   }, [roomId, data.home?.deletedRoomIds]);
   const connectionMessage = data.connectionState === 'offline' ? t('You are offline. We will reconnect when your internet connection returns.')
@@ -1274,17 +1276,16 @@ function FoodRunClient() {
   if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
   if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
   const home = data.home;
-  const profileMissing = !home.profile.name || !home.profile.phone;
   let content;
   if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
   else if (page === 'downloads') content = <Page title={t("Get Intrvioo")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
-  else if (page === 'profile' || profileMissing) content = <ProfileScreen data={data} openRoom={openRoom} onBack={() => setPage('home')} />;
+  else if (page === 'profile') content = <ProfileScreen data={data} openRoom={openRoom} onBack={closeRoom} onSaved={() => setPage(inviteCode ? 'join' : 'home')} />;
   else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} data={data} room={restaurantRoomId ? data.rooms[restaurantRoomId]?.room : null} onBack={() => { setPage(restaurantRoomId ? 'room' : 'home'); setRestaurantRoomId(''); }} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Intrvioo</span><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></>;
+  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}{content}<footer><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => setPage('profile')}>{t("Profile")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></footer></></HomeNavigation.Provider>;
 }
 
 export default function FoodRunApp() {
@@ -1318,4 +1319,4 @@ export default function FoodRunApp() {
   </Suspense></GuideNavigation.Provider>;
 }
 
-export { Home, ProfileScreen, RoomScreen, MemberOrderPanel, AuthScreen, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };
+export { FoodRunClient, Home, ProfileScreen, RoomScreen, MemberOrderPanel, AuthScreen, PUBLIC_API_URL, Page, LanguageToggle, loadRestaurants, storeRestaurants, blankRestaurant, changeRestaurantCurrency, normalizeRestaurant, clone, uid, minorInput, parseRestaurantExport, restaurantExport, downloadText, copyText };

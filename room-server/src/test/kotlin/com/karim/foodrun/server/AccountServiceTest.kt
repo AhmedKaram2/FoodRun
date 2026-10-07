@@ -7,6 +7,20 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AccountServiceTest {
+    @Test fun newGoogleMemberCanJoinAndSaveAaniWithoutASeparateContactPhone() = RoomFixture(FakeIdentityProvider()).use { f ->
+        val signed = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "firebase-new-google")))
+        assertEquals("", signed.home!!.profile.phone)
+        val joined = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.JOIN, code = f.owner.room!!.code,
+            name = signed.home!!.profile.name, identityToken = signed.identityToken))
+        assertNotNull(joined.room)
+        val account = ReceivingAccount("mobile", "new-google", "Aani", "٠٥٠١٢٣٤٥٦٧", method = PaymentMethod.AANI)
+        val saved = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY, identityToken = signed.identityToken,
+            identity = IdentityRequest(IdentityAction.SAVE_PROFILE, profile = signed.home!!.profile.copy(payment = account))))
+        assertEquals("", saved.home!!.profile.phone)
+        assertEquals("+971501234567", saved.home!!.profile.payment!!.identifier)
+        assertEquals(1, saved.home!!.rooms.size)
+    }
     private class FakeIdentityProvider : IdentityProvider {
         private val profiles = mutableMapOf<String, FoodProfile>()
         override fun signIn(email: String, password: String, register: Boolean) = identity(email.substringBefore('@'))

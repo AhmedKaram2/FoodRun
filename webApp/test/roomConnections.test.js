@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { roomConnections } from '../src/foodrun/roomConnections.js';
 import { watch } from '../src/foodrun/client.js';
+test('a refreshed account membership replaces its subscription and ignores old device updates', () => {
+  const watches = [], received = [];
+  const manager = roomConnections({watch:(session,reply)=>{const entry={session,reply,closed:false};watches.push(entry);return()=>{entry.closed=true;};},load:async()=>({}),onReply:(session,reply)=>received.push({session,reply}),onStatus:()=>{}});
+  const old = {roomId:'room',memberId:'duplicate',token:'old',phase:'PLACED',orderNumber:1};
+  manager.sync({room:old});
+  const current = {...old,memberId:'canonical',token:'new'};
+  manager.sync({room:current});
+  assert.equal(watches[0].closed,true);
+  watches[0].reply({room:{revision:99},memberId:'duplicate'});
+  watches[1].reply({room:{revision:3},memberId:'canonical'});
+  assert.equal(received.length,1);assert.equal(received[0].session.memberId,'canonical');manager.close();
+});
 test('automatically archived unpaid rooms stay live until payment settlement completes', async () => {
   let opened = 0, stopped = 0, loaded = 0;
   const manager = roomConnections({ watch: () => { opened++; return () => stopped++; }, load: async () => { loaded++; return {}; }, onReply: () => {}, onStatus: () => {} });

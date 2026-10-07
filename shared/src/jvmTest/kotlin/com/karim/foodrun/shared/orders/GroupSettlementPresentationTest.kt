@@ -57,6 +57,23 @@ class GroupSettlementPresentationTest {
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
 
+    @Test fun walletCustodyShowsHolderLiabilityAndOffersRecipientConfirmationInTheRoom() {
+        val payment = WalletPayment("wallet-payment", "customer", "Hassan", "holder", "Ahmed", "payer-user", "Karim", "room", "Lunch", 1, "member", 1000, "AED", WalletPaymentStatus.SENT, "batch", 0)
+        val batch = WalletBatch("batch", "holder", "Ahmed", "payer-user", "Karim", 1000, "AED", listOf(payment.id), account, "Sent", createdAt = 0)
+        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true, walletPayments = listOf(payment), transfers = listOf(transfer(status = TransferStatus.CONFIRMED)))
+        val c = controller(due)
+        c.library = c.library.copy(home = HomePayload(FoodProfile("payer-user", "Karim"), wallet = WalletSnapshot(payments = listOf(payment), batches = listOf(batch))))
+        for (language in listOf("en", "ar")) {
+            c.library = c.library.copy(language = language)
+            val content = GroupSettlementPresentation(c).settlement()
+            val custody = content.cards.single { it.id == "wallet-custody:${payment.id}" }
+            assertTrue(custody.title.contains("Ahmed") && custody.detail.contains("Hassan"))
+            val confirmation = content.cards.single { it.id == "wallet-custody-batch:batch" }
+            assertEquals(listOf("batch-yes|batch", "batch-no|batch"), confirmation.buttons.map { it.value })
+            assertTrue(content.cards.single { it.id == "wallet-summary" }.detail.contains("Confirmed from others AED 0.00"))
+        }
+    }
+
     @Test fun paymentReminderIsOnlyOfferedForCollectibleUnpaidBalances() {
         val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true)
         val payer = controller(due).apply { online = true }

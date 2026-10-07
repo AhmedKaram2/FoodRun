@@ -219,7 +219,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
         require(c.selectionStyle in listOf("wheel", "names")) { "Choose Wheel or Running names." }
         MenuValidation.label(c.name); MenuValidation.label(c.text)
-        val person = Member(uuid(), c.name.trim(), approved = true, eligible = true, ready = true, lastSeen = clock())
+        val roomId = uuid()
+        val memberId = if (c.identityToken.isEmpty()) uuid() else AccountMemberships.memberId(roomId, accounts.userId(c.identityToken))
+        val person = Member(memberId, c.name.trim(), approved = true, eligible = true, ready = true, lastSeen = clock())
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
         val selected = requireNotNull(c.restaurant)
@@ -227,7 +229,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(options.size <= 12 && options.any { it.id == selected.id }) { "Choose up to 12 restaurants, including the current choice." }
         require(options.all { it.currency == selected.currency }) { "Restaurant poll choices must use the same currency." }
         options.forEach(MenuValidation::validate)
-        val room = Room(uuid(), code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, (c.fees ?: FeePolicy()).copy(automaticDelivery = c.flag),
+        val room = Room(roomId, code, person.id, c.text.trim(), selected, c.expectedNames, c.flag, c.destination, c.deadline, (c.fees ?: FeePolicy()).copy(automaticDelivery = c.flag),
             members = listOf(person), createdAt = clock(), updatedAt = clock(), restaurantOptions = options,
             restaurantVotes = listOf(RestaurantVote(person.id, selected.id)), restaurantPollOpen = options.size > 1, selectionStyle = c.selectionStyle)
         RoomRules.validateRoom(room); requireLoadable(room); db.save(room)
@@ -312,11 +314,12 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val account = requireNotNull(c.account) { "Add your receiving details in your profile first." }.let {
             if (it.method == PaymentMethod.AANI) it else it.copy(currency = request.currency)
         }.normalized().also { it.validate(); require(it.currency == request.currency) { "Receiving account currency must match the room currency." } }
-        val ids = profiles.keys.associateWith { uuid() }
+        val roomId = uuid()
+        val ids = profiles.keys.associateWith { AccountMemberships.memberId(roomId, it) }
         val ownerId = ids.getValue(uid)
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
-        val room = Room(uuid(), code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, currency = request.currency, openOrdering = true),
+        val room = Room(roomId, code, ownerId, c.text.trim(), Restaurant("payment-room", c.name.trim().ifBlank { c.text.trim() }, currency = request.currency, openOrdering = true),
             phase = RoomPhase.FULFILLED, payerId = ownerId, account = account, accounts = c.accounts.orEmpty().filterNot { it.id == account.id }.map { it.normalized() }, restaurantPaid = true,
             restaurantReference = "Already ordered and paid by ${profiles.getValue(uid).name}",
             members = profiles.map { (userId, profile) -> Member(ids.getValue(userId), profile.name, approved = true, ready = true) },
@@ -349,7 +352,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(room.paymentRoom == null) { "Payment rooms are private to the people selected by the organizer." }
         require(room.members.count { !it.removed && it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
         require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
-        val requested = Member(uuid(), c.name.trim(), guest = c.guest, lastSeen = clock())
+        val memberId = if (c.identityToken.isEmpty()) uuid() else AccountMemberships.memberId(room.id, accounts.userId(c.identityToken))
+        require(room.members.none { it.id == memberId }) { "This membership was removed from the room. Contact the organizer." }
+        val requested = Member(memberId, c.name.trim(), guest = c.guest, lastSeen = clock())
         val person = if (room.phase == RoomPhase.LOBBY && room.pastSpins.isEmpty()) admit(requested, room.phase) else requested.copy(participating = false)
         val next = room.copy(members = room.members + person, revision = room.revision + 1,
             quoteRevision = room.quoteRevision + if (person.participating) 1 else 0, updatedAt = clock()); requireLoadable(next); db.save(next)

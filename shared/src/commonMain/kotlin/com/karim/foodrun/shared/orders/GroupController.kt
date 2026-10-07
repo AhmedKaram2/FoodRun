@@ -450,7 +450,7 @@ class GroupController(val platform: GroupPlatform) {
     }
     internal fun resume(s: StoredSession) {
         roomWatches.remove(s.roomId)?.cancel(); roomWatchTokens.remove(s.roomId)
-        watching?.cancel(); generation++; session = s; reply = library.snapshots[s.roomId]; online = false
+        watching?.cancel(); generation++; session = s; reply = library.snapshots[s.roomId]?.takeIf { it.memberId == s.memberId }; online = false
         reply?.room?.let(::seedRoomDrafts)
         page = GroupPage.ROOM; startWatching()
     }
@@ -697,16 +697,22 @@ class GroupController(val platform: GroupPlatform) {
     private fun acceptHome(home: HomePayload, hub: HubPairing) {
         val wasOngoing = session?.let(::ongoingSession)
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
+        val refreshedSession = session?.takeIf { sameHub(it.hub, hub) }?.let { current -> sessions.firstOrNull { it.roomId == current.roomId } }
+        val changedMemberIds = sessions.filter { fresh -> library.snapshots[fresh.roomId]?.memberId?.let { it != fresh.memberId } == true }.map { it.roomId }.toSet()
         home.deletedRoomIds.forEach { id -> roomWatches.remove(id)?.cancel() }
         if(session?.roomId in home.deletedRoomIds) { watching?.cancel(); watching = null; generation++; session = null; reply = null; page = GroupPage.HOME }
         val catalog = mergeManagedRestaurantCatalog(library.restaurants, library.managedRestaurantIds, home.restaurants, deletedRestaurantIds = home.deletedRestaurantIds)
         val updated = library.copy(home = home, displayName = home.profile.name, language = home.profile.language,
             sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } || old.roomId in home.deletedRoomIds } + sessions,
-            snapshots = library.snapshots.filterKeys { it !in home.deletedRoomIds },
+            snapshots = library.snapshots.filterKeys { it !in home.deletedRoomIds && it !in changedMemberIds },
             restaurants = catalog.restaurants,
             managedRestaurantIds = catalog.managedIds)
         if (updated != library) replaceLibrary(updated)
-        if (session != null && wasOngoing != ongoingSession(requireNotNull(session))) startWatching()
+        if (refreshedSession != null && refreshedSession != session) {
+            if (refreshedSession.memberId != session?.memberId) { reply = null; selectedItem = null; editingCartLineId = null; selectedAccount = null }
+            session = refreshedSession
+            startWatching()
+        } else if (session != null && wasOngoing != ongoingSession(requireNotNull(session))) startWatching()
         notifications.refresh(); notifications.register(false); administration.checkAccess()
         home.invitations.forEach { alert("invite:${it.id}", "Join ${it.roomName}", "${it.invitedBy} invited you. Open Intrvioo and tap Join on your home screen.") }
     }

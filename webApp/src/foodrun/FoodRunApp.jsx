@@ -31,6 +31,8 @@ import HalfItemOffers from './HalfItemOffers.jsx';
 import { halfItemCartLines, portionQuantity, halfItemsOpen } from './halfItems.js';
 import WheelProtection from './WheelProtection.jsx';
 import WalletFunds, { WalletPaymentOption } from './WalletFunds.jsx';
+import WalletCustody from './WalletCustody.jsx';
+import { roomCashReceived, roomWalletPending } from './wallet.js';
 import { settlementOpen } from './roomLifecycle.js';
 import { t, tf, setLanguage as setTranslationLanguage } from './i18n.js';
 import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from './orderHistory';
@@ -68,7 +70,7 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.2/FoodRun-Android-1.6.2.apk';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.6.3/FoodRun-Android-1.6.3.apk';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -315,7 +317,7 @@ function AppDownloads({ compact = false }) {
     <div className="download-grid">
       <article className="download-card">
         <span className="platform-icon android" aria-hidden="true">◆</span>
-        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.2 · Android 8+")}</small></div>
+        <div><strong>{t("Android app")}</strong><small>{t("Version 1.6.3 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
@@ -444,7 +446,7 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
   const dashboard = userDashboard(data);
   const totalsByCurrency = entries => Object.entries(entries.reduce((totals, entry) => ({ ...totals, [entry.currency]: (totals[entry.currency] || 0) + entry.amount }), {}));
   if (compact) {
-    const balances = (data.home.wallet?.balances || []).filter(value => value.customerId === data.user?.uid);
+    const balances = (data.home.wallet?.balances || []).filter(value => value.customerId === (data.home.profile.userId || data.user?.uid));
     return <section className="card home-money-preview">
       <div><p className="eyebrow">{t('MY MONEY & ORDERS')}</p><h3>{tx('Wallet & payments', 'المحفظة والمدفوعات')}</h3>
         <p>{tx('Wallet balance', 'رصيد المحفظة')} · {totalsByCurrency(balances.map(value => ({ ...value, amount: value.available }))).map(([currency, total]) => money(total, currency)).join(' · ') || money(0, 'AED')}</p>
@@ -563,7 +565,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
   const continuing = roomCards.find(({ reply }) => reply?.room && !['ARCHIVED', 'CANCELLED'].includes(reply.room.phase));
   return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
-    {home.wallet && <WalletAnnouncement key={data.user?.uid || home.profile.userId} userId={data.user?.uid || home.profile.userId} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
+    {home.wallet && <WalletAnnouncement key={home.profile.userId || data.user?.uid} userId={home.profile.userId || data.user?.uid} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <HomeBanner rtl={uiLanguage === 'ar'} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
     <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
@@ -922,7 +924,7 @@ function WalletPanel({ room, receipts, me, payer }) {
   if (!own && !payer) return null;
   const pending = room.transfers.filter(transfer => String(transfer.status).toLowerCase() === 'declared');
   const restaurantTotal = receipts.reduce((sum, receipt) => sum + receipt.total, 0);
-  const confirmed = receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + receipt.paid, 0);
+  const confirmed = roomCashReceived(room, receipts);
   const remaining = receipts.filter(receipt => receipt.memberId !== room.payerId).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0);
   const refunds = receipts.reduce((sum, receipt) => sum + Math.max(0, -receipt.balance), 0);
   return <article className="card wallet-card"><p className="eyebrow">{payer ? t('ROOM WALLET') : t('MY WALLET')}</p><h2>{payer ? t("Every share in one place") : t("Your order and payment")}</h2><div className="progress-money wallet-summary">{payer ? <><span><small>{t("Restaurant total")}</small><b>{money(restaurantTotal, currency)}</b></span><span><small>{t("Your own share")}</small><b>{money(receipts.find(receipt => receipt.memberId === room.payerId)?.total || 0, currency)}</b></span><span><small>{t("Confirmed from others")}</small><b>{money(confirmed, currency)}</b></span><span><small>{t("Members still owe")}</small><b>{money(remaining, currency)}</b></span>{refunds > 0 && <span><small>{t("Refunds you owe")}</small><b>{money(refunds, currency)}</b></span>}</> : <><span><small>{t("My order")}</small><b>{money(own.total, currency)}</b></span><span><small>{t("Confirmed paid")}</small><b>{money(own.paid, currency)}</b></span><span><small>{own.balance < 0 ? t("Owed back to me") : t("I need to pay")}</small><b>{money(Math.abs(own.balance), currency)}</b></span></>}</div>
@@ -993,12 +995,13 @@ function SettlementPanel({ room, reply, me, owner, payer, data }) {
     {payer && !room.paymentRoom && <OrderSummary room={room} receipts={reply.receipts} />}
     {room.phase !== 'ARCHIVED' && (room.paymentRoom ? payer && <PaymentShareEditor room={room} receipts={reply.receipts} data={data} /> : (owner || payer) && <details className="card order-edit-options"><summary>{t('Edit item prices')}</summary><OrderPricingPanel room={room} data={data} describeLine={line => cartLineDescription(room, line)} /></details>)}
     <article id="room-payment" className="card stack payment-priority"><p className="eyebrow">{payer ? t('ROOM WALLET') : t('PAY YOUR SHARE')}</p><h2>{payer ? t('Payments') : t('Your payment')}</h2>
-      {payer && <div className="settlement-totals"><span><small>{t('Your own share')}</small><b>{money(reply.receipts.find(receipt => receipt.memberId === me.id)?.total || 0, currency)}</b></span><span><small>{t('Received')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + receipt.paid, 0), currency)}</b></span><span><small>{t('Still to collect')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0), currency)}</b></span></div>}
+      {payer && <div className="settlement-totals"><span><small>{t('Your own share')}</small><b>{money(reply.receipts.find(receipt => receipt.memberId === me.id)?.total || 0, currency)}</b></span><span><small>{t('Received')}</small><b>{money(roomCashReceived(room, reply.receipts), currency)}</b></span><span><small>{t('Still to collect')}</small><b>{money(reply.receipts.filter(receipt => receipt.memberId !== me.id).reduce((sum, receipt) => sum + Math.max(0, receipt.balance), 0) + roomWalletPending(room), currency)}</b></span></div>}
       {room.billRevision > 1 && <p className="field-help">{t('Updated totals apply automatically. No new approval is needed.')}</p>}
-      {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} /></section>)}
+      {reply.receipts.filter(receipt => !payer || receipt.memberId !== me.id).map(receipt => <section className="wallet-person" key={receipt.memberId}><div className="wallet-person-heading"><b>{receipt.name}</b><strong>{receipt.balance === 0 ? roomWalletPending(room, receipt.memberId) > 0 ? tx('Paid by wallet · holder payment pending', 'مدفوع بالمحفظة · بانتظار دفع حامل الأموال') : t('Settled') : `${receipt.balance < 0 ? t('Refund due') : t('Due')} · ${money(Math.abs(receipt.balance), currency)}`}</strong></div><small>{t('Order')} {money(receipt.total, currency)} · {t('Paid')} {money(receipt.paid, currency)}</small><PaymentActionLine room={room} receipt={receipt} memberId={me.id} data={data} /></section>)}
       {payer ? <details className="receiving-account-options" open={!roomPaymentAccounts(room).length || undefined}><summary>{tx('Receiving payment methods', 'طرق استلام المدفوعات')}</summary><PaymentMethodsEditor room={room} data={data} /></details> : <PaymentDetails account={room.account} accounts={room.accounts} data={data} />}
       <p className="fine">{t('Recording a payment tracks it in Intrvioo; it does not move money.')}</p>
     </article>
+    <WalletCustody room={room} data={data} />
     {payer && !room.paymentRoom && room.phase !== 'ARCHIVED' && <RestaurantOrderCard room={room} receipts={reply.receipts} data={data} settlementActions />}
     {!room.paymentRoom && <article className="card placed-banner"><p className="eyebrow">{t('RESTAURANT STATUS')}</p><h2>{room.restaurantPaid ? t('Restaurant payment recorded') : t('Order announced as placed')}</h2><p>{room.restaurantReference}</p></article>}
     <details className="card payment-breakdown"><summary>{t('Order and payment details')}</summary><WalletPanel room={room} receipts={reply.receipts} me={me} payer={payer} />{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}{room.transfers.map(transfer => <div className="transfer-row" key={transfer.id}><span>{room.members.find(member => member.id === transfer.memberId)?.name} · {transfer.reference}<small>{t(String(transfer.status).toLowerCase())}</small></span><b>{money(transfer.amount, currency)}</b></div>)}</details>

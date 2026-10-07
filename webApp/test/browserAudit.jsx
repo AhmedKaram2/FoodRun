@@ -10,6 +10,7 @@ import { t, getLanguage } from '../src/foodrun/i18n.js';
 import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
 import { CreatePaymentRoom } from '../src/foodrun/PaymentRoom.jsx';
 import WalletFunds, { WalletPaymentOption } from '../src/foodrun/WalletFunds.jsx';
+import WalletCustody from '../src/foodrun/WalletCustody.jsx';
 
 let root, host;
 export const commands = [];
@@ -816,6 +817,36 @@ export async function runWalletAudit() {
   await render(<WalletFunds data={holder}/>);
   assert(!measureAudit().overflow,'Wallet controls overflow');
   return {passed:['balance identifies holder','no users before typing','email query','clear hides results','late search discarded','name search','selected receiving method','AED 100 pending top-up','holder received/not received','AED 40 grouped transfer for two users','recipient confirms whole group','wallet pays current remaining amount','insufficient balance disables wallet'],...measureAudit()};
+}
+
+export async function runWalletCustodyAudit() {
+  commands.length = 0;
+  const bank = { id:'bank', holder:'Karim', bank:'Test Bank', identifier:'AE070331234567890123456', currency:'AED', method:'BANK' };
+  const payment = { id:'allocated', customerId:'customer', customerName:'Anas', holderId:'holder', holderName:'Ahmed', recipientId:'canonical', recipientName:'Karim', roomId:'room', roomName:'Lunch', orderNumber:1, memberId:'customer-member', amount:1500, currency:'AED', status:'OWING', batchId:'' };
+  const batch = { id:'batch', holderId:'holder', holderName:'Ahmed', recipientId:'canonical', recipientName:'Karim', amount:1500, currency:'AED', paymentIds:[payment.id], status:'PENDING', account:bank, note:'Bank transfer', createdAt:0 };
+  const wallet = { balances:[{customerId:'canonical',customerName:'Karim',holderId:'holder',holderName:'Ahmed',currency:'AED',available:5000}], topUps:[],payments:[payment],batches:[] };
+  const fixture = {...data, user:{uid:'other-login-id'}, home:{...data.home, profile:{...data.home.profile,userId:'canonical'}, rooms:[],wallet}, setError:()=>{}, clearJoinBlock:()=>{}};
+  const render = async component => {
+    document.getElementById('root').style.display='none';root?.unmount();host?.remove();host=document.createElement('div');host.id='audit-root';document.body.append(host);root=createRoot(host);root.render(component);await pause();
+  };
+  const room = {id:'room',walletPayments:[payment]};
+  await render(<WalletCustody room={room} data={fixture}/>);
+  assert(host.textContent.includes('Ahmed')&&host.textContent.includes('Anas')&&host.textContent.includes('AED 15.00'),'Wallet responsibility does not identify holder, customer and amount');
+  assert(!host.querySelector('button'),'Unsent holder payment can be confirmed');
+  const sent = {...payment,status:'SENT',batchId:'batch'};
+  const receiving = {...fixture,home:{...fixture.home,wallet:{...wallet,payments:[sent],batches:[batch]}}};
+  await render(<WalletCustody room={{...room,walletPayments:[sent]}} data={receiving}/>);
+  const confirm = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(getLanguage()==='ar'?'تأكيد استلام كامل المبلغ':'Confirm full amount received'));
+  assert(confirm,'Recipient confirmation missing');confirm.click();await pause();
+  assert(commands.at(-1)?.kind==='WALLET_REVIEW_BATCH'&&commands.at(-1)?.fields.transferId==='batch'&&commands.at(-1)?.fields.flag===true,'Incorrect grouped confirmation command');
+  const refuse = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(t('Not received')));refuse.click();await pause();
+  assert(commands.at(-1)?.fields.flag===false,'Incorrect grouped rejection command');
+  await render(<WalletCustody room={{...room,walletPayments:[sent]}} data={{...receiving,home:{...receiving.home,profile:{...receiving.home.profile,userId:'customer'}}}}/>);
+  assert(!host.querySelector('button'),'Customer can confirm receipt for the payer');
+  await render(<Home data={fixture} setPage={()=>{}} openRoom={()=>{}}/>);
+  assert(host.querySelector('.home-money-preview')?.textContent.includes('AED 50.00'),'Unified login hides canonical wallet balance on Home');
+  assert(!measureAudit().overflow,'Wallet custody or unified account controls overflow');
+  return {language:getLanguage(),width:innerWidth,passed:['holder owes on behalf of customer','unsent payment cannot be confirmed','recipient confirms full group','recipient rejects full group','customer cannot confirm payer receipt','canonical balance shared by both logins'],...measureAudit()};
 }
 
 // Exercises collapsed information and actions with a large order, in both languages.

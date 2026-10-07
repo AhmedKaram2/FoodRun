@@ -66,6 +66,7 @@ fun main() {
     File(directory, "pairing.txt").writeText(pairing)
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
     val db = RoomDatabase(directory, FirestoreStore.configured())
+    AccountMergeRepair.configured(db)
     SessionReset.apply(db, SessionReset.cutoff())?.let { (accounts, rooms) ->
         println("FoodRun session reset completed: $accounts account sessions and $rooms room sessions revoked.")
     }

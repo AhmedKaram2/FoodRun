@@ -27,16 +27,18 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         if (payer) {
             val restaurantTotal = receipts.sumOf { it.total }
             val own = receipts.firstOrNull { it.memberId == me }?.total ?: 0
-            val confirmed = receipts.filterNot { it.memberId == me }.sumOf { it.paid }
+            val confirmed = WalletSettlement.received(r, receipts)
             val remaining = receipts.filterNot { it.memberId == me }.sumOf { maxOf(0, it.balance) }
+            val holdersOwe = WalletSettlement.pending(r)
             val refunds = receipts.sumOf { maxOf(0, -it.balance) }
             return listOf(GroupCard("wallet-summary", tr("Room wallet", "محفظة الغرفة"),
-                "Restaurant total ${money(restaurantTotal)}\nYour own order ${money(own)}\nConfirmed from others ${money(confirmed)}\nMembers still owe ${money(remaining)}${if(refunds > 0) "\nRefunds you owe ${money(refunds)}" else ""}")) +
+                "Restaurant total ${money(restaurantTotal)}\nYour own order ${money(own)}\nConfirmed from others ${money(confirmed)}\nMembers still owe ${money(remaining)}${if(holdersOwe > 0) tr("\nWallet holders owe ${money(holdersOwe)}", "\nحاملو أموال المحافظ عليهم ${money(holdersOwe)}") else ""}${if(refunds > 0) "\nRefunds you owe ${money(refunds)}" else ""}")) +
                 receipts.map { receipt ->
                     val claim = pending.firstOrNull { it.memberId == receipt.memberId }
                     val status = when {
                         receipt.memberId == me -> tr("Your own contribution", "حصتك الشخصية")
                         receipt.balance < 0 -> tr("Refund due ${money(-receipt.balance)}", "مبلغ مرتجع مستحق ${money(-receipt.balance)}")
+                        receipt.balance == 0L && WalletSettlement.pending(r, receipt.memberId) > 0 -> tr("Paid by wallet · holder payment pending", "مدفوع بالمحفظة · بانتظار دفع حامل الأموال")
                         receipt.balance == 0L -> tr("Settled", "تمت التسوية")
                         else -> tr("Still owes ${money(receipt.balance)}", "المتبقي عليه ${money(receipt.balance)}")
                     }
@@ -48,6 +50,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val own = receipts.firstOrNull { it.memberId == me } ?: return emptyList()
         val status = when {
             own.balance < 0 -> tr("Owed back to you ${money(-own.balance)}", "لك مبلغ مرتجع ${money(-own.balance)}")
+            own.balance == 0L && WalletSettlement.pending(r, me) > 0 -> tr("Paid by wallet · holder payment pending", "مدفوع بالمحفظة · بانتظار دفع حامل الأموال")
             own.balance == 0L -> tr("Settled", "تمت التسوية")
             else -> tr("You need to pay ${money(own.balance)}", "عليك دفع ${money(own.balance)}")
         }
@@ -61,7 +64,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>()
         cards += walletCards()
-        r.walletPayments.forEach { cards += GroupCard("wallet-custody:${it.id}", "${it.customerName} · ${money(it.amount)}", "${it.holderName} → ${it.recipientName}", c.walletFunds.status(it)) }
+        cards += c.walletFunds.roomCards(r)
         cards += GroupCard("review-next-step", tr("Ready for the restaurant", "جاهز للمطعم"),
             if (payer) tr("Copy or share the order, then mark it as sent. You can add the expected arrival if known. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها أكّد إن الطلب اتبعت. ممكن تضيف معاد الوصول لو معروف. مش محتاج تأكيد تاني من الناس.")
             else tr("${name(r.payerId)} is sending the order to the restaurant.", "${name(r.payerId)} بيبعت الطلب للمطعم."))
@@ -101,7 +104,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val ownPending = pending.firstOrNull { it.memberId == me }
         val ownReceipt = receipts.firstOrNull { it.memberId == me }
         cards += walletCards()
-        r.walletPayments.forEach { cards += GroupCard("wallet-custody:${it.id}", "${it.customerName} · ${money(it.amount)}", "${it.holderName} → ${it.recipientName}", c.walletFunds.status(it)) }
+        cards += c.walletFunds.roomCards(r)
         cards += GroupCard("placed", if (r.restaurantPaid) tr("Restaurant payment confirmed", "تم تأكيد دفع المطعم") else tr("Restaurant payment pending", "بانتظار دفع المطعم"), r.restaurantReference)
         if (r.billRevision > 1) {
             val detail = buildString {
@@ -151,6 +154,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 !r.restaurantPaid -> tr("Wait for ${name(r.payerId)} to confirm the restaurant payment. Your receipt shows your current share.", "انتظر تأكيد ${name(r.payerId)} لدفع المطعم. يعرض إيصالك حصتك الحالية.")
                 ownReceipt == null -> tr("Your receipt is not available yet. Reconnect to refresh this order.", "إيصالك غير متاح بعد. أعد الاتصال لتحديث الطلب.")
                 ownReceipt.balance < 0 -> tr("${name(r.payerId)} owes you a refund of ${money(-ownReceipt.balance)}. Wait for it to arrive, then confirm the refund claim.", "لك لدى ${name(r.payerId)} مبلغ مرتجع ${money(-ownReceipt.balance)}. انتظر وصوله ثم أكد الاستلام.")
+                ownReceipt.balance == 0L && WalletSettlement.pending(r, me) > 0 -> tr("Your share is paid by wallet. The holder owes ${money(WalletSettlement.pending(r, me))} on your behalf; you do not need to pay again.", "تم دفع حصتك بالمحفظة. على حامل الأموال دفع ${money(WalletSettlement.pending(r, me))} نيابة عنك؛ لا تحتاج للدفع مرة أخرى.")
                 ownReceipt.balance == 0L -> tr("Your share is settled. No further payment is needed for the current bill.", "تمت تسوية حصتك ولا توجد دفعات أخرى للفاتورة الحالية.")
                 else -> tr("Send up to ${money(ownReceipt.balance)} to ${r.account?.holder ?: name(r.payerId)} using your bank app or cash, then record the amount below. Intrvioo only records payments.", "أرسل حتى ${money(ownReceipt.balance)} إلى ${r.account?.holder ?: name(r.payerId)} عبر البنك أو نقداً ثم سجل المبلغ. إنترفيو يوثق الدفعات فقط.")
             }

@@ -17,3 +17,9 @@ export function walletPaymentGroups(wallet, userId) {
 export function walletTotals(balances) {
   return Object.entries(balances.reduce((totals, balance) => ({ ...totals, [balance.currency]: (totals[balance.currency] || 0) + balance.available }), {}));
 }
+export function roomWalletPending(room, memberId) {
+  return (room.walletPayments || []).filter(value => value.status !== 'SETTLED' && (!memberId || value.memberId === memberId)).reduce((total, value) => total + value.amount, 0);
+}
+export function roomCashReceived(room, receipts) {
+  return receipts.filter(value => value.memberId !== room.payerId).reduce((total, value) => total + value.paid, 0) - roomWalletPending(room);
+}

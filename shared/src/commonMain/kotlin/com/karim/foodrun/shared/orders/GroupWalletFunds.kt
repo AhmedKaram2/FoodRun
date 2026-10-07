@@ -51,7 +51,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                 c.page = GroupPage.WALLET_BATCH; send(CommandKind.WALLET_RECIPIENT, userId = batchRecipient)
             }
             "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = GroupPage.PROFILE)
-            "batch-yes", "batch-no" -> send(CommandKind.WALLET_REVIEW_BATCH, transferId = id, flag = action == "batch-yes", returnPage = GroupPage.PROFILE)
+            "batch-yes", "batch-no" -> send(CommandKind.WALLET_REVIEW_BATCH, transferId = id, flag = action == "batch-yes", returnPage = c.page)
             "copy" -> c.platform.copyToClipboard(recipient!!.accounts.single { it.id == id }.identifier)
             else -> error("Unknown wallet action.")
         }
@@ -114,6 +114,20 @@ internal class GroupWalletFunds(private val c: GroupController) {
         WalletPaymentStatus.OWING -> tr("Wallet paid; holder still needs to send cash", "تم الدفع بالمحفظة؛ على الشخص إرسال النقد")
         WalletPaymentStatus.SENT -> tr("Cash sent; awaiting recipient confirmation", "أُرسل النقد؛ بانتظار تأكيد المستلم")
         WalletPaymentStatus.SETTLED -> tr("Cash settled", "تمت تسوية النقد")
+    }
+    fun roomCards(room: Room): List<GroupCard> {
+        val payments = room.walletPayments
+        val cards = payments.map { payment -> GroupCard("wallet-custody:${payment.id}",
+            "${payment.holderName} · ${Money.format(payment.amount, payment.currency)}",
+            tr("On behalf of ${payment.customerName} · pay to ${payment.recipientName}", "نيابة عن ${payment.customerName} · الدفع إلى ${payment.recipientName}"), status(payment)) }.toMutableList()
+        val batchIds = payments.filter { it.status == WalletPaymentStatus.SENT }.map { it.batchId }.toSet()
+        wallet.batches.filter { it.id in batchIds && it.status == WalletStatus.PENDING && it.recipientId == uid }.forEach { batch ->
+            cards += GroupCard("wallet-custody-batch:${batch.id}", "${batch.holderName} · ${Money.format(batch.amount, batch.currency)}",
+                wallet.payments.filter { it.id in batch.paymentIds }.joinToString("\n") { "${it.customerName} · ${it.roomName} #${it.orderNumber} · ${Money.format(it.amount, it.currency)}" },
+                tr("Confirm after receiving the full grouped amount", "أكد بعد استلام كامل المبلغ المجمع"),
+                listOf(action(tr("Confirm full amount received", "تأكيد استلام كامل المبلغ"), "batch-yes|${batch.id}"), action(tr("Not received", "لم أستلم"), "batch-no|${batch.id}")))
+        }
+        return cards
     }
     fun content(): GroupFlowContent {
         val fields = mutableListOf<GroupField>(); val cards = mutableListOf<GroupCard>(); val buttons = mutableListOf<GroupButton>()

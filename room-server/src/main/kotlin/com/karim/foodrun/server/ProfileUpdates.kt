@@ -6,8 +6,7 @@ import com.karim.foodrun.orders.*
 internal class ProfileUpdates(private val db: RoomDatabase, private val clock: () -> Long) {
     fun save(profile: FoodProfile): List<String> {
         val previous = db.record("profile:${profile.userId}")?.let { orderJson.decodeFromString<FoodProfile>(it) }
-        val memberships = db.records("membership:${profile.userId}:")
-            .map { orderJson.decodeFromString<AccountRoom>(it.second) }
+        val memberships = AccountMemberships(db).all(profile.userId)
         val changed = memberships.mapNotNull { membership ->
             val room = db.room(membership.roomId) ?: return@mapNotNull null
             if (room.phase in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) return@mapNotNull null

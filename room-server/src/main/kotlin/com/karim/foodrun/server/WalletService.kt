@@ -77,8 +77,13 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         }
         allocations.forEach { value ->
             put(value)
-            if(value.status != WalletPaymentStatus.SETTLED) notifications.wallet(value.holderId, value.id, "wallet_payment_due",
-                "Wallet payment to send" to "دفعة محفظة للإرسال", "${value.customerName} → ${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.customerName} ← ${value.recipientName} · ${Money.format(value.amount, value.currency)}")
+            if(value.status != WalletPaymentStatus.SETTLED) {
+                notifications.wallet(value.holderId, value.id, "wallet_payment_due",
+                    "Wallet payment to send" to "دفعة محفظة للإرسال", "${value.customerName} → ${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.customerName} ← ${value.recipientName} · ${Money.format(value.amount, value.currency)}")
+                notifications.wallet(value.recipientId, value.id, "wallet_payment_assigned",
+                    "Collect from the wallet holder" to "استلم من حامل أموال المحفظة",
+                    "${value.holderName} owes ${Money.format(value.amount, value.currency)} on behalf of ${value.customerName}" to "${value.holderName} عليه ${Money.format(value.amount, value.currency)} نيابة عن ${value.customerName}")
+            }
         }
         val updated = room.copy(walletPayments = room.walletPayments + allocations, transfers = room.transfers + allocations.map {
             Transfer("wallet-${it.id}", actor, it.amount, "Wallet · ${it.holderName}", requireNotNull(room.account), status = TransferStatus.CONFIRMED, createdAt = clock())

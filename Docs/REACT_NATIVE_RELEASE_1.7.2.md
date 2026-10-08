@@ -29,4 +29,12 @@ The latest native iPhone install was attempted after the compact carousel and sh
 
 Twelve restaurant entries were saved and read back from the production shared catalog: Yasmeen Al Sham, Al Khan/Al Luluah Tower; Mama'esh Ajman City Centre, Sharjah Beach House, and nine Dubai locations. These entries include verified branch/contact references and allow custom food entry. Menu items and prices were not copied from third-party delivery menus. Mama'esh locations/menu source: https://linktr.ee/mamaesh. Yasmeen location/contact: https://www.bizmideast.com/AE/yasmeen-al-sham-supermarket-restaurant-050-788-0111 and the restaurant's social posts mirrored at FoodBevg.
 
-Final publication identifiers will be recorded after deployment.
+## Published evidence
+
+- Code/tag: `456edeb472bc3d10e04fb1aec8d1e6888d6b058e`, `v1.7.2`, pushed to `fork/main`.
+- Website: https://intrvioo.com, Netlify deployment `6ac7707e92059b902f0c73f8`. Served entry `/assets/index-CCuJ1cSv.js` matches the local build, SHA-256 `1d5d63cc44312407d3f40eef9b85464b439d3a69404f4a2fe4ffb79f14d937cb`. Existing payment functions were preserved; their expected method checks passed.
+- Backend: Render deployment `dep-db3n0260tbcc7386hh50`, live at `2026-10-08T10:32:10Z`. Health is HTTP 200 with Firestore storage. All twelve restaurant entries remain present after deployment.
+- Public Android APK matches the signed local file: SHA-256 `2fb1aa36a0c5b5fd4fbaa2468b8b89e4f103307f8b4fc8f7a02f805439bd6e1d`. Signing certificate is unchanged. The final APK installed and launched on the Android emulator.
+- Public development IPA matches the exported local file: SHA-256 `5c5aee70e62d1ea33ef37ae5620d49cbdfb8a2d2f22b56b903810682d9d151c1`. Version 1.7.2/build 20; attached iPhone is covered by the provisioning profile. Development APNs entitlement, archive/export and strict signing checks passed.
+- Website navigation and the iPhone installation sheet passed English and Arabic checks at 320, 390 and 1280 pixels, including keyboard dismissal and focus restoration.
+- Firebase accepted sender validation (HTTP 200, validation only). No registered iOS push device was present. The final iPhone update could not be installed because CoreDevice could not reach the phone.

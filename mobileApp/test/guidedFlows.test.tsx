@@ -139,3 +139,36 @@ test("short joining stays simple and a fresh room starts on the first step",asyn
   emit({...base(),mainFields:[field("NAME","Me"),field("ROOM_CODE","123456")],primaryAction:action("Join","JOIN_ROOM","",true)});
   expect(view.getByTestId("ROOM_CODE")).toBeTruthy();expect(view.queryByTestId("flow-step:0")).toBeNull();
 });
+
+test("toggling the restaurant poll opens the sheet even when native navigation comes from a field update",async() => {
+  const draft=base();
+  (native.update as jest.Mock).mockImplementation((key,value) => {
+    if(key==="RESTAURANT_POLL") emit({...draft,state:{...draft.state,page:"LIBRARY"},mainFields:[field("RESTAURANT_SEARCH")],primaryAction:{...action("Use selected restaurants","CONFIRM_POLL_RESTAURANTS","",true),enabled:false},inlineButtons:[],topCards:[card("restaurant:a","Cafe A",{buttons:[action("Add to poll","TOGGLE_POLL_RESTAURANT","a")]})]});
+  });
+  const view=render(<App/>);await view.findByText("Choose the food");
+  fireEvent(view.getAllByRole("switch")[0],"valueChange",true);
+  expect(view.getByTestId("restaurant-results")).toBeTruthy();
+  expect(view.getByTestId("RESTAURANT_SEARCH").props.placeholder).toContain("Name, branch");
+});
+
+test("a saved creation failure retains review and retries the original request without a second create",async() => {
+  const view=render(<App/>);await view.findByText("Choose the food");next(view);next(view);next(view);
+  fireEvent.press(view.getByTestId("action:CREATE_ROOM:"));
+  emit({...current,state:{...current.state,error:"Network unavailable. Retry your saved request."},primaryAction:action("Retry saved request","RETRY","",true),inlineButtons:[...current.inlineButtons,action("Create room","CREATE_ROOM","",true)]});
+  expect(view.getByText("Step 4 of 4")).toBeTruthy();
+  expect(view.queryByTestId("action:CREATE_ROOM:")).toBeNull();
+  fireEvent.press(view.getByTestId("action:RETRY:"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("RETRY","");
+  expect((native.dispatch as jest.Mock).mock.calls.filter(([a])=>a==="CREATE_ROOM")).toHaveLength(1);
+});
+
+test("connection fallback and cancel preserve the room step and draft",async() => {
+  const view=render(<App/>);await view.findByText("Choose the food");next(view);
+  fireEvent.changeText(view.getByTestId("ROOM_NAME"),"My breakfast");next(view);
+  const draft={...current,state:{...current.state,error:"Network unavailable"},inlineButtons:[...current.inlineButtons,action("Connection options","OPEN_CONNECTION_OPTIONS")]};
+  (native.dispatch as jest.Mock).mockImplementation(a=>{if(a==="OPEN_CONNECTION_OPTIONS")emit({...draft,state:{...draft.state,page:"CONNECT"},mainFields:[field("HUB_URL","https://example.test")],extraFields:[],topCards:[],primaryAction:action("Use internet room","USE_INTERNET","",true),inlineButtons:[]});if(a==="BACK")emit(draft);});
+  emit(draft);fireEvent.press(view.getByText("Connection options"));
+  fireEvent.press(view.getByLabelText("Back"));expect(view.getByText("Step 3 of 4")).toBeTruthy();
+  fireEvent.press(view.getByTestId("action:FLOW_BACK:"));expect(view.getByTestId("ROOM_NAME").props.value).toBe("My breakfast");
+  expect(native.dispatch).not.toHaveBeenCalledWith("CREATE_ROOM","");
+});

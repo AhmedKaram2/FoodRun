@@ -221,7 +221,7 @@ function Application() {
       (!room || roomActionTab(button) === selected) &&
       button.action !== "SET_LANGUAGE" &&
       (state.page !== "HOME" ||
-        ["CREATE_PAYMENT_ROOM"].includes(
+        ["CREATE_PAYMENT_ROOM", "OPEN_CONNECTION_OPTIONS"].includes(
           button.action,
         )),
   );

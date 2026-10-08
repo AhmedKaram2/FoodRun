@@ -888,8 +888,8 @@ class GroupFlowIntegrationTest {
     }
     @Test fun pairingSameHubAtNewAddressUpdatesSavedSessionsWithoutRejoining(): Unit = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)
-        val token = c.session!!.token; val id = c.room().id
-        c.dispatch(GroupAction.CREATE); c.update(GroupFieldKey.HUB_URL, "https://192.168.1.99:8443"); c.dispatch(GroupAction.CONNECT)
+        val token = c.session!!.token; val id = c.room().id; val fingerprint = c.session!!.hub.fingerprint
+        c.dispatch(GroupAction.CREATE); c.update(GroupFieldKey.HUB_URL, "https://192.168.1.99:8443"); c.update(GroupFieldKey.FINGERPRINT, fingerprint); c.dispatch(GroupAction.CONNECT)
         assertEquals("https://192.168.1.99:8443", c.library.sessions.single().hub.url)
         c.dispatch(GroupAction.RESUME, id); bus.sync()
         assertEquals(token, c.session!!.token)
@@ -899,6 +899,10 @@ class GroupFlowIntegrationTest {
     @Test fun internetRoomActionSelectsTheDeployedPublicApiWithoutCertificatePinning(): Unit = Bus().use { bus ->
         val (c, _) = bus.phone()
         c.dispatch(GroupAction.CREATE)
+        assertEquals(GroupPage.SETUP, c.state.page)
+        assertEquals(FOOD_RUN_INTERNET_API, c.library.selectedHub?.url)
+        c.error = "Internet connection unavailable"
+        c.dispatch(GroupAction.OPEN_CONNECTION_OPTIONS)
         assertTrue(c.state.buttons.any { it.action == GroupAction.USE_INTERNET && it.primary })
         c.dispatch(GroupAction.USE_INTERNET)
         assertEquals(GroupPage.SETUP, c.state.page)

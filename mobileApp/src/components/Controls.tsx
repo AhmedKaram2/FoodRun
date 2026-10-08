@@ -105,6 +105,13 @@ export const action = (
   destructive: false,
   enabled: true,
 });
+function searchPlaceholder(key: string, rtl: boolean): string | undefined {
+  if (key === "RESTAURANT_SEARCH") return tx(rtl,"Name, branch or area · e.g. Ajman","اسم أو منطقة، مثل ممائيش أو عجمان");
+  if (["FRIEND_EMAIL", "WALLET_SEARCH"].includes(key)) return tx(rtl,"Name or email · at least 2 characters","الاسم أو البريد الإلكتروني · حرفان على الأقل");
+  if (key === "ADMIN_SEARCH") return tx(rtl,"Name, email, room code or keyword","الاسم أو البريد أو رمز الغرفة أو كلمة للبحث");
+  if (key.includes("SEARCH")) return tx(rtl,"Type a name or keyword…","اكتب اسماً أو كلمة للبحث…");
+  return undefined;
+}
 export function FieldInput({
   field,
   busy,
@@ -220,7 +227,7 @@ export function FieldInput({
             rtl={rtl}
             onClose={() => setSelect(false)}
           >
-                {field.choices.length > 8 && <TextInput accessibilityLabel={tx(rtl,"Search options","البحث في الخيارات")} placeholder={tx(rtl,"Search options","البحث في الخيارات")} placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={[styles.input,textStyle(rtl)]}/>}
+                {field.choices.length > 8 && <TextInput accessibilityLabel={tx(rtl,"Search options","البحث في الخيارات")} placeholder={tx(rtl,"Type a name or keyword…","اكتب اسماً أو كلمة للبحث…")} placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={[styles.input,textStyle(rtl)]}/>}
                 <ScrollView keyboardShouldPersistTaps="handled">
                   {field.choices.filter(choice => choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((choice) => (
                     <Pressable
@@ -249,25 +256,27 @@ export function FieldInput({
           editable={!busy}
           testID={field.key}
           accessibilityLabel={field.label}
+          placeholder={searchPlaceholder(field.key, rtl)}
+          placeholderTextColor={colors.muted}
           value={value}
           onChangeText={change}
           secureTextEntry={field.secret}
           multiline={field.multiline}
           numberOfLines={field.multiline ? 4 : 1}
           autoCapitalize={
-            /EMAIL|PASSWORD|IDENTIFIER|CODE|PHONE|HUB|FINGERPRINT/.test(
+            /EMAIL|PASSWORD|IDENTIFIER|CODE|PHONE|HUB|FINGERPRINT|SEARCH/.test(
               field.key,
             )
               ? "none"
               : "sentences"
           }
           autoCorrect={
-            !/EMAIL|PASSWORD|IDENTIFIER|CODE|PHONE|HUB|FINGERPRINT/.test(
+            !/EMAIL|PASSWORD|IDENTIFIER|CODE|PHONE|HUB|FINGERPRINT|SEARCH/.test(
               field.key,
             )
           }
           keyboardType={
-            /EMAIL/.test(field.key)
+            /EMAIL/.test(field.key) && field.key !== "FRIEND_EMAIL"
               ? "email-address"
               : /PHONE/.test(field.key)
                 ? "phone-pad"

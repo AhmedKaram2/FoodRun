@@ -664,7 +664,7 @@ export function CreateRoom({ data, mode, onBack, openRoom, inviteCode = '' }) {
   const profile = data.home.profile;
   const groups = roomFriendGroups(data.home);
   const [restaurants, setRestaurants] = useRestaurantLibrary();
-  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'wheel', friendGroupId: '', joinTimer: false, joinTimerMinutes: '10', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
+  const [form, setForm] = useState(() => ({ ...roomDefaults(profile.userId || data.user?.uid, restaurants), selectionStyle: 'names', friendGroupId: '', joinTimer: false, joinTimerMinutes: '10', restaurant: '', phone: '', code: inviteCode, memberName: profile.name?.trim() || data.user?.displayName || '', restaurantPoll: false, deliveryMode: true, discount: '0.00', proportionalDelivery: false }));
   const suggestedRoomName = useRef(form.room);
   const [message, setMessage] = useState('');
   const [restaurantPicker, setRestaurantPicker] = useState(false);
@@ -1261,6 +1261,9 @@ function FoodRunClientContent({ useData = useFoodRun } = {}) {
   useEffect(() => { window.scrollTo({ top: 0 }); }, [page]);
   const [roomId, setRoomId] = useState('');
   const [restaurantRoomId, setRestaurantRoomId] = useState('');
+  const [connectionOptions, setConnectionOptions] = useState(false);
+  useEffect(() => { if (data.home) setConnectionOptions(false); }, [!!data.home]);
+  useEffect(() => { setConnectionOptions(false); }, [data.user?.uid]);
   const previousUserId = useRef(data.user?.uid);
   useEffect(() => {
     if (previousUserId.current === data.user?.uid) return;
@@ -1331,7 +1334,8 @@ function FoodRunClientContent({ useData = useFoodRun } = {}) {
   if (block) return <BlockedNotice block={block} retry={() => data.connect(data.hub)} onBack={() => { data.clearJoinBlock(); closeRoom(); }} />;
   if (data.user && page === 'offline') return <>{alerts}<OfflineReceipts receipts={data.offlineReceipts} language={uiLanguage} onBack={() => setPage('home')} onClear={data.clearOfflineReceipts} /></>;
   const offlineAction = data.user && <button className="secondary" onClick={() => setPage('offline')}>{tx('Downloaded receipts', 'الإيصالات المحفوظة')}</button>;
-  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><BrandMark />{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{offlineAction}</div>{alerts}</>;
+  if (data.user && connectionOptions && !data.home && !data.hasPending) return <><HubScreen current={data.hub} connect={address => { setConnectionOptions(false); data.connect(address); }} error={data.error || connectionMessage} /><div className="center-actions"><button className="secondary" onClick={() => { setConnectionOptions(false); data.connect(PUBLIC_API_URL); }}>{tx('Retry Internet connection', 'إعادة محاولة الاتصال بالإنترنت')}</button>{offlineAction}</div>{alerts}</>;
+  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><BrandMark />{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{data.hub === PUBLIC_API_URL && ['retrying','offline'].includes(data.connectionState) && !data.hasPending && <button className="secondary" onClick={() => setConnectionOptions(true)}>{tx('Other connection options', 'خيارات اتصال أخرى')}</button>}{offlineAction}</div>{alerts}</>;
   if (!data.user) return <AuthScreen ready={data.authReady} allowRegistration={siteConfig.registrationsEnabled} />;
   if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onSupport={reply => { window.history.replaceState({}, '', '/'); setSupportSession(reply); setPage('home'); }} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
   if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;

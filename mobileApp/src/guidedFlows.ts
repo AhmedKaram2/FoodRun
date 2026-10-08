@@ -18,8 +18,8 @@ export const allActions = (s: Snapshot) => [s.primaryAction, ...s.inlineButtons,
 
 export function flowKind(s: Snapshot): FlowKind | null {
   const fields = allFields(s);
-  if (s.state.page === "SETUP" && s.primaryAction?.action === "CREATE_ROOM") return "room";
-  if (s.state.page === "RESTAURANT" && s.primaryAction?.action === "SAVE_RESTAURANT") return "restaurant";
+  if (s.state.page === "SETUP" && allActions(s).some(a => a.action === "CREATE_ROOM")) return "room";
+  if (s.state.page === "RESTAURANT" && allActions(s).some(a => a.action === "SAVE_RESTAURANT")) return "restaurant";
   if (s.state.page === "PAYMENT_ROOM" && fields.some(f => f.key === "PAYMENT_TOTAL")) return "payment";
   if (s.state.page === "MENU_ENTITY" && fields.length > 4) return "menu";
   return null;
@@ -94,6 +94,7 @@ export function useGuidedFlow(s: Snapshot | null) {
   const [steps, setSteps] = useState<Record<FlowKind, number>>({room: 0, restaurant: 0, payment: 0, menu: 0});
   const [pickingRestaurant, setPickingRestaurant] = useState(false);
   const roomDraft = useRef<Snapshot | null>(null);
+  const previousPage = useRef<string | undefined>(undefined);
   const account = s?.accountId, page = s?.state.page;
   useEffect(() => {
     setSteps({room: 0, restaurant: 0, payment: 0, menu: 0});
@@ -102,8 +103,14 @@ export function useGuidedFlow(s: Snapshot | null) {
   }, [account]);
   useEffect(() => {
     if (!s) return;
+    const previous = previousPage.current;
+    previousPage.current = page;
+    if (page === "LIBRARY" && previous === "SETUP" && roomDraft.current?.accountId === account) {
+      setPickingRestaurant(true);
+      allFields(s).filter(f => ["RESTAURANT_SEARCH", "RESTAURANT_EMIRATE", "RESTAURANT_AREA", "RESTAURANT_MEAL"].includes(f.key) && f.value).forEach(f => update(f.key, ""));
+    }
     if (flowKind(s) === "room") { roomDraft.current = s; setPickingRestaurant(false); }
-    if (!["SETUP", "LIBRARY", "RESTAURANT", "MENU_EDITOR", "MENU_ENTITY"].includes(page!)) {
+    if (!["CONNECT", "SETUP", "LIBRARY", "RESTAURANT", "MENU_EDITOR", "MENU_ENTITY"].includes(page!)) {
       roomDraft.current = null;
       setPickingRestaurant(false);
       setSteps(old => ({...old, room: 0}));
@@ -114,7 +121,7 @@ export function useGuidedFlow(s: Snapshot | null) {
   }, [page, account]);
   // Every draft change is already persisted by the native controller; keep its newest view behind the sheet.
   useEffect(() => { if (s && flowKind(s) === "room") roomDraft.current = s; }, [s]);
-  const picker = page === "LIBRARY" && pickingRestaurant && roomDraft.current?.accountId === account;
+  const picker = page === "LIBRARY" && (pickingRestaurant || s?.primaryAction?.action === "CONFIRM_POLL_RESTAURANTS") && roomDraft.current?.accountId === account;
   const screen = picker ? roomDraft.current : s;
   const kind = screen ? flowKind(screen) : null;
   const step = kind ? steps[kind] : 0;
@@ -122,7 +129,6 @@ export function useGuidedFlow(s: Snapshot | null) {
   const run = (a: Action) => {
     if (kind === "room" && ["OPEN_LIBRARY", "OPEN_POLL_RESTAURANTS"].includes(a.action)) {
       setPickingRestaurant(true);
-      ["RESTAURANT_SEARCH", "RESTAURANT_EMIRATE", "RESTAURANT_AREA", "RESTAURANT_MEAL"].forEach(key => update(key, ""));
     }
     dispatch(a.action, a.value);
   };

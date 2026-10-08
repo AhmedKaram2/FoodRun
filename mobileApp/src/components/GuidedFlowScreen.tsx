@@ -30,7 +30,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
   const knownFields = new Set(steps.flatMap(s => [...s.fields, ...s.optional]));
   const unknownFields = fields.filter(f => !knownFields.has(f.key) && !(kind === "room" && f.key === "RESTAURANT_NAME"));
   const primary = snapshot.primaryAction;
-  const unknownActions = actions.filter(a => a !== primary && !["SET_LANGUAGE", "BACK", "OPEN_LIBRARY", "OPEN_POLL_RESTAURANTS", "USE_OPEN_ORDER", ...steps.flatMap(s => s.actions)].includes(a.action));
+  const unknownActions = actions.filter(a => a !== primary && !["CREATE_ROOM", "SAVE_RESTAURANT", "SAVE_PAYMENT_ROOM", "MENU_SAVE", "RETRY", "SET_LANGUAGE", "BACK", "OPEN_LIBRARY", "OPEN_POLL_RESTAURANTS", "USE_OPEN_ORDER", "OPEN_CONNECTION_OPTIONS", ...steps.flatMap(s => s.actions)].includes(a.action));
   const contentCards = cards.filter(current.cards).filter(c => !(kind === "menu" || kind === "payment" && c.id.startsWith("share:")));
   const remainingCards = cards.filter(c => !steps.some(s => s.cards(c)) && !["restaurant", "poll-choices", "restaurant-choice-mode", "payment-account-missing"].includes(c.id) && !(kind === "payment" && c.id.startsWith("share:")));
   const stepFields = current.fields.map(key => fields.find(f => f.key === key)).filter((f): f is Field => !!f);
@@ -49,6 +49,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
   };
   const finish = () => {
     if (submitted.current) return;
+    if (primary?.action === "RETRY") { submitted.current = true; run(primary); return; }
     for (let i = 0; i < steps.length - 1; i++) {
       const invalid = stepError(kind, i, snapshot);
       if (invalid) { move(i); return; }
@@ -82,6 +83,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
         <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.stepTitle]}>{current.title}</Text>
         <Text style={[textStyle(rtl),styles.hint]}>{current.hint}</Text>
         {!!error && <Text accessibilityRole="alert" style={[textStyle(rtl),styles.error]}>{error}</Text>}
+        {actions.filter(a => a.action === "OPEN_CONNECTION_OPTIONS").map(renderButton)}
         {!review && <>
           {stepFields.map(renderField)}
           {kind === "room" && index === 0 && <>
@@ -133,7 +135,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
         {open && <Button rtl={rtl} busy={busy} action={{...open,primary:true}} onPress={() => {run(open);setSheet(null);}}/>}
       </>}
       {sheet === "people" && <>
-        <TextInput testID="payment-people-search" accessibilityLabel={tx(rtl,"Search people","ابحث عن شخص")} placeholder={tx(rtl,"Search by name","ابحث بالاسم")} value={query} onChangeText={setQuery} autoCorrect={false} style={[textStyle(rtl),styles.search]}/>
+        <TextInput testID="payment-people-search" accessibilityLabel={tx(rtl,"Search people","ابحث عن شخص")} placeholder={tx(rtl,"Type a name, e.g. Ahmed","اكتب اسماً، مثل أحمد")} placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} autoCorrect={false} style={[textStyle(rtl),styles.search]}/>
         <FlatList testID="payment-people-results" style={{flexShrink:1}} keyboardShouldPersistTaps="handled" data={people.filter(c => c.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))} keyExtractor={c => c.id}
           ListEmptyComponent={<Text style={[textStyle(rtl),styles.hint]}>{tx(rtl,"No matching people","لا توجد أسماء مطابقة")}</Text>}
           renderItem={({item}) => <CompactPerson card={item} rtl={rtl} busy={busy} run={run}/>}/>

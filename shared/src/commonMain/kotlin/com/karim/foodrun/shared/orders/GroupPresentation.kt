@@ -135,6 +135,9 @@ internal class GroupPresentation(private val c: GroupController) {
         val spin = room?.spin?.takeIf { c.page == GroupPage.ROOM && room.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) }
         val wheel = spin?.let { GroupWheel(it.memberIds.map { id -> room.members.single { m -> m.id == id }.name }, it, c.serverOffset(), room.members.single { m -> m.id == it.winnerId }.name, room.selectionStyle) }
         if (c.library.pending != null && !c.busy) buttons.add(0, GroupButton(tr("Retry saved request", "إعادة إرسال الطلب المحفوظ"), GroupAction.RETRY, primary = true))
+        if (c.library.pending == null && c.page in listOf(GroupPage.HOME, GroupPage.SETUP) && c.library.selectedHub?.url == FOOD_RUN_INTERNET_API &&
+            Regex("connect|network|timed? out|timeout|unavailable|socket|offline|host|unreachable", RegexOption.IGNORE_CASE).containsMatchIn(c.error))
+            button(tr("Connection options", "خيارات الاتصال"), GroupAction.OPEN_CONNECTION_OPTIONS)
         return GroupState(c.page, if(c.page in listOf(GroupPage.ROOM, GroupPage.ITEM)) title else ui(title), if(c.page == GroupPage.ITEM) subtitle else ui(subtitle), fields, cards, buttons, c.busy, c.online,
             ui(if (c.session == null) "Nearby or internet live rooms · Firebase account backup"
             else if(c.online && c.session?.hub?.fingerprint.isNullOrEmpty()) "Live over the internet · saved on this device"
@@ -266,7 +269,7 @@ internal class GroupPresentation(private val c: GroupController) {
             fields += GroupField(GroupFieldKey.FRIEND_GROUP_CHOICE, tr("Invite favourite friend group", "دعوة مجموعة أصدقاء مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_CHOICE), choices = listOf(GroupChoice("", tr("No group", "بدون مجموعة"))) + c.library.home?.roomFriendGroups().orEmpty().map { GroupChoice(it.selectionKey(), "${it.group.name} · ${it.ownerName}") })
             field(GroupFieldKey.JOIN_TIMER, tr("Start the wheel after a join timer", "بدء العجلة بعد مهلة الانضمام"), toggle = true)
             if(c.flag(GroupFieldKey.JOIN_TIMER)) field(GroupFieldKey.JOIN_TIMER_MINUTES, tr("Join time in minutes · 1–1440", "مهلة الانضمام بالدقائق · 1–1440"))
-            fields += GroupField(GroupFieldKey.SELECTION_STYLE, tr("Selection animation", "طريقة عرض الاختيار"), c.text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, choices = listOf(GroupChoice("wheel", tr("Wheel", "العجلة")), GroupChoice("names", tr("Running names", "الأسماء المتحركة"))))
+            fields += GroupField(GroupFieldKey.SELECTION_STYLE, tr("Selection animation", "طريقة عرض الاختيار"), c.text(GroupFieldKey.SELECTION_STYLE).ifBlank { "names" }, choices = listOf(GroupChoice("wheel", tr("Wheel", "العجلة")), GroupChoice("names", tr("Running names", "الأسماء المتحركة"))))
         }
         if (c.selectedRestaurant == null) {
             field(GroupFieldKey.RESTAURANT_NAME, "Restaurant for an open order")

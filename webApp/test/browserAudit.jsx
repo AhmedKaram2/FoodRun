@@ -1202,6 +1202,24 @@ export async function runIosInstallAudit(){
  assert(sheet.getBoundingClientRect().width<=innerWidth,'Install sheet overflows');
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause();assert(!document.querySelector('.ios-install-sheet'),'Escape did not close installation');
  assert(document.activeElement===button,'Focus was not restored');
- const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.2.ipa'),'IPA download is missing');
+ const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.3.ipa'),'IPA download is missing');
  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false};
+}
+
+export async function runInternetDefaultsAudit() {
+  await mountAudit('create');
+  const style=[...host.querySelectorAll('select')].find(select=>[...select.options].some(option=>option.value==='names'));
+  assert(style?.value==='names','New rooms do not default to running names');
+  await mountAudit('library');
+  assert(host.querySelector('input[type="search"]')?.placeholder,'Restaurant search has no help');
+  const fixture={...data,authReady:true,hub:'https://foodrun-api-q6b9.onrender.com',home:null,connectionState:'connecting',hasPending:false,clearJoinBlock:()=>{},connect:()=>{},dismissFeedback:()=>{}};
+  const useFixture=()=>fixture;
+  root.render(<FoodRunClient useData={useFixture}/>);await pause();
+  assert(!host.querySelector('.mode-cards'),'Healthy initial Internet connection shows other hub choices');
+  fixture.connectionState='retrying';root.render(<FoodRunClient useData={useFixture}/>);await pause();
+  const fallback=[...host.querySelectorAll('button')].find(button=>/Other connection options|خيارات اتصال أخرى/.test(button.textContent));
+  assert(fallback,'Failed Internet connection has no fallback');fallback.click();await pause();
+  assert(host.querySelector('.mode-cards'),'Connection choices did not open after failure');
+  assert(!measureAudit().overflow,'Connection choices overflow');
+  return {passed:true,language:getLanguage(),width:innerWidth,defaultStyle:'names',fallbackAfterFailure:true};
 }

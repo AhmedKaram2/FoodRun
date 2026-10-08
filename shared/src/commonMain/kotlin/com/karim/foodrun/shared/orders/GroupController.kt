@@ -66,6 +66,7 @@ class GroupController(val platform: GroupPlatform) {
     private var generation = 0
     private var offset: Long = 0
     private var libraryReturnPage = GroupPage.HOME
+    private var connectionReturnPage = GroupPage.HOME
     private var storageReadable = true
     private var supportOwner: GroupLibrary? = null
     private var supportDraft: Map<GroupFieldKey,String> = emptyMap()
@@ -261,18 +262,17 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.SAVE_ITEM_PRICE -> { val target = requireNotNull(pricingTarget); command(CommandKind.PRICE_ITEM, memberId = target.first, text = target.second, amount = Money.parse(text(GroupFieldKey.AMOUNT), room().restaurant.currency)) }
             GroupAction.BACK -> back()
             GroupAction.QUICK_SPIN -> page = GroupPage.QUICK_SPIN
-            GroupAction.CREATE, GroupAction.JOIN -> { if (action == GroupAction.CREATE) {
+            GroupAction.CREATE, GroupAction.JOIN -> { accountEditing = false; if (action == GroupAction.CREATE) {
                 smartDefaults.seed()
                 selectedRestaurant?.let { seedFees(it.restaurant) }
-                draft[GroupFieldKey.SELECTION_STYLE] = "wheel"
+                draft[GroupFieldKey.SELECTION_STYLE] = "names"
                 draft[GroupFieldKey.JOIN_TIMER] = "false"; draft[GroupFieldKey.JOIN_TIMER_MINUTES] = "10"; draft[GroupFieldKey.FRIEND_GROUP_CHOICE] = ""
-            }; joinMode = action == GroupAction.JOIN; nextOrder = false; page = GroupPage.CONNECT; seedHub() }
-            GroupAction.USE_INTERNET -> {
-                draft[GroupFieldKey.PAIRING_LINK] = ""
-                draft[GroupFieldKey.HUB_URL] = FOOD_RUN_INTERNET_API
-                draft[GroupFieldKey.FINGERPRINT] = ""
-                connect()
+            }; joinMode = action == GroupAction.JOIN; nextOrder = false; connectionReturnPage = GroupPage.HOME; page = GroupPage.CONNECT; useInternet() }
+            GroupAction.OPEN_CONNECTION_OPTIONS -> {
+                require(library.pending == null) { "Retry the saved request to confirm its result before changing connections." }
+                accountEditing = false; connectionReturnPage = page; page = GroupPage.CONNECT; seedHub()
             }
+            GroupAction.USE_INTERNET -> useInternet()
             GroupAction.CONNECT -> connect()
             GroupAction.DISCOVER -> platform.discover(callback { body -> draft[GroupFieldKey.HUB_URL] = body; success("Hub found. Scan its setup QR or paste its fingerprint to verify its identity."); publish() })
             GroupAction.SCAN -> platform.scanPairing(callback { body -> draft[GroupFieldKey.PAIRING_LINK] = body; connect() })
@@ -414,6 +414,12 @@ class GroupController(val platform: GroupPlatform) {
         override fun complete(body: String, error: String) { try { if (error.isNotBlank()) this@GroupController.error = error else action(body) } catch (e: Exception) { this@GroupController.error = e.message ?: "Unable to read this file." }; publish() }
     }
     private fun seedHub() { library.selectedHub?.let { draft[GroupFieldKey.HUB_URL] = it.url; draft[GroupFieldKey.FINGERPRINT] = it.fingerprint }; draft[GroupFieldKey.PAIRING_LINK] = "" }
+    private fun useInternet() {
+        draft[GroupFieldKey.PAIRING_LINK] = ""
+        draft[GroupFieldKey.HUB_URL] = FOOD_RUN_INTERNET_API
+        draft[GroupFieldKey.FINGERPRINT] = ""
+        connect()
+    }
     private fun connect() {
         val link = text(GroupFieldKey.PAIRING_LINK).trim()
         if (link.isNotEmpty()) {
@@ -464,7 +470,7 @@ class GroupController(val platform: GroupPlatform) {
         val groupChoice = if(nextOrder) "" else text(GroupFieldKey.FRIEND_GROUP_CHOICE)
         val group = if(groupChoice.isEmpty()) null else requireNotNull(library.home?.roomFriendGroups()?.singleOrNull { it.selectionKey() == groupChoice }) { "This friend group is no longer available. Choose a group again." }
         if (nextOrder) command(CommandKind.NEXT_ORDER, restaurant = r, restaurants = choices, fees = fees, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination)
-        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "wheel" }, friendGroupId = group?.group?.id.orEmpty(), friendGroupOwnerId = group?.ownerId.orEmpty(),
+        else send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.CREATE, name = text(GroupFieldKey.NAME).trim(), text = smartDefaults.submittedName(GroupFieldKey.ROOM_NAME), restaurant = r, restaurants = choices, expectedNames = names, flag = flag(GroupFieldKey.DELIVERY), destination = destination, fees = fees, selectionStyle = text(GroupFieldKey.SELECTION_STYLE).ifBlank { "names" }, friendGroupId = group?.group?.id.orEmpty(), friendGroupOwnerId = group?.ownerId.orEmpty(),
             joinTimerMinutes = if(flag(GroupFieldKey.JOIN_TIMER)) (text(GroupFieldKey.JOIN_TIMER_MINUTES).toIntOrNull()?.takeIf { it in 1..1440 } ?: error("Choose between 1 and 1440 minutes.")) else 0))
     }
     private fun back() {
@@ -495,6 +501,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupPage.PAYMENT, GroupPage.REORDER, GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
             GroupPage.LIBRARY -> libraryReturnPage
+            GroupPage.CONNECT -> connectionReturnPage
             else -> GroupPage.HOME
         }
     }

@@ -41,7 +41,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
   };
   const [firebaseUser, setUser] = useState(null), [authReady, setAuthReady] = useState(false);
   const user = useMemo(() => supportSession ? { uid: supportSession.home.profile.userId, email: '', emailVerified: false, displayName: supportSession.home.profile.name } : firebaseUser, [firebaseUser, supportSession]);
-  const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
+  const [hub, setHub] = useState(() => invitedHub() || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [connectionState, setConnectionState] = useState('');
   const homeReply = useRef(null);

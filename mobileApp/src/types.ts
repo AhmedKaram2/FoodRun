@@ -31,7 +31,7 @@ export type Wheel = {
     id: string;
     weights: number[];
     startAt: number;
-    endAt: number;
+    duration: number;
     turns: number;
     landingOffset: number;
     winnerId: string;

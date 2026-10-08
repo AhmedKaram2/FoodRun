@@ -1167,3 +1167,41 @@ export async function runMobilePagesAudit() {
   const remove = button('Delete selected data');assert(remove.disabled,'Filtered cleanup can delete unseen records');remove.click();await pause();assert(cleanupCalls.length===1,'Filtered cleanup sent delete request');
   return {passed:true,language:getLanguage(),width:innerWidth,screens,walletHistory:true,notificationPreferences:true,adminSearchTabs:9,adminPagination:true,overflow:false};
 }
+
+export async function runGlobalNavigationAudit() {
+  const oldUrl=location.href;
+  commands.length=0;
+  root?.unmount();host?.remove();document.getElementById('root').style.display='none';
+  host=document.createElement('div');host.id='audit-root';document.body.append(host);root=createRoot(host);
+  const fixture={...data,authReady:true,connectionState:'connected',home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},rooms:[],wallet:{balances:[],topUps:[],payments:[],batches:[]}},clearJoinBlock:()=>{},connect:()=>{},setError:()=>{},clearOfflineReceipts:()=>{},dismissFeedback:()=>{}};
+  const useFixture=()=>fixture;
+  const nav=async page=>{host.querySelectorAll('.app-navigation button')[page==='home'?0:1].click();await pause();};
+  const routes=[['Restaurants & menus','المطاعم والقوائم'],['Friend groups','مجموعات الأصدقاء'],['Notifications','الإشعارات'],['Get the apps','احصل على التطبيقات']];
+  try {
+    history.replaceState({},'','/');root.render(<FoodRunClient useData={useFixture}/>);await pause();
+    assert(host.querySelector('.app-navigation'),'Global navigation missing');
+    for(const [label,arabic] of routes){
+      await nav('home');
+      const target=[...host.querySelectorAll('button')].find(button=>[t(label),getLanguage()==='ar'?arabic:label].includes(button.textContent.trim()));
+      assert(target,`Missing route ${label}`);target.click();await pause();await pause();
+      await nav('profile');assert(host.querySelector('.profile-grid'),`Profile unreachable from ${label}`);
+      await nav('home');assert(host.querySelector('.home-banner'),`Home unreachable from ${label}`);
+    }
+    await nav('profile');host.querySelector('#profile-details').open=true;
+    assert(host.querySelector('.app-navigation').getBoundingClientRect().top>=0,'Navigation scrolled offscreen');
+    assert(!measureAudit().overflow,'Global navigation overflows');
+    assert(commands.length===0,'Navigation changed account or room data');
+    return {passed:true,language:getLanguage(),width:innerWidth,overflow:false,routes:routes.map(([label])=>label)};
+  } finally {history.replaceState({},'',oldUrl);}
+}
+
+export async function runIosInstallAudit(){
+ await mountAudit('home');
+ const button=[...host.querySelectorAll('button')].find(value=>value.textContent.trim()===t('Install on iPhone'));assert(button,'iPhone install unavailable');const fold=button.closest('details');if(fold)fold.open=true;button.focus();button.click();await pause();
+ const sheet=document.querySelector('.ios-install-sheet');assert(sheet?.getAttribute('aria-modal')==='true','Install is not a modal sheet');assert(sheet.textContent.includes('Safari'),'Safari instructions missing');assert(sheet.querySelectorAll('li').length===4,'Installation steps missing');
+ assert(sheet.getBoundingClientRect().width<=innerWidth,'Install sheet overflows');
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause();assert(!document.querySelector('.ios-install-sheet'),'Escape did not close installation');
+ assert(document.activeElement===button,'Focus was not restored');
+ const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.2.ipa'),'IPA download is missing');
+ return {passed:true,language:getLanguage(),width:innerWidth,overflow:false};
+}

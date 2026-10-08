@@ -3,6 +3,10 @@ import Svg, { Path, Circle, Rect, Line } from "react-native-svg";
 import { colors } from "../theme";
 const paths: Record<string, string> = {
   home: "M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
+  profile: "M4 21v-2a8 8 0 0 1 16 0v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
+  pause: "M9 5v14M15 5v14",
+  chevron: "m6 9 6 6 6-6",
+  play: "m8 5 11 7-11 7Z",
   wallet: "M3 6h16a2 2 0 0 1 2 2v12H3V4l14-1v3M21 11h-6v5h6",
   friends: "M6 20v-3a6 6 0 0 1 12 0v3M5 5a3 3 0 0 0 0 6M19 5a3 3 0 0 1 0 6M2 19v-2a5 5 0 0 1 3-4M22 19v-2a5 5 0 0 0-3-4",
   bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",

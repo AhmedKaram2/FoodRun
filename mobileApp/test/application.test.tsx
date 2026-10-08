@@ -95,7 +95,7 @@ beforeEach(() => {
     JSON.stringify(snapshot()),
   );
 });
-test("bottom navigation shows Home Rooms Wallet More with sign-in inside the menu", async () => {
+test("bottom navigation opens Home Rooms Wallet Profile and More", async () => {
   const view = render(<App />);
   await view.findByText("Food is better");
   fireEvent.press(view.getByLabelText("FoodRun Home"));
@@ -104,6 +104,8 @@ test("bottom navigation shows Home Rooms Wallet More with sign-in inside the men
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ROOMS", "");
   fireEvent.press(view.getByTestId("nav:OPEN_WALLET"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_WALLET", "");
+  fireEvent.press(view.getByTestId("nav:OPEN_PROFILE"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_PROFILE", "");
   fireEvent.press(view.getByText("More"));
   fireEvent.press(view.getByText("My profile"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_PROFILE", "");
@@ -129,8 +131,10 @@ test("home highlights keep working create, join, menus and profile actions", asy
   expect(native.dispatch).toHaveBeenLastCalledWith("JOIN", "");
   fireEvent.press(view.getByLabelText("Show highlight 2"));
   expect(view.getByText("Different tastes.")).toBeTruthy();
-  fireEvent.press(view.getByText("Explore restaurants"));
+  fireEvent.press(view.getByLabelText("Menus"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_LIBRARY", "");
+  expect(view.getByText("Create a room")).toBeTruthy();
+  expect(view.getByText("Join a room")).toBeTruthy();
   fireEvent.press(view.getByLabelText("My profile"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_PROFILE", "");
 });
@@ -324,4 +328,64 @@ test("order links work with Hermes and reject lookalike hosts and invalid codes"
   ).toBeNull();
   expect(roomCodeFromLink("https://intrvioo.com/?room=%ZZ")).toBeNull();
   expect(roomCodeFromLink("foodrun://signin?code=123456")).toBeNull();
+});
+
+test("floating half offers disappear after a live acceptance and payments open their tab", async () => {
+  const value=snapshot();value.state.page="ROOM";value.state.roomCode="123456";
+  value.topCards=[{...card("half-item:offer","Chicken half"),buttons:[action("Take this half","ACCEPT_HALF_ITEM","offer")] }];
+  value.sections=[{title:"All",collapsed:false,cards:[{...card("menu:item","Sandwich"),buttons:[action("Add food","OPEN_ITEM","item")]},{...card("transfer:pending","Pending payment"),buttons:[action("Confirm receipt","CONFIRM_TRANSFER","pending")]}]}];
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);
+  await view.findByLabelText("Half available");
+  fireEvent.press(view.getByLabelText("Half available"));
+  expect(view.getByRole("header",{name:"Take another half"})).toBeTruthy();
+  fireEvent.press(view.getAllByText("Take this half").at(-1)!);
+  expect(native.dispatch).toHaveBeenLastCalledWith("ACCEPT_HALF_ITEM","offer");
+  value.topCards=[];
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.queryByLabelText("Half available")).toBeNull();
+  expect(view.queryByRole("header",{name:"Take another half"})).toBeNull();
+  (native.dispatch as jest.Mock).mockClear();
+  fireEvent.press(view.getByLabelText("Payment actions"));
+  expect(view.getByLabelText("Payments").props.accessibilityState.selected).toBe(true);
+  expect(view.getByText("Confirm receipt")).toBeTruthy();
+  expect(native.dispatch).not.toHaveBeenCalled();
+  fireEvent.press(view.getByTestId("room-tab:0"));
+  value.sections[0].cards[1].buttons[0].enabled=false;
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.queryByLabelText("Payment actions")).toBeNull();
+  fireEvent.press(view.getByLabelText("Choose food"));
+  expect(view.getByText("Sandwich")).toBeTruthy();
+});
+test("large selection sheets search choices and dismiss without changing a value",()=>{
+  const view=render(<FieldInput busy={false} rtl={false} field={field("GROUP",{value:"2",choices:Array.from({length:10},(_,i)=>({value:String(i),label:`Group ${i}`}))})}/>);
+  fireEvent.press(view.getByTestId("GROUP"));
+  expect(view.getByRole("radio",{name:"Group 2"}).props.accessibilityState.selected).toBe(true);
+  fireEvent.changeText(view.getByLabelText("Search options"),"Group 8");
+  expect(view.queryByRole("radio",{name:"Group 1"})).toBeNull();
+  fireEvent.press(view.getByRole("radio",{name:"Group 8"}));
+  expect(native.update).toHaveBeenLastCalledWith("GROUP","8");
+  (native.update as jest.Mock).mockClear();
+  fireEvent.press(view.getByTestId("GROUP"));
+  fireEvent.press(view.getByLabelText("Dismiss sheet"));
+  expect(native.update).not.toHaveBeenCalled();
+});
+
+test("food options use a selection sheet and return to the same room tab",async()=>{
+  const value=snapshot();value.state.page="ROOM";value.state.roomCode="123456";
+  value.sections=[{title:"Food",collapsed:false,cards:[{...card("menu:food","Sandwich"),buttons:[action("Choose extras","OPEN_ITEM","food")]}]}];
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);await view.findByTestId("room-tab:1");fireEvent.press(view.getByTestId("room-tab:1"));
+  fireEvent.press(view.getByText("Choose extras"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ITEM","food");
+  value.state.page="ITEM";value.state.title="Sandwich options";
+  value.sections=[{title:"Size",collapsed:false,cards:[{...card("variant:small","Small"),badge:"Selected",buttons:[action("Choose size","SELECT_VARIANT","small")]},{...card("variant:large","Large"),buttons:[action("Choose size","SELECT_VARIANT","large")]}]}];
+  value.inlineButtons=[action("Extra cheese","TOGGLE_OPTION","cheese")];value.primaryAction=action("Add to my order","ADD_CART_ITEM","",true);
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.getByRole("header",{name:"Sandwich options"})).toBeTruthy();
+  fireEvent.press(view.getByRole("radio",{name:"Large · "}));expect(native.dispatch).toHaveBeenLastCalledWith("SELECT_VARIANT","large");
+  fireEvent.press(view.getByRole("checkbox",{name:"Extra cheese"}));expect(native.dispatch).toHaveBeenLastCalledWith("TOGGLE_OPTION","cheese");
+  fireEvent.press(view.getByText("Add to my order"));expect(native.dispatch).toHaveBeenLastCalledWith("ADD_CART_ITEM","");
+  value.state.page="ROOM";value.state.title="Room";value.sections=[];value.inlineButtons=[];value.primaryAction=undefined;
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.getByTestId("room-tab:1").props.accessibilityState.selected).toBe(true);
 });

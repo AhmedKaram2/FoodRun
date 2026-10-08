@@ -126,7 +126,7 @@
   "Use for order": "اختاره للطلب",
   "Save as favorite": "احفظه في المفضلة",
   "My profile": "ملفي الشخصي",
-  "Profile": "الملف الشخصي",
+  "Profile": "حسابي",
   "Your Intrvioo account": "حسابك في إنترفيو",
   "Use your existing Intrvioo account, or register here.": "ادخل بحساب إنترفيوو بتاعك، أو اعمل حساب هنا.",
   "Register / sign in": "تسجيل الدخول أو إنشاء حساب",
@@ -773,5 +773,6 @@
   "Invitation": "دعوة",
   "Your details, wallet and payments.": "بياناتك ومحفظتك ومدفوعاتك.",
   "Use your existing FoodRun account, or register here.": "سجّل الدخول بحساب FoodRun أو أنشئ حساباً جديداً.",
-  "Version 1.7.2 · Android 8+": "الإصدار 1.7.2 · أندرويد 8+"
+  "Version 1.7.2 · Android 8+": "الإصدار 1.7.2 · أندرويد 8+",
+  "Main navigation": "التنقل الرئيسي"
 }

@@ -5,7 +5,7 @@ export const isRoom = (page: string) => page === "ROOM";
 
 // Group by stable card IDs so language changes and live updates keep the same tabs.
 export function roomCardTab(card: Card): number {
-  if (/^(menu:|cart:|half-item:|estimate$)/.test(card.id)) return 1;
+  if (/^(menu:|cart:|half-item:|reuse-favorite:|reuse-past:|price:|early-order$|pricing-help$|estimate$)/.test(card.id)) return 1;
   if (/^(wallet|transfer:|receipt:|quote:|account$|restaurant-balance$|my-payment-status$|settlement-)/.test(card.id)) return 2;
   if (/^(member:|invite:|pending-join$)/.test(card.id)) return 3;
   return 0;
@@ -27,5 +27,6 @@ export function roomActionTab(button: Action): number {
   return 0;
 }
 export function roomFieldTab(field: Field): number {
+  if (/^MENU_/.test(field.key)) return 1;
   return /^(AMOUNT|REFERENCE|PAYMENT_|ACCOUNT_|AANI)/.test(field.key) ? 2 : 0;
 }

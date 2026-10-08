@@ -1,13 +1,13 @@
 {
-  "name": "Intrvioo",
-  "short_name": "Intrvioo",
+  "name": "FoodRun",
+  "short_name": "FoodRun",
   "description": "Order Together. Split Smarter.",
   "start_url": "/",
   "scope": "/",
   "id": "/",
   "display": "standalone",
-  "background_color": "#FFF7ED",
-  "theme_color": "#FF684A",
+  "background_color": "#F8FAF8",
+  "theme_color": "#245C49",
   "orientation": "portrait-primary",
   "icons": [
     {

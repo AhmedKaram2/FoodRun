@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { AccessibilityInfo, Animated, AppState, Easing, Pressable, View } from "react-native";
 
 const Motion = createContext(false);
+export function useMotionEnabled() { return useContext(Motion); }
 export function MotionProvider({ children }: { children: React.ReactNode }) {
   const [reduced, setReduced] = useState(true);
   const [active, setActive] = useState(AppState.currentState === "active");
@@ -24,7 +25,7 @@ export function usePressMotion() {
   useEffect(() => () => scale.stopAnimation(), [scale]);
   return { style: { transform: [{ scale }] }, onPressIn: () => run(0.96), onPressOut: () => run(1) };
 }
-export function PageMotion({ motionKey, children }: { motionKey: string; children: React.ReactNode }) {
+export function PageMotion({ motionKey, children, horizontal, rtl = false }: { motionKey: string; children: React.ReactNode; horizontal?:boolean;rtl?:boolean }) {
   const enabled = useContext(Motion), progress = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     progress.stopAnimation();
@@ -33,7 +34,8 @@ export function PageMotion({ motionKey, children }: { motionKey: string; childre
     const animation = Animated.timing(progress, { toValue: 1, duration: 230, easing: Easing.out(Easing.cubic), useNativeDriver: true });
     animation.start(); return () => animation.stop();
   }, [motionKey, enabled, progress]);
-  return <Animated.View style={{ gap: 16, opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }}>{children}</Animated.View>;
+  const travel = progress.interpolate({ inputRange: [0, 1], outputRange: [horizontal && rtl ? -18 : horizontal ? 18 : 12, 0] });
+  return <Animated.View style={{ gap: 16, opacity: progress, transform: [horizontal ? {translateX:travel} : {translateY:travel}] }}>{children}</Animated.View>;
 }
 export function FloatingArt({ children }: { children: React.ReactNode }) {
   const enabled = useContext(Motion), progress = useRef(new Animated.Value(0)).current;

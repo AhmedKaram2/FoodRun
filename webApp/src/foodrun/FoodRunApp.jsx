@@ -1,4 +1,6 @@
 import FriendGroups from './FriendGroups.jsx';
+import AppNavigation from './AppNavigation.jsx';
+import IosInstallSheet from './IosInstallSheet.jsx';
 import MobilePageLayout from './MobilePageLayout.jsx';
 import PagedList from './PagedList.jsx';
 import NotificationPreferences from './NotificationPreferences.jsx';
@@ -42,7 +44,7 @@ import { roomCashReceived, roomWalletPending } from './wallet.js';
 import { settlementOpen } from './roomLifecycle.js';
 import { t, tf, setLanguage as setTranslationLanguage } from './i18n.js';
 import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from './orderHistory';
-import { createContext, useContext, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -77,6 +79,7 @@ const phaseLabel = {
 };
 
 const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.2/FoodRun-Android-1.7.2.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.2/FoodRun-iOS-RegisteredDevices-1.7.2.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -314,7 +317,8 @@ function WinnerReveal({ winner, selected, me, room, data }) {
 }
 
 function AppDownloads({ compact = false }) {
-  const [iosHelp, setIosHelp] = useState(false);
+  const [iosHelp, setIosHelp] = useState(() => new URLSearchParams(window.location.search).get('install') === 'ios');
+  const closeIosHelp = useCallback(() => setIosHelp(false), []);
   return <section id="app-downloads" className={`app-downloads ${compact ? 'compact' : ''}`}>
     <div className="download-heading">
       <div><p className="eyebrow">{t("INTRVIOO ON YOUR PHONE")}</p><h2>{t("Take the table with you.")}</h2></div>
@@ -322,19 +326,19 @@ function AppDownloads({ compact = false }) {
     </div>
     <div className="download-grid">
       <article className="download-card">
-        <span className="platform-icon android" aria-hidden="true">◆</span>
+        <span className="platform-icon android" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m7 4-2-3m12 3 2-3M4 10a8 8 0 0 1 16 0v8H4ZM2 11v6m20-6v6M8 18v4m8-4v4"/><circle cx="8" cy="7" r=".6"/><circle cx="16" cy="7" r=".6"/></svg></span>
         <div><strong>{t("Android app")}</strong><small>{t("Version 1.7.2 · Android 8+")}</small></div>
         <a className="primary store-button" href={ANDROID_DOWNLOAD_URL}>{t("Download APK")}</a>
       </article>
       <article className="download-card">
-        <span className="platform-icon apple" aria-hidden="true">●</span>
-        <div><strong>{t("iPhone app")}</strong><small>{IOS_STORE_URL ? t("Available for iPhone and iPad") : t("Install from Safari · iOS 17+")}</small></div>
-        {IOS_STORE_URL
-          ? <a className="secondary store-button" href={IOS_STORE_URL}>{t("Open App Store")}</a>
-          : <button className="secondary store-button" onClick={() => setIosHelp(value => !value)}>{t("Install on iPhone")}</button>}
+        <span className="platform-icon apple" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 19h2"/></svg></span>
+        <div><strong>{tx('iPhone web app','تطبيق الويب للآيفون')}</strong><small>{tx('Install from Safari · No Apple account needed','تثبيت من Safari · دون حساب Apple')}</small></div>
+        <button className="secondary store-button" onClick={() => setIosHelp(true)}>{t("Install on iPhone")}</button>
+        {IOS_STORE_URL && <a className="secondary store-button" href={IOS_STORE_URL}>{t("Open App Store")}</a>}
       </article>
     </div>
-    {iosHelp && <div className="ios-install" role="status"><b>{t("On iPhone or iPad:")}</b>{t("open this page in Safari, tap the Share button, then choose")}<b>{t("Add to Home Screen")}</b>{t("and")}<b>{t("Add")}</b>.</div>}
+    <details className="ipa-test-download"><summary>{tx('Native iPhone IPA for registered testers','ملف IPA للآيفون لأجهزة الاختبار المسجّلة')}</summary><p>{tx('This development-signed build installs only on registered devices using Apple Configurator or Xcode and requires Developer Mode. For general installation, use Install on iPhone above.','تعمل هذه النسخة الموقّعة للتطوير على الأجهزة المسجّلة فقط، عبر Apple Configurator أو Xcode، وتتطلب وضع المطوّر. للتثبيت العام، استخدم زر تثبيت على الآيفون أعلاه.')}</p><a className="secondary" href={IOS_IPA_URL}>{tx('Download test IPA','تنزيل IPA للاختبار')}</a></details>
+    {iosHelp && <IosInstallSheet onClose={closeIosHelp} tx={tx}/>}
   </section>;
 }
 
@@ -1243,7 +1247,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   </Page>;
 }
 
-function FoodRunClient({ useData = useFoodRun } = {}) {
+function FoodRunClientContent({ useData = useFoodRun } = {}) {
   const [supportSession, setSupportSession] = useState(null);
   const baseData = useData({ supportSession, onSupportEnd: () => setSupportSession(null) });
   const [walletTopUpRequest, setWalletTopUpRequest] = useState(null);
@@ -1299,6 +1303,23 @@ function FoodRunClient({ useData = useFoodRun } = {}) {
   useEffect(() => { setNotificationAction(null); }, [data.user?.uid, data.hub]);
   const closeRoom = () => { localStorage.removeItem(ACTIVE_ROOM_KEY); setRoomId(''); setPage('home'); };
   useEffect(() => {
+    const navigate = event => {
+      if (!['home', 'profile'].includes(event.detail)) return;
+      const url = new URL(window.location.href);
+      if (url.pathname.replace(/\/+$/, '') === '/admin') url.pathname = '/';
+      url.searchParams.delete('guide'); url.hash = '';
+      window.history.replaceState({}, '', url);
+      if (event.detail === 'home') closeRoom();
+      else {
+        setNotificationAction(null);
+        setPage('profile');
+        if (data.user && !data.hub) data.connect(PUBLIC_API_URL);
+      }
+    };
+    window.addEventListener('foodrun-open-page', navigate);
+    return () => window.removeEventListener('foodrun-open-page', navigate);
+  }, [data.user?.uid, data.hub, data.connect]);
+  useEffect(() => {
     if (roomId && data.home?.deletedRoomIds?.includes(roomId)) closeRoom();
   }, [roomId, data.home?.deletedRoomIds]);
   const connectionMessage = data.connectionState === 'offline' ? t('You are offline. We will reconnect when your internet connection returns.')
@@ -1328,6 +1349,10 @@ function FoodRunClient({ useData = useFoodRun } = {}) {
   return <HomeNavigation.Provider value={closeRoom}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}<MobilePageLayout key={page} pageKey={page}>{content}</MobilePageLayout><footer className="mobile-app-nav"><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('profile')}>{t("Wallet")}</button><button onClick={() => setPage('friends')}>{tx('Friends','الأصدقاء')}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button><details className="mobile-nav-more"><summary>{tx('More','المزيد')}</summary><div>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></div></details></footer></></HomeNavigation.Provider>;
 }
 
+function FoodRunClient(props) {
+  return <><AppNavigation /><FoodRunClientContent {...props} /></>;
+}
+
 export default function FoodRunApp() {
   const [language, setLanguage] = useState(uiLanguage);
   const [guideOpen, setGuideOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === '1');
@@ -1345,6 +1370,11 @@ export default function FoodRunApp() {
     const pop = () => setGuideOpen(new URLSearchParams(window.location.search).get('guide') === '1');
     window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);
   }, []);
+  useEffect(() => {
+    const navigate = event => { if (['home','profile'].includes(event.detail)) setGuideOpen(false); };
+    window.addEventListener('foodrun-open-page', navigate);
+    return () => window.removeEventListener('foodrun-open-page', navigate);
+  }, []);
   useEffect(() => { if (!guideOpen) window.scrollTo(0, guideScroll.current); }, [guideOpen]);
   uiLanguage = language;
   setTranslationLanguage(language);
@@ -1355,7 +1385,7 @@ export default function FoodRunApp() {
   }, [language]);
   return <GuideNavigation.Provider value={{ open: openGuide, isOpen: guideOpen }}><Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>
     <div hidden={guideOpen}>{new URLSearchParams(window.location.search).has('nativeSignIn') ? <NativeGoogleSignIn /> : <FoodRunClient />}</div>
-    {guideOpen && <HowToUse language={language} onBack={closeGuide} />}
+    {guideOpen && <><AppNavigation /><HowToUse language={language} onBack={closeGuide} /></>}
   </Suspense></GuideNavigation.Provider>;
 }
 

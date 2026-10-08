@@ -4,7 +4,6 @@ import {
   Animated,
   Image,
   Keyboard,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,7 @@ import { colors, font, tx } from "../theme";
 import { dispatch, native, update } from "../native";
 import Icon from "./Icon";
 import { usePressMotion } from "./Motion";
+import BottomSheet from "./BottomSheet";
 export const textStyle = (
   rtl: boolean,
   weight: "regular" | "medium" | "semibold" | "bold" = "regular",
@@ -115,6 +115,7 @@ export function FieldInput({
   rtl: boolean;
 }) {
   const [select, setSelect] = useState(false),
+    [query, setQuery] = useState(""),
     [secret, setSecret] = useState(""),
     [photoError, setPhotoError] = useState("");
   const mounted = useRef(true);
@@ -205,40 +206,29 @@ export function FieldInput({
             accessibilityState={{ disabled: busy, expanded: select }}
             disabled={busy}
             testID={field.key}
-            onPress={() => setSelect(true)}
-            style={styles.input}
+            onPress={() => { setQuery(""); setSelect(true); }}
+            style={[styles.input, styles.selector, rtl && {flexDirection:"row-reverse"}]}
           >
-            <Text style={[textStyle(rtl), styles.inputText]}>
+            <Text style={[textStyle(rtl), styles.inputText, {flex:1}]}>
               {selected || tx(rtl, "Choose…", "اختر…")}
             </Text>
+            <Icon name="chevron" size={18} color={colors.muted}/>
           </Pressable>
-          <Modal
+          <BottomSheet
             visible={select}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setSelect(false)}
+            title={field.label}
+            rtl={rtl}
+            onClose={() => setSelect(false)}
           >
-            <View style={styles.backdrop}>
-              <View style={styles.sheet}>
-                <View style={styles.heading}>
-                  <Text style={[textStyle(rtl, "bold"), styles.sheetTitle]}>
-                    {field.label}
-                  </Text>
-                  <Pressable
-                    accessibilityLabel={tx(rtl, "Close", "إغلاق")}
-                    style={styles.iconButton}
-                    onPress={() => setSelect(false)}
-                  >
-                    <Icon name="close" />
-                  </Pressable>
-                </View>
+                {field.choices.length > 8 && <TextInput accessibilityLabel={tx(rtl,"Search options","البحث في الخيارات")} placeholder={tx(rtl,"Search options","البحث في الخيارات")} placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={[styles.input,textStyle(rtl)]}/>}
                 <ScrollView keyboardShouldPersistTaps="handled">
-                  {field.choices.map((choice) => (
+                  {field.choices.filter(choice => choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((choice) => (
                     <Pressable
                       key={choice.value}
                       accessibilityRole="radio"
-                      accessibilityState={{ selected: value === choice.value }}
-                      style={styles.choice}
+                      accessibilityState={{ selected: value === choice.value, disabled:busy }}
+                      disabled={busy}
+                      style={[styles.choice, value === choice.value && styles.selectedChoice, rtl && {flexDirection:"row-reverse"}]}
                       onPress={() => {
                         change(choice.value);
                         setSelect(false);
@@ -247,15 +237,12 @@ export function FieldInput({
                       <Text style={[textStyle(rtl), { flex: 1 }]}>
                         {choice.label}
                       </Text>
-                      {choice.value === value && (
-                        <Icon name="check" color={colors.green} />
-                      )}
+                      <View style={[styles.radio, value === choice.value && styles.selectedRadio]}>{choice.value === value && <Icon name="check" size={14} color={colors.white}/>}</View>
                     </Pressable>
                   ))}
+                  {!field.choices.some(choice => choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && <Text style={[textStyle(rtl),{paddingVertical:24}]}>{tx(rtl,"No matching options","لا توجد خيارات مطابقة")}</Text>}
                 </ScrollView>
-              </View>
-            </View>
-          </Modal>
+          </BottomSheet>
         </>
       ) : (
         <TextInput
@@ -468,6 +455,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   inputText: { fontSize: 16 },
+  selector:{flexDirection:"row",alignItems:"center",gap:10},
   toggle: {
     flexDirection: "row",
     alignItems: "center",
@@ -502,11 +490,17 @@ export const styles = StyleSheet.create({
   },
   choice: {
     flexDirection: "row",
+    alignItems:"center",
+    minHeight:56,
+    paddingHorizontal:12,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderColor: colors.line,
     gap: 12,
   },
+  selectedChoice:{backgroundColor:colors.mint,borderRadius:14},
+  radio:{height:22,width:22,borderRadius:11,borderWidth:1.5,borderColor:colors.line,alignItems:"center",justifyContent:"center"},
+  selectedRadio:{backgroundColor:colors.forest,borderColor:colors.forest},
   card: {
     padding: 16,
     borderRadius: 20,

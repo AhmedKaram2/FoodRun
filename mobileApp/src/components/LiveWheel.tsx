@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
-  Animated,
-  Easing,
+  AppState,
   StyleSheet,
   Text,
   View,
@@ -117,22 +116,27 @@ export default function LiveWheel({
   rtl: boolean;
 }) {
   const [now, setNow] = useState(Date.now()),
-    [reduced, setReduced] = useState(false);
+    [reduced, setReduced] = useState(true),
+    [active, setActive] = useState(AppState.currentState === "active");
+  const spin = wheel.round,
+    time = now + wheel.serverOffset,
+    ended = time >= spin.startAt + spin.duration;
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then(value => { if(mounted) setReduced(value); }).catch(()=>{});
     const event = AccessibilityInfo.addEventListener(
       "reduceMotionChanged",
       setReduced,
     );
-    return () => event.remove();
+    const app=AppState.addEventListener("change",state=>{setActive(state==="active");if(state==="active")setNow(Date.now());});
+    return () => { mounted=false; event.remove(); app.remove(); };
   }, []);
+  useEffect(()=>setNow(Date.now()),[wheel.round.id,wheel.serverOffset]);
   useEffect(() => {
+    if(!active || ended)return;
     const timer = setInterval(() => setNow(Date.now()), reduced ? 500 : 32);
     return () => clearInterval(timer);
-  }, [wheel.round.id, reduced]);
-  const spin = wheel.round as Wheel["round"] & { duration: number },
-    time = now + wheel.serverOffset,
-    ended = time >= spin.startAt + spin.duration;
+  }, [wheel.round.id, reduced, active, ended]);
   const rotation = geometry.spinRotation(
     spin,
     reduced ? (ended ? spin.startAt + spin.duration : spin.startAt) : time,
@@ -143,7 +147,7 @@ export default function LiveWheel({
   );
   return (
     <View style={styles.card}>
-      <Text style={styles.caption}>
+      <Text style={[styles.caption,{fontFamily:font("semibold",rtl),letterSpacing:rtl?0:1.5}]}>
         {tx(rtl, "LIVE SELECTION", "الاختيار المباشر")}
       </Text>
       {wheel.style === "names" ? (
@@ -170,8 +174,8 @@ export default function LiveWheel({
       <Text style={[styles.help, { fontFamily: font("regular", rtl) }]}>
         {tx(
           rtl,
-          "The order chooses the same person for everyone.",
-          "تختار الطلب الشخص نفسه لدى الجميع.",
+          "One live selection. The same person for everyone.",
+          "اختيار مباشر واحد، والنتيجة نفسها لدى الجميع.",
         )}
       </Text>
     </View>

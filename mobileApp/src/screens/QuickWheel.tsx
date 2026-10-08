@@ -12,6 +12,7 @@ import { quickAction } from "../native";
 import { colors, tx } from "../theme";
 import { Button, action, textStyle, styles } from "../components/Controls";
 import { WheelDrawing } from "../components/LiveWheel";
+import BottomSheet from "../components/BottomSheet";
 export default function QuickWheel({
   state,
   rtl,
@@ -51,11 +52,11 @@ export default function QuickWheel({
     .filter((value) => value.active)
     .map((value) => value.name);
   return (
+    <View style={{flex:1}}>
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 16, gap: 14 }}
     >
-      {state.destination === "MAIN" || state.destination === "WINNER" ? (
         <>
           <Text style={[textStyle(rtl, "bold"), { fontSize: 26, lineHeight: 40 }]}>
             {tx(rtl, "Who’s getting the food?", "من سيتولى إحضار الطعام؟")}
@@ -104,11 +105,12 @@ export default function QuickWheel({
             </View>
           </View>
         </>
-      ) : state.destination === "HISTORY" ? (
+    </ScrollView>
+    <BottomSheet visible={["CREW","ADD_PERSON","HISTORY"].includes(state.destination)} rtl={rtl} title={state.destination==="HISTORY" ? tx(rtl,"Previous picks","الاختيارات السابقة") : tx(rtl,"Your people","أصدقاؤك")} onClose={()=>quickAction("dismiss")}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12}}>
+      {state.destination === "HISTORY" ? (
         <>
-          <Text style={[textStyle(rtl, "bold"), { fontSize: 24 }]}>
-            {tx(rtl, "Previous picks", "الاختيارات السابقة")}
-          </Text>
+          {!state.history.length && <Text style={textStyle(rtl)}>{tx(rtl,"Your picks will appear here.","ستظهر اختياراتك هنا.")}</Text>}
           {state.history.map((item) => (
             <View style={styles.card} key={item.id}>
               <Text style={textStyle(rtl, "semibold")}>{item.name}</Text>
@@ -123,9 +125,7 @@ export default function QuickWheel({
         </>
       ) : (
         <>
-          <Text style={[textStyle(rtl, "bold"), { fontSize: 24 }]}>
-            {tx(rtl, "Your people", "أصدقاؤك")}
-          </Text>
+
           <Button
             rtl={rtl}
             action={action(
@@ -203,6 +203,8 @@ export default function QuickWheel({
           />
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </BottomSheet>
+    </View>
   );
 }

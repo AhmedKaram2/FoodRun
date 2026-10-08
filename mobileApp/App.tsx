@@ -6,7 +6,6 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Linking,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -33,6 +32,9 @@ import {
 } from "./src/components/Controls";
 import LiveWheel from "./src/components/LiveWheel";
 import HomeBanner from "./src/components/HomeBanner";
+import BottomSheet from "./src/components/BottomSheet";
+import RoomAttention from "./src/components/RoomAttention";
+import SelectionScreen from "./src/components/SelectionScreen";
 import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
 import { roomCodeFromLink } from "./src/roomLink";
@@ -67,6 +69,8 @@ function sectionsFor(snapshot: Snapshot): Section[] {
 }
 function Application() {
   const content = useRef<ScrollView>(null);
+  const roomContext = useRef<Snapshot | null>(null);
+  const savedRoomTab = useRef<{key:string;tab:number} | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [failure, setFailure] = useState(""),
     [menu, setMenu] = useState(false),
@@ -76,7 +80,9 @@ function Application() {
     let alive = true;
     const accept = (body: string) => {
       if (alive) {
-        setSnapshot(parseSnapshot(body));
+        const incoming = parseSnapshot(body);
+        if(incoming.state.page === "ROOM") roomContext.current = incoming;
+        setSnapshot(incoming);
         setFailure("");
       }
     };
@@ -95,11 +101,15 @@ function Application() {
     };
   }, []);
   useEffect(() => {
-    setSelected(0);
+    const key = `${snapshot?.accountId}:${snapshot?.state.roomCode}`;
+    setSelected(snapshot?.state.page === "ROOM" && savedRoomTab.current?.key === key ? savedRoomTab.current.tab : 0);
     setOptions(false);
   }, [snapshot?.state.page, snapshot?.state.roomCode, snapshot?.accountId]);
   useEffect(() => {
-    if (snapshot?.state.wheel?.round.id) setSelected(0);
+    if (snapshot?.state.wheel?.round.id) {
+      setSelected(0);
+      savedRoomTab.current = {key:`${snapshot.accountId}:${snapshot.state.roomCode}`,tab:0};
+    }
   }, [snapshot?.state.wheel?.round.id]);
   useEffect(() => {
     const event = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -158,6 +168,7 @@ function Application() {
     .find((card) => card.id === "admin-tabs");
   const fields = snapshot.mainFields.filter(field => !room || roomFieldTab(field) === selected);
   const changeTab = (index: number) => {
+    if(room) savedRoomTab.current={key:`${snapshot.accountId}:${state.roomCode}`,tab:index};
     setSelected(index);
     setOptions(false);
     content.current?.scrollTo({ y: 0, animated: false });
@@ -303,6 +314,8 @@ function Application() {
       >
         {state.page === "QUICK_SPIN" ? (
           <QuickWheel state={snapshot.quick} rtl={rtl} />
+        ) : ["ITEM", "ACCOUNT", "SELECTION_OVERRIDE"].includes(state.page) ? (
+          <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
           <>
             {(state.page !== "HOME" || snapshot.authenticated) && <View style={[ui.heading, rtl && ui.reverse]}>
@@ -411,11 +424,12 @@ function Application() {
                 ))}
               </ScrollView>
             )}
+            <View style={{flex:1}}>
             <ScrollView
               ref={content}
               key={`${state.page}:${state.roomCode}:${snapshot.accountId}`}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={ui.content}
+              contentContainerStyle={[ui.content, room && {paddingBottom:180}]}
               refreshControl={
                 <RefreshControl
                   refreshing={busy}
@@ -564,6 +578,8 @@ function Application() {
               )}
               </PageMotion>
             </ScrollView>
+            {room && <RoomAttention snapshot={snapshot} selected={selected} onOpenTab={changeTab}/>}
+            </View>
             {!!snapshot.primaryAction && !(state.page === "HOME" && snapshot.authenticated) && (!room || roomActionTab(snapshot.primaryAction) === selected) && (
               <View style={ui.primary}>
                 <Button action={snapshot.primaryAction} busy={busy} rtl={rtl} />
@@ -595,7 +611,8 @@ function Application() {
             "",
             walletRoute,
           ],
-          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu || (state.page !== "HOME" && !roomRoute && !walletRoute)],
+          ["profile", tx(rtl, "Profile", "حسابي"), "OPEN_PROFILE", "", profileDetails],
+          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu || (state.page !== "HOME" && !roomRoute && !walletRoute && !profileDetails)],
         ].map(([icon, label, kind, value, active]) => (
           <TabButton selected={!!active}
             key={String(kind)}
@@ -617,6 +634,9 @@ function Application() {
             />
             </View>
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
               style={[
                 textStyle(rtl, "medium"),
                 ui.navLabel,
@@ -628,24 +648,7 @@ function Application() {
           </TabButton>
         ))}
       </View>
-      <Modal
-        visible={menu}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMenu(false)}
-      >
-        <View style={controls.backdrop}>
-          <View style={controls.sheet}>
-            <View style={controls.heading}>
-              <Brand small />
-              <Pressable
-                accessibilityLabel={tx(rtl, "Close", "إغلاق")}
-                style={ui.icon}
-                onPress={() => setMenu(false)}
-              >
-                <Icon name="close" />
-              </Pressable>
-            </View>
+      <BottomSheet visible={menu} title={tx(rtl,"More","المزيد")} rtl={rtl} onClose={() => setMenu(false)}>
             <ScrollView contentContainerStyle={{ gap: 10 }}>
               {menuActions
                 .filter(
@@ -666,31 +669,9 @@ function Application() {
                   />
                 ))}
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={!!state.walletHistoryPrompt}
-        transparent
-        animationType="slide"
-        onRequestClose={() => dispatch("DISMISS_WALLET_HISTORY")}
-      >
-        <View style={controls.backdrop}>
-          <View style={controls.sheet}>
-            {state.walletHistoryPrompt && (
-              <>
-                <View style={controls.heading}>
-                  <Text style={[textStyle(rtl, "bold"), controls.sheetTitle]}>
-                    {state.walletHistoryPrompt.title}
-                  </Text>
-                  <Pressable
-                    accessibilityLabel={tx(rtl, "Close", "إغلاق")}
-                    style={ui.icon}
-                    onPress={() => dispatch("DISMISS_WALLET_HISTORY")}
-                  >
-                    <Icon name="close" />
-                  </Pressable>
-                </View>
+      </BottomSheet>
+      <BottomSheet visible={!!state.walletHistoryPrompt} title={state.walletHistoryPrompt?.title || tx(rtl,"Transactions","المعاملات")} rtl={rtl} onClose={() => dispatch("DISMISS_WALLET_HISTORY")}>
+        {state.walletHistoryPrompt && <>
                 <Text style={textStyle(rtl)}>
                   {state.walletHistoryPrompt.subtitle}
                 </Text>
@@ -734,25 +715,11 @@ function Application() {
                     />
                   )}
                 </ScrollView>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={!!state.reminderEmailPrompt}
-        transparent
-        animationType="slide"
-        onRequestClose={() => dispatch("DISMISS_REMINDER_EMAIL")}
-      >
-        <View style={controls.backdrop}>
-          <View style={controls.sheet}>
-            {state.reminderEmailPrompt && (
-              <>
-                <Text style={[textStyle(rtl, "bold"), controls.sheetTitle]}>
-                  {tx(rtl, "Recipient email", "بريد المستلم")} ·{" "}
-                  {state.reminderEmailPrompt.name}
-                </Text>
+
+        </>}
+      </BottomSheet>
+      <BottomSheet visible={!!state.reminderEmailPrompt} title={`${tx(rtl,"Recipient email","بريد المستلم")} · ${state.reminderEmailPrompt?.name || ""}`} rtl={rtl} onClose={() => dispatch("DISMISS_REMINDER_EMAIL")}>
+        {state.reminderEmailPrompt && <>
                 <FieldInput
                   busy={busy}
                   rtl={rtl}
@@ -789,11 +756,9 @@ function Application() {
                     "DISMISS_REMINDER_EMAIL",
                   )}
                 />
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+
+        </>}
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -887,7 +852,7 @@ const ui = StyleSheet.create({
     alignItems: "center",
     gap: 1,
   },
-  navIcon: { minWidth: 54, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16 },
+  navIcon: { minWidth: 48, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16 },
   activeNavIcon: { backgroundColor: colors.mint },
   navLabel: { fontSize: 12, lineHeight: 22, textAlign: "center" },
   primary: {

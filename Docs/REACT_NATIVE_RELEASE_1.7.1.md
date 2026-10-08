@@ -12,14 +12,20 @@ Android and iOS now render the same React Native native views from `mobileApp`. 
 - Expired Gmail sender authorization pauses delivery and preserves pending jobs and send allowance. Actual delivery still requires renewed authorization for foodruncollection@gmail.com.
 - Native owner support uses a temporary authorized session; target credentials never replace the owner's stored account or device push registration.
 
+- Accepted half-item offers disappear from the top; each participant keeps their half and exact split price in their own cart.
+- Paid wheel exemption and half-chance purchases are removed. Historical payments remain reviewable.
+- Existing restaurant menus support one-step Add & save item on web and native. Additions append atomically without replacing another user's additions, survive restart, and load into new and next orders without altering existing bills.
+- Browser subscriptions recover after network suspension, foreground return and temporary server failures. Web and native reject older account snapshots so a delayed socket message cannot undo a newer wallet acknowledgement. A Firestore metadata listener fences stale read caches as well as writes during a server handover.
+- Server shutdown stops and joins maintenance before closing SQLite; the local SIGTERM check stopped in 1.49 seconds with no SQLite maintenance errors.
+
 ## Local verification on 8 October 2026
 
 | Check | Result |
 | --- | --- |
 | Domain / wire contract | 43 / 6 tests passed |
-| Backend | 262 passed; 5 Firestore emulator checks skipped |
-| Shared mobile logic | 188 tests passed |
-| Website | 108 tests passed; production build passed |
+| Backend | 271 passed, including all 5 Firestore emulator checks |
+| Shared mobile logic | 190 tests passed |
+| Website | 114 tests passed; production build passed |
 | React Native | 11 interaction tests and TypeScript check passed |
 | iOS native | 23 passed; 2 live-hub integration tests skipped |
 | Android | Signed release APK and lint passed; installed and started on emulator |

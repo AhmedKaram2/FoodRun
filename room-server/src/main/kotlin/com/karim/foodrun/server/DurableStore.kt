@@ -22,6 +22,8 @@ internal val storedTables = listOf(
     StoredTable("account_records", listOf("key", "body"), 1, 1),
 )
 interface DurableStore : AutoCloseable {
+    /** False after another writer takes ownership; stale cached reads must stop too. */
+    val available: Boolean get() = true
     /** Atomically claims this single-writer hub. Null means a newly initialized empty store. */
     fun load(): List<StoredRow>?
     /** Atomic durable commit; null rows are deletions. Returns only after persistence is confirmed. */

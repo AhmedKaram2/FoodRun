@@ -127,6 +127,51 @@ class AdminServiceTest {
         directory.deleteRecursively()
     }
 
+    @Test fun membersAppendItemsDurablyWithoutOverwritingEachOtherOrAnExistingBill() {
+        val directory = Files.createTempDirectory("shared-menu-additions").toFile()
+        try {
+            RoomDatabase(directory).use { db ->
+                val provider = AdminIdentityProvider().apply { identity = identity.copy(userId = "order-owner", email = "owner@example.test", name = "Owner") }
+                val rooms = RoomService(db, identityProvider = provider)
+                fun command(kind: CommandKind, token: String, restaurant: Restaurant? = null) = RoomCommand(commandId = java.util.UUID.randomUUID().toString(), kind = kind, identityToken = token, restaurant = restaurant)
+                fun login() = rooms.execute(command(CommandKind.IDENTITY, "").copy(identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "valid-token"))).also { assertTrue(it.ok, it.error) }.identityToken
+                val owner = login()
+                val original = AdminService(db, rooms, identityProvider = provider).catalog().first()
+                val order = rooms.execute(command(CommandKind.CREATE, owner, original).copy(name = "Owner", text = "Breakfast"))
+                assertTrue(order.ok, order.error)
+                provider.identity = provider.identity.copy(userId = "baraa", email = "baraa@example.test", name = "Baraa")
+                val baraa = login()
+                val category = original.menu.categories.first()
+                val first = MenuItem("new-breakfast-item", category.id, "New sandwich", basePriceMinor = 750)
+                val second = first.copy(id = "another-breakfast-item", name = "Another sandwich", basePriceMinor = 450)
+                fun contribution(item: MenuItem) = original.copy(menu = Menu(items = listOf(item), categories = listOf(category)))
+                val add = command(CommandKind.ADD_MENU_ITEMS, baraa, contribution(first))
+                assertTrue(rooms.execute(add).ok)
+                assertTrue(rooms.execute(command(CommandKind.ADD_MENU_ITEMS, owner, contribution(second))).ok)
+                assertTrue(rooms.execute(add).ok) // lost acknowledgement must not duplicate the item
+                val saved = rooms.execute(command(CommandKind.HOME, owner)).home!!.restaurants.single { it.id == original.id }
+                assertEquals(1, saved.menu.items.count { it.id == first.id })
+                assertTrue(saved.menu.items.contains(second))
+                assertEquals(original, db.room(order.room!!.id)!!.restaurant, "Existing order prices stay unchanged")
+                val bad = rooms.execute(command(CommandKind.ADD_MENU_ITEMS, baraa, contribution(original.menu.items.first().copy(basePriceMinor = 1))))
+                assertFalse(bad.ok, "Appending cannot overwrite an existing price")
+                val newer = rooms.execute(command(CommandKind.CREATE, owner, original).copy(name = "Owner", text = "Tomorrow"))
+                assertTrue(newer.room!!.restaurant.menu.items.contains(first))
+                val completed = db.room(order.room!!.id)!!.copy(phase = RoomPhase.ARCHIVED)
+                db.save(completed)
+                val next = rooms.execute(RoomCommand(commandId = java.util.UUID.randomUUID().toString(), kind = CommandKind.NEXT_ORDER,
+                    roomId = completed.id, token = order.token, expectedOrderNumber = completed.orderNumber, expectedRevision = completed.revision))
+                assertTrue(next.ok, next.error)
+                assertTrue(next.room!!.restaurant.menu.items.contains(first))
+                assertTrue(next.room!!.restaurant.menu.items.contains(second))
+            }
+            RoomDatabase(directory).use { db ->
+                val restaurants = orderJson.decodeFromString<List<Restaurant>>(db.record(AdminService.RESTAURANTS)!!)
+                assertTrue(restaurants.any { r -> r.menu.items.any { it.id == "new-breakfast-item" } })
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun roomOwnerCanPublishFromTheRoomWithTheirLinkedSession() {
         val directory = Files.createTempDirectory("foodrun-owner-catalog").toFile()
         RoomDatabase(directory).use { db ->

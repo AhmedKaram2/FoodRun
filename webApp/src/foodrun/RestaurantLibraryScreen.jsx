@@ -57,13 +57,29 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
     } catch (error) { setMessage(error.message); }
     finally { setBusy(false); }
   };
+  const addSharedItem = async (item, category) => {
+    clearMessage(); setBusy(true);
+    try {
+      const contribution = { ...draft, menu: { items: [item], categories: [category], optionGroups: [] } };
+      const reply = await data.send('ADD_MENU_ITEMS', { restaurant: contribution });
+      if (!reply?.ok) { setMessage(t('Item could not be saved. Your item details are kept; check the connection and try again.')); return false; }
+      const saved = reply.home?.restaurants?.find(value => value.id === draft.id);
+      if (!saved) throw Error(t('Restaurant could not be saved.'));
+      saveList([...restaurants.filter(value => value.id !== saved.id), saved]);
+      // Keep other pending edits while accepting the authoritative menu additions.
+      setDraft(old => ({ ...old, menu: { ...old.menu, categories: [...old.menu.categories, ...saved.menu.categories.filter(value => !old.menu.categories.some(existing => existing.id === value.id))], items: [...old.menu.items.filter(value => value.id !== item.id), ...saved.menu.items.filter(value => !old.menu.items.some(existing => existing.id === value.id))] } }));
+      setNotice(t('Item saved to the shared menu and available in new orders.'));
+      return true;
+    } catch (error) { setMessage(error.message); return false; }
+    finally { setBusy(false); }
+  };
   const importFile = async file => {
     if (!file) return;
     try { const imported = parseRestaurantExport(await file.text()); setDraft(imported); setNotice(t("Menu imported. Review it, then save.")); }
     catch (error) { setMessage(error.message); }
   };
   return <Page title={t("Restaurants & menus")} subtitle={room ? t("Add a restaurant for this order and everyone using Intrvioo.") : t("Add restaurant details, menu items, and prices to the shared Intrvioo list.")} onBack={onBack}>
-    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t("ORDER OWNER") : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('Enter the restaurant basics, use Quick Add for each item and price, then publish once.')}</p></div><button type="button" data-mobile-target="editor" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
+    <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t("ORDER OWNER") : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('For an existing restaurant, enter an item name and price, then press Add & save item. New restaurants need to be published once.')}</p></div><button type="button" data-mobile-target="editor" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
     <div className="library-layout">
       <aside data-mobile-section="list" data-mobile-label={t("Restaurants & menus")} className="card library-list">
         <div className="section-title compact"><div><p className="eyebrow">{t("AVAILABLE RESTAURANTS")}</p><h3>{restaurants.length} {language === 'ar' ? 'مطاعم' : t("restaurants")}</h3></div><button aria-label={t('Add restaurant')} className="icon-button" type="button" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>＋</button></div>
@@ -81,7 +97,7 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
           <div className="form-grid three"><label>{t("Tax treatment")}<select value={draft.pricing.taxTreatment} onChange={e => setPricing('taxTreatment', e.target.value)}><option value="included">{t("Included")}</option><option value="added">{t("Added to bill")}</option><option value="unspecified">{t("Confirm later")}</option></select></label>{draft.pricing.taxTreatment === 'added' && <label>{t("Tax rate %")}<input type="number" min="0" max="100" step="0.01" value={(draft.pricing.taxRateBasisPoints || 0) / 100} onChange={e => setPricing('taxRateBasisPoints', Math.round(Number(e.target.value) * 100))} /></label>}<label>{t("Minimum order")}<MenuMoneyInput currency={draft.currency} value={draft.pricing.minimumOrderMinor} onChange={value => setPricing('minimumOrderMinor', value)} /></label></div>
           <div className="form-grid three"><label>{t("Default delivery fee")}<MenuMoneyInput currency={draft.currency} value={draft.pricing.defaultDeliveryFeeMinor} onChange={value => setPricing('defaultDeliveryFeeMinor', value)} /></label><label>{t("Default service fee")}<MenuMoneyInput currency={draft.currency} value={draft.pricing.defaultServiceFeeMinor} onChange={value => setPricing('defaultServiceFeeMinor', value)} /></label><label className="check field-check"><input type="checkbox" checked={draft.openOrdering} onChange={e => set('openOrdering', e.target.checked)} />{t("Allow custom items")}</label></div>
         </section>
-        <MenuEditor menu={draft.menu} language={language} currency={draft.currency} onChange={menu => setDraft(old => ({ ...old, menu }))} />
+        <MenuEditor menu={draft.menu} language={language} currency={draft.currency} busy={busy || data?.busy} onAddItem={shared && data?.identityToken ? addSharedItem : undefined} onChange={menu => setDraft(old => ({ ...old, menu }))} />
         {feedback && <FeedbackBanner key={feedback.id} feedback={feedback} onDismiss={dismissFeedback} />}
         <div className="editor-actions"><button type="button" className="secondary" onClick={saveLocal}>{t("Save on this device")}</button><button type="button" className="secondary" onClick={() => downloadText(`${(draft.name || t("restaurant")).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.foodrun.json`, restaurantExport(draft))}>{t("Export JSON")}</button><button type="button" className="secondary" onClick={() => copyText(restaurantExport(draft)).then(() => setNotice(t("Restaurant JSON copied."))).catch(error => setMessage(error.message))}>{t("Copy JSON")}</button><button className="primary" disabled={busy}>{busy ? t('Publishing…') : shared ? t('Save changes for everyone') : t('Publish for everyone')}</button></div>
       </form>

@@ -81,8 +81,7 @@ export async function runWheelProtectionAudit() {
   const click = async (label, card = options()) => { const node = [...card.querySelectorAll('button')].find(node => node.textContent === t(label)); assert(node && !node.disabled, `Missing action: ${label}`); node.click(); await pause(); };
   const expectCommand = (kind, fields) => { const actual = commands.at(-1); assert(actual?.kind === kind && Object.entries(fields).every(([key, value]) => actual.fields[key] === value), `Wrong command: ${JSON.stringify(actual)}`); };
   await mountAudit('room', 'LOBBY', { room: base });
-  await click('Exclude me from selection · AED 10'); expectCommand('REQUEST_WHEEL_PROTECTION', { text: 'EXCLUDE' });
-  await click('Reduce my chance by 50% · AED 5'); expectCommand('REQUEST_WHEEL_PROTECTION', { text: 'HALF_CHANCE' });
+  assert(!options(), 'Retired paid wheel options are visible in a new order');
   await mountAudit('room', 'LOBBY', { room: { ...base, wheelProtections: [request] } });
   assert(!options().querySelector('form'), 'Unapproved request asks for payment');
   assert(!options().textContent.includes(t('Approve request')), 'Member can approve their own request');
@@ -104,7 +103,7 @@ export async function runWheelProtectionAudit() {
   assert(choice && ![...choice.options].some(option => option.value === 'me'), 'Excluded member remains in direct selection');
   await mountAudit('room', 'LOBBY', { room: { ...base, wheelProtections: [{ ...request, status: 'AWAITING_PAYMENT' }] } });
   assert(!measureAudit().overflow, 'Wheel payment form overflows');
-  return { passed: ['two fixed fee options', 'approval before payment', 'owner approval', 'exact AED 5 payment declaration', 'owner receipt confirmation', 'pending payment blocks spin', 'half chance blocks direct selection', 'exclusion blocks direct selection'], ...measureAudit() };
+  return { passed: ['paid choices removed', 'approval before payment', 'owner approval', 'exact AED 5 payment declaration', 'owner receipt confirmation', 'pending payment blocks spin', 'half chance blocks direct selection', 'exclusion blocks direct selection'], ...measureAudit() };
 }
 export async function runAutoArchivePaymentAudit() {
   commands.length = 0;
@@ -189,13 +188,16 @@ export async function runOnboardingAudit() {
 }
 export async function runHalfItemAudit() {
   commands.length = 0;
-  const restaurant = { ...loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba'), openOrdering: true };
+  const restaurant = { ...(loadRestaurants().find(value => value.id === 'builtin-laffah-al-qasba') || normalizeRestaurant(bundledRestaurants[0])), openOrdering: true };
   const members = [{ id: 'me', name: 'Requester', approved: true, participating: true, eligible: true },
     { id: 'friend', name: 'Recipient', approved: true, participating: true, eligible: true }];
   const line = { id: 'sandwich', itemId: '', quantity: 1, description: 'Falafel sandwich / سندويش طعمية', notes: 'No onions', unitPrice: 501, optionIds: [], variantId: null };
   const cart = { memberId: 'me', revision: 1, lines: [line], submitted: true };
   const base = { restaurant, members, carts: [cart], halfItemOffers: [] };
   await mountAudit('room', 'COLLECTING', { room: base });
+  host.querySelectorAll('details').forEach(node => { node.open = true; });
+  { const myOrderTab = [...host.querySelectorAll('[data-mobile-target]')].find(node => node.dataset.mobileTarget === 'order');
+  if(myOrderTab) { myOrderTab.click(); await pause(); } }
   assert(button('Half'), 'Half button is not visible'); button('Half').click(); await pause();
   assert(commands.at(-1)?.kind === 'REQUEST_HALF_ITEM' && commands.at(-1).fields.text === line.id, 'Half button did not request the selected item');
   const offer = { id: 'half-offer', memberId: 'me', lineId: line.id, line: { ...line, amount: 501 }, acceptedById: null };
@@ -208,13 +210,19 @@ export async function runHalfItemAudit() {
     food: amount, delivery: 0, service: 0, discount: 0, tax: 0, total: amount, totalText: `AED ${(amount / 100).toFixed(2)}`, paid: 0, balance: amount, balanceText: `AED ${(amount / 100).toFixed(2)}` });
   const receipts = [receipt('me', 251, 1), receipt('friend', 250, 0)];
   await mountAudit('room', 'COLLECTING', { room: { ...base, halfItemOffers: [accepted] }, receipts });
+  host.querySelectorAll('details').forEach(node => { node.open = true; });
+  { const myOrderTab = [...host.querySelectorAll('[data-mobile-target]')].find(node => node.dataset.mobileTarget === 'order');
+  if(myOrderTab) { myOrderTab.click(); await pause(); } }
+  assert(!host.querySelector('.half-item-offers'), 'Accepted half offer remains at the top for the requester');
   assert(host.querySelector('.cart-review')?.textContent.includes('½ ×'), 'Requester cart did not display a half');
   assert(host.querySelector('.cart-review')?.textContent.includes('AED 2.51'), 'Requester cart did not show its split food cost');
   const summary = host.querySelector('.summary-items');
   assert(summary?.textContent.includes('1 ×') && !summary?.textContent.includes('2 ×'), 'Restaurant summary duplicated the sandwich');
   await mountAudit('room', 'COLLECTING', { memberId: 'friend', room: { ...base, halfItemOffers: [accepted] }, receipts: [receipts[1]] });
+  assert(!host.querySelector('.half-item-offers'), 'Accepted half offer remains at the top for the recipient');
   assert(host.querySelector('.cart-review')?.textContent.includes('½ ×') && host.querySelector('.cart-review')?.textContent.includes('AED 2.50'), 'Recipient cart did not show its half and cost');
   assert(button('Release my half'), 'Recipient cannot release its half');
+  assert(host.querySelector('.cart-review').contains(button('Release my half')), 'Half release is not inside the recipient order');
   const measured = measureAudit(); assert(!measured.overflow, 'Half sharing causes horizontal overflow');
   await mountAudit('room', 'PLACED', { room: { ...base, halfItemOffers: [offer] } });
   assert(host.querySelector('.half-item-offers')?.textContent.includes(t('Full item assigned to requester')), 'Unclaimed item does not explain the whole-item fallback');
@@ -392,6 +400,36 @@ export async function runCreateAudit() {
   button('Use this restaurant').click(); await pause();
   assert(!host.querySelector('.create-submit button').disabled, 'Direct ordering remains blocked');
   return { passed: ['mobile layout', 'no forced keyboard', 'Sharjah filtering', 'multi-selection', 'selected summary', 'exact submitted candidates', 'minimum two choices', 'direct order toggle'], ...measureAudit() };
+}
+export async function runSharedMenuSaveAudit() {
+  const restaurant = { ...normalizeRestaurant(bundledRestaurants[0]), id: 'audit-shared-menu', name: 'Audit shared menu', nameAr: 'قائمة اختبار مشتركة' };
+  const oldIds = localStorage.getItem('foodrun-server-catalog-v1');
+  storeRestaurants([...loadRestaurants().filter(value=>value.id!==restaurant.id), restaurant]);
+  localStorage.setItem('foodrun-server-catalog-v1', JSON.stringify([restaurant.id]));
+  let failed = false;
+  const fixture = { ...data, identityToken: 'fixture-identity', home: { ...data.home, restaurants: [restaurant] }, send: async (kind, fields) => {
+    commands.push({ kind, fields }); if(failed) return null;
+    return { ok: true, home: { ...data.home, restaurants: [{ ...restaurant, menu: { ...restaurant.menu, items: [...restaurant.menu.items, ...fields.restaurant.menu.items] } }] } };
+  } };
+  try {
+    await mountAudit('library', 'LOBBY', { data: fixture });
+    setValue(host.querySelector('.library-list input[type=search]'), restaurant.name); await pause();
+    host.querySelector('.restaurant-row').click(); await pause();
+    const inputs = () => host.querySelectorAll('.quick-menu-add input');
+    setValue(inputs()[0], 'Saved breakfast item'); setValue(inputs()[2], '7.50'); await pause();
+    button('Add & save item').click(); await pause(); await pause();
+    assert(commands.at(-1).kind === 'ADD_MENU_ITEMS', 'Quick Add did not persist to the shared catalog');
+    assert(commands.at(-1).fields.restaurant.menu.items.length === 1, 'Append must send only the new item');
+    assert(commands.at(-1).fields.restaurant.menu.items[0].basePriceMinor === 750, 'Quick Add price was incorrect');
+    assert(loadRestaurants().find(r=>r.id===restaurant.id).menu.items.some(item=>item.name==='Saved breakfast item'), 'Saved item disappeared from the library');
+    assert(inputs()[0].value === '' && inputs()[2].value === '', 'Successful save did not reset Quick Add');
+    failed = true; setValue(inputs()[0], 'Keep failed draft'); setValue(inputs()[2], '4.50'); await pause();
+    button('Add & save item').click(); await pause();
+    assert(inputs()[0].value === 'Keep failed draft' && inputs()[2].value === '4.50', 'A failed save lost the item draft');
+    assert(!loadRestaurants().find(r=>r.id===restaurant.id).menu.items.some(item=>item.name==='Keep failed draft'), 'Failed save was shown as persisted');
+    const measured = measureAudit(); assert(!measured.overflow, 'Quick Add overflows on mobile');
+    return { passed: ['one-step shared save', 'minor-unit price', 'catalog persistence', 'failure preserves draft'], language: getLanguage(), ...measured };
+  } finally { if(oldIds == null) localStorage.removeItem('foodrun-server-catalog-v1'); else localStorage.setItem('foodrun-server-catalog-v1',oldIds); }
 }
 export async function runLibraryAudit() {
   await mountAudit('library');

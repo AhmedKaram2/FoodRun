@@ -4,7 +4,7 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class WheelProtectionServiceTest {
-    private fun request(f: RoomFixture, member: RoomReply, plan: WheelProtectionPlan) = f.send(member, CommandKind.REQUEST_WHEEL_PROTECTION) { it.copy(text = plan.name) }.room!!.wheelProtections.last()
+    private fun request(f: RoomFixture, member: RoomReply, plan: WheelProtectionPlan) = f.legacyWheelRequest(member,plan)
     private fun approve(f: RoomFixture, request: WheelProtection) = f.send(f.owner, CommandKind.REVIEW_WHEEL_PROTECTION) { it.copy(transferId = request.id, flag = true) }
     private fun declare(f: RoomFixture, member: RoomReply, request: WheelProtection) = f.send(member, CommandKind.DECLARE_WHEEL_PAYMENT) { it.copy(transferId = request.id, amount = request.amount, text = "Cash paid to owner") }
     private fun confirm(f: RoomFixture, request: WheelProtection) = f.send(f.owner, CommandKind.CONFIRM_WHEEL_PAYMENT) { it.copy(transferId = request.id, amount = request.amount, flag = true) }
@@ -58,7 +58,7 @@ class WheelProtectionServiceTest {
         confirm(f, request)
         assertEquals("", f.state(other).room!!.wheelProtections.single().reference)
     }
-    @Test fun rejectedRequestsCanBeResubmittedAndUnreceivedPaymentsDoNotActivate() = RoomFixture().use { f ->
+    @Test fun legacyUnreceivedPaymentsDoNotActivate() = RoomFixture().use { f ->
         val member = f.join(); val first = request(f, member, WheelProtectionPlan.EXCLUDE)
         f.send(f.owner, CommandKind.REVIEW_WHEEL_PROTECTION) { it.copy(transferId = first.id, flag = false) }
         val second = request(f, member, WheelProtectionPlan.HALF_CHANCE); approve(f, second); declare(f, member, second)
@@ -66,6 +66,14 @@ class WheelProtectionServiceTest {
         assertNull(WheelProtectionRules.active(f.state().room!!, member.memberId))
         declare(f, member, second); confirm(f, second)
         assertEquals(WheelProtectionPlan.HALF_CHANCE, WheelProtectionRules.active(f.state().room!!, member.memberId))
+    }
+    @Test fun newPaidWheelRequestsAreUnavailableForBothPlans() = RoomFixture().use { f ->
+        val member = f.join();val before = f.state().room
+        WheelProtectionPlan.entries.forEach { plan ->
+            val result = f.service.execute(f.command(member,CommandKind.REQUEST_WHEEL_PROTECTION).copy(text = plan.name))
+            assertFalse(result.ok);assertEquals("Paid wheel options are no longer available.",result.error)
+            assertEquals(before,f.state().room)
+        }
     }
     @Test fun paymentReplayIsIdempotentAndProtectionSurvivesRestartButResetsNextOrder() = RoomFixture().use { f ->
         val member = f.join(); val request = request(f, member, WheelProtectionPlan.EXCLUDE)

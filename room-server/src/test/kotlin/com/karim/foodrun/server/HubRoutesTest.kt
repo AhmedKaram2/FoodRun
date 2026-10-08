@@ -31,6 +31,27 @@ class HubRoutesTest {
         }
     }
 
+    @Test fun optedInBrowsersReceiveSmallHeartbeatsAndAStaleInstanceRequestsReconnect() {
+        val store = DurableStorageTest.MemoryStore()
+        RoomFixture(durableFactory = { store }).use { f ->
+            val clock = AtomicLong(1000)
+            testApplication {
+                application { hubRoutes(f.service, socketClock = clock::get) }
+                val socketClient = createClient { install(WebSockets) }
+                socketClient.webSocket("/events") {
+                    send(Frame.Text(orderJson.encodeToString(f.command(f.owner, CommandKind.SNAPSHOT).copy(text = "live-check-v1"))))
+                    assertNotNull(orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText()).room)
+                    clock.addAndGet(15000)
+                    val heartbeat = withTimeout(5000) { orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText()) }
+                    assertEquals("LIVE", heartbeat.code); assertNull(heartbeat.room); assertNull(heartbeat.home)
+                    store.available = false
+                    val unavailable = withTimeout(5000) { orderJson.decodeFromString<RoomReply>((incoming.receive() as Frame.Text).readText()) }
+                    assertFalse(unavailable.ok); assertEquals("HUB_UNAVAILABLE", unavailable.code)
+                }
+            }
+        }
+    }
+
     @Test fun roomLifecycleMetadataIsOmittedForStrictLegacyClients() {
         val reply = RoomReply(home = HomePayload(FoodProfile(), rooms = listOf(AccountRoom("r", "Room", "m", "token", RoomPhase.ARCHIVED, 3))))
         assertFalse(orderJson.encodeToString(reply.forClient(true, true)).contains("ARCHIVED"))

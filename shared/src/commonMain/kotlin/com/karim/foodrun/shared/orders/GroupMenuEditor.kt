@@ -66,6 +66,14 @@ internal class GroupMenuEditor(private val c: GroupController) {
             "variant" -> set(menu.copy(items = menu.items.map { if(it.id != parent) it else it.copy(variants = it.variants.filterNot { it.id == id } + MenuVariant(id, name, price(), ar)) }))
             "option" -> set(menu.copy(optionGroups = menu.optionGroups.map { if(it.id != parent) it else it.copy(options = it.options.filterNot { it.id == id } + MenuOption(id, name, price(), ar)) }))
         }
+        val published = c.library.home?.restaurants?.firstOrNull { it.id == c.editingRestaurant?.restaurant?.id }
+        if(navigate && type == "item" && published != null && published.menu.items.none { it.id == id } &&
+            !c.administration.editingRestaurant && c.editingRoomOrder == null && c.library.identityToken.isNotEmpty()) {
+            val restaurant = c.editingRestaurant!!.restaurant
+            c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.ADD_MENU_ITEMS,
+                restaurant = restaurant.copy(menu = restaurant.menu.copy(items = listOf(menu.items.single { it.id == id })))), returnPage = GroupPage.MENU_EDITOR)
+            return
+        }
         if(navigate) back()
     }
     fun remove(value: String) {
@@ -88,11 +96,13 @@ internal class GroupMenuEditor(private val c: GroupController) {
     private fun row(kind: String, key: String, title: String, detail: String = "", parentId: String = "") = GroupCard("menu-edit:$kind:$key", title, detail,
         buttons = listOf(button("Edit", "تعديل", "$kind|$key|$parentId"), GroupButton(tr("Remove", "إزالة"), GroupAction.MENU_REMOVE, "$kind|$key|$parentId", destructive = true)))
     fun content(): GroupFlowContent {
-        if(c.page == GroupPage.MENU_EDITOR) return GroupFlowContent(cards =
+        if(c.page == GroupPage.MENU_EDITOR) return GroupFlowContent(fields = listOf(
+            field(GroupFieldKey.MENU_ITEM_NAME, "Item name", "اسم الصنف"),
+            field(GroupFieldKey.MENU_ITEM_PRICE, "Price · $currency", "السعر · $currency")), cards =
             menu.categories.sortedBy { it.sortOrder }.map { row("category", it.id, it.localizedName(c.library.language)) } +
             menu.items.map { row("item", it.id, it.localizedName(c.library.language), Money.format(it.basePriceMinor, currency)) } +
             menu.optionGroups.map { row("group", it.id, it.localizedName(c.library.language), "${it.minSelections}–${it.maxSelections}") },
-            buttons = listOf(button("Add category", "إضافة قسم", "category|"), button("Add item", "إضافة صنف", "item|"), button("Add extras group", "إضافة مجموعة إضافات", "group|")))
+            buttons = listOf(GroupButton(if(c.library.home?.restaurants?.any { it.id == c.editingRestaurant?.restaurant?.id } == true && !c.administration.editingRestaurant && c.editingRoomOrder == null) tr("Add & save item", "إضافة الصنف وحفظه") else tr("Add item to draft", "إضافة الصنف للمسودة"), GroupAction.ADD_MENU_ITEM, primary = true), button("Add category", "إضافة قسم", "category|"), button("Add item", "إضافة صنف", "item|"), button("Add extras group", "إضافة مجموعة إضافات", "group|")))
         val fields = mutableListOf(field(GroupFieldKey.MENU_ENTITY_NAME, "Name · English", "الاسم · إنجليزي"), field(GroupFieldKey.MENU_ENTITY_AR, "Name · Arabic", "الاسم · عربي"))
         val cards = mutableListOf<GroupCard>(); val buttons = mutableListOf<GroupButton>()
         when(type) {

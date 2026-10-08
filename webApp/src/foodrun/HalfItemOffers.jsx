@@ -3,7 +3,7 @@ import { t } from './i18n.js';
 import { halfItemsOpen } from './halfItems.js';
 
 export default function HalfItemOffers({ room, me, data, describe }) {
-  const offers = room.halfItemOffers || [];
+  const offers = (room.halfItemOffers || []).filter(offer => !offer.acceptedById);
   if (!offers.length || !me.approved) return null;
   const open = halfItemsOpen(room);
   return <section className="card half-item-offers" aria-label={t('Share half an item')} aria-live="polite">

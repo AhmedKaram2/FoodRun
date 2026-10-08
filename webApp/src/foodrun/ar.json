@@ -702,5 +702,14 @@
   "Clear search to review the full cleanup selection before deleting.": "امسح البحث لمراجعة جميع البيانات المحددة قبل الحذف.",
   "Reminder sent in app": "تم إرسال التذكير في التطبيق",
   "Reminder sent in the app; recipient emails are disabled.": "تم إرسال التذكير في التطبيق؛ المستلم أوقف رسائل البريد.",
-  "Previous update confirmed. You can continue editing.": "تم تأكيد التعديل السابق. يمكنك متابعة التعديل."
+  "Previous update confirmed. You can continue editing.": "تم تأكيد التعديل السابق. يمكنك متابعة التعديل.",
+  "Previous wheel payments": "مدفوعات العجلة السابقة",
+  "Paid wheel options are no longer available.": "خيارات العجلة المدفوعة لم تعد متاحة.",
+  "Excluded from selection": "مستبعد من الاختيار",
+  "50% less chance": "فرصة أقل بنسبة ٥٠٪",
+  "Add & save item": "إضافة الصنف وحفظه",
+  "Add item to draft": "إضافة الصنف للمسودة",
+  "Item saved to the shared menu and available in new orders.": "تم حفظ الصنف في القائمة المشتركة وأصبح متاحاً في الطلبات الجديدة.",
+  "Item could not be saved. Your item details are kept; check the connection and try again.": "تعذر حفظ الصنف. تم الاحتفاظ ببياناته؛ تحقق من الاتصال وحاول مجدداً.",
+  "For an existing restaurant, enter an item name and price, then press Add & save item. New restaurants need to be published once.": "للمطعم الموجود، أدخل اسم الصنف وسعره ثم اضغط إضافة الصنف وحفظه. يلزم نشر المطاعم الجديدة مرة واحدة."
 }

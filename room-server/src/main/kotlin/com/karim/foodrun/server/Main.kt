@@ -26,6 +26,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import javax.jmdns.JmDNS
 import javax.jmdns.ServiceInfo
 import kotlin.time.Duration.Companion.seconds
@@ -76,11 +77,12 @@ fun main() {
     require(emailDailyLimit in 1..450) { "FOODRUN_EMAIL_DAILY_LIMIT must be between 1 and 450." }
     val service = RoomService(db, identityProvider = FirebaseIdentity.configured(), emailEnabled = emailSender != null)
     val admin = AdminService(db, service)
-    Runtime.getRuntime().addShutdownHook(Thread { discoveries.forEach { it.close() }; db.close() })
-    embeddedServer(Netty, configure = {
+    val applicationJob = AtomicReference<Job?>()
+    val server = embeddedServer(Netty, configure = {
         if (proxyMode) connector { this.port = port; this.host = "0.0.0.0" }
         else sslConnector(keyStore, "foodrun", { password.toCharArray() }, { password.toCharArray() }) { this.port = port; this.host = "0.0.0.0" }
     }) {
+        applicationJob.set(coroutineContext[Job])
         hubRoutes(service, admin, reminderSender = emailSender?.let { sender -> { commandId -> service.sendPaymentReminder(commandId, sender, emailDailyLimit) } })
         if (emailSender != null) {
             launch(Dispatchers.IO) {
@@ -103,7 +105,17 @@ fun main() {
                 }
             }
         }
-    }.start(wait = true)
+    }
+    Runtime.getRuntime().addShutdownHook(Thread {
+        // Render stops the old instance during deployment. Stop requests and workers
+        // before closing SQLite so they cannot query a closed connection.
+        try { server.stop(1_000,5_000) } finally {
+            runBlocking { applicationJob.get()?.cancelAndJoin() }
+            discoveries.forEach { it.close() }
+            db.close()
+        }
+    })
+    server.start(wait = true)
 }
 
 fun Application.hubRoutes(
@@ -347,6 +359,7 @@ fun Application.hubRoutes(
             val request = runCatching { val body = first.readText(); JsonInputValidation.validate(body); orderJson.decodeFromString<RoomCommand>(body) }.getOrNull() ?: return@webSocket
             if (request.kind !in listOf(CommandKind.SNAPSHOT, CommandKind.HOME) || request.protocolVersion != 1) return@webSocket
             var lastVersion = Long.MIN_VALUE
+            var lastHeartbeatAt = 0L
             var lastPresenceAt = 0L
             var memberId = ""
             var lastHome: HomePayload? = null
@@ -355,6 +368,14 @@ fun Application.hubRoutes(
                 if (memberId.isNotEmpty() && now - lastPresenceAt >= 5_000) {
                     service.touch(memberId)
                     lastPresenceAt = now
+                }
+                if (!service.storageAvailable) {
+                    send(Frame.Text(orderJson.encodeToString(RoomReply(ok = false, code = "HUB_UNAVAILABLE", error = "Reconnect to the active order server."))))
+                    break
+                }
+                if (request.text == "live-check-v1" && lastVersion != Long.MIN_VALUE && now - lastHeartbeatAt >= 15_000) {
+                    send(Frame.Text(orderJson.encodeToString(RoomReply(code = "LIVE"))))
+                    lastHeartbeatAt = now
                 }
                 val version = service.eventVersion(request.kind, request.roomId)
                 // Ping/pong keeps idle sockets alive. A timed resend would repeatedly transfer

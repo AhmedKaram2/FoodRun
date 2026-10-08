@@ -24,6 +24,21 @@ class GroupAccountSyncTest {
         override fun discover(callback: GroupReplyCallback) = Unit
     }
 
+    @Test fun delayedHomeCannotReplaceANewerWalletSnapshot() {
+        val device = Device(); val c = GroupController(device)
+        val hub = HubPairing("https://api.example.test")
+        c.library = c.library.copy(identityToken = "identity-token", identityHub = hub, selectedHub = hub)
+        c.foreground()
+        val homeWatch = device.watches.last { it.command.kind == CommandKind.HOME }
+        val fresh = HomePayload(FoodProfile("me", "Current name"), wallet = WalletSnapshot(balances = listOf(WalletBalance("me", "Me", "holder", "Holder", "AED", 3900))))
+        homeWatch.reply(RoomReply(home = fresh, serverTime = 2000))
+        homeWatch.reply(RoomReply(home = fresh.copy(profile = fresh.profile.copy(name = "Old name"), wallet = WalletSnapshot()), serverTime = 1000))
+        assertEquals("Current name", c.library.home!!.profile.name)
+        assertEquals(3900L, c.library.home!!.wallet!!.balances.single().available)
+        homeWatch.reply(RoomReply(home = fresh.copy(profile = fresh.profile.copy(name = "Newest name")), serverTime = 3000))
+        assertEquals("Newest name", c.library.home!!.profile.name)
+    }
+
     @Test fun homeRefreshReplacesTheOpenRoomsMemberAndTokenAndIgnoresOldCallbacks() {
         val device = Device(); val c = GroupController(device)
         val hub = HubPairing("https://api.example.test")

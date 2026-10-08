@@ -4,6 +4,7 @@ import com.google.auth.oauth2.ServiceAccountCredentials
 import com.google.cloud.firestore.Blob
 import com.google.cloud.firestore.Firestore
 import com.google.cloud.firestore.FirestoreOptions
+import com.google.cloud.firestore.ListenerRegistration
 import com.karim.foodrun.orders.orderJson
 import kotlinx.serialization.encodeToString
 import java.io.ByteArrayOutputStream
@@ -26,7 +27,10 @@ class FirestoreStore(
     private val documents = metadata.collection("foodrun_rows")
     private var revision = -1L
     private var sizes = mutableMapOf<String, List<Int>>()
-    private var usable = true
+    @Volatile private var usable = true
+    override val available: Boolean get() = usable
+    private val writerId = UUID.randomUUID().toString()
+    private var ownershipListener: ListenerRegistration? = null
 
     init {
         require(namespace.matches(Regex("[a-zA-Z0-9_-]{1,80}")))
@@ -57,11 +61,17 @@ class FirestoreStore(
             val next = (meta.getLong("revision") ?: 0) + 1
             val writes = if (meta.getString("day") == clockDay()) meta.getLong("writes") ?: 0 else 0
             if (writes + 1 > dailyWriteLimit) throw StorageUnavailable("Daily storage allowance reached. Try again tomorrow.")
-            tx.set(metadata, mapOf("format" to 1L, "initialized" to (meta.getBoolean("initialized") == true), "revision" to next, "commit" to claim, "day" to clockDay(), "writes" to writes + 1, "bytes" to loadedSizes.values.sumOf { p -> p.sumOf { it.toLong() + 1024 } }))
+            tx.set(metadata, mapOf("format" to 1L, "initialized" to (meta.getBoolean("initialized") == true), "revision" to next, "commit" to claim, "writer" to writerId, "day" to clockDay(), "writes" to writes + 1, "bytes" to loadedSizes.values.sumOf { p -> p.sumOf { it.toLong() + 1024 } }))
             Triple(if (meta.getBoolean("initialized") == true) rows else null, next, loadedSizes)
         }.get(90, TimeUnit.SECONDS)
         revision = snapshot.second
         sizes = snapshot.third
+        ownershipListener?.remove()
+        ownershipListener = metadata.addSnapshotListener { value, error ->
+            // One small metadata listener fences old instances during deployments. Menus,
+            // wallet rows and photos continue to load only once on the active writer.
+            if (error != null || value?.exists() != true || value.getString("writer") != writerId) usable = false
+        }
         snapshot.first
     }
 
@@ -88,14 +98,14 @@ class FirestoreStore(
                 val meta = tx.get(metadata).get()
                 // A timeout retry may observe the already-committed operation.
                 if (meta.getString("commit") == commitId) return@runTransaction Unit
-                if (meta.getLong("revision") != expected) throw StorageUnavailable("Another server has taken over. Reconnect to the active server.")
+                if (meta.getString("writer") != writerId || meta.getLong("revision") != expected) throw StorageUnavailable("Another server has taken over. Reconnect to the active server.")
                 val writes = if (meta.getString("day") == clockDay()) meta.getLong("writes") ?: 0 else 0
                 if (writes + operations > dailyWriteLimit) throw StorageUnavailable("Daily storage allowance reached. Try again tomorrow.")
                 encoded.forEach { (id, parts) ->
                     parts.forEachIndexed { index, part -> tx.set(documents.document("$id-$index"), mapOf("row" to id, "part" to index, "count" to parts.size, "payload" to Blob.fromBytes(part))) }
                     for (index in parts.size until (sizes[id]?.size ?: 0)) tx.delete(documents.document("$id-$index"))
                 }
-                tx.set(metadata, mapOf("format" to 1L, "initialized" to true, "revision" to expected + 1, "commit" to commitId, "day" to clockDay(), "writes" to writes + operations, "bytes" to totalBytes))
+                tx.set(metadata, mapOf("format" to 1L, "initialized" to true, "revision" to expected + 1, "commit" to commitId, "writer" to writerId, "day" to clockDay(), "writes" to writes + operations, "bytes" to totalBytes))
                 Unit
             }.get(45, TimeUnit.SECONDS)
         } catch (error: Exception) {
@@ -109,7 +119,7 @@ class FirestoreStore(
 
     private fun <T> protect(block: () -> T): T = try { block() } catch (error: StorageUnavailable) { throw error }
         catch (error: Exception) { usable = false; throw StorageUnavailable("Firestore storage is unavailable.", error) }
-    override fun close() { firestore.close() }
+    override fun close() { ownershipListener?.remove(); firestore.close() }
 
     companion object {
         internal const val CHUNK_BYTES = 600_000

@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { money } from './client.js';
 import { t, tf } from './i18n.js';
-import ServiceSupportNote from './ServiceSupportNote.jsx';
 
-const labels = { EXCLUDE: 'Exclude me from selection · AED 10', HALF_CHANCE: 'Reduce my chance by 50% · AED 5' };
+const labels = { EXCLUDE: 'Excluded from selection', HALF_CHANCE: '50% less chance' };
 const statusLabels = { REQUESTED: 'Waiting for owner approval', AWAITING_PAYMENT: "Approved · pay the order owner",
   PAYMENT_DECLARED: 'Waiting for owner to confirm payment', ACTIVE: 'Active for this order', REJECTED: 'Request declined' };
 
@@ -12,17 +11,12 @@ export default function WheelProtection({ room, me, data }) {
   const owner = room.ownerId === me.id;
   if (!me.approved || me.guest || room.paymentRoom) return null;
   const requests = room.wheelProtections || [];
-  const mine = requests.findLast(request => request.memberId === me.id);
-  const canRequest = !owner && me.participating && me.eligible && room.phase === 'LOBBY' && (!mine || mine.status === 'REJECTED');
   const canManage = room.phase === 'LOBBY';
   const canConfirm = canManage || room.phase === 'ARCHIVED' && room.autoArchivedAt > 0;
   const send = (kind, request, fields = {}) => data.send(kind, { transferId: request.id, ...fields }, room.id);
-  if (!canManage && !requests.length) return null;
+  if (!requests.length) return null;
   return <article className="card stack wheel-protection">
-    <div><p className="eyebrow">{t('WHEEL OPTIONS')}</p><h3>{t('Please don’t pick me')}</h3></div>
-    <p className="field-help">{t("For this order only. The order owner approves first, then confirms receiving your payment. You still order food and pay your share.")}</p>
-    <ServiceSupportNote />
-    {canRequest && <div className="wheel-protection-options">{Object.entries(labels).map(([plan, label]) => <button type="button" className="secondary" key={plan} disabled={data.busy || !data.online[room.id]} onClick={() => data.send('REQUEST_WHEEL_PROTECTION', { text: plan }, room.id)}>{t(label)}</button>)}</div>}
+    <h3>{t('Previous wheel payments')}</h3>
     {(owner ? requests.filter(request => request.status !== 'REJECTED') : requests.filter(request => request.memberId === me.id || request.status === 'ACTIVE')).map(request => <section className="wheel-protection-request" key={request.id}>
       <div className="section-title compact"><b>{room.members.find(member => member.id === request.memberId)?.name}</b><strong><bdi>{money(request.amount, 'AED')}</bdi></strong></div>
       <p>{t(labels[request.plan])}</p><small role="status">{t(statusLabels[request.status])}</small>

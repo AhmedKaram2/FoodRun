@@ -8,6 +8,7 @@ class DurableStorageTest {
     internal class MemoryStore : DurableStore {
         var rows: MutableMap<String, StoredRow>? = null
         var commits = 0
+        override var available = true
         var failBefore = false
         var failAfter = false
         override fun load() = rows?.values?.toList()
@@ -42,6 +43,18 @@ class DurableStorageTest {
             f.restart(clearCache = true)
             assertTrue(f.state(member).history.isEmpty())
             assertEquals(setOf(1L), f.db.deletedHistory(archived.id))
+        }
+    }
+    @Test fun takeoverStopsCachedReadsBeforeAnyNewWrite() {
+        val store = MemoryStore()
+        RoomFixture(durableFactory = { store }).use { f ->
+            assertTrue(f.state().ok)
+            val commits = store.commits
+            store.available = false
+            assertFalse(f.service.storageAvailable)
+            assertFailsWith<StorageUnavailable> { f.state() }
+            assertFailsWith<StorageUnavailable> { f.db.records("profile:") }
+            assertEquals(commits, store.commits)
         }
     }
     @Test fun rejectedWriteCannotBeAcknowledgedOrReadAsSaved() {

@@ -387,7 +387,7 @@ class GroupController(val platform: GroupPlatform) {
         stopHomeWatching(); watching?.cancel(); watching = null; generation++
         session = null; reply = null; draft.clear(); walletFunds.clear(); notifications.clear(); administration.clear(); paymentReminders.clear(); feedbacks.clear(); selectionOverride.clear()
         library = library.copy(identityToken = result.identityToken,identityHub = hub,selectedHub = hub,home = null,sessions = emptyList(),snapshots = emptyMap(),accounts = emptyList(),seenAlerts = emptyList(),pending = null,pendingHub = null)
-        acceptHome(requireNotNull(result.home),hub); page = GroupPage.HOME; busy = false; startHomeWatching(); publish()
+        acceptHome(requireNotNull(result.home),hub,result.serverTime); page = GroupPage.HOME; busy = false; startHomeWatching(); publish()
     }
     private fun endSupport() {
         val owner = supportOwner ?: return
@@ -541,7 +541,7 @@ class GroupController(val platform: GroupPlatform) {
             text = if (action == GroupAction.WALLET_REJECT) "Payment was not received." else if (payer) "Refund sent" else "Payment sent"), returnPage = page)
     }
     internal fun send(c: RoomCommand, retry: Boolean = false, returnPage: GroupPage? = null) {
-        val accountCommand = c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP, CommandKind.SET_NOTIFICATION_PREFERENCES)
+        val accountCommand = c.kind in listOf(CommandKind.ADD_MENU_ITEMS, CommandKind.PUBLISH_RESTAURANT, CommandKind.FRIEND_LOOKUP, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP, CommandKind.SET_NOTIFICATION_PREFERENCES)
         val walletRead = c.kind in listOf(CommandKind.WALLET_PEOPLE, CommandKind.WALLET_RECIPIENT, CommandKind.FRIEND_LOOKUP)
         require(library.pending == null || retry) { "A previous request is awaiting confirmation. Retry it before making another change." }
         val requestSession = if(c.roomId.isEmpty() || c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) null else library.sessions.single { it.roomId == c.roomId }
@@ -581,13 +581,23 @@ class GroupController(val platform: GroupPlatform) {
                         val s = StoredSession(hub, room.id, next.token, next.memberId, room.name)
                         session = s; library = library.copy(sessions = library.sessions.filterNot { it.roomId == s.roomId } + s, displayName = if(c.kind == CommandKind.CREATE_PAYMENT_ROOM) library.displayName else c.name)
                     }
-                    next.home?.let { acceptHome(it, hub) }
+                    next.home?.let { acceptHome(it, hub, next.serverTime) }
                     if (c.kind == CommandKind.CREATE) next.room?.let(smartDefaults::remember)
                     walletFunds.accept(next, outgoing)
                     friends.accept(next, outgoing)
                     if(next.room != null) accept(next, sentAt)
                     replaceLibrary(library.copy(pending = null, pendingHub = null))
                     if (c.kind == CommandKind.REMIND_PAYMENT) paymentReminders.accept(outgoing, next.code)
+                    if (c.kind == CommandKind.ADD_MENU_ITEMS) {
+                        val saved = library.home?.restaurants?.firstOrNull { it.id == c.restaurant?.id }
+                        if(saved != null && editingRestaurant?.restaurant?.id == saved.id) editingRestaurant = editingRestaurant!!.copy(restaurant = saved)
+                        draft[GroupFieldKey.MENU_ITEM_NAME] = ""; draft[GroupFieldKey.MENU_ITEM_PRICE] = ""
+                        success("Item saved to the shared menu and available in new orders.")
+                    }
+                    if (c.kind == CommandKind.PUBLISH_RESTAURANT) {
+                        formDrafts.finishRestaurant(draft)
+                        success("Restaurant, items, and prices are now available to everyone.")
+                    }
                     if (c.kind == CommandKind.RECORD_PAYMENT) success("Payment recorded.")
                     if (c.kind in listOf(CommandKind.CONFIRM_TRANSFER, CommandKind.CONFIRM_REFUND)) success("Payment confirmed.")
                     if (c.kind == CommandKind.UPDATE_RESTAURANT && editingRoomOrder != null) {
@@ -733,7 +743,7 @@ class GroupController(val platform: GroupPlatform) {
                     } else if(result.home != null) {
                         val home = requireNotNull(result.home)
                         replaceLibrary(library.copy(identityToken = result.identityToken.ifEmpty { library.identityToken }, identityHub = hub))
-                        acceptHome(home, hub); page = returnPage ?: if(action == IdentityAction.INVITE) GroupPage.PEOPLE else GroupPage.HOME
+                        acceptHome(home, hub, result.serverTime); page = returnPage ?: if(action == IdentityAction.INVITE) GroupPage.PEOPLE else GroupPage.HOME
                     } else success("If an account exists, a password reset email has been requested.")
                     startHomeWatching()
                 } catch(e: Exception) { this@GroupController.error = e.message ?: "Account update failed. Retry." }
@@ -747,7 +757,11 @@ class GroupController(val platform: GroupPlatform) {
         replaceLibrary(library.copy(seenAlerts = (library.seenAlerts + id).takeLast(100)))
         if(!notifications.deviceEnabled || id.startsWith("invite:")) platform.notify(title, body)
     }
-    private fun acceptHome(home: HomePayload, hub: HubPairing) {
+    private val homeTimes = mutableMapOf<String, Long>()
+    private fun acceptHome(home: HomePayload, hub: HubPairing, serverTime: Long = 0) {
+        val key = "${hub.url}:${home.profile.userId}"
+        if(serverTime > 0 && serverTime < (homeTimes[key] ?: 0)) return
+        if(serverTime > 0) homeTimes[key] = serverTime
         val wasOngoing = session?.let(::ongoingSession)
         val sessions = home.rooms.map { StoredSession(hub, it.roomId, it.token, it.memberId, it.roomName) }
         val refreshedSession = session?.takeIf { sameHub(it.hub, hub) }?.let { current -> sessions.firstOrNull { it.roomId == current.roomId } }
@@ -785,7 +799,7 @@ class GroupController(val platform: GroupPlatform) {
             homeWatching = platform.watch(hub, encodeCommand(request), object : GroupReplyCallback {
                 override fun complete(body: String, error: String) {
                     if(epoch != homeGeneration || error.isNotEmpty()) return
-                    try { val next = decodeReply(body); if (next.ok) next.home?.let { acceptHome(it, hub); watchSavedRooms(epoch); publish() } }
+                    try { val next = decodeReply(body); if (next.ok) next.home?.let { acceptHome(it, hub, next.serverTime); watchSavedRooms(epoch); publish() } }
                     catch (_: Exception) { /* Existing home stays available; the next update retries. */ }
                 }
             })
@@ -915,7 +929,7 @@ class GroupController(val platform: GroupPlatform) {
                 try {
                     val result = decodeReply(body)
                     if(!result.ok || result.code == "COMMAND_UNKNOWN") return
-                    result.home?.let { acceptHome(it,hub) }
+                    result.home?.let { acceptHome(it,hub,result.serverTime) }
                     if(result.room != null) {
                         val room = requireNotNull(result.room)
                         val restored = library.sessions.firstOrNull { it.roomId == room.id }

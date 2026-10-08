@@ -74,7 +74,7 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         when(c.page) {
             GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> { title = tr("Wallet", "المحفظة"); subtitle = ""; append(c.walletFunds.content()) }
-            GroupPage.WHEEL_PROTECTION -> { title = tr("Please don’t pick me", "ما تختارنيش"); subtitle = ""; append(c.wheelProtection.content()) }
+            GroupPage.WHEEL_PROTECTION -> { title = tr("Previous wheel payments", "مدفوعات العجلة السابقة"); subtitle = ""; append(c.wheelProtection.content()) }
             GroupPage.SELECTION_OVERRIDE -> { title = tr("Wheel selection", "اختيار العجلة"); subtitle = ""; append(c.selectionOverride.content()) }
             GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY -> { title = tr("Menu editor", "تعديل القائمة"); append(c.menuEditor.content()) }
             GroupPage.ADMIN, GroupPage.ADMIN_USER, GroupPage.ADMIN_CONFIRM -> { title = tr("Administration", "الإدارة"); append(c.administration.content()) }
@@ -406,7 +406,7 @@ internal class GroupPresentation(private val c: GroupController) {
         if(!me.guest && !me.participating && r.phase != RoomPhase.LOBBY) {
             card("viewing-order", ui("You’re in the order"), ui("You’re viewing this order. You can join when the next order opens."))
         }
-        if (!me.guest && r.paymentRoom == null && (r.phase == RoomPhase.LOBBY || r.wheelProtections.isNotEmpty())) button(tr("Please don’t pick me", "ما تختارنيش"), GroupAction.OPEN_WHEEL_PROTECTION)
+        if (!me.guest && r.paymentRoom == null && r.wheelProtections.isNotEmpty()) button(tr("Previous wheel payments", "مدفوعات العجلة السابقة"), GroupAction.OPEN_WHEEL_PROTECTION)
         button("Invite people", GroupAction.SHARE_ROOM); if(owner && r.phase == RoomPhase.LOBBY && c.sameHub(c.library.identityHub, c.session?.hub)) button(tr("Invite registered people", "دعوة مستخدمين مسجلين"), GroupAction.OPEN_PEOPLE); button("Receipts", GroupAction.OPEN_RECEIPTS); button("Past orders", GroupAction.OPEN_HISTORY)
         button(tr("Save restaurant", "حفظ المطعم"), GroupAction.SAVE_ROOM_RESTAURANT)
         if((owner || payer) && r.phase in listOf(RoomPhase.LOBBY, RoomPhase.COLLECTING, RoomPhase.REVIEW)) button(tr("Edit restaurant details", "تعديل بيانات المطعم"), GroupAction.EDIT_ROOM_RESTAURANT)
@@ -608,7 +608,8 @@ internal class GroupPresentation(private val c: GroupController) {
             val total = wholeTotal?.let { if (shared) it - it / 2 else it }
             card("cart:${line.id}", "${if (shared) "½" else line.quantity.toString()} × $name", line.notes,
                 total?.let { Money.format(it, r.restaurant.currency) } ?: tr("Awaiting price", "بانتظار السعر"),
-                if (offer != null) emptyList() else listOf(GroupButton(tr("Half", "نصف"), GroupAction.REQUEST_HALF_ITEM, line.id),
+                if (shared && halfItemsOpen(r)) listOf(GroupButton(tr("Keep the whole item", "آخذ الصنف كاملاً"), GroupAction.CANCEL_HALF_ITEM, requireNotNull(offer).id))
+                else if (offer != null) emptyList() else listOf(GroupButton(tr("Half", "نصف"), GroupAction.REQUEST_HALF_ITEM, line.id),
                     GroupButton("−", GroupAction.DECREASE_CART_QUANTITY, line.id),
                     GroupButton("+", GroupAction.INCREASE_CART_QUANTITY, line.id, enabled = line.quantity < 99),
                     GroupButton(tr("Edit", "تعديل"), GroupAction.EDIT_CART_ITEM, line.id),
@@ -616,14 +617,16 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         r.halfItemOffers.filter { it.acceptedById == c.me() }.forEach { offer ->
             card("cart:half:${offer.id}", "½ × ${localizedReceiptDescription(r, offer.line, language)}", offer.line.notes,
-                Money.format(offer.line.amount / 2, r.restaurant.currency))
+                Money.format(offer.line.amount / 2, r.restaurant.currency),
+                if(halfItemsOpen(r)) listOf(GroupButton(tr("Release my half", "إلغاء حصتي من النصف"), GroupAction.CANCEL_HALF_ITEM, offer.id)) else emptyList())
         }
         c.reply?.receipts?.firstOrNull { it.memberId == c.me() }?.let { card("estimate", tr("Your estimated total", "إجمالي طلبك المتوقع"), it.totalText) }
     }
+    private fun halfItemsOpen(r: Room) = r.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING) &&
+        !r.restaurantPollOpen && (r.deadline == 0L || c.serverNow() <= r.deadline)
     private fun halfItemOffers(r: Room, me: Member) {
-        val open = r.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING) &&
-            (r.deadline == 0L || c.serverNow() <= r.deadline)
-        r.halfItemOffers.forEach { offer ->
+        val open = halfItemsOpen(r)
+        r.halfItemOffers.filter { it.acceptedById == null }.forEach { offer ->
             val requester = r.members.firstOrNull { it.id == offer.memberId }?.name.orEmpty()
             val recipient = r.members.firstOrNull { it.id == offer.acceptedById }?.name.orEmpty()
             val shared = offer.acceptedById != null

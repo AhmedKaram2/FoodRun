@@ -14,13 +14,13 @@ import javax.crypto.spec.SecretKeySpec
 class RoomDatabase(directory: File, private val durable: DurableStore? = null) : AutoCloseable {
     val cloudDurable: Boolean get() = durable != null
     @Volatile private var failed = false
-    val available: Boolean get() = !failed
+    val available: Boolean get() = !failed && durable?.available != false
     private var transactionDepth = 0
     private val random = SecureRandom()
     private val key: SecretKeySpec
     private val sqlConnection: Connection
     private val connection: Connection get() {
-        if (failed) throw StorageUnavailable("Storage must reconnect before serving requests.")
+        if (!available) throw StorageUnavailable("Storage must reconnect before serving requests.")
         return sqlConnection
     }
     init {

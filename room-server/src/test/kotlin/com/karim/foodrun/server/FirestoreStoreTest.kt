@@ -39,6 +39,10 @@ class FirestoreStoreTest {
             assertTrue(FirestoreStore.encode(row).size > FirestoreStore.CHUNK_BYTES)
             first.commit(mapOf(row.id to row))
             assertEquals(row, second.load()!!.single())
+            val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10)
+            while (first.available && System.nanoTime() < deadline) Thread.sleep(20)
+            assertFalse(first.available, "The old instance must stop serving cached reads after takeover")
+            assertTrue(second.available)
             assertFailsWith<StorageUnavailable> { first.commit(mapOf(row.id to row.copy(cells = listOf("large", "stale")))) }
             val short = row.copy(cells = listOf("large", "small"))
             second.commit(mapOf(short.id to short))
@@ -88,7 +92,7 @@ class FirestoreStoreTest {
             assertEquals(command.paymentRoom!!.details, restored.room!!.paymentRoom)
             assertEquals(created.token, f.execute(command).token)
             val payment = RoomCommand(commandId = f.id(), kind = CommandKind.RECORD_PAYMENT, roomId = created.room!!.id, token = created.token,
-                expectedOrderNumber = 1, expectedRevision = created.room!!.revision, memberId = membership.memberId, amount = 2000, text = "Cash")
+                expectedOrderNumber = 1, expectedRevision = f.service.snapshot(created.room!!.id, created.token).room!!.revision, memberId = membership.memberId, amount = 2000, text = "Cash")
             f.execute(payment)
             f.restart(clearCache = true)
             assertEquals(0L, f.service.snapshot(membership.roomId, membership.token).receipts.single().balance)

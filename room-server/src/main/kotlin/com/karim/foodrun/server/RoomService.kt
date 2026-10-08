@@ -96,6 +96,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.joinTimerMinutes in 0..1440) { "Choose an order timer between 1 and 1440 minutes, or leave it off." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
+        require(c.kind != CommandKind.REQUEST_WHEEL_PROTECTION) { "Paid wheel options are no longer available." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
         expireDueRooms()
         if (c.roomId.isNotEmpty()) db.transaction { db.room(c.roomId)?.let(::archiveExpired) }
@@ -105,6 +106,18 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else if(c.kind == CommandKind.COMMAND_STATUS) commandStatus(c)
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
+        else if (c.kind in listOf(CommandKind.ADD_MENU_ITEMS, CommandKind.PUBLISH_RESTAURANT)) db.transaction {
+            val uid = accounts.userId(c.identityToken)
+            val restaurant = requireNotNull(c.restaurant) { "Choose a restaurant and menu." }
+            val digest = hash("$uid:${c.kind}:" + orderJson.encodeToString(restaurant))
+            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
+                val catalog = AdminService(db, this, clock, identityProvider)
+                if (c.kind == CommandKind.ADD_MENU_ITEMS) catalog.addMenuItems(c.identityToken, restaurant)
+                else catalog.contributeRestaurant(CatalogRestaurantMutation(c.identityToken, c.roomId, c.token, restaurant))
+                val reply = accounts.home(c.identityToken)
+                db.record(c.commandId, digest, reply); support.record(c); signalHome(); reply
+            }
+        }
         else if(c.kind == CommandKind.SET_NOTIFICATION_PREFERENCES) db.transaction {
             val uid = accounts.userId(c.identityToken)
             val preferences = requireNotNull(c.notificationPreferences) { "Choose your notification preferences." }
@@ -174,7 +187,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         val actor = authenticate(c.roomId, c.token)
                         presence[actor] = clock()
                         val room = withPresence(finalizeSpin(requireNotNull(db.room(c.roomId))))
-                        val changed = reducer.apply(room, actor, c, clock(), db.record(selectionOverrideKey(room)))
+                        val nextCommand = if(c.kind == CommandKind.NEXT_ORDER) c.copy(restaurant = currentCatalogRestaurant(c.restaurant ?: room.restaurant), restaurants = c.restaurants.ifEmpty { room.restaurantOptions }.map(::currentCatalogRestaurant)) else c
+                        val changed = reducer.apply(room, actor, nextCommand, clock(), db.record(selectionOverrideKey(room)))
                         var result = if (c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.ACCEPT_DUTY)) accounts.withSavedPayment(changed) else changed
                         result = wallets.reviewClaim(room, result, c)
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
@@ -277,6 +291,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             signalRoom(it.id)
         }
     }
+    private fun currentCatalogRestaurant(requested: Restaurant): Restaurant {
+        val published = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) }
+            ?: BuiltInRestaurants.all.map { it.restaurant }
+        return published.firstOrNull { it.id == requested.id } ?: requested
+    }
     private fun create(c: RoomCommand): RoomReply {
         if(c.identityToken.isNotBlank()) AccountRestrictions.requireRoomAllowed(db, accounts.userId(c.identityToken), "", clock())
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
@@ -289,8 +308,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val person = Member(memberId, c.name.trim(), approved = true, eligible = true, ready = true, lastSeen = clock())
         var code: String
         do { code = (100000 + random.nextInt(900000)).toString() } while (db.roomByCode(code) != null)
-        val selected = requireNotNull(c.restaurant)
-        val options = c.restaurants.ifEmpty { listOf(selected) }.distinctBy { it.id }
+        val selected = currentCatalogRestaurant(requireNotNull(c.restaurant))
+        val options = c.restaurants.ifEmpty { listOf(selected) }.map(::currentCatalogRestaurant).distinctBy { it.id }
         require(options.size <= 12 && options.any { it.id == selected.id }) { "Choose up to 12 restaurants, including the current choice." }
         require(options.all { it.currency == selected.currency }) { "Restaurant poll choices must use the same currency." }
         options.forEach(MenuValidation::validate)

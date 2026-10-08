@@ -41,6 +41,12 @@ internal class RoomFixture(private val identityProvider: IdentityProvider? = nul
         return execute(RoomCommand(commandId = id(), kind = CommandKind.JOIN, name = name, code = owner.room!!.code, identityToken = identity))
     }
     fun approve(actor: RoomReply) = send(owner, CommandKind.APPROVE) { it.copy(memberId = actor.memberId) }
+    fun legacyWheelRequest(member: RoomReply,plan: WheelProtectionPlan): WheelProtection {
+        val room = state().room!!
+        val request = WheelProtection(id(),member.memberId,room.ownerId,room.orderNumber,plan,createdAt = now)
+        db.save(room.copy(wheelProtections = room.wheelProtections + request,revision = room.revision+1))
+        return request
+    }
     fun start(member: RoomReply): RoomReply {
         send(owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }
         send(member, CommandKind.READY) { it.copy(flag = true) }

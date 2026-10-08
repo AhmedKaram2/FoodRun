@@ -79,7 +79,7 @@ class RoomExpiryServiceTest {
     }
     @Test fun pendingWheelPaymentMustBeResolvedBeforeTheArchivedOrderIsReplaced() = RoomFixture().use { f ->
         val member = f.join()
-        val request = f.send(member, CommandKind.REQUEST_WHEEL_PROTECTION) { it.copy(text = "EXCLUDE") }.room!!.wheelProtections.single()
+        val request = f.legacyWheelRequest(member,WheelProtectionPlan.EXCLUDE)
         f.send(f.owner, CommandKind.REVIEW_WHEEL_PROTECTION) { it.copy(transferId = request.id, flag = true) }
         f.send(member, CommandKind.DECLARE_WHEEL_PAYMENT) { it.copy(transferId = request.id, amount = request.amount, text = "Cash") }
         expire(f)

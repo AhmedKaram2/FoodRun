@@ -48,8 +48,15 @@ internal fun GroupController.addMenuItem() {
     val export = requireNotNull(editingRestaurant)
     val name = text(GroupFieldKey.MENU_ITEM_NAME).trim(); MenuValidation.label(name)
     val currency = text(GroupFieldKey.CURRENCY).uppercase()
-    val item = MenuItem(platform.uuid(), export.restaurant.menu.categories.first().id, name, basePriceMinor = Money.parse(text(GroupFieldKey.MENU_ITEM_PRICE), currency))
-    editingRestaurant = export.copy(restaurant = export.restaurant.copy(menu = export.restaurant.menu.copy(items = export.restaurant.menu.items + item)))
+    val category = export.restaurant.menu.categories.firstOrNull() ?: MenuCategory(platform.uuid(), "Menu", nameAr = "القائمة")
+    val categories = export.restaurant.menu.categories.ifEmpty { listOf(category) }
+    val item = MenuItem(platform.uuid(), category.id, name, basePriceMinor = Money.parse(text(GroupFieldKey.MENU_ITEM_PRICE), currency))
+    if(!administration.editingRestaurant && editingRoomOrder == null && library.identityToken.isNotEmpty() && library.home?.restaurants?.any { it.id == export.restaurant.id } == true) {
+        send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.ADD_MENU_ITEMS,
+            restaurant = export.restaurant.copy(menu = export.restaurant.menu.copy(items = listOf(item), categories = categories))), returnPage = GroupPage.MENU_EDITOR)
+        return
+    }
+    editingRestaurant = export.copy(restaurant = export.restaurant.copy(menu = export.restaurant.menu.copy(items = export.restaurant.menu.items + item, categories = categories)))
     draft[GroupFieldKey.MENU_ITEM_NAME] = ""; draft[GroupFieldKey.MENU_ITEM_PRICE] = ""
 }
 internal fun GroupController.saveEditor() {
@@ -65,6 +72,10 @@ internal fun GroupController.saveEditor() {
             taxRateBasisPoints = taxRate, minimumOrderMinor = Money.parse(text(GroupFieldKey.MINIMUM_ORDER).ifBlank { "0" }, currency)))
     MenuValidation.validate(r)
     if(administration.editingRestaurant) { administration.saveRestaurant(r); return }
+    if(editingRoomOrder == null && library.identityToken.isNotEmpty()) {
+        send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.PUBLISH_RESTAURANT, restaurant = r), returnPage = GroupPage.LIBRARY)
+        return
+    }
     saveRestaurant(export.copy(restaurant = r, revision = export.revision + 1))
     if(editingRoomOrder != null) command(CommandKind.UPDATE_RESTAURANT, restaurant = r, text = text(GroupFieldKey.REASON).ifBlank { "Restaurant details updated" })
     else { formDrafts.finishRestaurant(draft); page = GroupPage.LIBRARY }

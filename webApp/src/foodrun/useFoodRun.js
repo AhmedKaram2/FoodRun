@@ -6,6 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { command, request, watch } from './client';
 import { mergeRoomReply } from './roomState';
+import { newestAccountReply } from './accountState.js';
 import { roomConnections } from './roomConnections';
 import { accountConnection } from './accountConnection.js';
 import { pendingRecovery } from './pendingRecovery.js';
@@ -43,6 +44,11 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
   const [hub, setHub] = useState(() => invitedHub() || localStorage.getItem('foodrun-hub') || import.meta.env.VITE_FOODRUN_HUB_URL || publicHub);
   const [hubRevision, setHubRevision] = useState(0);
   const [connectionState, setConnectionState] = useState('');
+  const homeReply = useRef(null);
+  const applyHome = reply => {
+    if (!reply.home || newestAccountReply(homeReply.current, reply) !== reply) return false;
+    homeReply.current = reply; setHome(reply.home); return true;
+  };
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
   const { error, setError, notice, setNotice, feedback, dismissFeedback } = useFeedback();
   const [busy, setBusy] = useState(false);
@@ -69,7 +75,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     setUser(next); setAuthReady(true);
   }), []);
   useEffect(() => {
-    const epoch = ++alive.current; setSessionScope(''); setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); setPaymentReminderTimes({}); setPaymentReminderStates({}); seen.current.clear(); pending.current = null;
+    const epoch = ++alive.current; setSessionScope(''); homeReply.current = null; setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); setPaymentReminderTimes({}); setPaymentReminderStates({}); seen.current.clear(); pending.current = null;
     setConnectionState(''); setError('');
     if (!user || !hub) return;
     try {
@@ -89,11 +95,11 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
       onStatus: state => { if (current()) setConnectionState(state); },
       onConnected: reply => {
         if (!current()) return;
-        readBlock(reply); setAccessBlock(null); setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); setHome(reply.home); if (!pending.current) setError('');
+        readBlock(reply); setAccessBlock(null); setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); applyHome(reply); if (!pending.current) setError('');
         setSessions(Object.fromEntries(reply.home.rooms.map(room => [room.roomId, room])));
         return watch(hub, command('HOME', { identityToken: reply.identityToken }), next => {
           if (!current()) return;
-          readBlock(next); setHome(next.home);
+          if (!applyHome(next)) return; readBlock(next);
           setSessions(Object.fromEntries(next.home.rooms.map(room => [room.roomId, room])));
           next.home.invitations.forEach(invite => alert(`invite:${invite.id}`, `You're invited to ${invite.roomName}.`, t("Join from your home screen.")));
         }, (connected, reason, statusReply) => { if (!current()) return; readBlock(statusReply); setOnline(old => ({ ...old, home: connected })); if (reason) setError(reason); });
@@ -161,7 +167,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     pending.current = payload;
   };
   const accept = (reply, olderPage = false) => {
-    if (reply.home) setHome(reply.home);
+    if (reply.home) applyHome(reply);
     if (!reply.room) return;
     const r = reply.room;
     if (reply.token) setSessions(old => ({ ...old, [r.id]: { roomId: r.id, roomName: r.name, memberId: reply.memberId, token: reply.token } }));
@@ -189,7 +195,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
       }
       if (payload.kind === 'RECORD_PAYMENT') setNotice(t('Payment recorded.'));
       if (['CONFIRM_TRANSFER', 'CONFIRM_REFUND'].includes(payload.kind)) setNotice(t('Payment confirmed.'));
-      return reply;
+      return reply.home && homeReply.current ? { ...reply, home: homeReply.current.home } : reply;
     } catch (e) {
       if (epoch !== alive.current) return null;
       readBlock(e);

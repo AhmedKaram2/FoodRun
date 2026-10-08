@@ -12,19 +12,20 @@ export function MenuMoneyInput({ value, onChange, label, currency = 'AED' }) {
     catch (error) { event.target.setCustomValidity(error.message); }
   }} />;
 }
-export default function MenuEditor({ menu, onChange, language = 'en', currency = 'AED' }) {
+export default function MenuEditor({ menu, onChange, language = 'en', currency = 'AED', onAddItem, busy = false }) {
   const t = (en, ar) => language === 'ar' ? (translate(en, 'ar') === en ? ar : translate(en, 'ar')) : en;
   const id = () => crypto.randomUUID();
   const [quick, setQuick] = useState({ name: '', nameAr: '', price: '', categoryId: menu.categories[0]?.id || '' });
   const quickPrice = (() => { try { return amount(quick.price, currency); } catch { return null; } })();
-  const addQuickItem = () => {
+  const addQuickItem = async () => {
     if (!quick.name.trim() || quickPrice == null) return;
     const category = menu.categories.find(value => value.id === quick.categoryId) || menu.categories[0] || { id: id(), name: 'Menu', nameAr: 'القائمة', sortOrder: 0 };
-    onChange({
-      ...menu,
+    const item = { id: id(), categoryId: category.id, name: quick.name.trim(), nameAr: quick.nameAr.trim(), description: '', descriptionAr: '', basePriceMinor: quickPrice, available: true, variants: [], optionGroupIds: [] };
+    if (onAddItem) {
+      if (!await onAddItem(item, category)) return;
+    } else onChange({ ...menu,
       categories: menu.categories.some(value => value.id === category.id) ? menu.categories : [...menu.categories, category],
-      items: [...menu.items, { id: id(), categoryId: category.id, name: quick.name.trim(), nameAr: quick.nameAr.trim(), description: '', descriptionAr: '', basePriceMinor: quickPrice, available: true, variants: [], optionGroupIds: [] }],
-    });
+      items: [...menu.items, item] });
     setQuick({ name: '', nameAr: '', price: '', categoryId: category.id });
   };
   const editItem = (itemId, fields) => onChange({ ...menu, items: menu.items.map(item => item.id === itemId ? { ...item, ...fields } : item) });
@@ -40,7 +41,7 @@ export default function MenuEditor({ menu, onChange, language = 'en', currency =
         <label>{t('Arabic name (optional)', 'الاسم بالعربية (اختياري)')}<input dir="rtl" value={quick.nameAr} maxLength="160" onChange={event => setQuick(old => ({ ...old, nameAr: event.target.value }))} /></label>
         <label>{t(`Price · ${currency}`, `السعر · ${currency}`)}<input inputMode="decimal" value={quick.price} placeholder={minorInput(0, currency)} onChange={event => setQuick(old => ({ ...old, price: event.target.value }))} /></label>
         {menu.categories.length > 0 && <label>{t('Category', 'القسم')}<select value={menu.categories.some(value => value.id === quick.categoryId) ? quick.categoryId : menu.categories[0].id} onChange={event => setQuick(old => ({ ...old, categoryId: event.target.value }))}>{menu.categories.map(category => <option value={category.id} key={category.id}>{language === 'ar' && category.nameAr ? category.nameAr : category.name}</option>)}</select></label>}
-        <button type="button" className="primary" disabled={!quick.name.trim() || quickPrice == null} onClick={addQuickItem}>{t('Add item', 'إضافة الصنف')}</button>
+        <button type="button" className="primary" disabled={busy || !quick.name.trim() || quickPrice == null} onClick={addQuickItem}>{busy ? t('Saving…', 'جارٍ الحفظ…') : onAddItem ? t('Add & save item', 'إضافة الصنف وحفظه') : t('Add item to draft', 'إضافة الصنف للمسودة')}</button>
       </div>
       <small>{t('Add items one by one. You can open any item below later for sizes, descriptions, and extras.', 'أضف الأصناف واحداً تلو الآخر. يمكنك فتح أي صنف لاحقاً لإضافة الأحجام والوصف والإضافات.')}</small>
     </section>

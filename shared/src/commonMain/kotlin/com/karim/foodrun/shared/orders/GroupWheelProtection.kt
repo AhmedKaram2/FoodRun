@@ -4,7 +4,7 @@ import com.karim.foodrun.orders.*
 
 internal class GroupWheelProtection(private val c: GroupController) {
     private fun tr(en: String, ar: String) = if (c.library.language == "ar") ar else en
-    fun open() { require(c.room().paymentRoom == null); c.draft.remove(GroupFieldKey.WHEEL_PAYMENT_REFERENCE); c.page = GroupPage.WHEEL_PROTECTION }
+    fun open() { require(c.room().paymentRoom == null && c.room().wheelProtections.isNotEmpty()); c.draft.remove(GroupFieldKey.WHEEL_PAYMENT_REFERENCE); c.page = GroupPage.WHEEL_PROTECTION }
     private fun request(value: String) = c.room().wheelProtections.single { it.id == value }
     private fun command(kind: CommandKind, value: String = "", text: String = "", flag: Boolean = false, amount: Long = 0) {
         val room = c.room()
@@ -14,7 +14,7 @@ internal class GroupWheelProtection(private val c: GroupController) {
     }
     fun dispatch(action: GroupAction, value: String) {
         when (action) {
-            GroupAction.REQUEST_WHEEL_PROTECTION -> command(CommandKind.REQUEST_WHEEL_PROTECTION, text = value)
+            GroupAction.REQUEST_WHEEL_PROTECTION -> error("Paid wheel options are no longer available.")
             GroupAction.APPROVE_WHEEL_PROTECTION, GroupAction.REJECT_WHEEL_PROTECTION -> command(CommandKind.REVIEW_WHEEL_PROTECTION, value, flag = action == GroupAction.APPROVE_WHEEL_PROTECTION)
             GroupAction.DECLARE_WHEEL_PAYMENT -> command(CommandKind.DECLARE_WHEEL_PAYMENT, value, amount = request(value).amount,
                 text = c.text(GroupFieldKey.WHEEL_PAYMENT_REFERENCE).ifBlank { tr("Paid the order owner", "تم الدفع لصاحب الطلب") })
@@ -28,16 +28,8 @@ internal class GroupWheelProtection(private val c: GroupController) {
         val room = c.room(); val me = room.members.single { it.id == c.me() }; val owner = room.ownerId == me.id
         val editable = room.phase == RoomPhase.LOBBY && c.online
         val confirmable = c.online && (room.phase == RoomPhase.LOBBY || room.phase == RoomPhase.ARCHIVED && room.autoArchivedAt > 0)
-        val mine = room.wheelProtections.lastOrNull { it.memberId == me.id }
-        val cards = mutableListOf(GroupCard("wheel-intro", tr("Please don’t pick me", "ما تختارنيش"),
-            tr("For this order only. The owner approves first, then confirms receiving your payment. You still order food and pay your share.", "للطلب الحالي بس. صاحب الطلب يوافق الأول وبعدها يؤكد استلام الفلوس. تقدر تطلب أكل وتدفع حصتك عادي.")))
+        val cards = mutableListOf<GroupCard>()
         val buttons = mutableListOf<GroupButton>(); val fields = mutableListOf<GroupField>()
-        cards += GroupCard("wheel-service-support", tr("Support Intrvioo", "ادعم إنترفيوو"),
-            tr("Payments for paid features and subscriptions help renew our servers and improve the website service.", "مدفوعات المزايا المدفوعة والاشتراكات بتساعدنا في تجديد السيرفرات وتحسين خدمة الموقع."))
-        if (editable && !owner && me.approved && me.participating && me.eligible && !me.guest && (mine == null || mine.status == WheelProtectionStatus.REJECTED)) {
-            buttons += GroupButton(tr("Exclude me from selection · AED 10", "استبعدني من الاختيار · ١٠ دراهم"), GroupAction.REQUEST_WHEEL_PROTECTION, WheelProtectionPlan.EXCLUDE.name)
-            buttons += GroupButton(tr("Reduce my chance by 50% · AED 5", "قلّل فرصة اختياري للنصف · ٥ دراهم"), GroupAction.REQUEST_WHEEL_PROTECTION, WheelProtectionPlan.HALF_CHANCE.name)
-        }
         room.wheelProtections.filter { (owner && it.status != WheelProtectionStatus.REJECTED) || it.memberId == me.id || it.status == WheelProtectionStatus.ACTIVE }.forEach { request ->
             val actions = mutableListOf<GroupButton>()
             if (editable && owner && request.status == WheelProtectionStatus.REQUESTED) actions += GroupButton(tr("Approve request", "وافق على الطلب"), GroupAction.APPROVE_WHEEL_PROTECTION, request.id)

@@ -74,6 +74,31 @@ class AdminService(
         rooms.adminChanged()
         RestaurantCatalogPayload(next.sortedBy { it.name }, deletedRestaurantIds(db))
     }
+    /** Append against the latest catalog so two members cannot overwrite each other's additions. */
+    internal fun addMenuItems(identityToken: String, contribution: Restaurant): RestaurantCatalogPayload = synchronized(rooms) {
+        val actor = rooms.catalogContributor(identityToken, "", "")
+        val current = catalogUnlocked()
+        val restaurant = requireNotNull(current.firstOrNull { it.id == contribution.id }) { "Publish this restaurant before adding shared menu items." }
+        require(contribution.currency == restaurant.currency) { "Use the restaurant's current currency." }
+        require(contribution.menu.items.isNotEmpty()) { "Add at least one menu item." }
+        fun <T> append(existing: List<T>, additions: List<T>, key: (T) -> String): List<T> {
+            additions.forEach { value ->
+                existing.firstOrNull { key(it) == key(value) }?.let { old -> require(old == value) { "An existing menu entry changed. Refresh before editing it." } }
+            }
+            return existing + additions.filter { value -> existing.none { key(it) == key(value) } }
+        }
+        val menu = restaurant.menu.copy(
+            items = append(restaurant.menu.items, contribution.menu.items) { it.id },
+            categories = append(restaurant.menu.categories, contribution.menu.categories) { it.id },
+            optionGroups = append(restaurant.menu.optionGroups, contribution.menu.optionGroups) { it.id })
+        val saved = restaurant.copy(menu = menu).also(MenuValidation::validate)
+        db.transaction {
+            db.putRecord(RESTAURANTS, orderJson.encodeToString(current.map { if(it.id == saved.id) saved else it }))
+            audit(actor, "add-menu-items", saved.id)
+        }
+        rooms.adminChanged()
+        RestaurantCatalogPayload(catalogUnlocked(), deletedRestaurantIds(db))
+    }
     fun mutateRestaurant(change: AdminRestaurantMutation): List<Restaurant> = synchronized(rooms) {
         val current = catalogUnlocked()
         val next = when(change.action) {

@@ -21,11 +21,11 @@ Saving enabled notification preferences now requests device permission after the
 
 Version 1.7.2 uses Android version code 20 and iOS build 20. Development installation on the attached iPhone is separate from App Store or TestFlight distribution.
 
-The attached iPhone has not enabled notifications yet. Real iPhone delivery and notification tap verification require signing in and accepting the iPhone notification permission. No delivery to that device has been claimed from unit tests or Firebase validation alone. Gmail sender reauthorization remains separate from push delivery.
+At the last device preference check, notifications were disabled on the attached iPhone. Real iPhone delivery and notification tap verification require signing in and accepting the iPhone notification permission. No delivery to that device has been claimed from unit tests or Firebase validation alone. Gmail sender reauthorization remains separate from push delivery.
 
 The website offers direct Android APK installation, Safari installation of the FoodRun web app, and a separate development-signed IPA download for registered testers. The native IPA requires a covered device, Developer Mode and installation through Apple Configurator or Xcode. Safari installation does not require an Apple account; it uses the website and keeps the same FoodRun identity. The archive and IPA export passed.
 
-The latest native iPhone install was attempted after the compact carousel and sheet changes, but CoreDevice could no longer locate the attached iPhone. The earlier design build was installed successfully; the final update and real push delivery require reconnecting and unlocking the phone.
+The final archived native build was installed on the attached iPhone 15 on 2026-10-08 at 14:41 Dubai time and launched at 14:42 (process 99764). CoreDevice reported success for both operations. The connection became unavailable during the follow-up process and notification-preference checks; sustained runtime and real push delivery were not verified.
 
 Twelve restaurant entries were saved and read back from the production shared catalog: Yasmeen Al Sham, Al Khan/Al Luluah Tower; Mama'esh Ajman City Centre, Sharjah Beach House, and nine Dubai locations. These entries include verified branch/contact references and allow custom food entry. Menu items and prices were not copied from third-party delivery menus. Mama'esh locations/menu source: https://linktr.ee/mamaesh. Yasmeen location/contact: https://www.bizmideast.com/AE/yasmeen-al-sham-supermarket-restaurant-050-788-0111 and the restaurant's social posts mirrored at FoodBevg.
 
@@ -37,4 +37,4 @@ Twelve restaurant entries were saved and read back from the production shared ca
 - Public Android APK matches the signed local file: SHA-256 `2fb1aa36a0c5b5fd4fbaa2468b8b89e4f103307f8b4fc8f7a02f805439bd6e1d`. Signing certificate is unchanged. The final APK installed and launched on the Android emulator.
 - Public development IPA matches the exported local file: SHA-256 `5c5aee70e62d1ea33ef37ae5620d49cbdfb8a2d2f22b56b903810682d9d151c1`. Version 1.7.2/build 20; attached iPhone is covered by the provisioning profile. Development APNs entitlement, archive/export and strict signing checks passed.
 - Website navigation and the iPhone installation sheet passed English and Arabic checks at 320, 390 and 1280 pixels, including keyboard dismissal and focus restoration.
-- Firebase accepted sender validation (HTTP 200, validation only). No registered iOS push device was present. The final iPhone update could not be installed because CoreDevice could not reach the phone.
+- Firebase accepted sender validation (HTTP 200, validation only). No registered iOS push device was present at that check. The final native build was subsequently installed and launched on the attached iPhone 15; notification delivery remains unverified.

@@ -29,14 +29,23 @@ Android and iOS now render the same React Native native views from `mobileApp`. 
 | React Native | 11 interaction tests and TypeScript check passed |
 | iOS native | 23 passed; 2 live-hub integration tests skipped |
 | Android | Signed release APK and lint passed; installed and started on emulator |
-| iOS release build | ARM simulator build passed; signed development device build prepared |
+| iOS release build | ARM simulator build passed; signed development build installed and launched on the attached iPhone 15 |
 | Backend isolation | installDist passed without Node or installed mobile dependencies |
 | Responsive website | Arabic and English at 320, 390 and 1280 pixels; all page audits passed |
 
-These results do not establish real-account Google completion, inbox receipt, authenticated production financial behavior or App Store/TestFlight publication. The original 1.7.0 build was installed on the user's iPhone; the corrected 1.7.1 installation requires the device to reconnect. Gmail token refresh was rejected with invalid_grant; no replacement credential was saved during the timed-out authorization flow.
+These results do not establish real-account Google completion, inbox receipt, authenticated production financial behavior or App Store/TestFlight publication. The corrected 1.7.1 build was installed and launched on the attached iPhone 15 on 8 October; its process remained running after startup. Real-account Google completion still requires confirmation on the phone. Gmail token refresh was rejected with invalid_grant; no replacement credential was saved during the timed-out authorization flow.
 
 ## Build and release
 
 Run `npm --prefix mobileApp ci` before Android builds. For iOS run `bundle install` and `bundle exec pod install`, then use `FoodRun.xcworkspace`. iOS supports ARM devices and ARM simulators, matching the configured Kotlin targets. The bundle build phase declares its final output so incremental JavaScript changes are included in code signing. Keep the existing Android signing key, bundle identifiers and Apple signing configuration to preserve upgrades and native data.
 
 Deploy the backend before releasing clients because saved-command recovery and native support need its new endpoints. Website deployment must preserve the existing Netlify payment functions. Android distribution uses the signed APK under v1.7.1. Reconnect and unlock the paired iPhone for development installation. Renew the Gmail sender credentials privately and update only the three Gmail environment variables before verifying pending invitations.
+
+## Published release
+
+Source commit: `08016abd2e7ec159e9fa7e1f0ef26ef6b6aaff38`.
+
+- Backend: Render deployment `dep-db3l3dtg1s2s73at9ci0` became live on 8 October 2026 at 08:23:04 UTC. Health returned HTTP 200 with Firestore storage. Two authenticated production reads returned matching account, order and wallet data.
+- Website: Netlify production deployment `6ac75356ebf3f619449315a7` serves the tested build on https://intrvioo.com. The entry asset checksum is `a703c8f1691efb2adac0009c8c59f704cdbf5902f58988d6f83e85970f889719`. Existing payment functions were preserved and checked.
+- Android: [FoodRun 1.7.1](https://github.com/AhmedKaram2/FoodRun/releases/tag/v1.7.1) is public. Signed APK checksum: `e2f9484abb5b3840a010c7a0972c527117713e964017e258efd5282d83ae64e1`.
+- iOS: development-signed FoodRun 1.7.1 installed and started on the attached iPhone 15. This is not an App Store or TestFlight release.

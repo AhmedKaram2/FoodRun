@@ -23,7 +23,7 @@ Android and iOS now render the same React Native native views from `mobileApp`. 
 | React Native | 11 interaction tests and TypeScript check passed |
 | iOS native | 23 passed; 2 live-hub integration tests skipped |
 | Android | Signed release APK and lint passed; installed and started on emulator |
-| iOS device build | Signed development Release build prepared |
+| iOS release build | ARM simulator build passed; signed development device build prepared |
 | Backend isolation | installDist passed without Node or installed mobile dependencies |
 | Responsive website | Arabic and English at 320, 390 and 1280 pixels; all page audits passed |
 
@@ -31,6 +31,6 @@ These results do not establish real-account Google completion, inbox receipt, au
 
 ## Build and release
 
-Run `npm --prefix mobileApp ci` before Android builds. For iOS run `bundle install` and `bundle exec pod install`, then use `FoodRun.xcworkspace`. Keep the existing Android signing key, bundle identifiers and Apple signing configuration to preserve upgrades and native data.
+Run `npm --prefix mobileApp ci` before Android builds. For iOS run `bundle install` and `bundle exec pod install`, then use `FoodRun.xcworkspace`. iOS supports ARM devices and ARM simulators, matching the configured Kotlin targets. The bundle build phase declares its final output so incremental JavaScript changes are included in code signing. Keep the existing Android signing key, bundle identifiers and Apple signing configuration to preserve upgrades and native data.
 
 Deploy the backend before releasing clients because saved-command recovery and native support need its new endpoints. Website deployment must preserve the existing Netlify payment functions. Android distribution uses the signed APK under v1.7.1. Reconnect and unlock the paired iPhone for development installation. Renew the Gmail sender credentials privately and update only the three Gmail environment variables before verifying pending invitations.

@@ -208,7 +208,7 @@ function Application() {
         <View style={ui.headerTools}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={tx(rtl, "Switch to English", "اللغة العربية")}
+            accessibilityLabel={tx(rtl, "Switch to Arabic", "التبديل إلى الإنجليزية")}
             style={ui.language}
             onPress={() => dispatch("SET_LANGUAGE", rtl ? "en" : "ar")}
           >

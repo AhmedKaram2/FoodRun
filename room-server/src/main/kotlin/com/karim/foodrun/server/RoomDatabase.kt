@@ -150,7 +150,7 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
         val commandIds = connection.createStatement().use { statement -> statement.executeQuery("SELECT id,body FROM commands").use { rows ->
             buildList { while(rows.next()) if (orderJson.decodeFromString<RoomReply>(decrypt(rows.getString(2))).room?.id == roomId) add(rows.getString(1)) }
         } }
-        commandIds.forEach { id -> connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use { it.setString(1, encrypt(orderJson.encodeToString(RoomReply(ok = false, code = "REMOVED", error = "This order was deleted by the administrator.")))); it.setString(2, id); it.executeUpdate() } }
+        commandIds.forEach { id -> connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use { it.setString(1, encrypt(orderJson.encodeToString(RoomReply(ok = false, code = "REMOVED", error = "This room was deleted by the administrator.")))); it.setString(2, id); it.executeUpdate() } }
         enqueueCloud("room-$roomId", "{\"deleted\":true}")
      } }
     internal fun deleteSessionBatch(): Int = transaction {

@@ -99,7 +99,7 @@ class GroupController(val platform: GroupPlatform) {
             if (key == GroupFieldKey.ELIGIBLE) {
                 val room = room()
                 val member = room.members.single { it.id == me() }
-                require(page == GroupPage.ROOM && room.phase == RoomPhase.LOBBY) { "Payment consent can only change while gathering. Refresh the order." }
+                require(page == GroupPage.ROOM && room.phase == RoomPhase.LOBBY) { "Payment consent can only change while gathering. Refresh the room." }
                 require(member.approved && !member.guest && member.participating) { "Join this order before choosing whether to pay." }
                 require(library.pending == null) { "Retry the saved request before changing payment consent." }
                 if (member.eligible != (value == "true")) command(CommandKind.READY, flag = member.ready, eligible = value == "true")
@@ -210,6 +210,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.OPEN_HOME -> { walletHistory.dismiss(); repeat(8) { if(page != GroupPage.HOME) back() } }
             GroupAction.OPEN_ROOMS -> { page = GroupPage.ROOMS }
             GroupAction.OPEN_PROFILE -> { openProfile() }
+            GroupAction.OPEN_WALLET -> { openProfile(); if (library.home != null) page = GroupPage.WALLET }
             GroupAction.OPEN_WALLET_ANNOUNCEMENT -> { walletAnnouncement.dismiss(); openProfile() }
             GroupAction.DISMISS_WALLET_ANNOUNCEMENT -> walletAnnouncement.dismiss()
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
@@ -488,7 +489,8 @@ class GroupController(val platform: GroupPlatform) {
             editingRoomOrder = null
         }
         page = when (page) {
-            GroupPage.NOTIFICATION_PREFERENCES, GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> GroupPage.PROFILE
+            GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH -> walletFunds.returnPage
+            GroupPage.NOTIFICATION_PREFERENCES -> GroupPage.PROFILE
             GroupPage.WHEEL_PROTECTION -> GroupPage.ROOM
             GroupPage.PAYMENT, GroupPage.REORDER, GroupPage.BLOCK_REQUEST, GroupPage.ITEM, GroupPage.CUSTOM_ITEM, GroupPage.PRICE_ITEM, GroupPage.PRICES, GroupPage.PEOPLE, GroupPage.ACCOUNT, GroupPage.RECEIPTS, GroupPage.HISTORY -> GroupPage.ROOM
             GroupPage.RESTAURANT -> if (roomRestaurantEditor) GroupPage.ROOM else GroupPage.LIBRARY
@@ -599,6 +601,7 @@ class GroupController(val platform: GroupPlatform) {
                         success("Restaurant, items, and prices are now available to everyone.")
                     }
                     if (c.kind == CommandKind.RECORD_PAYMENT) success("Payment recorded.")
+                    if (c.kind == CommandKind.SET_NOTIFICATION_PREFERENCES && c.notificationPreferences?.pushEnabled == true && !supportActive) notifications.register(true)
                     if (c.kind in listOf(CommandKind.CONFIRM_TRANSFER, CommandKind.CONFIRM_REFUND)) success("Payment confirmed.")
                     if (c.kind == CommandKind.UPDATE_RESTAURANT && editingRoomOrder != null) {
                         formDrafts.finishRestaurant(draft); editingRoomOrder = null
@@ -619,7 +622,7 @@ class GroupController(val platform: GroupPlatform) {
     private fun accept(next: RoomReply, sentAt: Long) {
         require(next.protocolVersion == 1) { "Update Intrvioo to connect to this hub." }
         val s = requireNotNull(session); val room = requireNotNull(next.room)
-        require(room.id == s.roomId && next.memberId == s.memberId) { "Hub returned a different order." }
+        require(room.id == s.roomId && next.memberId == s.memberId) { "Hub returned a different room." }
         if (reply?.room?.id == room.id && room.revision < (reply?.room?.revision ?: 0)) return
         val needsSave = library.snapshots[room.id]?.deletedHistoryNumbers != next.deletedHistoryNumbers || library.snapshots[room.id]?.room?.revision != room.revision || platform.now() - (library.snapshots[room.id]?.serverTime ?: 0) > 60000
         offset = next.serverTime - (sentAt + platform.now()) / 2
@@ -678,7 +681,7 @@ class GroupController(val platform: GroupPlatform) {
                             command(CommandKind.ACK_SPIN, text = r.preparationId)
                         }
                     }
-                } catch (e: Exception) { this@GroupController.error = e.message ?: "Could not synchronize this order." }
+                } catch (e: Exception) { this@GroupController.error = e.message ?: "Could not synchronize this room." }
                 publish()
             }
         }
@@ -713,7 +716,7 @@ class GroupController(val platform: GroupPlatform) {
     internal fun saveProfileUpdate(profile: FoodProfile) = identity(IdentityAction.SAVE_PROFILE, profileOverride = profile, returnPage = page)
     private fun identity(action: IdentityAction, value: String = "", profileOverride: FoodProfile? = null, returnPage: GroupPage? = null) {
         val hub = if (action in listOf(IdentityAction.SIGN_IN, IdentityAction.REGISTER, IdentityAction.RESET_PASSWORD, IdentityAction.FIREBASE_SIGN_IN)) requireNotNull(library.selectedHub) else requireNotNull(library.identityHub ?: library.selectedHub)
-        if (action == IdentityAction.INVITE) require(sameHub(session?.hub, hub)) { "Sign in on this order's server before inviting registered people." }
+        if (action == IdentityAction.INVITE) require(sameHub(session?.hub, hub)) { "Sign in on this room's server before inviting registered people." }
         val request = IdentityRequest(action, text(GroupFieldKey.EMAIL).trim(), text(GroupFieldKey.PASSWORD),
             if(action in listOf(IdentityAction.REGISTER, IdentityAction.SAVE_PROFILE)) profileOverride ?: profileDraft() else null,
             userId = if(action == IdentityAction.INVITE) value else "", invitationId = if(action == IdentityAction.ACCEPT_INVITE) value else "", firebaseToken = if(action == IdentityAction.FIREBASE_SIGN_IN) value else "")
@@ -752,7 +755,7 @@ class GroupController(val platform: GroupPlatform) {
         })
     }
     private fun alert(id: String, title: String, body: String) {
-        if(supportActive) return
+        if(supportActive || library.home?.notificationPreferences?.pushEnabled == false) return
         if (id in library.seenAlerts) return
         replaceLibrary(library.copy(seenAlerts = (library.seenAlerts + id).takeLast(100)))
         if(!notifications.deviceEnabled || id.startsWith("invite:")) platform.notify(title, body)
@@ -899,7 +902,7 @@ class GroupController(val platform: GroupPlatform) {
                 try {
                     require(error.isEmpty()) { error }
                     val response = decodeReply(body); require(response.ok) { response.error }
-                    require(response.protocolVersion == 1 && response.room?.id == s.roomId && response.memberId == s.memberId) { "Hub returned a different order or unsupported history format." }
+                    require(response.protocolVersion == 1 && response.room?.id == s.roomId && response.memberId == s.memberId) { "Hub returned a different room or unsupported history format." }
                     val history = ((reply?.history ?: emptyList()) + response.history).filterNot { it.number in response.deletedHistoryNumbers }.distinctBy { it.number }.sortedByDescending { it.number }
                     val combined = requireNotNull(reply).copy(history = history, historyNextOffset = response.historyNextOffset)
                     replaceLibrary(library.copy(snapshots = library.snapshots + (s.roomId to combined)))

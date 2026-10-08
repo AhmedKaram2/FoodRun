@@ -54,7 +54,7 @@ internal object GroupLayout {
             else -> "Order updates"
         }
         val grouped = cards.groupBy(::category)
-        return listOf("Order summary", "Payment actions", "Wallet", "Payment activity", "Restaurant order", "Order updates", "Choose your food", "Your order", "Totals & recipient", "At the table")
+        return listOf("Order summary", "Payment actions", "Wallet", "Payment activity", "Restaurant order", "Order updates", "Choose your food", "Your order", "Totals & recipient", "Quote confirmations", "At the table")
             .mapNotNull { title -> grouped[title]?.let {
                 GroupSection(title, it, collapsed = title in setOf("At the table", "Totals & recipient", "Payment activity") && it.all { card -> card.buttons.isEmpty() })
             } }

@@ -9,6 +9,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
     private var selectedUser = ""
     private var batchRecipient = ""
     private var batchCurrency = "AED"
+    var returnPage = GroupPage.PROFILE; private set
     private val uid get() = c.library.home?.profile?.userId.orEmpty()
     private val wallet get() = c.library.home?.wallet ?: WalletSnapshot()
     private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
@@ -29,6 +30,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
         val action = value.substringBefore('|'); val id = value.substringAfter('|', "")
         when(action) {
             "charge" -> {
+                returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE
                 searchChanged()
                 val parts = id.split('|')
                 val currency = parts.firstOrNull()?.takeIf { it in Money.currencies } ?: c.library.home?.profile?.payment?.currency ?: "AED"
@@ -42,15 +44,16 @@ internal class GroupWalletFunds(private val c: GroupController) {
             "methods" -> send(CommandKind.WALLET_RECIPIENT, userId = if(c.page == GroupPage.WALLET_BATCH) batchRecipient else selectedUser)
             "top-up" -> {
                 require(recipient?.person?.userId == selectedUser && selectedUser.isNotEmpty())
-                send(CommandKind.WALLET_TOP_UP, amount = Money.parse(c.text(GroupFieldKey.WALLET_AMOUNT), currency()), text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = GroupPage.PROFILE)
+                send(CommandKind.WALLET_TOP_UP, amount = Money.parse(c.text(GroupFieldKey.WALLET_AMOUNT), currency()), text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = returnPage)
             }
-            "top-up-yes", "top-up-no" -> send(CommandKind.WALLET_REVIEW_TOP_UP, transferId = id, flag = action == "top-up-yes", returnPage = GroupPage.PROFILE)
+            "top-up-yes", "top-up-no" -> send(CommandKind.WALLET_REVIEW_TOP_UP, transferId = id, flag = action == "top-up-yes", returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE)
             "batch" -> {
+                returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE
                 val payment = wallet.payments.single { it.id == id }
                 batchRecipient = payment.recipientId; batchCurrency = payment.currency; recipient = null; c.draft.remove(GroupFieldKey.WALLET_NOTE)
                 c.page = GroupPage.WALLET_BATCH; send(CommandKind.WALLET_RECIPIENT, userId = batchRecipient)
             }
-            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = GroupPage.PROFILE)
+            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = returnPage)
             "batch-yes", "batch-no" -> send(CommandKind.WALLET_REVIEW_BATCH, transferId = id, flag = action == "batch-yes", returnPage = c.page)
             "copy" -> c.platform.copyToClipboard(recipient!!.accounts.single { it.id == id }.identifier)
             else -> error("Unknown wallet action.")
@@ -61,7 +64,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
         val room = requireNotNull(c.library.snapshots[roomId]?.room)
         val receipt = c.library.snapshots.getValue(roomId).receipts.single { it.memberId == session.memberId }
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.PAY_WITH_WALLET, roomId = roomId, token = session.token,
-            expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, amount = receipt.balance), returnPage = if(c.page == GroupPage.HOME || c.page == GroupPage.PROFILE) c.page else GroupPage.PAYMENT)
+            expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, amount = receipt.balance), returnPage = if(c.page in listOf(GroupPage.HOME, GroupPage.PROFILE, GroupPage.WALLET)) c.page else GroupPage.PAYMENT)
     }
     private fun group() = wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == batchRecipient && it.currency == batchCurrency && it.status == WalletPaymentStatus.OWING }
     fun payButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {

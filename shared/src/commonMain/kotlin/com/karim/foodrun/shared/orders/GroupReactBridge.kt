@@ -8,8 +8,9 @@ import kotlinx.serialization.Serializable
 @Serializable data class ReactGroupScreen(
     val state: GroupState, val adminAvailable: Boolean, val supportActive: Boolean, val accountId: String, val authenticated: Boolean, val mainFields: List<GroupField>, val extraFields: List<GroupField>,
     val topCards: List<GroupCard>, val sections: List<GroupSection>, val primaryAction: GroupButton?,
-    val inlineButtons: List<GroupButton>, val utilityButtons: List<GroupButton>, val quick: ReactQuickWheel,
+    val inlineButtons: List<GroupButton>, val utilityButtons: List<GroupButton>, val quick: ReactQuickWheel, val profile: ReactProfile? = null,
 )
+@Serializable data class ReactProfile(val name: String, val photo: String)
 @Serializable data class ReactWheelPerson(val id: Int, val name: String, val active: Boolean, val removable: Boolean)
 @Serializable data class ReactWheelHistory(val id: String, val name: String, val date: String)
 @Serializable data class ReactQuickWheel(
@@ -29,11 +30,12 @@ class GroupReactBridge(val groups: GroupController, private val wheel: FoodRunCo
             ReactQuickWheel(quick.people.map { ReactWheelPerson(it.id,it.name,quick.activePeople.any { person -> person.id == it.id },quick.crewItems.any { person -> person.id == it.id && person.isCustom }) },
                 quick.historyItems.map { ReactWheelHistory(it.id,it.person.name,it.dateLabel) },quick.winner?.name.orEmpty(),quick.isSpinning,quick.canSpin,
                 quick.spinPlan?.startRotation ?: 0.0,quick.spinPlan?.endRotation ?: 0.0,quick.destination.name,quick.nameDraft,quick.nameErrorMessage.orEmpty(),quick.wheelRevision),
+            groups.library.home?.profile?.let { ReactProfile(it.name,it.photo) },
         ))
     }
     fun dispatch(action: String, value: String) {
         groups.dispatch(GroupAction.valueOf(action),value)
-        if(action == "OPEN_PROFILE" && groups.page == GroupPage.CONNECT && groups.library.selectedHub == null) groups.dispatch(GroupAction.USE_INTERNET)
+        if(action in listOf("OPEN_PROFILE", "OPEN_WALLET") && groups.page == GroupPage.CONNECT && groups.library.selectedHub == null) groups.dispatch(GroupAction.USE_INTERNET)
     }
     fun update(key: String, value: String) { groups.update(GroupFieldKey.valueOf(key),value) }
     fun tick() { groups.tickAccessBlock(); groups.tickPaymentReminders() }

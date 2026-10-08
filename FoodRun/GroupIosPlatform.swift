@@ -9,8 +9,12 @@ import FoodRunShared
 
 /// The shared controller calls this adapter on the UI thread; callbacks return there too.
 final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterDelegate, MessagingDelegate {
-    var onNotification: ((String, String) -> Void)?
+    var onNotification: ((String, String) -> Void)? {
+        didSet { if let pending = pendingNotification, let onNotification { pendingNotification = nil; onNotification(pending.0, pending.1) } }
+    }
+    private var pendingNotification: (String, String)?
     private var pushCallback: GroupReplyCallback?
+    private var pushGeneration = 0
     private var apnsObservers: [NSObjectProtocol] = []
     private var googleSignInPending = false
     func googleSignIn(callback: GroupReplyCallback) {
@@ -66,7 +70,7 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
         UNUserNotificationCenter.current().delegate = self
         let ar = Locale.preferredLanguages.first?.hasPrefix("ar") == true
         func action(_ id: String, _ en: String, _ arabic: String) -> UNNotificationAction { UNNotificationAction(identifier: id, title: ar ? arabic : en, options: [.foreground]) }
-        let open = action("open", "Open order", "فتح الطلب")
+        let open = action("open", "Open room", "فتح الغرفة")
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: "FOODRUN_ORDER", actions: [action("order", "Review & send order", "مراجعة وإرسال الطلب"), action("copy", "Copy order", "نسخ الطلب"), action("share", "Share order", "مشاركة الطلب")], intentIdentifiers: []),
             UNNotificationCategory(identifier: "FOODRUN_CONFIRM", actions: [action("confirm", "Payment received", "استلمت الدفع"), open], intentIdentifiers: []),
@@ -96,15 +100,17 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
     func pushToken(prompt: Bool, callback: GroupReplyCallback) {
         if !prompt && !UserDefaults.standard.bool(forKey: "foodrun-push-enabled") { callback.complete(body: "", error: ""); return }
         pushCallback?.complete(body: "", error: "Notification registration restarted.")
+        pushGeneration += 1
+        let generation = pushGeneration
         pushCallback = callback
         let begin = { [weak self] in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.pushGeneration == generation, self.pushCallback != nil else { return }
                 Messaging.messaging().isAutoInitEnabled = true
                 if Messaging.messaging().apnsToken != nil { self.fetchPushToken() }
                 else { UIApplication.shared.registerForRemoteNotifications() }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
-                    if self?.pushCallback != nil { self?.finishPush("", "Push registration timed out. Try again on a signed iPhone build.") }
+                    if self?.pushGeneration == generation && self?.pushCallback != nil { self?.finishPush("", "Push registration timed out. Try again on a signed iPhone build.") }
                 }
             }
         }
@@ -112,26 +118,30 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
             if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional { begin() }
             else if prompt {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in
-                    if allowed { begin() } else { DispatchQueue.main.async { self?.finishPush("", "Enable notifications in iPhone settings.") } }
+                    if allowed { begin() } else { DispatchQueue.main.async { if self?.pushGeneration == generation { self?.finishPush("", "Enable notifications in iPhone settings.") } } }
                 }
-            } else { DispatchQueue.main.async { self?.finishPush("", "") } }
+            } else { DispatchQueue.main.async { if self?.pushGeneration == generation { self?.finishPush("", "") } } }
         }
     }
     private func fetchPushToken() {
         guard pushCallback != nil else { return }
+        let generation = pushGeneration
         Messaging.messaging().token { [weak self] token, error in
             DispatchQueue.main.async {
-                guard let token, error == nil else { self?.finishPush("", "Notifications could not be enabled. Try again."); return }
+                guard let self, self.pushGeneration == generation, self.pushCallback != nil else { return }
+                guard let token, error == nil else { self.finishPush("", "Notifications could not be enabled. Try again."); return }
                 let installation = UserDefaults.standard.string(forKey: "foodrun-push-installation") ?? UUID().uuidString
                 UserDefaults.standard.set(installation, forKey: "foodrun-push-installation")
                 UserDefaults.standard.set(true, forKey: "foodrun-push-enabled")
                 let data = try? JSONSerialization.data(withJSONObject: ["token": token, "platform": "ios", "installationId": installation])
-                self?.finishPush(data.flatMap { String(data: $0, encoding: .utf8) } ?? "", "")
+                self.finishPush(data.flatMap { String(data: $0, encoding: .utf8) } ?? "", "")
             }
         }
     }
     private func finishPush(_ body: String, _ error: String) { let callback = pushCallback; pushCallback = nil; callback?.complete(body: body, error: error) }
     func disablePush() {
+        pushGeneration += 1
+        finishPush("", "")
         UserDefaults.standard.set(false, forKey: "foodrun-push-enabled")
         Messaging.messaging().isAutoInitEnabled = false
         Messaging.messaging().deleteToken { _ in }
@@ -154,9 +164,15 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         if let id = response.notification.request.content.userInfo["notificationId"] as? String {
             let action = response.actionIdentifier == UNNotificationDefaultActionIdentifier ? "open" : response.actionIdentifier
-            DispatchQueue.main.async { [weak self] in self?.onNotification?(id, action) }
+            DispatchQueue.main.async { [weak self] in
+                self?.receiveNotification(id: id, action: action)
+            }
         }
         completionHandler()
+    }
+    func receiveNotification(id: String, action: String) {
+        guard id.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil else { return }
+        if let handler = onNotification { handler(id, action) } else { pendingNotification = (id, action) }
     }
 
     func enableNotifications() {

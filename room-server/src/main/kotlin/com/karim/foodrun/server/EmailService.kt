@@ -50,13 +50,13 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         val link = if(room == null) site else "$site/?room=${room.code}${System.getenv("FOODRUN_EMAIL_API_URL")?.let { "&hub=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()}"
         val subject = if(room == null) "$ownerName invited you to Intrvioo" else "$ownerName invited you to ${room.name}"
         val body = if(room == null) "$ownerName added you to the friend group ${group.name}. Join Intrvioo using this email to order food together: $link"
-        else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (order poll)" else ""}\nOrder code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
+        else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (room poll)" else ""}\nRoom code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
         db.putRecord("email-job:$id", orderJson.encodeToString(EmailJob(id, ownerId, room?.id.orEmpty(), room?.orderNumber ?: 0,
             subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id, friendGroupOwnerId = groupOwnerId.takeUnless { it == ownerId }.orEmpty(), recipientUserId = member.userId)))
     }
     fun remind(room: Room, actorId: String, command: RoomCommand): String {
         require(room.payerId == actorId) { "Only the chosen payer can send payment reminders." }
-        require(command.expectedOrderNumber == room.orderNumber && command.expectedRevision == room.revision) { "The bill changed. Refresh the order and try again." }
+        require(command.expectedOrderNumber == room.orderNumber && command.expectedRevision == room.revision) { "The bill changed. Refresh the room and try again." }
         val receipt = Billing.receipts(room).singleOrNull { it.memberId == command.memberId }
         require(receipt != null && PaymentReminderRules.eligible(room, actorId, receipt)) { "Reminders are only available for unpaid balances with no payment awaiting confirmation." }
         val uid = requireNotNull(db.record("member-user:${room.id}:${receipt.memberId}")) { "This member needs to sign in again before receiving email reminders." }

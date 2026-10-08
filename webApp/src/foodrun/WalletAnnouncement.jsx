@@ -11,7 +11,7 @@ export default function WalletAnnouncement({ userId, onOpen }) {
     <span className="wallet-announcement-icon" aria-hidden="true">↔</span>
     <div className="stack"><p className="eyebrow">{t('NEW · YOUR WALLET')}</p>
       <h2 id="wallet-announcement-title">{t('Your wallet is here!')}</h2>
-      <p>{t("Keep money with a trusted wallet holder and use your balance to pay for order orders.")}</p>
+      <p>{t('Keep money with a trusted wallet holder and use your balance to pay for room orders.')}</p>
       <ol><li>{t('Choose a wallet holder and request a top-up.')}</li><li>{t('Transfer the money outside Intrvioo. Your balance updates after the holder confirms receipt.')}</li><li>{t('Choose Pay with wallet when paying your share.')}</li></ol>
       <div className="hero-actions"><button className="primary" type="button" onClick={() => { dismiss(); onOpen(); }}>{t('Open wallet')}</button><button className="secondary" type="button" onClick={dismiss}>{t('Got it')}</button></div>
     </div>

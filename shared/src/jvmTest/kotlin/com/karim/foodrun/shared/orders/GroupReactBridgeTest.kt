@@ -11,6 +11,9 @@ class GroupReactBridgeTest {
         val requests = mutableListOf<Pair<RoomCommand,GroupReplyCallback>>()
         var time = 1000L
         var pushCalls = 0
+        val pushRequests = mutableListOf<Pair<Boolean,GroupReplyCallback>>()
+        val notificationRequests = mutableListOf<Pair<NotificationRequest,GroupReplyCallback>>()
+        var deferNotifications = false
         var googleCallback: GroupReplyCallback? = null
         var failRequests = false
         override fun read(key: String) = saved[key].orEmpty()
@@ -23,7 +26,11 @@ class GroupReactBridgeTest {
         }
         override fun googleSignIn(callback: GroupReplyCallback) { googleCallback = callback }
         override fun watch(hub: HubPairing,body: String,callback: GroupReplyCallback) = object : GroupSubscription { override fun cancel() = Unit }
-        override fun pushToken(prompt: Boolean,callback: GroupReplyCallback) { pushCalls++ }
+        override fun pushToken(prompt: Boolean,callback: GroupReplyCallback) { pushCalls++; if(prompt) pushRequests += prompt to callback else callback.complete("", "") }
+        override fun notificationRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) {
+            notificationRequests += orderJson.decodeFromString<NotificationRequest>(body) to callback
+            if(!deferNotifications) callback.complete(orderJson.encodeToString(NotificationReply()), "")
+        }
         override fun share(text: String,fileName: String) = Unit
         override fun openLink(url: String) = Unit
         override fun importMenu(callback: GroupReplyCallback) = Unit
@@ -113,6 +120,48 @@ class GroupReactBridgeTest {
         assertTrue(c.state.cards.any { it.id == "session:room" })
         assertTrue(phone.requests.isEmpty())
         c.dispatch(GroupAction.OPEN_HOME);assertEquals(GroupPage.HOME,c.state.page)
+    }
+    @Test fun walletTabUsesTheSameAccountAndDoesNotExposeProfileEditing() {
+        val phone = Phone(); val c = owner(phone)
+        c.dispatch(GroupAction.OPEN_WALLET)
+        assertEquals(GroupPage.WALLET, c.state.page)
+        assertTrue(c.state.cards.any { it.id == "profile-dashboard:wallet-summary" })
+        assertTrue(c.state.cards.all { it.id.startsWith("profile-dashboard:wallet") })
+        assertTrue(c.state.fields.isEmpty())
+        assertFalse(c.state.buttons.any { it.action == GroupAction.SAVE_PROFILE })
+        assertTrue(phone.requests.isEmpty())
+        assertEquals("owner", c.library.home!!.profile.userId)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION, "charge")
+        assertEquals(GroupPage.WALLET_TOP_UP, c.page)
+        c.dispatch(GroupAction.BACK)
+        assertEquals(GroupPage.WALLET, c.page)
+        c.dispatch(GroupAction.OPEN_HOME)
+        assertEquals(GroupPage.HOME, c.state.page)
+    }
+    @Test fun savingEnabledPreferencesRequestsDevicePermissionAfterServerAcknowledgement() {
+        val phone = Phone(); val c = owner(phone)
+        c.dispatch(GroupAction.OPEN_NOTIFICATION_PREFERENCES)
+        c.dispatch(GroupAction.SAVE_NOTIFICATION_PREFERENCES)
+        assertTrue(phone.pushRequests.isEmpty())
+        val pending = phone.requests.last()
+        pending.second.complete(orderJson.encodeToString(RoomReply(home = c.library.home!!.copy(notificationPreferences = NotificationPreferences(true,true)))), "")
+        assertEquals(1,phone.pushRequests.size)
+        assertTrue(phone.pushRequests.single().first)
+    }
+    @Test fun disablingPushIgnoresLateTokenAndLateRegistrationAcknowledgement() {
+        val phone = Phone(); val c = owner(phone)
+        val body = """{"token":"fixture-push-token","platform":"ios","installationId":"fixture-installation"}"""
+        c.dispatch(GroupAction.ENABLE_ALERTS)
+        c.dispatch(GroupAction.DISABLE_ALERTS)
+        phone.pushRequests.single().second.complete(body, "")
+        assertFalse(phone.notificationRequests.any { it.first.action == "register" })
+        c.dispatch(GroupAction.ENABLE_ALERTS)
+        phone.deferNotifications = true
+        phone.pushRequests.last().second.complete(body, "")
+        val pending = phone.notificationRequests.last { it.first.action == "register" }
+        c.dispatch(GroupAction.DISABLE_ALERTS)
+        pending.second.complete(orderJson.encodeToString(NotificationReply()), "")
+        assertFalse(c.notifications.deviceEnabled)
     }
     @Test fun lostAcknowledgementRecoversReadOnlyWithoutReplayingOrLosingDrafts() {
         val phone = Phone();val c = owner(phone)

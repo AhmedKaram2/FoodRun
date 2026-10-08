@@ -1,15 +1,17 @@
 import tokens from "../../Branding/Intrvioo/source/brand-tokens.json";
-import { Platform } from "react-native";
 export const colors = {
   coral: tokens.colors.coral,
   green: tokens.colors.fresh_green,
   yellow: tokens.colors.warm_yellow,
   ink: tokens.colors.charcoal,
-  cream: tokens.colors.cream,
-  mint: tokens.colors.light_green,
+  cream: "#F8FAF8",
+  mint: "#E7F3ED",
+  primary: "#C44730",
+  forest: "#245C49",
+  coralWash: "#FFF0E9",
   white: "#FFFFFF",
-  muted: "#647069",
-  line: "#E6E8DF",
+  muted: "#5F6D66",
+  line: "#DCE5DF",
   danger: "#B3261E",
 };
 export const font = (
@@ -17,9 +19,12 @@ export const font = (
   rtl = false,
 ) =>
   rtl
-    ? Platform.OS === "ios"
-      ? "NotoSansArabic"
-      : "sans-serif"
+    ? {
+        regular: "NotoSansArabic-Regular",
+        medium: "NotoSansArabic-Medium",
+        semibold: "NotoSansArabic-SemiBold",
+        bold: "NotoSansArabic-Bold",
+      }[weight]
     : {
         regular: "Poppins-Regular",
         medium: "Poppins-Medium",

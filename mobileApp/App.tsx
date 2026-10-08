@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   AppState,
   BackHandler,
   KeyboardAvoidingView,
@@ -31,11 +32,15 @@ import {
   styles as controls,
 } from "./src/components/Controls";
 import LiveWheel from "./src/components/LiveWheel";
+import HomeBanner from "./src/components/HomeBanner";
+import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
 import { roomCodeFromLink } from "./src/roomLink";
+import { isRoom, roomSections, roomActionTab, roomFieldTab } from "./src/roomTabs";
 
 function sectionsFor(snapshot: Snapshot): Section[] {
   const { state } = snapshot;
+  if (isRoom(state.page)) return roomSections(snapshot);
   if (state.page === "FRIENDS") {
     const cards = snapshot.sections.flatMap((section) => section.cards);
     return [
@@ -61,6 +66,7 @@ function sectionsFor(snapshot: Snapshot): Section[] {
   return snapshot.sections;
 }
 function Application() {
+  const content = useRef<ScrollView>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [failure, setFailure] = useState(""),
     [menu, setMenu] = useState(false),
@@ -91,7 +97,10 @@ function Application() {
   useEffect(() => {
     setSelected(0);
     setOptions(false);
-  }, [snapshot?.state.page]);
+  }, [snapshot?.state.page, snapshot?.state.roomCode, snapshot?.accountId]);
+  useEffect(() => {
+    if (snapshot?.state.wheel?.round.id) setSelected(0);
+  }, [snapshot?.state.wheel?.round.id]);
   useEffect(() => {
     const event = BackHandler.addEventListener("hardwareBackPress", () => {
       if (menu) {
@@ -139,22 +148,27 @@ function Application() {
   const { state } = snapshot,
     { rtl, busy } = state,
     section = sections[Math.min(selected, Math.max(0, sections.length - 1))],
-    profileDetails = state.page === "PROFILE";
+    profileDetails = state.page === "PROFILE",
+    room = isRoom(state.page),
+    wallet = state.page === "WALLET",
+    roomRoute = ["ROOMS", "ROOM", "ITEM", "CUSTOM_ITEM", "PRICE_ITEM", "PRICES", "PAYMENT", "REORDER", "RECEIPTS", "HISTORY", "ACCOUNT", "BLOCK_REQUEST", "WHEEL_PROTECTION", "SELECTION_OVERRIDE", "SETUP"].includes(state.page),
+    walletRoute = ["WALLET", "WALLET_TOP_UP", "WALLET_BATCH"].includes(state.page);
   const adminTabs = snapshot.sections
     .flatMap((value) => value.cards)
     .find((card) => card.id === "admin-tabs");
-  const fields = snapshot.mainFields;
+  const fields = snapshot.mainFields.filter(field => !room || roomFieldTab(field) === selected);
   const changeTab = (index: number) => {
     setSelected(index);
     setOptions(false);
+    content.current?.scrollTo({ y: 0, animated: false });
   };
   const menuActions = [
     action(
       tx(
         rtl,
-        snapshot.authenticated ? "Profile & wallet" : "Sign in / register",
+        snapshot.authenticated ? "My profile" : "Sign in / register",
         snapshot.authenticated
-          ? "الملف الشخصي والمحفظة"
+          ? "ملفي الشخصي"
           : "تسجيل الدخول أو إنشاء حساب",
       ),
       "OPEN_PROFILE",
@@ -166,8 +180,9 @@ function Application() {
     ),
     action(tx(rtl, "Notifications", "الإشعارات"), "OPEN_NOTIFICATIONS"),
     action(tx(rtl, "Restaurants & menus", "المطاعم والقوائم"), "OPEN_LIBRARY"),
+    action(tx(rtl, "Quick pick", "اختيار سريع"), "QUICK_SPIN"),
     action(
-      tx(rtl, "Create payment order", "إنشاء طلب دفع"),
+      tx(rtl, "Create payment room", "إنشاء غرفة دفع"),
       "CREATE_PAYMENT_ROOM",
     ),
     action(
@@ -188,9 +203,10 @@ function Application() {
   ];
   const inline = snapshot.inlineButtons.filter(
     (button) =>
+      (!room || roomActionTab(button) === selected) &&
       button.action !== "SET_LANGUAGE" &&
       (state.page !== "HOME" ||
-        ["JOIN", "CREATE_PAYMENT_ROOM", "OPEN_PROFILE"].includes(
+        ["CREATE_PAYMENT_ROOM"].includes(
           button.action,
         )),
   );
@@ -206,6 +222,9 @@ function Application() {
           <Brand small />
         </Pressable>
         <View style={ui.headerTools}>
+          {snapshot.authenticated && snapshot.profile && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"My profile","ملفي الشخصي")} onPress={() => dispatch("OPEN_PROFILE")} style={ui.profilePhoto}>
+            {snapshot.profile.photo ? <Image source={{uri:snapshot.profile.photo}} style={ui.profilePhoto}/> : <Text style={[textStyle(rtl,"semibold"), {textAlign:"center",fontSize:16}]}>{Array.from(snapshot.profile.name)[0]}</Text>}
+          </Pressable>}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={tx(rtl, "Switch to Arabic", "التبديل إلى الإنجليزية")}
@@ -286,7 +305,7 @@ function Application() {
           <QuickWheel state={snapshot.quick} rtl={rtl} />
         ) : (
           <>
-            <View style={[ui.heading, rtl && ui.reverse]}>
+            {(state.page !== "HOME" || snapshot.authenticated) && <View style={[ui.heading, rtl && ui.reverse]}>
               {state.canGoBack && (
                 <Pressable
                   accessibilityRole="button"
@@ -301,7 +320,7 @@ function Application() {
               )}
               <View style={{ flex: 1 }}>
                 <Text style={[textStyle(rtl, "bold"), ui.title]}>
-                  {state.title}
+                  {wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
                 </Text>
                 {!!state.subtitle && (
                   <Text style={[textStyle(rtl), ui.subtitle]}>
@@ -310,10 +329,25 @@ function Application() {
                 )}
               </View>
               {busy && <ActivityIndicator color={colors.coral} />}
-            </View>
+            </View>}
             {(sections.length > 1 ||
               (profileDetails && snapshot.extraFields.length > 0)) && (
-              <ScrollView
+              <View style={room && ui.roomTabs}>
+              {room ? <View style={[ui.roomTabRow, rtl && ui.reverse]}>
+                {sections.map((item, index) => (
+                  <TabButton selected={selected === index} key={index} testID={`room-tab:${index}`}
+                    accessibilityRole="tab" accessibilityLabel={item.title}
+                    accessibilityState={{ selected: selected === index }}
+                    onPress={() => changeTab(index)}
+                    style={[ui.roomTab, selected === index && ui.selectedRoomTab]}>
+                    <Icon name={["room", "food", "wallet", "friends"][index]}
+                      size={20} color={selected === index ? colors.forest : colors.muted} />
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+                      style={[textStyle(rtl, selected === index ? "semibold" : "medium"), ui.roomTabLabel,
+                        { color: selected === index ? colors.forest : colors.muted }]}>{item.title}</Text>
+                  </TabButton>
+                ))}
+              </View> : <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={ui.tabs}
@@ -336,8 +370,7 @@ function Application() {
                         },
                       ]}
                     >
-                      {item.title || tx(rtl, "Details", "التفاصيل")}{" "}
-                      {item.cards.length || ""}
+                      {item.title || tx(rtl, "Details", "التفاصيل")}
                     </Text>
                   </Pressable>
                 ))}
@@ -358,7 +391,8 @@ function Application() {
                     </Text>
                   </Pressable>
                 )}
-              </ScrollView>
+              </ScrollView>}
+              </View>
             )}
             {adminTabs && (
               <ScrollView
@@ -378,7 +412,8 @@ function Application() {
               </ScrollView>
             )}
             <ScrollView
-              key={`${state.page}:${snapshot.accountId}`}
+              ref={content}
+              key={`${state.page}:${state.roomCode}:${snapshot.accountId}`}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={ui.content}
               refreshControl={
@@ -389,29 +424,13 @@ function Application() {
                 />
               }
             >
-              {state.page === "HOME" && snapshot.authenticated && (
-                <View style={ui.hero}>
-                  <Text style={[textStyle(rtl, "bold"), ui.heroTitle]}>
-                    {tx(
-                      rtl,
-                      "Food is better\ntogether.",
-                      "الأكل أحلى\nمع بعض.",
-                    )}
-                  </Text>
-                  <Text style={[textStyle(rtl), ui.heroText]}>
-                    {tx(
-                      rtl,
-                      "Order together. Split smarter.",
-                      "اطلبوا مع بعض. قسموا الحساب بسهولة.",
-                    )}
-                  </Text>
-                </View>
-              )}
-              {!!state.roomCode && (
+              <PageMotion motionKey={`${state.page}:${state.roomCode}:${selected}:${rtl}`}>
+              {state.page === "HOME" && <HomeBanner rtl={rtl} busy={busy} authenticated={snapshot.authenticated} />}
+              {!!state.roomCode && (!room || selected === 0) && (
                 <View style={[ui.roomCode, rtl && ui.reverse]}>
                   <View>
                     <Text style={[textStyle(rtl, "medium"), { fontSize: 12 }]}>
-                      {tx(rtl, "ORDER CODE", "رمز الطلب")}
+                      {tx(rtl, "ROOM CODE", "رمز الغرفة")}
                     </Text>
                     <Text selectable style={ui.code}>
                       {state.roomCode}
@@ -421,14 +440,14 @@ function Application() {
                     rtl={rtl}
                     busy={busy}
                     action={action(
-                      tx(rtl, "Share order", "مشاركة الطلب"),
+                      tx(rtl, "Invite", "دعوة"),
                       "SHARE_ROOM",
                     )}
                   />
                 </View>
               )}
-              {!!state.wheel && <LiveWheel wheel={state.wheel} rtl={rtl} />}
-              {state.progressStep >= 0 && (
+              {!!state.wheel && (!room || selected === 0) && <LiveWheel wheel={state.wheel} rtl={rtl} />}
+              {state.progressStep >= 0 && (!room || selected === 0) && (
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -468,7 +487,7 @@ function Application() {
                   ))}
                 </ScrollView>
               )}
-              {snapshot.topCards.map((card) => (
+              {(!room ? snapshot.topCards : selected === 0 ? snapshot.topCards.filter(card => card.id.startsWith("half-item:")) : []).map((card) => (
                 <CardView key={card.id} card={card} busy={busy} rtl={rtl} />
               ))}
               {fields.map((field) => (
@@ -497,8 +516,19 @@ function Application() {
                   rtl={rtl}
                 />
               )}
+              {room && selected !== 0 && section?.cards.length === 0 && fields.length === 0 && inline.length === 0 && (
+                <View style={ui.empty}>
+                  <Icon name={["room", "food", "wallet", "friends"][selected]} size={32} color={colors.forest} />
+                  <Text style={[textStyle(rtl), ui.emptyText]}>{[
+                    "",
+                    tx(rtl, "Your menu and food choices will appear here when ordering opens.", "ستظهر القائمة واختياراتك هنا عند فتح الطلبات."),
+                    tx(rtl, "Payments will appear here when the bill is ready.", "ستظهر المدفوعات هنا عندما تكون الفاتورة جاهزة."),
+                    tx(rtl, "Room members will appear here.", "سيظهر أعضاء الغرفة هنا."),
+                  ][selected]}</Text>
+                </View>
+              )}
               {(snapshot.extraFields.length > 0 ||
-                snapshot.utilityButtons.length > 0) && (
+                snapshot.utilityButtons.length > 0) && (!room || selected === 0) && (
                 <>
                   {!profileDetails && (
                     <Button
@@ -532,8 +562,9 @@ function Application() {
                   )}
                 </>
               )}
+              </PageMotion>
             </ScrollView>
-            {!!snapshot.primaryAction && (
+            {!!snapshot.primaryAction && !(state.page === "HOME" && snapshot.authenticated) && (!room || roomActionTab(snapshot.primaryAction) === selected) && (
               <View style={ui.primary}>
                 <Button action={snapshot.primaryAction} busy={busy} rtl={rtl} />
               </View>
@@ -552,22 +583,23 @@ function Application() {
           ],
           [
             "room",
-            tx(rtl, "Orders", "الطلبات"),
+            tx(rtl, "Rooms", "الغرف"),
             "OPEN_ROOMS",
             "",
-            state.page === "ORDERS" || state.page === "ORDER",
+            roomRoute,
           ],
           [
-            "wheel",
-            tx(rtl, "Wheel", "العجلة"),
-            "QUICK_SPIN",
+            "wallet",
+            tx(rtl, "Wallet", "المحفظة"),
+            "OPEN_WALLET",
             "",
-            state.page === "QUICK_SPIN",
+            walletRoute,
           ],
-          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu],
+          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu || (state.page !== "HOME" && !roomRoute && !walletRoute)],
         ].map(([icon, label, kind, value, active]) => (
-          <Pressable
+          <TabButton selected={!!active}
             key={String(kind)}
+            testID={`nav:${kind}`}
             accessibilityRole="tab"
             accessibilityState={{ selected: !!active, disabled: busy }}
             disabled={busy}
@@ -578,10 +610,12 @@ function Application() {
             }
             style={ui.navItem}
           >
+            <View style={[ui.navIcon, !!active && ui.activeNavIcon]}>
             <Icon
               name={String(icon)}
-              color={active ? colors.coral : colors.muted}
+              color={active ? colors.forest : colors.muted}
             />
+            </View>
             <Text
               style={[
                 textStyle(rtl, "medium"),
@@ -591,7 +625,7 @@ function Application() {
             >
               {String(label)}
             </Text>
-          </Pressable>
+          </TabButton>
         ))}
       </View>
       <Modal
@@ -766,7 +800,7 @@ function Application() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Application />
+      <MotionProvider><Application /></MotionProvider>
     </SafeAreaProvider>
   );
 }
@@ -781,13 +815,14 @@ const ui = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   reverse: { flexDirection: "row-reverse" },
   headerTools: { flexDirection: "row", alignItems: "center", gap: 8 },
+  profilePhoto: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.mint, alignItems: "center", justifyContent: "center" },
   language: {
     height: 44,
     minWidth: 44,
@@ -810,9 +845,9 @@ const ui = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  title: { fontSize: 24, lineHeight: 34 },
-  subtitle: { fontSize: 13, lineHeight: 21, color: colors.muted },
-  content: { padding: 16, gap: 14, paddingBottom: 24 },
+  title: { fontSize: 24, lineHeight: 36 },
+  subtitle: { fontSize: 14, lineHeight: 24, color: colors.muted },
+  content: { padding: 18, gap: 16, paddingBottom: 28 },
   tabs: { maxHeight: 58, flexGrow: 0 },
   tabRow: {
     paddingHorizontal: 16,
@@ -829,7 +864,14 @@ const ui = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  activeTab: { backgroundColor: colors.ink, borderColor: colors.ink },
+  activeTab: { backgroundColor: colors.forest, borderColor: colors.forest },
+  roomTabs: { marginHorizontal: 16, marginBottom: 4, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
+  roomTabRow: { flexDirection: "row", padding: 5 },
+  roomTab: { flex: 1, minHeight: 62, borderRadius: 15, alignItems: "center", justifyContent: "center", gap: 3, paddingHorizontal: 2 },
+  selectedRoomTab: { backgroundColor: colors.mint },
+  roomTabLabel: { fontSize: 12, lineHeight: 22 },
+  empty: { padding: 28, alignItems: "center", gap: 14, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
+  emptyText: { fontSize: 15, lineHeight: 26, textAlign: "center" },
   bottom: {
     flexDirection: "row",
     borderTopWidth: 1,
@@ -840,12 +882,14 @@ const ui = StyleSheet.create({
   },
   navItem: {
     flex: 1,
-    minHeight: 56,
+    minHeight: 64,
     justifyContent: "center",
     alignItems: "center",
-    gap: 4,
+    gap: 1,
   },
-  navLabel: { fontSize: 11, textAlign: "center" },
+  navIcon: { minWidth: 54, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16 },
+  activeNavIcon: { backgroundColor: colors.mint },
+  navLabel: { fontSize: 12, lineHeight: 22, textAlign: "center" },
   primary: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -861,15 +905,15 @@ const ui = StyleSheet.create({
     alignItems: "center",
   },
   error: { padding: 14, backgroundColor: "#FFF0EB" },
-  hero: { padding: 24, borderRadius: 26, backgroundColor: "#FFEBDD", gap: 10 },
-  heroTitle: { fontSize: 32, lineHeight: 46 },
-  heroText: { fontSize: 15, lineHeight: 23 },
+  hero: { padding: 22, borderRadius: 26, backgroundColor: colors.forest, gap: 12 },
+  heroTitle: { fontSize: 30, lineHeight: 45, color: colors.white },
+  heroText: { fontSize: 15, lineHeight: 26, color: "#E3F1E9" },
   roomCode: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
-    backgroundColor: colors.mint,
+    padding: 14,
+    backgroundColor: colors.coralWash,
     borderRadius: 18,
   },
   code: {

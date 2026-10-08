@@ -7,6 +7,6 @@ export function roomInvitation(room, link, language = 'en') {
     : tf('Restaurant: {name}', { name: name(room.restaurant) }, language);
   return [`Intrvioo · ${room.name}`, restaurant,
     tf('Order #{number}', { number: room.orderNumber }, language),
-    tf("Order code: {code}", { code: room.code }, language),
-    t("Join using the link or code. After selection, the order creator or selected person must approve new joiners.", language), link].join('\n');
+    tf('Room code: {code}', { code: room.code }, language),
+    t('Join using the link or code. After selection, the room creator or selected person must approve new joiners.', language), link].join('\n');
 }

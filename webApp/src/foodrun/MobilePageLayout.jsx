@@ -16,13 +16,18 @@ export default function MobilePageLayout({ pageKey, children }) {
       const activePanels = values.length > 1 ? values : [];
       panels.current.filter(old => !activePanels.some(value => value.node === old.node)).forEach(({node}) => node.removeAttribute("data-mobile-hidden"));
       panels.current = activePanels;
-      setTabs(old => JSON.stringify(old) === JSON.stringify(panels.current.map(({id,title}) => ({id,title}))) ? old : panels.current.map(({id,title}) => ({id,title})));
-      setSelected(old => panels.current.some(value => value.id === old) ? old : panels.current[0]?.id || '');
+      const grouped = [...new Map(panels.current.map(({id,title}) => [id,{id,title}])).values()];
+      if (grouped.some(tab => tab.id === 'room-overview')) {
+        const order = ['room-overview','room-food','room-payments','room-members'];
+        grouped.sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id));
+      }
+      setTabs(old => JSON.stringify(old) === JSON.stringify(grouped) ? old : grouped);
+      setSelected(old => panels.current.some(value => value.id === old) ? old : grouped[0]?.id || '');
     };
     const activateTarget = event => {
       const shortcut = event.target.closest?.('[data-mobile-target]'); if(shortcut) { setSelected(shortcut.dataset.mobileTarget); return; }
       const target = event.type === 'invalid' ? event.target : event.target.closest?.('a[href^="#"]');
-      const node = event.type === 'invalid' ? target : target && document.getElementById(target.getAttribute('href').slice(1));
+      const node = event.type === 'invalid' ? target : target && host.querySelector('#' + CSS.escape(target.getAttribute('href').slice(1)));
       const panel = panels.current.find(value => value.node.contains(node));
       if(panel) { if(event.type === 'invalid') flushSync(() => setSelected(panel.id)); else setSelected(panel.id); if(panel.node.tagName === 'DETAILS') panel.node.open = true; let parent = node?.parentElement; while(parent) { if(parent.tagName === 'DETAILS') parent.open = true; parent = parent.parentElement; } }
     };
@@ -32,5 +37,6 @@ export default function MobilePageLayout({ pageKey, children }) {
     return () => { observer.disconnect(); host.removeEventListener('invalid',activateTarget,true); host.removeEventListener('click',activateTarget); panels.current.forEach(({node}) => node.removeAttribute('data-mobile-hidden')); };
   }, [pageKey]);
   useLayoutEffect(() => { panels.current.forEach(({node,id}) => { node.setAttribute('data-mobile-hidden',String(id !== selected)); }); },[selected,tabs]);
-  return <div className="mobile-page-layout" ref={root}>{tabs.length > 1 && <nav className="mobile-section-tabs" aria-label={getLanguage() === 'ar' ? 'أقسام الصفحة' : 'Page sections'}>{tabs.map(tab => <button type="button" key={tab.id} className={tab.id === selected ? 'active' : ''} aria-pressed={tab.id === selected} onClick={() => { setSelected(tab.id); const panel = panels.current.find(value => value.id === tab.id); if(panel?.node.tagName === 'DETAILS') panel.node.open = true; }}>{tab.title}</button>)}</nav>}{children}</div>;
+  const roomTabs = tabs.some(tab => tab.id === 'room-overview');
+  return <div className="mobile-page-layout" ref={root}>{tabs.length > 1 && <nav className={`mobile-section-tabs${roomTabs ? ' mobile-room-tabs' : ''}`} role="tablist" aria-label={getLanguage() === 'ar' ? 'أقسام الصفحة' : 'Page sections'}>{tabs.map(tab => <button type="button" role="tab" key={tab.id} className={tab.id === selected ? 'active' : ''} aria-selected={tab.id === selected} aria-pressed={tab.id === selected} onClick={() => { setSelected(tab.id); panels.current.filter(value => value.id === tab.id).forEach(({node}) => { if(node.tagName === 'DETAILS') node.open = true; }); }}>{tab.title}</button>)}</nav>}{children}</div>;
 }

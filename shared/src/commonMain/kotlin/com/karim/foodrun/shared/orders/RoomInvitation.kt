@@ -10,7 +10,7 @@ internal fun roomInvitation(room: Room, link: String, language: String): String 
     } else (if (arabic) "المطعم: " else "Restaurant: ") + room.restaurant.localizedName(language)
     return listOf("Intrvioo · ${room.name}", restaurant,
         (if (arabic) "طلب رقم " else "Order #") + room.orderNumber,
-        (if (arabic) "كود الطلب: " else "Order code: ") + room.code,
-        if (arabic) "انضم بالرابط أو الكود. بعد الاختيار، يجب أن يوافق منشئ الطلب أو الشخص المختار على المنضمين الجدد." else "Join using the link or code. After selection, the order creator or selected person must approve new joiners.",
+        (if (arabic) "كود الغرفة: " else "Room code: ") + room.code,
+        if (arabic) "انضم بالرابط أو الكود. بعد الاختيار، يجب أن يوافق منشئ الغرفة أو الشخص المختار على المنضمين الجدد." else "Join using the link or code. After selection, the room creator or selected person must approve new joiners.",
         link).joinToString("\n")
 }

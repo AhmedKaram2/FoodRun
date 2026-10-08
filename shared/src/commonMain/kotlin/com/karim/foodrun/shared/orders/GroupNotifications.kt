@@ -12,6 +12,7 @@ internal class GroupNotifications(private val c: GroupController) {
     private var lastFetch = 0L
     private var registered = ""
     private var registering = false
+    private var registrationGeneration = 0
     var deviceEnabled = false; private set
     private var token = ""
     private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
@@ -50,9 +51,11 @@ internal class GroupNotifications(private val c: GroupController) {
         if(!prompt && registered.startsWith(c.library.identityToken) && registered.endsWith(c.library.language) && registered.isNotEmpty()) return
         if(c.library.identityToken.isEmpty()) { if(prompt) c.error = tr("Sign in to enable notifications.", "سجل الدخول لتفعيل الإشعارات."); return }
         val identity = c.library.identityToken
+        val generation = ++registrationGeneration
         registering = true
         c.platform.pushToken(prompt, object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
+                if(generation != registrationGeneration) return
                 registering = false
                 if(identity != c.library.identityToken) return
                 if(body.isEmpty() && error.isEmpty()) return
@@ -63,7 +66,9 @@ internal class GroupNotifications(private val c: GroupController) {
                     val key = identity + token + c.library.language
                     if(registered == key && !prompt) return
                     request(NotificationRequest(identity, "register", token = token, platform = data.getValue("platform").jsonPrimitive.content,
-                        installationId = data.getValue("installationId").jsonPrimitive.content, language = c.library.language)) { registered = key; deviceEnabled = true }
+                        installationId = data.getValue("installationId").jsonPrimitive.content, language = c.library.language)) {
+                        if(generation == registrationGeneration && c.library.home?.notificationPreferences?.pushEnabled != false) { registered = key; deviceEnabled = true }
+                    }
                 } catch (_: Exception) { if(prompt) c.error = tr("Notifications could not be enabled. Try again.", "تعذر تفعيل الإشعارات. حاول مجدداً.") }
                 c.publish()
             }
@@ -71,10 +76,11 @@ internal class GroupNotifications(private val c: GroupController) {
     }
     fun disable() {
         if(c.supportActive) return
+        registrationGeneration++; registering = false
         if(token.isNotEmpty()) request(NotificationRequest(c.library.identityToken, "unregister", token = token))
         c.platform.disablePush(); registered = ""; token = ""; deviceEnabled = false
     }
-    fun clear() { deviceEnabled = false; registering = false; items = emptyList(); selected = null; pending = null; registered = ""; token = ""; fetching = false; lastFetch = 0 }
+    fun clear() { registrationGeneration++; deviceEnabled = false; registering = false; items = emptyList(); selected = null; pending = null; registered = ""; token = ""; fetching = false; lastFetch = 0 }
     fun openFromPush(id: String, action: String) {
         if(!id.matches(Regex("[a-f0-9]{40}"))) return
         pending = id to action; c.page = GroupPage.NOTIFICATIONS; refresh(); c.publish()
@@ -84,10 +90,10 @@ internal class GroupNotifications(private val c: GroupController) {
         if(item.kind == "friend_group_added") { request(NotificationRequest(c.library.identityToken,"read",notificationId=id)); c.friends.open(); return }
         if(item.kind == "friend_room_invitation") { request(NotificationRequest(c.library.identityToken,"read",notificationId=id)); c.dispatch(GroupAction.ACCEPT_INVITE,item.transferId); return }
         if(item.kind.startsWith("wallet_")) {
-            request(NotificationRequest(c.library.identityToken, "read", notificationId = id)); selected = null; c.page = GroupPage.PROFILE; return
+            request(NotificationRequest(c.library.identityToken, "read", notificationId = id)); selected = null; c.page = GroupPage.WALLET; return
         }
         val session = c.library.sessions.firstOrNull { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) }
-            ?: error(tr("This order is no longer available.", "الطلب لم تعد متاحة."))
+            ?: error(tr("This room is no longer available.", "الغرفة لم تعد متاحة."))
         selected = item
         intendedAction = action.takeIf { value -> value == "open" || item.actions.any { it.id == value } } ?: "open"
         request(NotificationRequest(c.library.identityToken, "read", notificationId = id))
@@ -148,7 +154,7 @@ internal class GroupNotifications(private val c: GroupController) {
             }
             "accept" -> button("Accept selection", "قبول الاختيار", "accept")
             "pay" -> button("Open my payment", "فتح دفعتي", "pay")
-            "expired" -> detail = tr("This action is no longer available. Check the current order below.", "هذا الإجراء لم يعد متاحاً. راجع الطلب الحالي بالأسفل.")
+            "expired" -> detail = tr("This action is no longer available. Check the current room below.", "هذا الإجراء لم يعد متاحاً. راجع الغرفة الحالية بالأسفل.")
         }
         actions += GroupButton(tr("Close", "إغلاق"), GroupAction.NOTIFICATION_ACTION, "close")
         return GroupCard("notification-action", item.title, detail, buttons = actions)

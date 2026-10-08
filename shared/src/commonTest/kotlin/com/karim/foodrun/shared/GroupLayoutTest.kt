@@ -27,7 +27,7 @@ class GroupLayoutTest {
     }
 
     @Test fun menuAndOrderPrecedeCrewWithoutLosingUnknownCards() {
-        val cards = listOf("member:host", "invite:friend", "cart:meal", "new-card-type", "menu:burger", "estimate", "receipt:me", "transfer:1")
+        val cards = listOf("member:host", "invite:friend", "cart:meal", "new-card-type", "menu:burger", "estimate", "receipt:me", "transfer:1", "quote:me")
             .map { GroupCard(it, it) }
         val rendered = GroupState(page = GroupPage.ROOM, cards = cards).sections.flatMap { it.cards }
         assertEquals(cards.toSet(), rendered.toSet())

@@ -580,4 +580,15 @@ html[dir=rtl] .top-actions,html[dir=rtl] .hero-actions { flex-direction:row; }
   .admin-tabs{position:sticky;top:0;z-index:24;padding:.6rem 12px}.admin-shell .mobile-section-tabs{top:0}.admin-shell .admin-row{grid-template-columns:minmax(0,1fr) auto}.admin-shell .admin-content{width:calc(100% - 24px)}.admin-row>span{min-width:0}.admin-topbar{padding:.8rem 12px}
 }
 .mobile-nav-more{display:contents}.mobile-nav-more>summary{display:none}.mobile-nav-more>div{display:contents}.list-pagination{grid-column:1/-1}
+.mobile-room-panel{display:contents}
+@media(max-width:640px){
+  .mobile-section-tabs{background:#f8faf8;padding:.6rem 12px;border-color:#dce5df;scrollbar-width:none}
+  .mobile-section-tabs button{border-radius:14px;color:#5f6d66;font-size:.85rem;line-height:1.6}
+  .mobile-section-tabs .active{background:#245c49;border-color:#245c49;color:#fff}
+  .mobile-room-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:#fff;box-shadow:0 3px 12px #1f293708}
+  .mobile-room-tabs button{max-width:none;min-width:0;min-height:52px;padding:.5rem .15rem;border:0;background:transparent;font-size:.8rem}
+  .mobile-room-tabs .active{background:#e7f3ed;color:#245c49;border-radius:14px}
+  .mobile-room-panel[data-mobile-hidden="false"]{display:contents}
+  .mobile-room-panel:empty{display:none}
+}
 @media(max-width:640px){.mobile-app-nav{overflow:visible;justify-content:space-between;gap:0}.mobile-app-nav>button{flex:1;font-size:.76rem;padding:.4rem .3rem;min-width:0}.mobile-nav-more{display:block;position:relative;flex:1;text-align:center;font-size:.76rem}.mobile-nav-more>summary{display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:44px;list-style:none}.mobile-nav-more>div{display:flex;flex-direction:column;position:absolute;bottom:calc(100% + 10px);inset-inline-end:0;min-width:220px;padding:.6rem;background:#163d34;border:1px solid #78988f;border-radius:16px;box-shadow:0 8px 35px #0004}.mobile-nav-more:not([open])>div{display:none}.mobile-nav-more button{font-size:.9rem;text-align:start}.mobile-page-layout .mobile-page-layout .mobile-section-tabs{top:58px;z-index:23}}

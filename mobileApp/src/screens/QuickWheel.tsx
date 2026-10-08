@@ -57,8 +57,8 @@ export default function QuickWheel({
     >
       {state.destination === "MAIN" || state.destination === "WINNER" ? (
         <>
-          <Text style={[textStyle(rtl, "bold"), { fontSize: 28 }]}>
-            {tx(rtl, "Who’s getting the food?", "مين هيجيب الأكل؟")}
+          <Text style={[textStyle(rtl, "bold"), { fontSize: 26, lineHeight: 40 }]}>
+            {tx(rtl, "Who’s getting the food?", "من سيتولى إحضار الطعام؟")}
           </Text>
           <WheelDrawing names={names} rotation={angle} />
           {!!state.winner && (
@@ -76,7 +76,7 @@ export default function QuickWheel({
             busy={state.spinning}
             action={{
               ...action(
-                tx(rtl, "Spin the wheel", "لف العجلة"),
+                tx(rtl, "Pick someone", "اختيار شخص"),
                 "QUICK",
                 String(angle),
                 true,
@@ -85,7 +85,7 @@ export default function QuickWheel({
             }}
             onPress={() => quickAction("spin", String(angle))}
           />
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flexDirection: rtl ? "row-reverse" : "row", gap: 8 }}>
             <View style={{ flex: 1 }}>
               <Button
                 rtl={rtl}

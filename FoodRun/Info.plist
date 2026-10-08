@@ -33,6 +33,10 @@
 		<string>Poppins-SemiBold.ttf</string>
 		<string>Poppins-Bold.ttf</string>
 		<string>NotoSansArabic.ttf</string>
+		<string>NotoSansArabic-Regular.ttf</string>
+		<string>NotoSansArabic-Medium.ttf</string>
+		<string>NotoSansArabic-SemiBold.ttf</string>
+		<string>NotoSansArabic-Bold.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

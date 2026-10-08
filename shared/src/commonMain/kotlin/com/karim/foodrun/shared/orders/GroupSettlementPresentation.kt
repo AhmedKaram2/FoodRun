@@ -31,7 +31,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             val remaining = receipts.filterNot { it.memberId == me }.sumOf { maxOf(0, it.balance) }
             val holdersOwe = WalletSettlement.pending(r)
             val refunds = receipts.sumOf { maxOf(0, -it.balance) }
-            return listOf(GroupCard("wallet-summary", tr("Order wallet", "محفظة الطلب"),
+            return listOf(GroupCard("wallet-summary", tr("Room wallet", "محفظة الغرفة"),
                 "Restaurant total ${money(restaurantTotal)}\nYour own order ${money(own)}\nConfirmed from others ${money(confirmed)}\nMembers still owe ${money(remaining)}${if(holdersOwe > 0) tr("\nWallet holders owe ${money(holdersOwe)}", "\nحاملو أموال المحافظ عليهم ${money(holdersOwe)}") else ""}${if(refunds > 0) "\nRefunds you owe ${money(refunds)}" else ""}")) +
                 receipts.map { receipt ->
                     val claim = pending.firstOrNull { it.memberId == receipt.memberId }

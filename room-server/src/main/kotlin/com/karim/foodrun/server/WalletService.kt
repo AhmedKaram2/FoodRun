@@ -78,7 +78,7 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
     }
     private fun pay(c: RoomCommand, uid: String, actor: String, automatic: Boolean = false): Room {
         val room = requireNotNull(db.room(c.roomId))
-        require(db.record("member-user:${room.id}:$actor") == uid) { "Sign in with the account that owns this order membership." }
+        require(db.record("member-user:${room.id}:$actor") == uid) { "Sign in with the account that owns this room membership." }
         require(room.orderNumber == c.expectedOrderNumber && room.revision == c.expectedRevision) { "The order changed. Refresh and try again." }
         require(room.settlementOpen && room.restaurantPaid) { "Wait until the order and restaurant payment are settled." }
         require(room.orderingMembers.any { it.id == actor } && room.payerId != actor) { "Your own contribution needs no transfer." }

@@ -78,7 +78,7 @@ export default function RestaurantLibraryScreen({ onBack, language = 'en', data,
     try { const imported = parseRestaurantExport(await file.text()); setDraft(imported); setNotice(t("Menu imported. Review it, then save.")); }
     catch (error) { setMessage(error.message); }
   };
-  return <Page title={t("Restaurants & menus")} subtitle={room ? t("Add a restaurant for this order and everyone using Intrvioo.") : t("Add restaurant details, menu items, and prices to the shared Intrvioo list.")} onBack={onBack}>
+  return <Page title={t("Restaurants & menus")} subtitle={room ? t('Add a restaurant for this room and everyone using Intrvioo.') : t("Add restaurant details, menu items, and prices to the shared Intrvioo list.")} onBack={onBack}>
     <section className="card restaurant-editor-intro"><div><p className="eyebrow">{room ? t("ORDER OWNER") : t('SHARED RESTAURANT LIST')}</p><h2>{t('Restaurant → items → publish')}</h2><p>{t('For an existing restaurant, enter an item name and price, then press Add & save item. New restaurants need to be published once.')}</p></div><button type="button" data-mobile-target="editor" className="primary" onClick={() => { setDraft(blankRestaurant()); clearMessage(); }}>{t('＋ Add new restaurant')}</button></section>
     <div className="library-layout">
       <aside data-mobile-section="list" data-mobile-label={t("Restaurants & menus")} className="card library-list">

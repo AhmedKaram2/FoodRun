@@ -1108,6 +1108,20 @@ export async function runMobilePagesAudit() {
     const component = root._auditComponent;
     await wrap();
     assert(!measureAudit().overflow,screen+' overflow');
+    if(screen === 'room' && innerWidth <= 640) {
+      const tabs = [...host.querySelectorAll('.mobile-room-tabs button')];
+      assert(tabs.length === 4, 'Room does not have four mobile tabs');
+      assert(tabs.map(node => node.textContent).join('|') === ['Overview','My food','Payments','Members'].map(label => t(label)).join('|'), 'Room tab order or labels changed');
+      for (let index = 0; index < tabs.length; index++) {
+        tabs[index].click(); await pause();
+        const id = ['room-overview','room-food','room-payments','room-members'][index];
+        const panels = [...host.querySelectorAll('[data-mobile-section]')];
+        assert(panels.filter(node => node.dataset.mobileSection === id).every(node => node.dataset.mobileHidden === 'false'), 'A grouped room panel is unreachable');
+        assert(panels.filter(node => node.dataset.mobileSection !== id).every(node => node.dataset.mobileHidden === 'true'), 'A different room tab is still visible');
+      }
+      const shortcut = host.querySelector('a[href="#room-payment"]');
+      if (shortcut) { shortcut.click(); await pause(); assert(host.querySelector('[data-mobile-section="room-payments"]').dataset.mobileHidden === 'false', 'Payment shortcut did not open Payments'); }
+    }
     if(screen === 'create' && innerWidth <= 640) {
       const panel = host.querySelector('[data-mobile-section="room"]'), roomName = panel.querySelector('input');
       setValue(roomName,''); await pause();

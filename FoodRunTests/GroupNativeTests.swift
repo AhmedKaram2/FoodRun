@@ -5,6 +5,19 @@ import FoodRunShared
 @testable import FoodRun
 
 final class GroupNativeTests: XCTestCase {
+    @MainActor
+    func testNotificationTapWaitsForTheControllerOnColdLaunch() {
+        let platform = GroupIosPlatform()
+        let id = String(repeating: "a", count: 40)
+        platform.receiveNotification(id: id, action: "confirm")
+        var received: [(String, String)] = []
+        platform.onNotification = { received.append(($0, $1)) }
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.first?.0, id)
+        XCTAssertEqual(received.first?.1, "confirm")
+        platform.receiveNotification(id: "invalid", action: "open")
+        XCTAssertEqual(received.count, 1)
+    }
     func testGoogleAndRoomCallbacksAreRegisteredInTheBuiltApp() throws {
         let types = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])
         let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }

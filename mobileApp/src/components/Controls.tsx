@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   Image,
   Keyboard,
   Modal,
@@ -16,11 +17,14 @@ import type { Action, Card, Field } from "../types";
 import { colors, font, tx } from "../theme";
 import { dispatch, native, update } from "../native";
 import Icon from "./Icon";
+import { usePressMotion } from "./Motion";
 export const textStyle = (
   rtl: boolean,
   weight: "regular" | "medium" | "semibold" | "bold" = "regular",
 ) => ({
   fontFamily: font(weight, rtl),
+  writingDirection: rtl ? ("rtl" as const) : ("ltr" as const),
+  includeFontPadding: false,
   textAlign: rtl ? ("right" as const) : ("left" as const),
   color: colors.ink,
 });
@@ -36,6 +40,7 @@ export function Button({
   onPress?: () => void;
 }) {
   const disabled = busy || !action.enabled;
+  const motion = usePressMotion();
   const press = () => {
     Keyboard.dismiss();
     const run = () =>
@@ -58,6 +63,8 @@ export function Button({
       testID={"action:" + action.action + ":" + action.value}
       disabled={disabled}
       onPress={press}
+      onPressIn={motion.onPressIn}
+      onPressOut={motion.onPressOut}
       style={({ pressed }) => [
         styles.button,
         action.primary ? styles.primary : styles.secondary,
@@ -66,10 +73,11 @@ export function Button({
         pressed && { opacity: 0.75 },
       ]}
     >
-      <Text
+      <Animated.Text
         style={[
           textStyle(rtl, "semibold"),
           styles.buttonText,
+          motion.style,
           {
             color: action.primary
               ? colors.white
@@ -80,7 +88,7 @@ export function Button({
         ]}
       >
         {action.title}
-      </Text>
+      </Animated.Text>
     </Pressable>
   );
 }
@@ -311,12 +319,16 @@ export function CardView({
   busy: boolean;
   rtl: boolean;
 }) {
+  const person = /^(member:|person:|friend-result:)/.test(card.id);
+  const icon = /(wallet|receipt|transfer|payment|account)/.test(card.id) ? "wallet"
+    : /^(menu:|cart:|half-item:|estimate)/.test(card.id) ? "food" : "room";
   const contents = (
     <>
       <View
         style={[styles.cardHeading, rtl && { flexDirection: "row-reverse" }]}
       >
         <View style={styles.avatar}>
+          {person ?
           <Text
             style={{
               fontFamily: font("bold", rtl),
@@ -326,6 +338,7 @@ export function CardView({
           >
             {Array.from(card.title)[0]}
           </Text>
+          : <Icon name={icon} color={colors.forest} />}
         </View>
         <Text style={[textStyle(rtl, "semibold"), styles.cardTitle]}>
           {card.title}
@@ -434,7 +447,7 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  primary: { backgroundColor: colors.ink },
+  primary: { backgroundColor: colors.primary },
   secondary: {
     backgroundColor: colors.white,
     borderColor: colors.line,
@@ -442,9 +455,9 @@ export const styles = StyleSheet.create({
   },
   danger: { borderColor: "#EAC7C0", backgroundColor: "#FFF0EB" },
   disabled: { opacity: 0.45 },
-  buttonText: { fontSize: 14, textAlign: "center" },
+  buttonText: { fontSize: 15, lineHeight: 24, textAlign: "center" },
   field: { gap: 7 },
-  label: { fontSize: 14 },
+  label: { fontSize: 14, lineHeight: 24, color: colors.muted },
   input: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -503,12 +516,12 @@ export const styles = StyleSheet.create({
     gap: 12,
   },
   cardHeading: { flexDirection: "row", alignItems: "center", gap: 10 },
-  cardTitle: { fontSize: 17, flex: 1 },
+  cardTitle: { fontSize: 17, lineHeight: 28, flex: 1 },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: colors.mint,
+    backgroundColor: colors.coralWash,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -520,7 +533,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.mint,
     fontSize: 12,
   },
-  detail: { fontSize: 14, lineHeight: 24 },
+  detail: { fontSize: 15, lineHeight: 26 },
   actions: { gap: 8 },
   cardImage: { width: "100%", height: 300 },
   pagination: {

@@ -3,8 +3,8 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
 
-enum class GroupPage { ROOMS, NOTIFICATION_PREFERENCES, FRIENDS, WALLET_TOP_UP, WALLET_BATCH, MENU_EDITOR, MENU_ENTITY, ADMIN, ADMIN_USER, ADMIN_CONFIRM, PAYMENT_ROOM, PAYMENT_SHARE, RECORD_PAYMENT, PAYMENT, REORDER, NOTIFICATIONS, BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY, SELECTION_OVERRIDE, WHEEL_PROTECTION }
-enum class GroupAction { OPEN_ROOMS, ADMIN_SUPPORT_START, END_SUPPORT, OPEN_HOME, OPEN_NOTIFICATION_PREFERENCES, SAVE_NOTIFICATION_PREFERENCES, OPEN_WALLET_HISTORY, DISMISS_WALLET_HISTORY, LOAD_WALLET_HISTORY, REFRESH_WALLET_HISTORY, FRIENDS_ACTION, WALLET_FUNDS_ACTION, PAY_WITH_WALLET, MENU_OPEN, MENU_EDIT, MENU_SAVE, MENU_REMOVE, MENU_TOGGLE_GROUP, OPEN_ADMIN, ADMIN_TAB, ADMIN_USER, ADMIN_NEW_USER, ADMIN_SAVE_USER, ADMIN_ACTION, ADMIN_CONFIRM, ADMIN_RESTAURANT, ADMIN_NEW_RESTAURANT, ADMIN_SAVE_SETTINGS, ADMIN_PREVIEW_CLEANUP, ADMIN_DELETE_CLEANUP, CREATE_PAYMENT_ROOM, SAVE_PAYMENT_ROOM, EDIT_PAYMENT_RECEIPT, EDIT_PAYMENT_SHARE, EDIT_EXISTING_PAYMENT_SHARE, REMOVE_PAYMENT_SHARE, SAVE_PAYMENT_SHARE, RECORD_PAYMENT, SAVE_RECORDED_PAYMENT, CONFIRM_REORDER, OPEN_NOTIFICATIONS, OPEN_NOTIFICATION, NOTIFICATION_ACTION, DISABLE_ALERTS,
+enum class GroupPage { WALLET, ROOMS, NOTIFICATION_PREFERENCES, FRIENDS, WALLET_TOP_UP, WALLET_BATCH, MENU_EDITOR, MENU_ENTITY, ADMIN, ADMIN_USER, ADMIN_CONFIRM, PAYMENT_ROOM, PAYMENT_SHARE, RECORD_PAYMENT, PAYMENT, REORDER, NOTIFICATIONS, BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY, SELECTION_OVERRIDE, WHEEL_PROTECTION }
+enum class GroupAction { OPEN_WALLET, OPEN_ROOMS, ADMIN_SUPPORT_START, END_SUPPORT, OPEN_HOME, OPEN_NOTIFICATION_PREFERENCES, SAVE_NOTIFICATION_PREFERENCES, OPEN_WALLET_HISTORY, DISMISS_WALLET_HISTORY, LOAD_WALLET_HISTORY, REFRESH_WALLET_HISTORY, FRIENDS_ACTION, WALLET_FUNDS_ACTION, PAY_WITH_WALLET, MENU_OPEN, MENU_EDIT, MENU_SAVE, MENU_REMOVE, MENU_TOGGLE_GROUP, OPEN_ADMIN, ADMIN_TAB, ADMIN_USER, ADMIN_NEW_USER, ADMIN_SAVE_USER, ADMIN_ACTION, ADMIN_CONFIRM, ADMIN_RESTAURANT, ADMIN_NEW_RESTAURANT, ADMIN_SAVE_SETTINGS, ADMIN_PREVIEW_CLEANUP, ADMIN_DELETE_CLEANUP, CREATE_PAYMENT_ROOM, SAVE_PAYMENT_ROOM, EDIT_PAYMENT_RECEIPT, EDIT_PAYMENT_SHARE, EDIT_EXISTING_PAYMENT_SHARE, REMOVE_PAYMENT_SHARE, SAVE_PAYMENT_SHARE, RECORD_PAYMENT, SAVE_RECORDED_PAYMENT, CONFIRM_REORDER, OPEN_NOTIFICATIONS, OPEN_NOTIFICATION, NOTIFICATION_ACTION, DISABLE_ALERTS,
     OPEN_BLOCK_REQUEST, REQUEST_BLOCK, OPEN_POLL_RESTAURANTS, TOGGLE_POLL_RESTAURANT, CONFIRM_POLL_RESTAURANTS, OPEN_ORDER_PRICES,
     OPEN_SELECTION_OVERRIDE, UNLOCK_SELECTION_OVERRIDE, SAVE_SELECTION_OVERRIDE,
     SAVE_REMINDER_EMAIL, DISMISS_REMINDER_EMAIL, WALLET_RECORD_PAYMENT,
@@ -86,7 +86,7 @@ object GroupText {
         homeTitle -> "الأكل أحلى\nمع بعض."
         homeSubtitle -> "اطلبوا مع بعض. قسّموا الحساب بسهولة."
         groupEyebrow -> "مكان للجميع"
-        groupTitle -> "طلب واحد لكل المجموعة."
+        groupTitle -> "غرفة واحدة لكل المجموعة."
         groupDescription -> "اختاروا الطعام ومسؤول الطلب واجمعوا طلباتكم معاً."
         quickDescription -> "اختاروا من يجلب الطعام دون إعداد مسبق."
         libraryDescription -> "احتفظ بقوائم مطاعمك المفضلة."
@@ -94,8 +94,8 @@ object GroupText {
         explore -> "خيارات إنترفيو"
         back, backToRooms -> "رجوع"
         working -> "جارٍ تحديث مجموعتك…"
-        roomCode -> "رمز الطلب"
-        roomOptions -> "خيارات الطلب والتعديلات"
+        roomCode -> "رمز الغرفة"
+        roomOptions -> "خيارات الغرفة والتعديلات"
         manualConnection -> "إدخال بيانات الاتصال يدوياً"
         pasteMenu -> "لصق قائمة المطعم"
         details -> "بياناتك"
@@ -109,7 +109,7 @@ object GroupText {
     }
     val brand = "INTRVIOO / TOGETHER"
     val back = "Back"
-    val backToRooms = "Back to orders"
+    val backToRooms = "Back to rooms"
     val homeTitle = "Food is better\ntogether."
     val homeSubtitle = "Order Together. Split Smarter."
     val groupEyebrow = "A TABLE FOR EVERYONE"
@@ -119,8 +119,8 @@ object GroupText {
     val libraryDescription = "Keep your favorite menus close."
     val savedRooms = "Your tables"
     val explore = "Make it a Food Run"
-    val roomCode = "ORDER CODE"
-    val roomOptions = "Order options & adjustments"
+    val roomCode = "ROOM CODE"
+    val roomOptions = "Room options & adjustments"
     val manualConnection = "Enter connection details manually"
     val pasteMenu = "Paste menu JSON"
     val details = "Your details"

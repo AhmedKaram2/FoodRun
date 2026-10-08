@@ -70,7 +70,7 @@ fun main() {
     AccountMergeRepair.configured(db)
     InitialFriendGroup.configured(db)?.let { println("Initial friend group created with $it current users.") }
     SessionReset.apply(db, SessionReset.cutoff())?.let { (accounts, rooms) ->
-        println("FoodRun session reset completed: $accounts account sessions and $rooms order sessions revoked.")
+        println("FoodRun session reset completed: $accounts account sessions and $rooms room sessions revoked.")
     }
     val emailSender = GmailEmailSender.configured()
     val emailDailyLimit = System.getenv("FOODRUN_EMAIL_DAILY_LIMIT")?.toInt() ?: 100
@@ -162,7 +162,7 @@ fun Application.hubRoutes(
         while (isActive) {
             try { service.tick() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { log.error("Order maintenance failed; retrying. ${failure.javaClass.simpleName}") }
+            catch (failure: Exception) { log.error("Room maintenance failed; retrying. ${failure.javaClass.simpleName}") }
             delay(250)
         }
     }
@@ -347,7 +347,7 @@ fun Application.hubRoutes(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (invalid: IllegalArgumentException) { RoomReply(ok = false, error = "Invalid request. Check the supplied fields and menu format.", code = "VALIDATION") }
             catch (failure: Exception) {
-                log.error("Order request failed: ${failure.javaClass.simpleName}")
+                log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
             call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails, friendMembershipDetails, notificationPreferencesDetails)), ContentType.Application.Json)
@@ -384,7 +384,7 @@ fun Application.hubRoutes(
                     val snapshot = try { withContext(Dispatchers.IO) { service.execute(request) } }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
-                        log.error("Order subscription failed: ${failure.javaClass.simpleName}")
+                        log.error("Room subscription failed: ${failure.javaClass.simpleName}")
                         RoomReply(ok = false, error = "The hub is temporarily unavailable. Reconnect to resume.", code = "HUB_UNAVAILABLE")
                     }
                     // Room edits signal HOME globally. Do not resend the whole catalog when

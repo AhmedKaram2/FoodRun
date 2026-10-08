@@ -198,14 +198,14 @@ test('offline restaurant upgrades restore location without replacing edited menu
 
 test('Arabic translation preserves user supplied strings and protocol values', async () => {
   const { t, tf } = await import('../src/foodrun/i18n.js');
-  assert.equal(t('Wallet dashboard', 'ar'), 'متابعة الحسابات');
+  assert.equal(t('Wallet dashboard', 'ar'), 'ملخص المدفوعات');
   assert.equal(t('Ahmed – without onions', 'ar'), 'Ahmed – without onions');
   assert.equal(t('DECLARE_TRANSFER', 'ar'), 'DECLARE_TRANSFER');
   assert.equal(t('Wallet dashboard', 'en'), 'Wallet dashboard');
   assert.equal(t('Breakfast', 'ar'), 'فطار');
-  assert.equal(t('Create order', 'ar'), 'اعمل الطلب');
+  assert.equal(t('Create room', 'ar'), 'إنشاء غرفة');
   assert.equal(tf('Join {name}', { name: 'Home & AED 8.00' }, 'ar'), 'ادخل Home & AED 8.00');
-  assert.equal(tf('Order code: {code}', { code: '001234' }, 'ar'), 'كود الطلب: 001234');
+  assert.equal(tf('Room code: {code}', { code: '001234' }, 'ar'), 'كود الغرفة: 001234');
 });
 
 test('known menu prices immediately include quantity, selected size and extras', async () => {

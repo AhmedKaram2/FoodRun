@@ -17,8 +17,8 @@ export default function HomeBanner({ rtl = false, allowRoomCreation = true, onCr
   const slides = [
     { tone: 'together', eyebrow: copy('GOOD FOOD BRINGS PEOPLE CLOSER', 'الأكل الحلو يقرّبنا'),
       first: copy('Food is better', 'الأكل أحلى'), accent: copy('together.', 'مع بعض.'),
-      description: copy('Create a group order, let everyone choose what they love, and split the total without the awkward math.', 'ابدأ طلب جماعي، وخلي كل واحد يختار أكله، واقسموا الحساب بسهولة.'),
-      action: copy('Start a Food Run', 'ابدأ طلب جماعي'), onAction: onCreate, disabled: !allowRoomCreation },
+      description: copy('Create a room, let everyone choose what they love, and split the total with ease.', 'أنشئ غرفة، ودع كل شخص يختار ما يحب، وتقاسموا الحساب بسهولة.'),
+      action: copy('Create a room', 'إنشاء غرفة'), onAction: onCreate, disabled: !allowRoomCreation },
     { tone: 'taste', eyebrow: copy('A LITTLE OF EVERYTHING. EVERYONE INCLUDED.', 'كل واحد يختار اللي يحبه'),
       first: copy('Different tastes.', 'أذواق مختلفة.'), accent: copy('Same table.', 'سفرة واحدة.'),
       description: copy('The pizza person. The burger person. The “just a salad” person. Bring your favorites to one shared order.', 'بيتزا، برجر، أو سلطة… كل واحد يختار اللي يحبه، وكل الاختيارات تتجمع في طلب واحد.'),
@@ -26,7 +26,7 @@ export default function HomeBanner({ rtl = false, allowRoomCreation = true, onCr
     { tone: 'split', eyebrow: copy('LESS HASSLE. MORE TOGETHERNESS.', 'حساب أسهل. وقت أحلى.'),
       first: copy('Split the bill.', 'اقسموا الحساب.'), accent: copy('Keep the good times.', 'واستمتعوا بالوقت.'),
       description: copy('Clear shares, one place for the order, and more time for the people around your table.', 'كل واحد يعرف حسابه، والطلب كله في مكان واحد، ووقت أكتر لصحابك.'),
-      action: copy('Start a Food Run', 'ابدأ طلب جماعي'), onAction: onCreate, disabled: !allowRoomCreation },
+      action: copy('Create a room', 'إنشاء غرفة'), onAction: onCreate, disabled: !allowRoomCreation },
   ];
   const slide = slides[index];
   return <section className={`home-banner home-banner-${slide.tone}`} aria-label={copy('Intrvioo highlights', 'مميزات إنترفيوو')} aria-roledescription={copy('carousel', 'عارض شرائح')}>
@@ -38,7 +38,7 @@ export default function HomeBanner({ rtl = false, allowRoomCreation = true, onCr
         <p className="home-banner-description">{slide.description}</p>
         <div className="home-banner-actions">
           <button className="primary" disabled={slide.disabled} onClick={slide.onAction}>{slide.action}<BannerIcon kind="arrow" /></button>
-          <button className="secondary" onClick={onJoin}>{copy('Join an Order', 'انضم لطلب')}</button>
+          <button className="secondary" onClick={onJoin}>{copy('Join a room', 'الانضمام إلى غرفة')}</button>
         </div>
       </div>
       <div className="home-banner-visual">

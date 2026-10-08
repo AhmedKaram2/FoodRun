@@ -232,6 +232,23 @@ class FriendsTimerSupportTest {
         assertFalse(f.service.execute(command(f, expiring, CommandKind.HOME)).ok)
         assertFalse(f.service.execute(change.copy(commandId = f.id(), token = expiring.home!!.rooms.single().token, identityToken = "")).ok)
     }
+    @Test fun nativeOwnerSupportRequiresVerifiedOwnerAndEmailDetailsAreOptIn(): Unit = RoomFixture(Provider()).use { f ->
+        val target = login(f,"Bob")
+        val owner = f.execute(RoomCommand(commandId = f.id(),kind = CommandKind.IDENTITY,
+            identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN,firebaseToken = "admin")))
+        val admin = AdminService(f.db,f.service,{f.now},Provider())
+        val legacy = admin.nativeRequest(NativeAdminRequest(owner.identityToken))
+        assertTrue(legacy.dashboard!!.users.all { it.email.isEmpty() })
+        assertFalse(orderJson.encodeToString(legacy).contains("\"support\""))
+        val modern = admin.nativeRequest(NativeAdminRequest(owner.identityToken,emailDetails = true))
+        assertEquals("Bob@example.test",modern.dashboard!!.users.single { it.id == "Bob" }.email)
+        assertFails { admin.nativeRequest(NativeAdminRequest(target.identityToken,"support-start",orderJson.encodeToString(AdminSupportRequest("Bob")))) }
+        val support = admin.nativeRequest(NativeAdminRequest(owner.identityToken,"support-start",orderJson.encodeToString(AdminSupportRequest("Bob")))).support!!
+        assertEquals("Bob",support.home!!.profile.userId)
+        assertNotEquals(target.identityToken,support.identityToken)
+        assertFails { f.service.nativeAdminToken(support.identityToken) }
+        Unit
+    }
 
     @Test fun searchFindsNamesAndEmailsButKeepsHiddenProfilesPrivate() = RoomFixture(Provider(),emailEnabled = true).use { f ->
         val alice = login(f,"Alice"); login(f,"Bob"); val hidden = login(f,"Hidden")

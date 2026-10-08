@@ -18,9 +18,9 @@ internal class AccountMemberships(private val db: RoomDatabase) {
     fun all(uid: String): List<AccountRoom> = db.allRooms().mapNotNull { find(uid, it) }
 
     fun save(uid: String, room: Room, memberId: String, token: String) {
-        require(room.members.any { it.id == memberId && !it.removed }) { "This room membership is no longer active." }
-        require(owner(room.id, memberId).let { it == null || it == uid }) { "This room membership belongs to another account." }
-        require(find(uid, room).let { it == null || it.memberId == memberId }) { "This account already has a membership in this room." }
+        require(room.members.any { it.id == memberId && !it.removed }) { "This order membership is no longer active." }
+        require(owner(room.id, memberId).let { it == null || it == uid }) { "This order membership belongs to another account." }
+        require(find(uid, room).let { it == null || it.memberId == memberId }) { "This account already has a membership in this order." }
         db.putRecord("membership:$uid:${room.id}", orderJson.encodeToString(AccountRoom(room.id, room.name, memberId, token)))
         db.putRecord("member-user:${room.id}:$memberId", uid)
     }

@@ -1,6 +1,6 @@
 package com.karim.foodrun.shared.orders
 
-data class GroupFeedback(val id: Long, val message: String, val isError: Boolean, val durationMillis: Long, val expiresAt: Long)
+@kotlinx.serialization.Serializable data class GroupFeedback(val id: Long, val message: String, val isError: Boolean, val durationMillis: Long, val expiresAt: Long)
 
 internal class GroupFeedbacks(private val clock: () -> Long) {
     private var sequence = 0L

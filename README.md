@@ -1,6 +1,6 @@
 # Food Run 🍟
 
-A Kotlin Multiplatform app for choosing who picks up food and organizing group meals, with native SwiftUI on iOS and Jetpack Compose on Android.
+A FoodRun app for choosing who picks up food and organizing group meals. Android and iOS share React Native screens and Kotlin Multiplatform business rules.
 
 **Crew:** Karim, Karam, Hassan, Mersal, Baraa, Fayed, Ayman, Rayan, Gaber and Fakhr. Add more people in **Who’s in? → Add person**.
 
@@ -72,7 +72,7 @@ Each spin is independent, so a previous winner can win again. Kotlin chooses the
 
 ![Native apps, shared Kotlin modules and the local hub](Docs/media/architecture.svg)
 
-KMP owns form drafts, validation, navigation, application state and display models. Native adapters handle lifecycle, animation, secure storage, pinned transport, discovery and system sharing. The local JVM hub authorizes room changes, chooses shared spin results and persists group orders. Quick Spin operates separately using local preferences.
+Android and iOS render the same React Native screens in `mobileApp`. Shared KMP controllers retain validation, navigation, accounts, room synchronization, billing and existing offline storage. A view-only native bridge supplies display data and actions; session tokens stay in the native adapters. Google sign-in, secure storage, push, discovery, photo selection and sharing use the existing platform services. The JVM hub authorizes room changes and chooses shared spin results.
 
 Reusable buttons, controlled inputs, avatars, cards and dividers preserve Food Run’s warm cream and orange palette, with deep green accents for group meals. The focused local [IosComponents package](Packages/IosComponents) is adapted from the supplied MOHRE library; Android has equivalent Compose components. Source provenance and fixes are in [component reuse](Docs/component-reuse.md).
 
@@ -80,11 +80,14 @@ The app uses English copy centralized in KMP. `shared` contains application stat
 
 ## Build Android
 
-Prerequisites: JDK 17+, Android SDK platform 36, and SDK build tools. Set `ANDROID_HOME` or create an untracked `local.properties` with `sdk.dir=/path/to/Android/sdk`.
+Prerequisites: Node 22.11+ (React Native 0.86), JDK 17+, Android SDK platform 36, and SDK build tools. Set `ANDROID_HOME` or create an untracked `local.properties` with `sdk.dir=/path/to/Android/sdk`.
 
 ```sh
+npm --prefix mobileApp ci
 ./gradlew :shared:jvmTest :androidApp:assembleDebug
 ```
+
+For development, run `npm --prefix mobileApp start`. Release builds embed the JavaScript bundle and run independently of Metro. The backend continues to build without Node or installed mobile dependencies.
 
 Open this folder in Android Studio to run on a device or emulator.
 
@@ -99,15 +102,21 @@ The creation script preserves existing signing files. Back up `.signing/` privat
 
 ## Build iOS
 
-Prerequisites: macOS, Xcode, JDK 17+, and the Android SDK for Gradle project configuration. The first build downloads Kotlin dependencies.
+Prerequisites: macOS, Xcode, Node, Ruby/Bundler, JDK 17+, and the Android SDK for Gradle project configuration. Install the shared UI and CocoaPods dependencies first:
 
-1. Open `FoodRun.xcodeproj` in Xcode.
+```sh
+npm --prefix mobileApp ci
+bundle install
+bundle exec pod install
+```
+
+1. Open `FoodRun.xcworkspace` in Xcode.
 2. Select **FoodRun** and an iPhone simulator.
 3. Run with **⌘R**; test with **⌘U**.
 
 The Xcode pre-build phase builds and embeds the shared Kotlin framework automatically. Keep simulator ad-hoc signing enabled: Keychain storage requires the app's entitlements, so do not build with `CODE_SIGNING_ALLOWED=NO`. For a physical iPhone, select your Apple development team under **Signing & Capabilities** and run on the connected device. Requires iOS 17+.
 
-After changing project structure, regenerate the project with `xcodegen generate`. To build both shared Apple framework variants explicitly:
+After changing project structure, regenerate with `xcodegen generate` and then `bundle exec pod install`. To build both shared Apple framework variants explicitly:
 
 ```sh
 ./gradlew :shared:assembleFoodRunSharedDebugXCFramework

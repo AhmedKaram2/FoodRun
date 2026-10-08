@@ -1,6 +1,8 @@
 package com.karim.foodrun.server
 
 import com.google.auth.oauth2.UserCredentials
+import com.google.api.client.http.HttpResponseException
+import java.io.IOException
 import kotlinx.serialization.json.*
 import java.net.URI
 import java.net.URLEncoder
@@ -37,10 +39,20 @@ internal class GmailEmailSender(
         }
     }
     override fun send(delivery: EmailDelivery): EmailResult {
+        val token = try { accessToken() } catch(failure: IOException) {
+            val authorizationRequired = generateSequence<Throwable>(failure) { it.cause }
+                .filterIsInstance<HttpResponseException>().any { response ->
+                    response.statusCode in listOf(400,401) && runCatching {
+                        Json.parseToJsonElement(response.content).jsonObject["error"]?.jsonPrimitive?.content
+                    }.getOrNull() in listOf("invalid_grant","invalid_client","unauthorized_client")
+                }
+            if(authorizationRequired) return EmailResult.AUTH_REQUIRED
+            throw failure
+        }
         val raw = Base64.getUrlEncoder().withoutPadding().encodeToString(mime(delivery).toByteArray(Charsets.UTF_8))
         // Using the exact mailbox instead of 'me' also rejects credentials for another account.
         val request = HttpRequest.newBuilder(URI("https://gmail.googleapis.com/gmail/v1/users/$SENDER/messages/send"))
-            .timeout(Duration.ofSeconds(20)).header("Authorization", "Bearer ${accessToken()}")
+            .timeout(Duration.ofSeconds(20)).header("Authorization", "Bearer $token")
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(buildJsonObject { put("raw", raw) }.toString())).build()
         val response = transport(request)

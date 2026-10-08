@@ -33,7 +33,7 @@ internal object EmailContacts {
     val recipientUserId: String = "",
 )
 internal data class EmailDelivery(val job: EmailJob, val address: String)
-internal enum class EmailResult { SENT, RETRY, FAILED }
+internal enum class EmailResult { SENT, RETRY, FAILED, AUTH_REQUIRED }
 internal fun interface EmailSender { fun send(delivery: EmailDelivery): EmailResult }
 internal class ReminderEmailRequired : IllegalArgumentException("Enter an email address for this payment reminder.")
 
@@ -50,13 +50,13 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         val link = if(room == null) site else "$site/?room=${room.code}${System.getenv("FOODRUN_EMAIL_API_URL")?.let { "&hub=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()}"
         val subject = if(room == null) "$ownerName invited you to Intrvioo" else "$ownerName invited you to ${room.name}"
         val body = if(room == null) "$ownerName added you to the friend group ${group.name}. Join Intrvioo using this email to order food together: $link"
-        else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (room poll)" else ""}\nRoom code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
+        else "$ownerName created ${room.name}.\nRestaurant: ${room.restaurant.name}${if(room.restaurantPollOpen) " (order poll)" else ""}\nOrder code: ${room.code}\n${if(room.deliveryMode) "Delivery" else "Pickup"}${room.destination.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}\n${if(room.joinDeadlineAt > 0) "Join before ${java.time.Instant.ofEpochMilli(room.joinDeadlineAt)} (UTC). The wheel starts when the timer ends.\n" else ""}Join and start your order: $link"
         db.putRecord("email-job:$id", orderJson.encodeToString(EmailJob(id, ownerId, room?.id.orEmpty(), room?.orderNumber ?: 0,
             subject, body, clock(), recipientAddress = member.email, friendGroupId = group.id, friendGroupOwnerId = groupOwnerId.takeUnless { it == ownerId }.orEmpty(), recipientUserId = member.userId)))
     }
     fun remind(room: Room, actorId: String, command: RoomCommand): String {
         require(room.payerId == actorId) { "Only the chosen payer can send payment reminders." }
-        require(command.expectedOrderNumber == room.orderNumber && command.expectedRevision == room.revision) { "The bill changed. Refresh the room and try again." }
+        require(command.expectedOrderNumber == room.orderNumber && command.expectedRevision == room.revision) { "The bill changed. Refresh the order and try again." }
         val receipt = Billing.receipts(room).singleOrNull { it.memberId == command.memberId }
         require(receipt != null && PaymentReminderRules.eligible(room, actorId, receipt)) { "Reminders are only available for unpaid balances with no payment awaiting confirmation." }
         val uid = requireNotNull(db.record("member-user:${room.id}:${receipt.memberId}")) { "This member needs to sign in again before receiving email reminders." }
@@ -157,7 +157,14 @@ internal class EmailService(private val db: RoomDatabase, private val clock: () 
         val job = delivery.job
         val key = "email-job:${job.id}"
         if (db.record(key)?.let { orderJson.decodeFromString<EmailJob>(it) } != job) return
-        if (result == EmailResult.RETRY && job.attempts < 6) {
+        if(result == EmailResult.AUTH_REQUIRED) {
+            // OAuth failed before a Gmail send request. Preserve the invitation and quota.
+            db.putRecord(key,orderJson.encodeToString(job.copy(attempts = maxOf(0,job.attempts-1),nextAt = clock()+300_000)))
+            val attempts = db.record("email:attempts")?.let { orderJson.decodeFromString<List<Long>>(it) }.orEmpty().toMutableList()
+            val reservation = attempts.lastIndexOf(job.nextAt-300_000)
+            if(reservation >= 0) attempts.removeAt(reservation)
+            db.putRecord("email:attempts",orderJson.encodeToString(attempts))
+        } else if (result == EmailResult.RETRY && job.attempts < 6) {
             db.putRecord(key, orderJson.encodeToString(job.copy(nextAt = clock() + minOf(3_600_000L, 60_000L * (1L shl job.attempts)))))
         } else {
             db.deleteRecord(key)

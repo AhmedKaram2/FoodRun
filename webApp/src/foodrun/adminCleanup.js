@@ -5,7 +5,7 @@ function validDate(value) {
 }
 
 export function cleanupSelection({ scope, filter, days, fromDate, toDate, timeZone }) {
-  if (!['closedRooms', 'history'].includes(scope)) throw Error('Choose rooms or order history.');
+  if (!['closedRooms', 'history'].includes(scope)) throw Error("Choose orders or order history.");
   if (filter === 'date') {
     if (!validDate(fromDate) || !validDate(toDate)) throw Error('Choose both a valid start date and an end date.');
     if (toDate < fromDate) throw Error('The end date must be on or after the start date.');

@@ -17,7 +17,7 @@ internal class GroupWheelProtection(private val c: GroupController) {
             GroupAction.REQUEST_WHEEL_PROTECTION -> command(CommandKind.REQUEST_WHEEL_PROTECTION, text = value)
             GroupAction.APPROVE_WHEEL_PROTECTION, GroupAction.REJECT_WHEEL_PROTECTION -> command(CommandKind.REVIEW_WHEEL_PROTECTION, value, flag = action == GroupAction.APPROVE_WHEEL_PROTECTION)
             GroupAction.DECLARE_WHEEL_PAYMENT -> command(CommandKind.DECLARE_WHEEL_PAYMENT, value, amount = request(value).amount,
-                text = c.text(GroupFieldKey.WHEEL_PAYMENT_REFERENCE).ifBlank { tr("Paid the room owner", "تم الدفع لصاحب الغرفة") })
+                text = c.text(GroupFieldKey.WHEEL_PAYMENT_REFERENCE).ifBlank { tr("Paid the order owner", "تم الدفع لصاحب الطلب") })
             GroupAction.CONFIRM_WHEEL_PAYMENT, GroupAction.REJECT_WHEEL_PAYMENT -> command(CommandKind.CONFIRM_WHEEL_PAYMENT, value,
                 amount = request(value).amount, flag = action == GroupAction.CONFIRM_WHEEL_PAYMENT)
             GroupAction.COPY_WHEEL_ACCOUNT -> c.platform.copyToClipboard(c.room().wheelProtectionAccounts.single { it.id == value }.identifier)
@@ -30,7 +30,7 @@ internal class GroupWheelProtection(private val c: GroupController) {
         val confirmable = c.online && (room.phase == RoomPhase.LOBBY || room.phase == RoomPhase.ARCHIVED && room.autoArchivedAt > 0)
         val mine = room.wheelProtections.lastOrNull { it.memberId == me.id }
         val cards = mutableListOf(GroupCard("wheel-intro", tr("Please don’t pick me", "ما تختارنيش"),
-            tr("For this order only. The owner approves first, then confirms receiving your payment. You still order food and pay your share.", "للطلب الحالي بس. صاحب الغرفة يوافق الأول وبعدها يؤكد استلام الفلوس. تقدر تطلب أكل وتدفع حصتك عادي.")))
+            tr("For this order only. The owner approves first, then confirms receiving your payment. You still order food and pay your share.", "للطلب الحالي بس. صاحب الطلب يوافق الأول وبعدها يؤكد استلام الفلوس. تقدر تطلب أكل وتدفع حصتك عادي.")))
         val buttons = mutableListOf<GroupButton>(); val fields = mutableListOf<GroupField>()
         cards += GroupCard("wheel-service-support", tr("Support Intrvioo", "ادعم إنترفيوو"),
             tr("Payments for paid features and subscriptions help renew our servers and improve the website service.", "مدفوعات المزايا المدفوعة والاشتراكات بتساعدنا في تجديد السيرفرات وتحسين خدمة الموقع."))
@@ -48,14 +48,14 @@ internal class GroupWheelProtection(private val c: GroupController) {
             }
             if (editable && request.memberId == me.id && request.status == WheelProtectionStatus.AWAITING_PAYMENT) {
                 fields += GroupField(GroupFieldKey.WHEEL_PAYMENT_REFERENCE, tr("Payment note (optional)", "ملاحظة الدفع (اختياري)"), c.text(GroupFieldKey.WHEEL_PAYMENT_REFERENCE))
-                actions += GroupButton(tr("I paid the room owner", "دفعت لصاحب الغرفة"), GroupAction.DECLARE_WHEEL_PAYMENT, request.id, primary = true)
+                actions += GroupButton(tr("I paid the order owner", "دفعت لصاحب الطلب"), GroupAction.DECLARE_WHEEL_PAYMENT, request.id, primary = true)
                 room.wheelProtectionAccounts.forEach { account -> cards += GroupCard("wheel-account:${account.id}", "${account.holder} · ${account.bank}", account.identifier,
                     buttons = listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_WHEEL_ACCOUNT, account.id))) }
             }
             val status = when(request.status) {
-                WheelProtectionStatus.REQUESTED -> tr("Waiting for owner approval", "في انتظار موافقة صاحب الغرفة")
-                WheelProtectionStatus.AWAITING_PAYMENT -> tr("Approved · pay the room owner", "تمت الموافقة · ادفع لصاحب الغرفة")
-                WheelProtectionStatus.PAYMENT_DECLARED -> tr("Waiting for owner to confirm payment", "في انتظار تأكيد صاحب الغرفة لاستلام الفلوس")
+                WheelProtectionStatus.REQUESTED -> tr("Waiting for owner approval", "في انتظار موافقة صاحب الطلب")
+                WheelProtectionStatus.AWAITING_PAYMENT -> tr("Approved · pay the order owner", "تمت الموافقة · ادفع لصاحب الطلب")
+                WheelProtectionStatus.PAYMENT_DECLARED -> tr("Waiting for owner to confirm payment", "في انتظار تأكيد صاحب الطلب لاستلام الفلوس")
                 WheelProtectionStatus.ACTIVE -> tr("Active for this order", "مفعّل للطلب الحالي")
                 WheelProtectionStatus.REJECTED -> tr("Request declined", "تم رفض الطلب")
             }
@@ -64,7 +64,7 @@ internal class GroupWheelProtection(private val c: GroupController) {
                 "${Money.format(request.amount, "AED")} · $status${if(request.reference.isEmpty()) "" else "\n${request.reference}"}", actions)
         }
         cards += GroupCard("wheel-payment-note", tr("Pay only after approval", "ادفع بعد الموافقة بس"),
-            tr("Pay the room owner outside Intrvioo. The fee is separate from your food bill. At least one eligible member must keep their normal chance.", "ادفع لصاحب الغرفة خارج التطبيق. الرسوم منفصلة عن حساب الأكل. لازم يفضل عضو مؤهل واحد على الأقل بفرصته العادية."))
+            tr("Pay the order owner outside Intrvioo. The fee is separate from your food bill. At least one eligible member must keep their normal chance.", "ادفع لصاحب الطلب خارج التطبيق. الرسوم منفصلة عن حساب الأكل. لازم يفضل عضو مؤهل واحد على الأقل بفرصته العادية."))
         return GroupFlowContent(cards = cards, fields = fields, buttons = buttons)
     }
 }

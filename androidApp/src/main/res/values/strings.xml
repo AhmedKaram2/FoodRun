@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Intrvioo</string>
+    <string name="app_name">FoodRun</string>
     <string name="group_menu_too_large">Menu exceeds 2 MB. Choose a smaller JSON file.</string>
     <string name="group_menu_open_failed">Could not open this menu. Check the file and try importing again.</string>
     <string name="group_menu_invalid_encoding">Could not read the menu text. Export it as UTF-8 JSON and import again.</string>

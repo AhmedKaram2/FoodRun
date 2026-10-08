@@ -28,4 +28,4 @@ internal object AccountRestrictions {
     }
 }
 internal class AccountBlockedException(val block: AccessBlock) : IllegalStateException(
-    if (block.removed) "This Food Run account was removed. Contact the administrator." else "Your access to this room is temporarily blocked.")
+    if (block.removed) "This Food Run account was removed. Contact the administrator." else "Your access to this order is temporarily blocked.")

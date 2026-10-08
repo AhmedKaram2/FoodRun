@@ -110,7 +110,7 @@ final class WheelStore {
     }
 }
 
-private final class IosFoodRunTimeZone: NSObject, FoodRunTimeZone {
+final class IosFoodRunTimeZone: NSObject, FoodRunTimeZone {
     func offsetSecondsAt(timeMillis: Double) -> Int32 {
         Int32(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: timeMillis / 1_000)))
     }

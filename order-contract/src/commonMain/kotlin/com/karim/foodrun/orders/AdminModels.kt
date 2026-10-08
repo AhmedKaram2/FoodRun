@@ -51,5 +51,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class RestaurantCatalogPayload(val restaurants: List<Restaurant>, val deletedRestaurantIds: Set<String>)
 @Serializable data class AdminRoomMutation(val roomId: String, val action: String, val expectedRevision: Long = 0, val confirmation: String = "")
 
-@Serializable data class NativeAdminRequest(val identityToken: String, val action: String = "dashboard", val payload: String = "")
-@Serializable data class NativeAdminReply(val ok: Boolean = true, val error: String = "", val dashboard: AdminDashboard? = null, val preview: AdminCleanupPreview? = null)
+@Serializable data class NativeAdminRequest(val identityToken: String, val action: String = "dashboard", val payload: String = "",
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class) @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER) val emailDetails: Boolean = false)
+@Serializable data class NativeAdminReply(val ok: Boolean = true, val error: String = "", val dashboard: AdminDashboard? = null, val preview: AdminCleanupPreview? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class) @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER) val support: RoomReply? = null)

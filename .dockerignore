@@ -2,6 +2,11 @@
 .gradle
 .kotlin
 .idea
+Pods
+.bundle
+.signing
+.xcode.env.local
+**/.cxx
 .local
 **/build
 **/node_modules

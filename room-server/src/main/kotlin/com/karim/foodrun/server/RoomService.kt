@@ -39,8 +39,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     val storageMode: String get() = if (db.cloudDurable) "firestore" else "sqlite"
     @Synchronized fun syncCloud() = accounts.syncCloud()
     @Synchronized fun adminCancel(roomId: String) {
-        val room = requireNotNull(db.room(roomId)) { "Room was not found." }
-        require(room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) { "Room is already complete." }
+        val room = requireNotNull(db.room(roomId)) { "Order was not found." }
+        require(room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED)) { "Order is already complete." }
         require(room.phase !in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED)) { "Placed orders must be settled and archived. Cancellation would hide outstanding payments." }
         db.save(room.copy(phase = RoomPhase.CANCELLED, revision = room.revision + 1, updatedAt = clock()))
         signalRoom(roomId)
@@ -93,7 +93,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.roomId.length <= 160 && c.token.length <= 128 && c.code.length <= 16 && c.memberId.length <= 160 && c.transferId.length <= 160 && c.accountId.length <= 160) { "Invalid request identifier." }
         require(c.name.length <= 160 && c.text.length <= 500 && c.destination.length <= 1000 && c.expectedNames.size <= 30) { "Request fields exceed the supported length." }
         require(c.restaurants.size <= 12) { "A restaurant poll supports up to 12 choices." }
-        require(c.joinTimerMinutes in 0..1440) { "Choose a room timer between 1 and 1440 minutes, or leave it off." }
+        require(c.joinTimerMinutes in 0..1440) { "Choose an order timer between 1 and 1440 minutes, or leave it off." }
         require(c.historyOffset in 0..1_000_000) { "Invalid history page." }
         require(c.protocolVersion == 1) { "Update Food Run: this protocol version is unsupported." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
@@ -103,6 +103,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             signalHome()
             reply.room?.let { signalRoom(it.id) }
         }
+        else if(c.kind == CommandKind.COMMAND_STATUS) commandStatus(c)
         else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
         else if(c.kind == CommandKind.SET_NOTIFICATION_PREFERENCES) db.transaction {
             val uid = accounts.userId(c.identityToken)
@@ -149,7 +150,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else db.transaction {
             if (c.kind in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) {
-                require(!c.guest) { "Guest mode is unavailable. Sign in to join the room." }
+                require(!c.guest) { "Guest mode is unavailable. Sign in to join the order." }
                 if (identityProvider != null) accounts.userId(c.identityToken)
             }
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
@@ -279,8 +280,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun create(c: RoomCommand): RoomReply {
         if(c.identityToken.isNotBlank()) AccountRestrictions.requireRoomAllowed(db, accounts.userId(c.identityToken), "", clock())
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
-        require(settings.roomCreationEnabled) { "New room creation is temporarily disabled by the administrator." }
-        require(db.activeRoomCount() < 100) { "Hub has reached its active-room limit." }
+        require(settings.roomCreationEnabled) { "New order creation is temporarily disabled by the administrator." }
+        require(db.activeRoomCount() < 100) { "Hub has reached its active-order limit." }
         require(c.selectionStyle in listOf("wheel", "names")) { "Choose Wheel or Running names." }
         MenuValidation.label(c.name); MenuValidation.label(c.text)
         val roomId = uuid()
@@ -316,24 +317,39 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         db.deleteRecord(selectionOverrideKey(room))
         db.records("selection:grant:${room.id}:${room.orderNumber}:").forEach { (key, _) -> db.deleteRecord(key) }
     }
+    /** Resolve a lost acknowledgement without executing the original mutation again. */
+    private fun commandStatus(c: RoomCommand): RoomReply {
+        require(c.text.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid saved request identifier." }
+        val uid = accounts.userId(c.identityToken)
+        val saved = db.recordedReply(c.text) ?: return RoomReply(code = "COMMAND_UNKNOWN")
+        val savedUser = saved.home?.profile?.userId?.takeIf { it.isNotEmpty() }
+            ?: saved.room?.let { db.record("member-user:${it.id}:${saved.memberId}") }
+        require(savedUser != null && AccountAliases.resolve(db,savedUser) == uid) { "This saved request belongs to another account." }
+        val home = accounts.home(c.identityToken).home!!
+        val membership = saved.room?.let { room -> home.rooms.singleOrNull { it.roomId == room.id } }
+        val room = membership?.let { db.room(it.roomId) }
+        val result = if(room != null) projection(room,membership.memberId).copy(token = membership.token,home = home)
+            else RoomReply(home = home)
+        return result.copy(code = saved.code.ifEmpty { "COMMAND_FOUND" })
+    }
     private fun selectionGrantKey(c: RoomCommand) = "selection:grant:${c.roomId}:${c.expectedOrderNumber}:${hash(c.identityToken)}"
     private fun requireSelectionAdministrator(c: RoomCommand) {
         require(isAdministrator(c.identityToken)) { "This account cannot change the wheel selection." }
         val actor = authenticate(c.roomId, c.token)
-        require(db.record("member-user:${c.roomId}:$actor") == accounts.userId(c.identityToken)) { "This room belongs to another account session." }
+        require(db.record("member-user:${c.roomId}:$actor") == accounts.userId(c.identityToken)) { "This order belongs to another account session." }
     }
     private fun selectionOverride(c: RoomCommand): RoomReply {
         val actor = authenticate(c.roomId, c.token)
         val room = requireNotNull(db.room(c.roomId))
         require(room.wheelProtections.none { it.status == WheelProtectionStatus.ACTIVE }) { "Paid wheel protection keeps this selection random." }
         require(room.paymentRoom == null && room.phase == RoomPhase.LOBBY) { "The wheel selection can only change before spinning." }
-        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "The order changed. Refresh the room and try again." }
+        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "The order changed. Refresh the order and try again." }
         val code = if (c.kind == CommandKind.UNLOCK_SELECTION_OVERRIDE) {
             require(c.text == "5457") { "Incorrect passcode." }
             db.putRecord(selectionGrantKey(c), (clock() + 10 * 60_000).toString())
             "SELECTION_OVERRIDE_UNLOCKED"
         } else {
-            require((db.record(selectionGrantKey(c))?.toLongOrNull() ?: 0) > clock()) { "Long press the room name and enter the passcode again." }
+            require((db.record(selectionGrantKey(c))?.toLongOrNull() ?: 0) > clock()) { "Long press the order name and enter the passcode again." }
             if (c.memberId.isEmpty()) db.deleteRecord(selectionOverrideKey(room))
             else {
                 require(room.orderingMembers.any { it.id == c.memberId && it.eligible }) { "Choose someone eligible for this wheel." }
@@ -354,20 +370,20 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val userId = accounts.userId(identityToken)
         if (roomId.isEmpty()) return userId
         val actor = authenticate(roomId, roomToken)
-        val room = requireNotNull(db.room(roomId)) { "Room was not found." }
-        require(room.ownerId == actor || isAdministrator(identityToken)) { "Only the room owner or administrator can add a restaurant from this room." }
-        require(db.record("member-user:$roomId:$actor") == userId) { "This room belongs to another account session." }
+        val room = requireNotNull(db.room(roomId)) { "Order was not found." }
+        require(room.ownerId == actor || isAdministrator(identityToken)) { "Only the order owner or administrator can add a restaurant from this order." }
+        require(db.record("member-user:$roomId:$actor") == userId) { "This order belongs to another account session." }
         return userId
     }
 
     private fun createPaymentRoom(c: RoomCommand): RoomReply {
         val uid = accounts.userId(c.identityToken)
         AccountRestrictions.requireRoomAllowed(db, uid, "", clock())
-        val request = requireNotNull(c.paymentRoom) { "Enter the payment room details." }
+        val request = requireNotNull(c.paymentRoom) { "Enter the payment order details." }
         request.details.validate()
         Money.precision(request.currency)
         val settings = db.record(AdminService.SETTINGS)?.let { orderJson.decodeFromString<AdminSettings>(it) } ?: AdminSettings()
-        require(settings.roomCreationEnabled && db.activeRoomCount() < 100) { "New room creation is currently unavailable." }
+        require(settings.roomCreationEnabled && db.activeRoomCount() < 100) { "New order creation is currently unavailable." }
         MenuValidation.label(c.text)
         require(request.shares.size in 2..30 && request.shares.map { it.userId }.distinct().size == request.shares.size) { "Choose yourself and 1–29 different people." }
         require(request.shares.any { it.userId == uid }) { "Include your own share, even if it is zero." }
@@ -380,7 +396,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.amount > 0 && request.shares.sumOf { it.amount } == c.amount) { "The shares must add up to the receipt total." }
         val account = requireNotNull(c.account) { "Add your receiving details in your profile first." }.let {
             if (it.method == PaymentMethod.AANI) it else it.copy(currency = request.currency)
-        }.normalized().also { it.validate(); require(it.currency == request.currency) { "Receiving account currency must match the room currency." } }
+        }.normalized().also { it.validate(); require(it.currency == request.currency) { "Receiving account currency must match the order currency." } }
         val roomId = uuid()
         val ids = profiles.keys.associateWith { AccountMemberships.memberId(roomId, it) }
         val ownerId = ids.getValue(uid)
@@ -393,7 +409,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             carts = request.shares.map { share -> MemberCart(ids.getValue(share.userId), submitted = true,
                 lines = if (share.amount == 0L) emptyList() else listOf(CartLine(uuid(), "", 1, description = share.description.trim(), unitPrice = share.amount))) },
             transfers = request.shares.filter { it.received > 0 }.map { Transfer(uuid(), ids.getValue(it.userId), it.received,
-                "Payment received before this room was created", account, status = TransferStatus.CONFIRMED, createdAt = clock()) },
+                "Payment received before this order was created", account, status = TransferStatus.CONFIRMED, createdAt = clock()) },
             paymentRoom = request.details, createdAt = clock(), updatedAt = clock(),
             audit = listOf(AuditEntry(c.commandId, ownerId, c.kind.name, "Already ordered; shares and received payments recorded by payer", clock())))
         RoomRules.validateRoom(room); Billing.receipts(room); requireLoadable(room); db.save(room)
@@ -410,19 +426,19 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     private fun join(c: RoomCommand): RoomReply {
         MenuValidation.label(c.name)
-        require(c.code.matches(Regex("[0-9]{6}"))) { "Enter a six-digit room code." }
-        val room = db.roomByCode(c.code) ?: error("Room code was not found.")
+        require(c.code.matches(Regex("[0-9]{6}"))) { "Enter a six-digit order code." }
+        val room = db.roomByCode(c.code) ?: error("Order code was not found.")
         if(c.identityToken.isNotBlank()) AccountRestrictions.requireRoomAllowed(db, accounts.userId(c.identityToken), room.id, clock())
         if (c.identityToken.isNotEmpty()) accounts.linked(c.identityToken, room.id)?.let { saved ->
             if (room.members.any { it.id == saved.memberId && !it.removed })
                 return projection(room, saved.memberId).copy(token = saved.token)
         }
-        require(room.paymentRoom == null) { "Payment rooms are private to the people selected by the organizer." }
-        require(room.joinDeadlineAt == 0L || clock() < room.joinDeadlineAt) { "This room's join timer ended. Only existing members can resume this order." }
-        require(room.members.count { !it.removed && it.guest == c.guest } < if (c.guest) 10 else 30) { "Room capacity reached." }
-        require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the room. Resume your saved session or use a distinct name." }
+        require(room.paymentRoom == null) { "Payment orders are private to the people selected by the organizer." }
+        require(room.joinDeadlineAt == 0L || clock() < room.joinDeadlineAt) { "This order's join timer ended. Only existing members can resume this order." }
+        require(room.members.count { !it.removed && it.guest == c.guest } < if (c.guest) 10 else 30) { "Order capacity reached." }
+        require(room.members.none { !it.removed && it.name.equals(c.name.trim(), true) }) { "This name is already in the order. Resume your saved session or use a distinct name." }
         val memberId = if (c.identityToken.isEmpty()) uuid() else AccountMemberships.memberId(room.id, accounts.userId(c.identityToken))
-        require(room.members.none { it.id == memberId }) { "This membership was removed from the room. Contact the organizer." }
+        require(room.members.none { it.id == memberId }) { "This membership was removed from the order. Contact the organizer." }
         val requested = Member(memberId, c.name.trim(), guest = c.guest, lastSeen = clock())
         val person = if (room.phase == RoomPhase.LOBBY && room.pastSpins.isEmpty()) admit(requested, room.phase) else requested.copy(participating = false)
         val next = room.copy(members = room.members + person, revision = room.revision + 1,
@@ -434,14 +450,14 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private fun requestBlock(c: RoomCommand): RoomReply {
         val actor = authenticate(c.roomId, c.token)
         val room = requireNotNull(db.room(c.roomId))
-        require(actor == room.ownerId) { "Only the room owner can request a block." }
+        require(actor == room.ownerId) { "Only the order owner can request a block." }
         val requesterId = accounts.userId(c.identityToken)
         require(db.record("member-user:${room.id}:$actor") == requesterId ||
-            db.record("membership:$requesterId:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it).memberId == actor } == true) { "Sign in with the room owner's account." }
-        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "Refresh this room before requesting a block." }
+            db.record("membership:$requesterId:${room.id}")?.let { orderJson.decodeFromString<AccountRoom>(it).memberId == actor } == true) { "Sign in with the order owner's account." }
+        require(c.expectedOrderNumber == room.orderNumber && c.expectedRevision == room.revision) { "Refresh this order before requesting a block." }
         require(c.amount in 1..8760 && c.text.trim().length in 5..300) { "Choose 1 to 8760 hours and give a reason of 5 to 300 characters." }
         val target = RoomRules.member(room, c.memberId)
-        require(target.id != actor) { "Choose another room member." }
+        require(target.id != actor) { "Choose another order member." }
         val targetId = db.record("member-user:${room.id}:${target.id}") ?: db.records("membership:").firstOrNull { (_, body) ->
             orderJson.decodeFromString<AccountRoom>(body).let { it.roomId == room.id && it.memberId == target.id }
         }?.first?.removePrefix("membership:")?.substringBefore(':') ?: error("This member has no registered account.")
@@ -457,10 +473,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         signalHome(); roomIds.forEach(::signalRoom)
     }
     private fun authenticate(roomId: String, token: String): String {
-        require(token.length in 32..128) { "Room credentials are missing. Join or resume this order." }
+        require(token.length in 32..128) { "Order credentials are missing. Join or resume this order." }
         support.validateRoom(token)
-        val session = db.session(hash(token)) ?: error("Session was removed. Rejoin this room using its link or code.")
-        require(session.first == roomId) { "This credential belongs to another room." }
+        val session = db.session(hash(token)) ?: error("Session was removed. Rejoin this order using its link or code.")
+        require(session.first == roomId) { "This credential belongs to another order." }
         val userId = db.record("member-user:$roomId:${session.second}") ?: db.records("membership:").firstOrNull { (_, body) ->
             val membership = orderJson.decodeFromString<AccountRoom>(body)
             membership.roomId == roomId && membership.memberId == session.second
@@ -524,7 +540,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val viewers = listOfNotNull(room.payerId, room.ownerId).distinct()
         viewers.forEach { actor ->
             require(orderJson.encodeToString(baseProjection(room, actor)).toByteArray().size <= MAX_CURRENT_BYTES) {
-                "This room is too large to sync safely. Use a smaller menu or fewer cart lines."
+                "This order is too large to sync safely. Use a smaller menu or fewer cart lines."
             }
         }
     }

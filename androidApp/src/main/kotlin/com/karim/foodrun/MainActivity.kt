@@ -1,36 +1,27 @@
 package com.karim.foodrun
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
+import com.facebook.react.ReactActivity
+import com.facebook.react.ReactActivityDelegate
+import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
+import com.facebook.react.defaults.DefaultReactActivityDelegate
 
-class MainActivity : ComponentActivity() {
-    private val groups by viewModels<GroupViewModel>()
+class MainActivity : ReactActivity() {
+    private val app get() = application as FoodRunApplication
+    override fun getMainComponentName() = "FoodRun"
+    override fun createReactActivityDelegate(): ReactActivityDelegate = DefaultReactActivityDelegate(this,mainComponentName,fabricEnabled)
     override fun onCreate(savedInstanceState: Bundle?) {
+        app.platform.attach(this)
         super.onCreate(savedInstanceState)
-        groups.platform.attach(this)
-        groups.platform.handleGoogleCallback(intent?.data)
-        handleNotification(intent)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-        )
-        setContent {
-            FoodTheme {
-                GroupScreen(groups.controller)
-            }
-        }
+        app.platform.handleGoogleCallback(intent?.data); handleNotification(intent)
     }
-    override fun onStart() { super.onStart(); groups.controller.foreground(); groups.platform.googleForegrounded() }
-    override fun onStop() { groups.platform.googleBackgrounded(); groups.controller.background(); super.onStop() }
-    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); setIntent(intent); groups.platform.handleGoogleCallback(intent.data); handleNotification(intent) }
+    override fun onStart() { super.onStart(); app.groups.foreground(); app.platform.googleForegrounded() }
+    override fun onStop() { app.platform.googleBackgrounded(); app.groups.background(); super.onStop() }
+    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); setIntent(intent); app.platform.handleGoogleCallback(intent.data); handleNotification(intent) }
     private fun handleNotification(intent: android.content.Intent?) {
         val id = intent?.getStringExtra("notificationId") ?: return
-        groups.controller.openNotification(id, intent.getStringExtra("notificationAction") ?: "open")
-        intent.removeExtra("notificationId"); intent.removeExtra("notificationAction")
+        app.groups.openNotification(id,intent.getStringExtra("notificationAction") ?: "open")
+        intent.removeExtra("notificationId");intent.removeExtra("notificationAction")
     }
-    override fun onDestroy() { groups.platform.detach(this); super.onDestroy() }
+    override fun onDestroy() { app.platform.detach(this); super.onDestroy() }
 }

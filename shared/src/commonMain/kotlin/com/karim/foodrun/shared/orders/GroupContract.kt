@@ -3,8 +3,8 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 import kotlinx.serialization.Serializable
 
-enum class GroupPage { NOTIFICATION_PREFERENCES, FRIENDS, WALLET_TOP_UP, WALLET_BATCH, MENU_EDITOR, MENU_ENTITY, ADMIN, ADMIN_USER, ADMIN_CONFIRM, PAYMENT_ROOM, PAYMENT_SHARE, RECORD_PAYMENT, PAYMENT, REORDER, NOTIFICATIONS, BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY, SELECTION_OVERRIDE, WHEEL_PROTECTION }
-enum class GroupAction { OPEN_NOTIFICATION_PREFERENCES, SAVE_NOTIFICATION_PREFERENCES, OPEN_WALLET_HISTORY, DISMISS_WALLET_HISTORY, LOAD_WALLET_HISTORY, REFRESH_WALLET_HISTORY, FRIENDS_ACTION, WALLET_FUNDS_ACTION, PAY_WITH_WALLET, MENU_OPEN, MENU_EDIT, MENU_SAVE, MENU_REMOVE, MENU_TOGGLE_GROUP, OPEN_ADMIN, ADMIN_TAB, ADMIN_USER, ADMIN_NEW_USER, ADMIN_SAVE_USER, ADMIN_ACTION, ADMIN_CONFIRM, ADMIN_RESTAURANT, ADMIN_NEW_RESTAURANT, ADMIN_SAVE_SETTINGS, ADMIN_PREVIEW_CLEANUP, ADMIN_DELETE_CLEANUP, CREATE_PAYMENT_ROOM, SAVE_PAYMENT_ROOM, EDIT_PAYMENT_RECEIPT, EDIT_PAYMENT_SHARE, EDIT_EXISTING_PAYMENT_SHARE, REMOVE_PAYMENT_SHARE, SAVE_PAYMENT_SHARE, RECORD_PAYMENT, SAVE_RECORDED_PAYMENT, CONFIRM_REORDER, OPEN_NOTIFICATIONS, OPEN_NOTIFICATION, NOTIFICATION_ACTION, DISABLE_ALERTS,
+enum class GroupPage { ROOMS, NOTIFICATION_PREFERENCES, FRIENDS, WALLET_TOP_UP, WALLET_BATCH, MENU_EDITOR, MENU_ENTITY, ADMIN, ADMIN_USER, ADMIN_CONFIRM, PAYMENT_ROOM, PAYMENT_SHARE, RECORD_PAYMENT, PAYMENT, REORDER, NOTIFICATIONS, BLOCK_REQUEST, HOME, PROFILE, PEOPLE, CUSTOM_ITEM, PRICE_ITEM, PRICES, QUICK_SPIN, CONNECT, SETUP, LIBRARY, RESTAURANT, ROOM, ITEM, ACCOUNT, RECEIPTS, HISTORY, SELECTION_OVERRIDE, WHEEL_PROTECTION }
+enum class GroupAction { OPEN_ROOMS, ADMIN_SUPPORT_START, END_SUPPORT, OPEN_HOME, OPEN_NOTIFICATION_PREFERENCES, SAVE_NOTIFICATION_PREFERENCES, OPEN_WALLET_HISTORY, DISMISS_WALLET_HISTORY, LOAD_WALLET_HISTORY, REFRESH_WALLET_HISTORY, FRIENDS_ACTION, WALLET_FUNDS_ACTION, PAY_WITH_WALLET, MENU_OPEN, MENU_EDIT, MENU_SAVE, MENU_REMOVE, MENU_TOGGLE_GROUP, OPEN_ADMIN, ADMIN_TAB, ADMIN_USER, ADMIN_NEW_USER, ADMIN_SAVE_USER, ADMIN_ACTION, ADMIN_CONFIRM, ADMIN_RESTAURANT, ADMIN_NEW_RESTAURANT, ADMIN_SAVE_SETTINGS, ADMIN_PREVIEW_CLEANUP, ADMIN_DELETE_CLEANUP, CREATE_PAYMENT_ROOM, SAVE_PAYMENT_ROOM, EDIT_PAYMENT_RECEIPT, EDIT_PAYMENT_SHARE, EDIT_EXISTING_PAYMENT_SHARE, REMOVE_PAYMENT_SHARE, SAVE_PAYMENT_SHARE, RECORD_PAYMENT, SAVE_RECORDED_PAYMENT, CONFIRM_REORDER, OPEN_NOTIFICATIONS, OPEN_NOTIFICATION, NOTIFICATION_ACTION, DISABLE_ALERTS,
     OPEN_BLOCK_REQUEST, REQUEST_BLOCK, OPEN_POLL_RESTAURANTS, TOGGLE_POLL_RESTAURANT, CONFIRM_POLL_RESTAURANTS, OPEN_ORDER_PRICES,
     OPEN_SELECTION_OVERRIDE, UNLOCK_SELECTION_OVERRIDE, SAVE_SELECTION_OVERRIDE,
     SAVE_REMINDER_EMAIL, DISMISS_REMINDER_EMAIL, WALLET_RECORD_PAYMENT,
@@ -32,13 +32,13 @@ enum class GroupFieldKey { PUSH_NOTIFICATIONS, EMAIL_NOTIFICATIONS, FRIEND_GROUP
     RESTAURANT_NAME, BRANCH, CURRENCY, PHONE, ADDRESS, MENU_ITEM_NAME, MENU_ITEM_PRICE, DELIVERY_FEE, SERVICE_FEE, DISCOUNT, TAX_RATE, MINIMUM_ORDER,
     RESTAURANT_SEARCH, RESTAURANT_EMIRATE, RESTAURANT_AREA, RESTAURANT_MEAL, MENU_SEARCH, MENU_CATEGORY, PROPORTIONAL, AUTOMATIC_DELIVERY, JSON_MENU, ELIGIBLE, QUANTITY, NOTE, ACCOUNT_HOLDER, ACCOUNT_BANK, ACCOUNT_IDENTIFIER, AMOUNT, BILL_ADJUSTMENT, REFERENCE, REASON, GUEST,
 }
-data class GroupChoice(val value: String, val label: String)
-data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false, val choices: List<GroupChoice> = emptyList())
-data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
-data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList(), val image: String = "", val selection: GroupButton? = null)
-data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String, val style: String = "wheel")
-data class GroupReminderEmailPrompt(val name: String, val address: String, val error: String)
-data class GroupState(
+@Serializable data class GroupChoice(val value: String, val label: String)
+@Serializable data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false, val choices: List<GroupChoice> = emptyList())
+@Serializable data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
+@Serializable data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList(), val image: String = "", val selection: GroupButton? = null)
+@Serializable data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String, val style: String = "wheel")
+@Serializable data class GroupReminderEmailPrompt(val name: String, val address: String, val error: String)
+@Serializable data class GroupState(
     val page: GroupPage = GroupPage.HOME, val title: String = "Intrvioo", val subtitle: String = "Good food. Great company.",
     val fields: List<GroupField> = emptyList(), val cards: List<GroupCard> = emptyList(), val buttons: List<GroupButton> = emptyList(),
     val busy: Boolean = false, val online: Boolean = false, val status: String = "", val error: String = "", val wheel: GroupWheel? = null,
@@ -86,7 +86,7 @@ object GroupText {
         homeTitle -> "الأكل أحلى\nمع بعض."
         homeSubtitle -> "اطلبوا مع بعض. قسّموا الحساب بسهولة."
         groupEyebrow -> "مكان للجميع"
-        groupTitle -> "غرفة واحدة لكل المجموعة."
+        groupTitle -> "طلب واحد لكل المجموعة."
         groupDescription -> "اختاروا الطعام ومسؤول الطلب واجمعوا طلباتكم معاً."
         quickDescription -> "اختاروا من يجلب الطعام دون إعداد مسبق."
         libraryDescription -> "احتفظ بقوائم مطاعمك المفضلة."
@@ -94,8 +94,8 @@ object GroupText {
         explore -> "خيارات إنترفيو"
         back, backToRooms -> "رجوع"
         working -> "جارٍ تحديث مجموعتك…"
-        roomCode -> "رمز الغرفة"
-        roomOptions -> "خيارات الغرفة والتعديلات"
+        roomCode -> "رمز الطلب"
+        roomOptions -> "خيارات الطلب والتعديلات"
         manualConnection -> "إدخال بيانات الاتصال يدوياً"
         pasteMenu -> "لصق قائمة المطعم"
         details -> "بياناتك"
@@ -109,7 +109,7 @@ object GroupText {
     }
     val brand = "INTRVIOO / TOGETHER"
     val back = "Back"
-    val backToRooms = "Back to rooms"
+    val backToRooms = "Back to orders"
     val homeTitle = "Food is better\ntogether."
     val homeSubtitle = "Order Together. Split Smarter."
     val groupEyebrow = "A TABLE FOR EVERYONE"
@@ -119,8 +119,8 @@ object GroupText {
     val libraryDescription = "Keep your favorite menus close."
     val savedRooms = "Your tables"
     val explore = "Make it a Food Run"
-    val roomCode = "ROOM CODE"
-    val roomOptions = "Room options & adjustments"
+    val roomCode = "ORDER CODE"
+    val roomOptions = "Order options & adjustments"
     val manualConnection = "Enter connection details manually"
     val pasteMenu = "Paste menu JSON"
     val details = "Your details"
@@ -137,6 +137,7 @@ interface GroupPlatform {
     fun enableNotifications() {}
     fun pushToken(prompt: Boolean, callback: GroupReplyCallback) { callback.complete("", "Push notifications are unavailable on this device.") }
     fun disablePush() {}
+    fun accountSignedOut() {}
     fun adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete("", "Administration is unavailable on this device.") }
     fun notificationRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete("", "Notifications are unavailable on this device.") }
     fun read(key: String): String

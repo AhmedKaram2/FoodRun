@@ -43,13 +43,13 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
   const balanced = total > 0 && remaining === 0;
   const sectionHeading = (number, title, description) => <header className="payment-section-heading"><span className="payment-step" aria-hidden="true">{number}</span><div><h2>{t(title)}</h2>{description && <p>{t(description)}</p>}</div></header>;
   const initials = name => Array.from(name.trim())[0] || '?';
-  return <div className="payment-create-page"><Page title={t('Payment room')} subtitle={t('Already ordered? Add the bill and settle everyone’s share.')} onBack={onBack}>
-    <form onSubmit={submit}><fieldset className="room-fieldset payment-create-layout" disabled={saving || data.busy}>
+  return <div className="payment-create-page"><Page title={t("Payment order")} subtitle={t('Already ordered? Add the bill and settle everyone’s share.')} onBack={onBack}>
+    <form onSubmit={submit}><fieldset className="order-fieldset payment-create-layout" disabled={saving || data.busy}>
       <div className="payment-create-main">
         <section className="card payment-section stack">
           {sectionHeading('01', 'Order details', 'Give this bill a name everyone will recognize.')}
           <div className="form-grid two">
-            <label>{t('Room name')}<input required maxLength={160} placeholder={t('e.g. Friday lunch')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+            <label>{t("Order name")}<input required maxLength={160} placeholder={t('e.g. Friday lunch')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
             <label>{t('Restaurant')}<input maxLength={160} placeholder={t('Restaurant name')} value={form.restaurant} onChange={e => setForm({ ...form, restaurant: e.target.value })} /></label>
             <label>{t('Currency')}<select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value, total: '' })}>{CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}</select></label>
           </div>
@@ -67,7 +67,7 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
           </div>
         </section>
         <section className="card payment-section stack">
-          {sectionHeading('02', 'Add people', 'Selected people will see this room and their balance in their wallet.')}
+          {sectionHeading('02', 'Add people', "Selected people will see this order and their balance in their wallet.")}
           <div className="payment-selection-heading"><span className="payment-owner"><span className="payment-avatar" aria-hidden="true">{initials(owner.name)}</span><bdi>{owner.name}</bdi><small>{t(' · You')}</small></span><span className="payment-count">{tf('{count} selected', { count: people.length })}</span></div>
           <label>{t('Search users')}<input type="search" placeholder={t('Search by name…')} value={search} onChange={e => setSearch(e.target.value)} /></label>
           <div className="payment-people-list"><PagedList items={matches} resetKey={search}>{person => <label className={`payment-person-choice${selected.includes(person.userId) ? ' is-selected' : ''}`} key={person.userId}>
@@ -104,9 +104,9 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
         <div className="section-title compact"><b>{t('Payment')}</b><a className="secondary" href="#payment-create-methods">{t(account ? 'Edit' : 'Add payment method')}</a></div>
         {methods.length > 0 && <label>{t('Payment method')}<select value={account.id} onChange={event => setAccountChoice(event.target.value)}>{methods.map(method => <option value={method.id} key={method.id}>{t(method.method === 'AANI' ? 'Aani' : 'Bank account')} · {method.identifier}</option>)}</select></label>}
         {!account && <p className="payment-profile-note">{t('Add your receiving details in your profile first.')}</p>}
-        <p className="payment-summary-help">{t('Creating this room records that you already paid the restaurant. It does not move money.')}</p>
+        <p className="payment-summary-help">{t("Creating this order records that you already paid the restaurant. It does not move money.")}</p>
         {error && <p className="form-message" role="alert">{error}</p>}
-        <button className="primary wide" disabled={uploading || !account}>{t(saving || data.busy ? 'Creating room…' : 'Create payment room')}</button>
+        <button className="primary wide" disabled={uploading || !account}>{t(saving || data.busy ? "Creating order…" : "Create payment order")}</button>
       </aside>
     </fieldset></form>
     <PaymentMethodsEditor data={data} id="payment-create-methods" />
@@ -116,7 +116,7 @@ export function CreatePaymentRoom({ data, onBack, openRoom, openProfile }) {
 export function PaymentReceipt({ room, data, payer }) {
   const [error, setError] = useState(''), [uploading, setUploading] = useState(false);
   const details = room.paymentRoom;
-  return <article className="card stack"><p className="eyebrow">{t('PAYMENT ROOM')}</p><h2>{room.restaurant.name}</h2><p className="preserve-lines">{details.orderDetails}</p>
+  return <article className="card stack"><p className="eyebrow">{t("PAYMENT ORDER")}</p><h2>{room.restaurant.name}</h2><p className="preserve-lines">{details.orderDetails}</p>
     {details.receiptPhoto && <details><summary>{t('View receipt photo')}</summary><a href={details.receiptPhoto} download="receipt.jpg"><img className="receipt-photo" src={details.receiptPhoto} alt={t('Receipt photo')} /></a></details>}
     {payer && room.phase === 'FULFILLED' && <label>{t('Add or replace receipt photo')}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || data.busy} onChange={async event => { const file = event.target.files?.[0]; if (!file) return; setUploading(true); setError(''); const revision = room.revision; try { const photo = await receiptPhotoData(file); await data.send('UPDATE_PAYMENT_RECEIPT', { expectedRevision: revision, paymentRoom: { details: { ...details, receiptPhoto: photo }, shares: [] } }, room.id); } catch (e) { setError(e.message); } finally { setUploading(false); } }} /></label>}
     {error && <p role="alert">{error}</p>}

@@ -8,6 +8,7 @@ import { command, request, watch } from './client';
 import { mergeRoomReply } from './roomState';
 import { roomConnections } from './roomConnections';
 import { accountConnection } from './accountConnection.js';
+import { pendingRecovery } from './pendingRecovery.js';
 import { readReceiptArchive, saveReceiptArchive, clearReceiptArchive, clearUserReceiptArchives } from './offlineReceipts';
 
 const publicHub = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
@@ -205,11 +206,23 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
   };
   const send = async (kind, fields = {}, roomId = '') => {
     const session = sessions[roomId], room = roomRef.current[roomId]?.room;
-    if (roomId && (!session || !room)) { setError(t("Reconnect to this room before making changes.")); return null; }
+    if (roomId && (!session || !room)) { setError(t("Reconnect to this order before making changes.")); return null; }
     const payload = command(kind, { identityToken, ...(session ? { roomId, token: session.token, expectedRevision: room.revision, expectedOrderNumber: room.orderNumber } : {}), ...fields });
     return execute(payload);
   };
   const retry = () => pending.current ? execute(pending.current, { retrying: true }) : null;
+  useEffect(()=>{
+    if(busy||!identityToken||!pending.current)return;
+    const epoch=alive.current,abort=new AbortController(),id=pending.current.commandId;
+    const close=pendingRecovery({id,
+      current:value=>epoch===alive.current&&pending.current?.commandId===value,
+      query:value=>request(hub,command('COMMAND_STATUS',{identityToken,text:value}),abort.signal),
+      complete:reply=>{savePending(null);accept(reply);setError('');setNotice(t('Previous update confirmed. You can continue editing.'));},
+    });
+    return()=>{close();abort.abort();};
+    // The saved request ID and identity scope control this recovery, not live snapshot renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[hub,user?.uid,identityToken,busy,pending.current?.commandId]);
   const loadOlderHistory = roomId => {
     const session = sessions[roomId], offset = roomRef.current[roomId]?.historyNextOffset;
     if (!session || offset == null || offset < 0) return null;

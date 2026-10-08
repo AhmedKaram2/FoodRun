@@ -5,6 +5,27 @@ import java.util.Base64
 import kotlin.test.*
 
 class EmailServiceTest {
+    @Test fun expiredSenderAuthorizationPreservesQueuedMailAndDoesNotConsumeSendQuota() = RoomFixture(Identity(),emailEnabled = true).use { f ->
+        reminder(f)
+        val first = assertNotNull(f.service.nextEmail(1))
+        repeat(8) { index ->
+            val attempt = if(index == 0) first else assertNotNull(f.service.nextEmail(1))
+            f.service.finishEmail(attempt,EmailResult.AUTH_REQUIRED)
+            assertTrue(f.db.record("email-job:${first.job.id}") != null)
+            assertNull(f.db.record("email-result:${first.job.id}"))
+            f.now += 300_001
+        }
+        val recovered = assertNotNull(f.service.nextEmail(1))
+        f.service.finishEmail(recovered,EmailResult.SENT)
+        assertTrue(f.db.record("email-result:${first.job.id}")!!.endsWith(":sent"))
+    }
+    @Test fun invalidGrantIsClassifiedWithoutAttemptingToSendOrLoggingProviderCredentials() {
+        val response = com.google.api.client.http.HttpResponseException.Builder(400,"Bad Request",com.google.api.client.http.HttpHeaders())
+            .setContent("{\"error\":\"invalid_grant\"}").build()
+        val sender = GmailEmailSender({ throw java.io.IOException("Refresh failed",response) },"https://intrvioo.com","https://api.example.test") { error("Must not send without authorization") }
+        val job = EmailJob("a","user","room",1,"Invitation","Body",0)
+        assertEquals(EmailResult.AUTH_REQUIRED,sender.send(EmailDelivery(job,"member@example.test")))
+    }
     private class Identity : IdentityProvider {
         var verified = true
         override fun signIn(email: String, password: String, register: Boolean) = account(email)

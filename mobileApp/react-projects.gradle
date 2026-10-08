@@ -1,0 +1,12 @@
+// Keep Node resolution consistent in Android Studio, Xcode and terminal builds.
+def node = System.getenv('NODE_BINARY') ?: ['/opt/homebrew/bin/node','/usr/local/bin/node','/usr/bin/node'].find { new File(it).canExecute() } ?: 'node'
+subprojects { project ->
+  project.plugins.withId('com.facebook.react') {
+    project.react {
+      nodeExecutableAndArgs.set([node])
+      reactNativeDir.set(rootProject.file('mobileApp/node_modules/react-native'))
+      codegenDir.set(rootProject.file('mobileApp/node_modules/@react-native/codegen'))
+      cliFile.set(rootProject.file('mobileApp/node_modules/react-native/cli.js'))
+    }
+  }
+}

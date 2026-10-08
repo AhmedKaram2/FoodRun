@@ -1,0 +1,890 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  AppState,
+  BackHandler,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { colors, font, tx } from "./src/theme";
+import { dispatch, events, native, parseSnapshot, update } from "./src/native";
+import type { Snapshot, Section, Field } from "./src/types";
+import Brand from "./src/components/Brand";
+import Icon from "./src/components/Icon";
+import {
+  Button,
+  CardView,
+  FieldInput,
+  PagedCards,
+  action,
+  textStyle,
+  styles as controls,
+} from "./src/components/Controls";
+import LiveWheel from "./src/components/LiveWheel";
+import QuickWheel from "./src/screens/QuickWheel";
+import { roomCodeFromLink } from "./src/roomLink";
+
+function sectionsFor(snapshot: Snapshot): Section[] {
+  const { state } = snapshot;
+  if (state.page === "FRIENDS") {
+    const cards = snapshot.sections.flatMap((section) => section.cards);
+    return [
+      {
+        title: tx(state.rtl, "Edit group", "تعديل المجموعة"),
+        cards: cards.filter((card) =>
+          /^friend-(email|result|searching|view)/.test(card.id),
+        ),
+        collapsed: false,
+      },
+      {
+        title: tx(state.rtl, "Your groups", "مجموعاتك"),
+        cards: cards.filter((card) => card.id.startsWith("friend-group:")),
+        collapsed: false,
+      },
+      {
+        title: tx(state.rtl, "Groups I joined", "المجموعات التي انضممت إليها"),
+        cards: cards.filter((card) => card.id.startsWith("friend-joined:")),
+        collapsed: false,
+      },
+    ];
+  }
+  return snapshot.sections;
+}
+function Application() {
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
+    [failure, setFailure] = useState(""),
+    [menu, setMenu] = useState(false),
+    [selected, setSelected] = useState(0),
+    [options, setOptions] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const accept = (body: string) => {
+      if (alive) {
+        setSnapshot(parseSnapshot(body));
+        setFailure("");
+      }
+    };
+    const subscription = events.addListener("FoodRunState", accept);
+    native
+      .getSnapshot()
+      .then(accept)
+      .catch(() => setFailure("Could not open the app. Please restart."));
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") native.tick();
+    }, 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    setSelected(0);
+    setOptions(false);
+  }, [snapshot?.state.page]);
+  useEffect(() => {
+    const event = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (menu) {
+        setMenu(false);
+        return true;
+      }
+      if (snapshot?.state.walletHistoryPrompt) {
+        dispatch("DISMISS_WALLET_HISTORY");
+        return true;
+      }
+      if (snapshot?.state.canGoBack) {
+        dispatch("BACK");
+        return true;
+      }
+      return false;
+    });
+    return () => event.remove();
+  }, [snapshot?.state.canGoBack, snapshot?.state.walletHistoryPrompt, menu]);
+  useEffect(() => {
+    const open = (value: string) => {
+      const room = roomCodeFromLink(value);
+      if (room) {
+        update("ROOM_CODE", room);
+        dispatch("JOIN");
+      }
+    };
+    Linking.getInitialURL().then((value) => {
+      if (value) open(value);
+    });
+    const event = Linking.addEventListener("url", (event) => open(event.url));
+    return () => event.remove();
+  }, []);
+  const sections = useMemo(
+    () => (snapshot ? sectionsFor(snapshot) : []),
+    [snapshot],
+  );
+  if (!snapshot)
+    return (
+      <SafeAreaView style={ui.loading}>
+        <Brand />
+        <ActivityIndicator color={colors.coral} />
+        {!!failure && <Text style={{ color: colors.danger }}>{failure}</Text>}
+      </SafeAreaView>
+    );
+  const { state } = snapshot,
+    { rtl, busy } = state,
+    section = sections[Math.min(selected, Math.max(0, sections.length - 1))],
+    profileDetails = state.page === "PROFILE";
+  const adminTabs = snapshot.sections
+    .flatMap((value) => value.cards)
+    .find((card) => card.id === "admin-tabs");
+  const fields = snapshot.mainFields;
+  const changeTab = (index: number) => {
+    setSelected(index);
+    setOptions(false);
+  };
+  const menuActions = [
+    action(
+      tx(
+        rtl,
+        snapshot.authenticated ? "Profile & wallet" : "Sign in / register",
+        snapshot.authenticated
+          ? "الملف الشخصي والمحفظة"
+          : "تسجيل الدخول أو إنشاء حساب",
+      ),
+      "OPEN_PROFILE",
+    ),
+    action(
+      tx(rtl, "Friend groups", "مجموعات الأصدقاء"),
+      "FRIENDS_ACTION",
+      "open",
+    ),
+    action(tx(rtl, "Notifications", "الإشعارات"), "OPEN_NOTIFICATIONS"),
+    action(tx(rtl, "Restaurants & menus", "المطاعم والقوائم"), "OPEN_LIBRARY"),
+    action(
+      tx(rtl, "Create payment order", "إنشاء طلب دفع"),
+      "CREATE_PAYMENT_ROOM",
+    ),
+    action(
+      tx(rtl, "Notification preferences", "تفضيلات الإشعارات"),
+      "OPEN_NOTIFICATION_PREFERENCES",
+    ),
+    ...(snapshot.adminAvailable
+      ? [action(tx(rtl, "Administration", "الإدارة"), "OPEN_ADMIN")]
+      : []),
+    ...(snapshot.authenticated && !snapshot.supportActive
+      ? [
+          {
+            ...action(tx(rtl, "Sign out", "تسجيل الخروج"), "SIGN_OUT"),
+            destructive: true,
+          },
+        ]
+      : []),
+  ];
+  const inline = snapshot.inlineButtons.filter(
+    (button) =>
+      button.action !== "SET_LANGUAGE" &&
+      (state.page !== "HOME" ||
+        ["JOIN", "CREATE_PAYMENT_ROOM", "OPEN_PROFILE"].includes(
+          button.action,
+        )),
+  );
+  return (
+    <SafeAreaView edges={["top", "bottom"]} style={ui.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.cream} />
+      <View style={[ui.header, rtl && ui.reverse]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tx(rtl, "FoodRun Home", "FoodRun الرئيسية")}
+          onPress={() => dispatch("OPEN_HOME")}
+        >
+          <Brand small />
+        </Pressable>
+        <View style={ui.headerTools}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tx(rtl, "Switch to English", "اللغة العربية")}
+            style={ui.language}
+            onPress={() => dispatch("SET_LANGUAGE", rtl ? "en" : "ar")}
+          >
+            <Text
+              style={{ fontFamily: font("semibold", rtl), color: colors.ink }}
+            >
+              {rtl ? "EN" : "ع"}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tx(rtl, "More options", "خيارات إضافية")}
+            style={ui.icon}
+            onPress={() => setMenu(true)}
+          >
+            <Icon name="menu" />
+          </Pressable>
+        </View>
+      </View>
+      {snapshot.supportActive && (
+        <View style={ui.feedback}>
+          <Text style={[textStyle(rtl), { flex: 1 }]}>
+            {tx(
+              rtl,
+              "Owner support session · expires after 30 minutes",
+              "جلسة دعم المالك · تنتهي بعد 30 دقيقة",
+            )}
+          </Text>
+          <Button
+            rtl={rtl}
+            action={action(
+              tx(rtl, "Return to my account", "العودة إلى حسابي"),
+              "END_SUPPORT",
+            )}
+          />
+        </View>
+      )}
+      {!!state.feedback && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tx(rtl, "Dismiss message", "إغلاق الرسالة")}
+          onPress={() => native.dismissFeedback(state.feedback!.id)}
+          style={[ui.feedback, state.feedback.isError && ui.error]}
+        >
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[
+              textStyle(rtl),
+              {
+                flex: 1,
+                color: state.feedback.isError ? colors.danger : colors.ink,
+              },
+            ]}
+          >
+            {state.feedback.message}
+          </Text>
+          <Icon name="close" size={18} />
+        </Pressable>
+      )}
+      {!!state.error && !state.feedback && (
+        <View style={ui.error}>
+          <Text
+            accessibilityRole="alert"
+            style={[textStyle(rtl), { color: colors.danger }]}
+          >
+            {state.error}
+          </Text>
+        </View>
+      )}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {state.page === "QUICK_SPIN" ? (
+          <QuickWheel state={snapshot.quick} rtl={rtl} />
+        ) : (
+          <>
+            <View style={[ui.heading, rtl && ui.reverse]}>
+              {state.canGoBack && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={tx(rtl, "Back", "رجوع")}
+                  style={ui.icon}
+                  onPress={() => dispatch("BACK")}
+                >
+                  <View style={rtl && { transform: [{ scaleX: -1 }] }}>
+                    <Icon name="back" />
+                  </View>
+                </Pressable>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={[textStyle(rtl, "bold"), ui.title]}>
+                  {state.title}
+                </Text>
+                {!!state.subtitle && (
+                  <Text style={[textStyle(rtl), ui.subtitle]}>
+                    {state.subtitle}
+                  </Text>
+                )}
+              </View>
+              {busy && <ActivityIndicator color={colors.coral} />}
+            </View>
+            {(sections.length > 1 ||
+              (profileDetails && snapshot.extraFields.length > 0)) && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={ui.tabs}
+                contentContainerStyle={[ui.tabRow, rtl && ui.reverse]}
+              >
+                {sections.map((item, index) => (
+                  <Pressable
+                    key={item.title + index}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: selected === index }}
+                    onPress={() => changeTab(index)}
+                    style={[ui.tab, selected === index && ui.activeTab]}
+                  >
+                    <Text
+                      style={[
+                        textStyle(rtl, "medium"),
+                        {
+                          fontSize: 13,
+                          color: selected === index ? colors.white : colors.ink,
+                        },
+                      ]}
+                    >
+                      {item.title || tx(rtl, "Details", "التفاصيل")}{" "}
+                      {item.cards.length || ""}
+                    </Text>
+                  </Pressable>
+                ))}
+                {profileDetails && snapshot.extraFields.length > 0 && (
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: options }}
+                    onPress={() => setOptions(!options)}
+                    style={[ui.tab, options && ui.activeTab]}
+                  >
+                    <Text
+                      style={[
+                        textStyle(rtl),
+                        { color: options ? colors.white : colors.ink },
+                      ]}
+                    >
+                      {tx(rtl, "Your details", "بياناتك")}
+                    </Text>
+                  </Pressable>
+                )}
+              </ScrollView>
+            )}
+            {adminTabs && (
+              <ScrollView
+                horizontal
+                style={ui.tabs}
+                contentContainerStyle={ui.tabRow}
+                showsHorizontalScrollIndicator={false}
+              >
+                {adminTabs.buttons.map((button) => (
+                  <Button
+                    key={button.value}
+                    action={button}
+                    busy={busy}
+                    rtl={rtl}
+                  />
+                ))}
+              </ScrollView>
+            )}
+            <ScrollView
+              key={`${state.page}:${snapshot.accountId}`}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={ui.content}
+              refreshControl={
+                <RefreshControl
+                  refreshing={busy}
+                  onRefresh={() => dispatch("REFRESH")}
+                  tintColor={colors.coral}
+                />
+              }
+            >
+              {state.page === "HOME" && snapshot.authenticated && (
+                <View style={ui.hero}>
+                  <Text style={[textStyle(rtl, "bold"), ui.heroTitle]}>
+                    {tx(
+                      rtl,
+                      "Food is better\ntogether.",
+                      "الأكل أحلى\nمع بعض.",
+                    )}
+                  </Text>
+                  <Text style={[textStyle(rtl), ui.heroText]}>
+                    {tx(
+                      rtl,
+                      "Order together. Split smarter.",
+                      "اطلبوا مع بعض. قسموا الحساب بسهولة.",
+                    )}
+                  </Text>
+                </View>
+              )}
+              {!!state.roomCode && (
+                <View style={[ui.roomCode, rtl && ui.reverse]}>
+                  <View>
+                    <Text style={[textStyle(rtl, "medium"), { fontSize: 12 }]}>
+                      {tx(rtl, "ORDER CODE", "رمز الطلب")}
+                    </Text>
+                    <Text selectable style={ui.code}>
+                      {state.roomCode}
+                    </Text>
+                  </View>
+                  <Button
+                    rtl={rtl}
+                    busy={busy}
+                    action={action(
+                      tx(rtl, "Share order", "مشاركة الطلب"),
+                      "SHARE_ROOM",
+                    )}
+                  />
+                </View>
+              )}
+              {!!state.wheel && <LiveWheel wheel={state.wheel} rtl={rtl} />}
+              {state.progressStep >= 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {(rtl
+                    ? [
+                        "انضمام",
+                        "المطعم",
+                        "الطعام",
+                        "مسؤول الطلب",
+                        "إرسال الطلب",
+                        "الدفع",
+                      ]
+                    : [
+                        "Join",
+                        "Restaurant",
+                        "Food",
+                        "Payer",
+                        "Send order",
+                        "Pay",
+                      ]
+                  ).map((label, index) => (
+                    <Text
+                      key={label}
+                      style={[
+                        ui.progress,
+                        textStyle(rtl, "medium"),
+                        index === state.progressStep && {
+                          backgroundColor: colors.mint,
+                        },
+                      ]}
+                    >
+                      {index < state.progressStep ? "✓ " : ""}
+                      {label}
+                    </Text>
+                  ))}
+                </ScrollView>
+              )}
+              {snapshot.topCards.map((card) => (
+                <CardView key={card.id} card={card} busy={busy} rtl={rtl} />
+              ))}
+              {fields.map((field) => (
+                <FieldInput
+                  key={`${snapshot.accountId}:${state.page}:${field.key}`}
+                  field={field}
+                  busy={busy}
+                  rtl={rtl}
+                />
+              ))}
+              {inline.map((button, index) => (
+                <Button
+                  key={button.action + button.value + index}
+                  action={button}
+                  busy={busy}
+                  rtl={rtl}
+                />
+              ))}
+              {section && (
+                <PagedCards
+                  key={state.page + section.title}
+                  cards={section.cards.filter(
+                    (card) => card.id !== "admin-tabs",
+                  )}
+                  busy={busy}
+                  rtl={rtl}
+                />
+              )}
+              {(snapshot.extraFields.length > 0 ||
+                snapshot.utilityButtons.length > 0) && (
+                <>
+                  {!profileDetails && (
+                    <Button
+                      action={action(
+                        tx(rtl, "More options", "خيارات إضافية"),
+                        "OPTIONS",
+                      )}
+                      rtl={rtl}
+                      onPress={() => setOptions(!options)}
+                    />
+                  )}
+                  {options && (
+                    <View style={{ gap: 12 }}>
+                      {snapshot.extraFields.map((field) => (
+                        <FieldInput
+                          key={field.key}
+                          field={field}
+                          busy={busy}
+                          rtl={rtl}
+                        />
+                      ))}
+                      {snapshot.utilityButtons.map((button, index) => (
+                        <Button
+                          key={button.action + index}
+                          action={button}
+                          busy={busy}
+                          rtl={rtl}
+                        />
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+            {!!snapshot.primaryAction && (
+              <View style={ui.primary}>
+                <Button action={snapshot.primaryAction} busy={busy} rtl={rtl} />
+              </View>
+            )}
+          </>
+        )}
+      </KeyboardAvoidingView>
+      <View style={[ui.bottom, rtl && ui.reverse]}>
+        {[
+          [
+            "home",
+            tx(rtl, "Home", "الرئيسية"),
+            "OPEN_HOME",
+            "",
+            state.page === "HOME",
+          ],
+          [
+            "room",
+            tx(rtl, "Orders", "الطلبات"),
+            "OPEN_ROOMS",
+            "",
+            state.page === "ORDERS" || state.page === "ORDER",
+          ],
+          [
+            "wheel",
+            tx(rtl, "Wheel", "العجلة"),
+            "QUICK_SPIN",
+            "",
+            state.page === "QUICK_SPIN",
+          ],
+          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu],
+        ].map(([icon, label, kind, value, active]) => (
+          <Pressable
+            key={String(kind)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: !!active, disabled: busy }}
+            disabled={busy}
+            onPress={() =>
+              kind === "MORE"
+                ? setMenu(true)
+                : dispatch(String(kind), String(value))
+            }
+            style={ui.navItem}
+          >
+            <Icon
+              name={String(icon)}
+              color={active ? colors.coral : colors.muted}
+            />
+            <Text
+              style={[
+                textStyle(rtl, "medium"),
+                ui.navLabel,
+                { color: active ? colors.ink : colors.muted },
+              ]}
+            >
+              {String(label)}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <Modal
+        visible={menu}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenu(false)}
+      >
+        <View style={controls.backdrop}>
+          <View style={controls.sheet}>
+            <View style={controls.heading}>
+              <Brand small />
+              <Pressable
+                accessibilityLabel={tx(rtl, "Close", "إغلاق")}
+                style={ui.icon}
+                onPress={() => setMenu(false)}
+              >
+                <Icon name="close" />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ gap: 10 }}>
+              {menuActions
+                .filter(
+                  (button) =>
+                    snapshot.authenticated ||
+                    ["OPEN_PROFILE", "OPEN_LIBRARY"].includes(button.action),
+                )
+                .map((button, index) => (
+                  <Button
+                    key={button.action + index}
+                    action={button}
+                    rtl={rtl}
+                    busy={busy}
+                    onPress={() => {
+                      setMenu(false);
+                      dispatch(button.action, button.value);
+                    }}
+                  />
+                ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={!!state.walletHistoryPrompt}
+        transparent
+        animationType="slide"
+        onRequestClose={() => dispatch("DISMISS_WALLET_HISTORY")}
+      >
+        <View style={controls.backdrop}>
+          <View style={controls.sheet}>
+            {state.walletHistoryPrompt && (
+              <>
+                <View style={controls.heading}>
+                  <Text style={[textStyle(rtl, "bold"), controls.sheetTitle]}>
+                    {state.walletHistoryPrompt.title}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel={tx(rtl, "Close", "إغلاق")}
+                    style={ui.icon}
+                    onPress={() => dispatch("DISMISS_WALLET_HISTORY")}
+                  >
+                    <Icon name="close" />
+                  </Pressable>
+                </View>
+                <Text style={textStyle(rtl)}>
+                  {state.walletHistoryPrompt.subtitle}
+                </Text>
+                <Text style={[textStyle(rtl, "bold"), { fontSize: 20 }]}>
+                  {state.walletHistoryPrompt.balance}
+                </Text>
+                <ScrollView contentContainerStyle={{ gap: 12 }}>
+                  <PagedCards
+                    cards={state.walletHistoryPrompt.cards}
+                    busy={false}
+                    rtl={rtl}
+                  />
+                  {state.walletHistoryPrompt.loading && (
+                    <ActivityIndicator color={colors.coral} />
+                  )}
+                  {!!state.walletHistoryPrompt.error && (
+                    <Text style={{ color: colors.danger }}>
+                      {state.walletHistoryPrompt.error}
+                    </Text>
+                  )}
+                  <Button
+                    rtl={rtl}
+                    busy={state.walletHistoryPrompt.loading}
+                    action={action(
+                      tx(rtl, "Refresh", "تحديث"),
+                      "REFRESH_WALLET_HISTORY",
+                    )}
+                  />
+                  {state.walletHistoryPrompt.hasMore && (
+                    <Button
+                      rtl={rtl}
+                      busy={state.walletHistoryPrompt.loading}
+                      action={action(
+                        tx(
+                          rtl,
+                          "Load older transactions",
+                          "تحميل معاملات أقدم",
+                        ),
+                        "LOAD_WALLET_HISTORY",
+                      )}
+                    />
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={!!state.reminderEmailPrompt}
+        transparent
+        animationType="slide"
+        onRequestClose={() => dispatch("DISMISS_REMINDER_EMAIL")}
+      >
+        <View style={controls.backdrop}>
+          <View style={controls.sheet}>
+            {state.reminderEmailPrompt && (
+              <>
+                <Text style={[textStyle(rtl, "bold"), controls.sheetTitle]}>
+                  {tx(rtl, "Recipient email", "بريد المستلم")} ·{" "}
+                  {state.reminderEmailPrompt.name}
+                </Text>
+                <FieldInput
+                  busy={busy}
+                  rtl={rtl}
+                  field={{
+                    key: "REMINDER_EMAIL",
+                    label: tx(rtl, "Email", "البريد الإلكتروني"),
+                    value: state.reminderEmailPrompt.address,
+                    choices: [],
+                    toggle: false,
+                    secret: false,
+                    multiline: false,
+                  }}
+                />
+                {!!state.reminderEmailPrompt.error && (
+                  <Text style={{ color: colors.danger }}>
+                    {state.reminderEmailPrompt.error}
+                  </Text>
+                )}
+                <Button
+                  busy={busy}
+                  rtl={rtl}
+                  action={action(
+                    tx(rtl, "Send reminder", "إرسال التذكير"),
+                    "SAVE_REMINDER_EMAIL",
+                    "",
+                    true,
+                  )}
+                />
+                <Button
+                  busy={busy}
+                  rtl={rtl}
+                  action={action(
+                    tx(rtl, "Cancel", "إلغاء"),
+                    "DISMISS_REMINDER_EMAIL",
+                  )}
+                />
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Application />
+    </SafeAreaProvider>
+  );
+}
+const ui = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.cream },
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+    backgroundColor: colors.cream,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  reverse: { flexDirection: "row-reverse" },
+  headerTools: { flexDirection: "row", alignItems: "center", gap: 8 },
+  language: {
+    height: 44,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  icon: {
+    height: 44,
+    width: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heading: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  title: { fontSize: 24, lineHeight: 34 },
+  subtitle: { fontSize: 13, lineHeight: 21, color: colors.muted },
+  content: { padding: 16, gap: 14, paddingBottom: 24 },
+  tabs: { maxHeight: 58, flexGrow: 0 },
+  tabRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    gap: 8,
+    alignItems: "center",
+  },
+  tab: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  activeTab: { backgroundColor: colors.ink, borderColor: colors.ink },
+  bottom: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+    paddingTop: 6,
+    paddingBottom: 4,
+  },
+  navItem: {
+    flex: 1,
+    minHeight: 56,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  navLabel: { fontSize: 11, textAlign: "center" },
+  primary: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.cream,
+  },
+  feedback: {
+    padding: 12,
+    backgroundColor: colors.mint,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  error: { padding: 14, backgroundColor: "#FFF0EB" },
+  hero: { padding: 24, borderRadius: 26, backgroundColor: "#FFEBDD", gap: 10 },
+  heroTitle: { fontSize: 32, lineHeight: 46 },
+  heroText: { fontSize: 15, lineHeight: 23 },
+  roomCode: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    backgroundColor: colors.mint,
+    borderRadius: 18,
+  },
+  code: {
+    fontFamily: font("bold"),
+    fontSize: 29,
+    color: colors.ink,
+    letterSpacing: 3,
+  },
+  progress: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    fontSize: 12,
+  },
+});

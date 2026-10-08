@@ -6,6 +6,7 @@ xcuserdata/
 *.xcresult
 .gradle/
 .kotlin/
+**/.cxx/
 **/build/
 local.properties
 .signing/
@@ -21,6 +22,7 @@ webApp/node_modules/
 mobileApp/node_modules/
 Pods/
 .bundle/
+.xcode.env.local
 webApp/dist/
 webApp/.env.local
 

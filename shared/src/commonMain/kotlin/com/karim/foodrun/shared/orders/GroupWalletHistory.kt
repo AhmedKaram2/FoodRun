@@ -2,7 +2,7 @@ package com.karim.foodrun.shared.orders
 
 import com.karim.foodrun.orders.*
 
-data class GroupWalletHistoryPrompt(val title: String, val subtitle: String, val balance: String, val cards: List<GroupCard>, val loading: Boolean, val error: String, val hasMore: Boolean)
+@kotlinx.serialization.Serializable data class GroupWalletHistoryPrompt(val title: String, val subtitle: String, val balance: String, val cards: List<GroupCard>, val loading: Boolean, val error: String, val hasMore: Boolean)
 
 /** Read requests stay outside the mutation queue; history is never persisted on disk. */
 internal class GroupWalletHistory(private val c: GroupController) {

@@ -8,7 +8,7 @@ export default function OfflineReceipts({ receipts, onBack, onClear, language = 
   return <main className="app-shell" dir={language === 'ar' ? 'rtl' : 'ltr'}>
     <button className="back" onClick={onBack}>{t('← Back', 'رجوع ←')}</button>
     <h1>{t('Downloaded receipts', 'الإيصالات المحفوظة')}</h1>
-    <p>{t('Your last downloaded receipts on this device. Amounts may have changed since the last sync. Connect to the room before making a payment.', 'آخر الإيصالات المحفوظة على هذا الجهاز. قد تتغير المبالغ بعد آخر مزامنة. اتصل بالغرفة قبل الدفع.')}</p>
+    <p>{t("Your last downloaded receipts on this device. Amounts may have changed since the last sync. Connect to the order before making a payment.", "آخر الإيصالات المحفوظة على هذا الجهاز. قد تتغير المبالغ بعد آخر مزامنة. اتصل بالطلب قبل الدفع.")}</p>
     <p className="muted">{t('Up to 200 personal receipts. Signing out removes them from this browser.', 'حتى ٢٠٠ إيصال شخصي. تسجيل الخروج يحذفها من هذا المتصفح.')}</p>
     {!!receipts.length && <button className="secondary" onClick={onClear}>{t('Remove downloaded receipts', 'حذف الإيصالات المحفوظة')}</button>}
     {!receipts.length && <p className="card">{t('No downloaded receipts yet. Open an order while connected to save your receipt.', 'لا توجد إيصالات محفوظة. افتح طلباً أثناء الاتصال لحفظ إيصالك.')}</p>}

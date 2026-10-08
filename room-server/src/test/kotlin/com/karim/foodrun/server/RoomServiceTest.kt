@@ -400,7 +400,7 @@ class RoomServiceTest {
             val extra = f.service.execute(RoomCommand(commandId = f.id(), kind = CommandKind.JOIN,
                 code = f.owner.room!!.code, name = "Over capacity", guest = guest))
             assertFalse(extra.ok)
-            assertEquals(if (guest) "Guest mode is unavailable. Sign in to join the room." else "Room capacity reached.", extra.error)
+            assertEquals(if (guest) "Guest mode is unavailable. Sign in to join the order." else "Order capacity reached.", extra.error)
         }
         f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = true) }
         members.forEach { member -> f.send(member, CommandKind.READY) { it.copy(flag = true) } }

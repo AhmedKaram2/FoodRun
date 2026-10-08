@@ -1,6 +1,7 @@
 import java.util.Properties
 
 plugins {
+    id("com.facebook.react")
     id("com.google.gms.google-services")
     id("com.android.application")
     kotlin("android")
@@ -19,8 +20,8 @@ android {
         applicationId = "com.karim.foodrun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.6.7"
+        versionCode = 19
+        versionName = "1.7.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -47,13 +48,24 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
+react {
+    root.set(rootProject.file("mobileApp"))
+    reactNativeDir.set(rootProject.file("mobileApp/node_modules/react-native"))
+    codegenDir.set(rootProject.file("mobileApp/node_modules/@react-native/codegen"))
+    cliFile.set(rootProject.file("mobileApp/node_modules/react-native/cli.js"))
+    entryFile.set(rootProject.file("mobileApp/index.js"))
+    autolinkLibrariesWithApp()
+}
+
 dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:hermes-android")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-messaging")

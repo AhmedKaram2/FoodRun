@@ -19,7 +19,7 @@ internal class GroupAdministration(private val c: GroupController) {
     private fun button(en: String, ar: String, action: GroupAction, value: String = "", primary: Boolean = false, destructive: Boolean = false) = GroupButton(tr(en, ar), action, value, primary, destructive)
     fun clear() { allowed = false; checking = false; checkedIdentity = ""; dashboard = null; preview = null; editingRestaurant = false }
     fun checkAccess() {
-        if(c.library.identityToken.isBlank() || checkedIdentity == c.library.identityToken || checking) return
+        if(c.supportActive || c.library.identityToken.isBlank() || checkedIdentity == c.library.identityToken || checking) return
         checking = true
         request("access", silent = true)
     }
@@ -27,7 +27,7 @@ internal class GroupAdministration(private val c: GroupController) {
         val hub = c.library.identityHub ?: return
         val identity = c.library.identityToken
         if(!silent) { c.busy = true; c.publish() }
-        c.platform.adminRequest(hub, orderJson.encodeToString(NativeAdminRequest(identity, action, payload)), object : GroupReplyCallback {
+        c.platform.adminRequest(hub, orderJson.encodeToString(NativeAdminRequest(identity, action, payload, emailDetails = true)), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 if(identity != c.library.identityToken || hub != c.library.identityHub) return
                 checking = false
@@ -37,6 +37,7 @@ internal class GroupAdministration(private val c: GroupController) {
                     val result = orderJson.decodeFromString<NativeAdminReply>(body)
                     if(action == "access") { checkedIdentity = identity; allowed = result.ok }
                     require(result.ok) { result.error }
+                    result.support?.let { c.startSupport(it,hub); return }
                     allowed = true; result.dashboard?.let { dashboard = it }
                     if(action == "cleanup-preview") {
                         val selection = orderJson.decodeFromString<AdminCleanupRequest>(payload)
@@ -52,6 +53,7 @@ internal class GroupAdministration(private val c: GroupController) {
             }
         })
     }
+    fun support(id: String) { require(verifiedAccess); request("support-start",orderJson.encodeToString(AdminSupportRequest(id))) }
     fun open() { c.page = GroupPage.ADMIN; request("dashboard") }
     fun tab(value: String) {
         tab = if(value == "cleanup-date") "cleanup" else value; c.draft[GroupFieldKey.ADMIN_SEARCH] = ""
@@ -119,7 +121,7 @@ internal class GroupAdministration(private val c: GroupController) {
             }
             "cancel", "delete" -> {
                 val room = d.rooms.single { it.id == pendingTarget }
-                require(c.text(GroupFieldKey.ADMIN_CONFIRMATION) == room.code) { "Type the room code to confirm." }
+                require(c.text(GroupFieldKey.ADMIN_CONFIRMATION) == room.code) { "Type the order code to confirm." }
                 request("room", orderJson.encodeToString(AdminRoomMutation(room.id, pendingAction, room.revision, room.code))) { c.page = GroupPage.ADMIN }
             }
             "delete-restaurant" -> {
@@ -162,21 +164,21 @@ internal class GroupAdministration(private val c: GroupController) {
         if(c.page == GroupPage.ADMIN_CONFIRM) return confirmContent()
         val d = dashboard ?: return GroupFlowContent(buttons = listOf(button("Refresh", "تحديث", GroupAction.OPEN_ADMIN)))
         val fields = mutableListOf<GroupField>(); val cards = mutableListOf<GroupCard>(); val buttons = mutableListOf<GroupButton>()
-        val tabs = listOf("overview" to tr("Overview", "نظرة عامة"), "users" to tr("Users", "المستخدمون"), "restaurants" to tr("Restaurants", "المطاعم"), "rooms" to tr("Rooms", "الغرف"), "history" to tr("Order history", "سجل الطلبات"), "wallets" to tr("Wallets", "المحافظ"), "blocks" to tr("Block requests", "طلبات الحظر"), "cleanup" to tr("Cleanup", "تنظيف البيانات"), "settings" to tr("Settings", "الإعدادات"))
+        val tabs = listOf("overview" to tr("Overview", "نظرة عامة"), "users" to tr("Users", "المستخدمون"), "restaurants" to tr("Restaurants", "المطاعم"), "rooms" to tr("Orders", "الطلبات"), "history" to tr("Order history", "سجل الطلبات"), "wallets" to tr("Wallets", "المحافظ"), "blocks" to tr("Block requests", "طلبات الحظر"), "cleanup" to tr("Cleanup", "تنظيف البيانات"), "settings" to tr("Settings", "الإعدادات"))
         cards += GroupCard("admin-tabs", tr("Administration", "الإدارة"), buttons = tabs.map { GroupButton(it.second, GroupAction.ADMIN_TAB, it.first, enabled = tab != it.first) })
-        if(tab == "rooms") cards += GroupCard("admin-clear-rooms", tr("Clear rooms by date", "مسح الغرف حسب التاريخ"), buttons = listOf(button("Clear rooms by date", "مسح الغرف حسب التاريخ", GroupAction.ADMIN_TAB, "cleanup-date")))
+        if(tab == "rooms") cards += GroupCard("admin-clear-rooms", tr("Clear orders by date", "مسح الطلبات حسب التاريخ"), buttons = listOf(button("Clear orders by date", "مسح الطلبات حسب التاريخ", GroupAction.ADMIN_TAB, "cleanup-date")))
         val search = c.text(GroupFieldKey.ADMIN_SEARCH).trim()
         fields += field(GroupFieldKey.ADMIN_SEARCH, "Search this tab", "ابحث في هذا القسم")
         when(tab) {
             "overview" -> {
-                cards += GroupCard("admin-overview", tr("Overview", "نظرة عامة"), "${d.users.size} ${tr("users", "مستخدمين")} · ${d.rooms.size} ${tr("rooms", "غرف")} · ${d.restaurants.size} ${tr("restaurants", "مطاعم")}")
+                cards += GroupCard("admin-overview", tr("Overview", "نظرة عامة"), "${d.users.size} ${tr("users", "مستخدمين")} · ${d.rooms.size} ${tr("orders", "طلبات")} · ${d.restaurants.size} ${tr("restaurants", "مطاعم")}")
                 cards += d.activity.take(50).mapIndexed { i, event -> GroupCard("activity:$i", event.action, "${event.target}\n${event.actorId}") }
             }
             "users" -> {
                 buttons += button("Create user", "إنشاء مستخدم", GroupAction.ADMIN_NEW_USER)
-                cards += d.users.filter { search.isBlank() || it.name.contains(search, true) || it.phone.contains(search) || it.email.contains(search,true) || it.id.contains(search,true) }.map { person -> GroupCard("admin-user:${person.id}", person.name, person.phone,
+                cards += d.users.filter { search.isBlank() || it.name.contains(search, true) || it.phone.contains(search) || it.email.contains(search,true) || it.id.contains(search,true) }.map { person -> GroupCard("admin-user:${person.id}", person.name, listOf(person.phone,person.email).filter { it.isNotBlank() }.joinToString("\n"),
                     if(person.removed) tr("Removed", "محذوف") else if(person.disabled) tr("Blocked", "محظور") else "",
-                    if(person.removed) listOf(button("Restore", "استعادة", GroupAction.ADMIN_ACTION, "restore|${person.id}")) else listOf(button("Edit all details", "تعديل جميع البيانات", GroupAction.ADMIN_USER, person.id),
+                    if(person.removed) listOf(button("Restore", "استعادة", GroupAction.ADMIN_ACTION, "restore|${person.id}")) else listOfNotNull(if(person.id != c.library.home?.profile?.userId && !person.disabled) button("Sign in as this user", "الدخول بحساب هذا المستخدم",GroupAction.ADMIN_SUPPORT_START,person.id) else null,button("Edit all details", "تعديل جميع البيانات", GroupAction.ADMIN_USER, person.id),
                         button("Block", "حظر", GroupAction.ADMIN_ACTION, "block|${person.id}"), button("Unblock", "إلغاء الحظر", GroupAction.ADMIN_ACTION, "unblock|${person.id}"), button("Remove user", "إزالة المستخدم", GroupAction.ADMIN_ACTION, "remove|${person.id}", destructive = true))) }
             }
             "restaurants" -> {
@@ -187,25 +189,25 @@ internal class GroupAdministration(private val c: GroupController) {
                 "${r.restaurant} · ${r.phase}\n${tr("Total", "الإجمالي")} ${Money.format(r.totalMinor, r.currency)} · ${tr("Outstanding", "المتبقي")} ${Money.format(r.outstandingMinor, r.currency)}" +
                     if(tab == "wallets") "\n" + r.wallets.joinToString("\n") { "${it.name}: ${Money.format(it.balanceMinor, r.currency)}" } else "",
                 buttons = if(tab == "rooms") listOfNotNull(
-                    if(r.phase in listOf("LOBBY", "PREPARING_SPIN", "SPINNING", "ACCEPTING", "COLLECTING", "REVIEW")) button("Cancel room", "إلغاء الغرفة", GroupAction.ADMIN_ACTION, "cancel|${r.id}", destructive = true) else null,
-                    if(r.canDelete) button("Delete room", "حذف الغرفة", GroupAction.ADMIN_ACTION, "delete|${r.id}", destructive = true) else null) else emptyList()) }
+                    if(r.phase in listOf("LOBBY", "PREPARING_SPIN", "SPINNING", "ACCEPTING", "COLLECTING", "REVIEW")) button("Cancel order", "إلغاء الطلب", GroupAction.ADMIN_ACTION, "cancel|${r.id}", destructive = true) else null,
+                    if(r.canDelete) button("Delete order", "حذف الطلب", GroupAction.ADMIN_ACTION, "delete|${r.id}", destructive = true) else null) else emptyList()) }
             "blocks" -> cards += d.blockRequests.map { r -> GroupCard("block:${r.id}", "${r.userName} · ${r.roomName}", "${r.reason}\n${r.durationHours} ${tr("hours", "ساعة")}", r.status,
                 if(r.status == "pending") listOf(button("Approve block", "الموافقة على الحظر", GroupAction.ADMIN_ACTION, "approve|${r.id}"), button("Reject", "رفض", GroupAction.ADMIN_ACTION, "reject|${r.id}")) else emptyList()) }
             "settings" -> {
                 fields += field(GroupFieldKey.ADMIN_REGISTRATION, "Allow registration", "السماح بالتسجيل", toggle = true)
-                fields += field(GroupFieldKey.ADMIN_ROOMS, "Allow new rooms", "السماح بغرف جديدة", toggle = true)
+                fields += field(GroupFieldKey.ADMIN_ROOMS, "Allow new orders", "السماح بطلبات جديدة", toggle = true)
                 fields += field(GroupFieldKey.ADMIN_MESSAGE, "Maintenance message", "رسالة الصيانة")
                 buttons += button("Save settings", "حفظ الإعدادات", GroupAction.ADMIN_SAVE_SETTINGS, primary = true)
             }
             "cleanup" -> {
-                fields += field(GroupFieldKey.ADMIN_SCOPE, "Data to clean", "البيانات المطلوب تنظيفها", choices = listOf(GroupChoice("closedRooms", tr("Closed rooms", "الغرف المغلقة")), GroupChoice("history", tr("Order history", "سجل الطلبات"))))
+                fields += field(GroupFieldKey.ADMIN_SCOPE, "Data to clean", "البيانات المطلوب تنظيفها", choices = listOf(GroupChoice("closedRooms", tr("Closed orders", "الطلبات المغلقة")), GroupChoice("history", tr("Order history", "سجل الطلبات"))))
                 fields += field(GroupFieldKey.ADMIN_CLEANUP_FILTER, "Time filter", "فلتر الوقت", choices = listOf(GroupChoice("age", tr("Older than a number of days", "أقدم من عدد أيام")), GroupChoice("date", tr("Date range", "فترة زمنية"))))
                 if(c.text(GroupFieldKey.ADMIN_CLEANUP_FILTER) == "date") {
                     fields += field(GroupFieldKey.ADMIN_FROM_DATE, "Start date · YYYY-MM-DD", "تاريخ البداية · YYYY-MM-DD")
                     fields += field(GroupFieldKey.ADMIN_TO_DATE, "End date · YYYY-MM-DD", "تاريخ النهاية · YYYY-MM-DD")
                     fields += field(GroupFieldKey.ADMIN_TIME_ZONE, "Time zone", "المنطقة الزمنية")
                 } else fields += field(GroupFieldKey.ADMIN_DAYS, "Older than days", "أقدم من عدد أيام")
-                cards += GroupCard("cleanup-help", tr("Review rooms before clearing", "راجع الغرف قبل المسح"), tr("The range uses last activity and includes both dates. Active orders and unsettled payments are protected.", "الفترة حسب آخر نشاط وتشمل يوم البداية والنهاية. الطلبات النشطة والمدفوعات غير المسددة محمية."))
+                cards += GroupCard("cleanup-help", tr("Review orders before clearing", "راجع الطلبات قبل المسح"), tr("The range uses last activity and includes both dates. Active orders and unsettled payments are protected.", "الفترة حسب آخر نشاط وتشمل يوم البداية والنهاية. الطلبات النشطة والمدفوعات غير المسددة محمية."))
                 buttons += button("Preview selection", "معاينة البيانات", GroupAction.ADMIN_PREVIEW_CLEANUP)
                 preview?.let { p -> cards += GroupCard("cleanup-count", "${p.count} ${tr("records", "سجلات")}", p.targets.filter { search.isBlank() || it.name.contains(search,true) || it.restaurant.contains(search,true) }.take(30).joinToString("\n") { "${it.name} · #${it.orderNumber}" })
                     if(p.count > 0) { fields += field(GroupFieldKey.ADMIN_CONFIRMATION, "Type DELETE to confirm", "اكتب DELETE للتأكيد"); buttons += button("Delete selected data", "حذف البيانات المحددة", GroupAction.ADMIN_DELETE_CLEANUP, destructive = true).copy(enabled = c.text(GroupFieldKey.ADMIN_CONFIRMATION) == "DELETE" && search.isBlank()) } }
@@ -228,11 +230,11 @@ internal class GroupAdministration(private val c: GroupController) {
         val fields = mutableListOf<GroupField>(); val d = requireNotNull(dashboard)
         val name = d.users.firstOrNull { it.id == pendingTarget }?.name ?: d.rooms.firstOrNull { it.id == pendingTarget }?.let { "${it.name} · ${it.code}" } ?: d.restaurants.firstOrNull { it.id == pendingTarget }?.name.orEmpty()
         if(pendingAction in listOf("block", "unblock")) {
-            fields += field(GroupFieldKey.ADMIN_SCOPE, "Block scope", "نطاق الحظر", choices = listOf(GroupChoice("", tr("All rooms", "جميع الغرف"))) + d.rooms.map { GroupChoice(it.id, it.name) })
+            fields += field(GroupFieldKey.ADMIN_SCOPE, "Block scope", "نطاق الحظر", choices = listOf(GroupChoice("", tr("All orders", "جميع الطلبات"))) + d.rooms.map { GroupChoice(it.id, it.name) })
             fields += field(GroupFieldKey.ADMIN_DURATION, "Duration in hours · 0 means indefinite", "المدة بالساعات · صفر يعني دائماً")
             fields += field(GroupFieldKey.ADMIN_REASON, "Reason", "السبب")
         }
-        if(pendingAction in listOf("remove", "delete-restaurant", "cancel", "delete")) fields += field(GroupFieldKey.ADMIN_CONFIRMATION, if(pendingAction in listOf("cancel", "delete")) "Type the room code to confirm" else "Type the name to confirm", if(pendingAction in listOf("cancel", "delete")) "اكتب رمز الغرفة للتأكيد" else "اكتب الاسم للتأكيد")
+        if(pendingAction in listOf("remove", "delete-restaurant", "cancel", "delete")) fields += field(GroupFieldKey.ADMIN_CONFIRMATION, if(pendingAction in listOf("cancel", "delete")) "Type the order code to confirm" else "Type the name to confirm", if(pendingAction in listOf("cancel", "delete")) "اكتب رمز الطلب للتأكيد" else "اكتب الاسم للتأكيد")
         return GroupFlowContent(fields, listOf(GroupCard("admin-confirm", name, tr("Review this action before confirming: $pendingAction", "راجع الإجراء قبل التأكيد: $pendingAction"))), listOf(button("Confirm action", "تأكيد الإجراء", GroupAction.ADMIN_CONFIRM, primary = true, destructive = true)))
     }
 }

@@ -1,4 +1,6 @@
 import SwiftUI
+import React
+import GoogleSignIn
 import FirebaseCore
 import FirebaseMessaging
 
@@ -20,12 +22,17 @@ final class FoodRunAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct FoodRunApp: App {
     @UIApplicationDelegateAdaptor(FoodRunAppDelegate.self) private var appDelegate
-    @State private var store = WheelStore()
-    @StateObject private var groups = GroupStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            GroupScreen(store: groups, wheelStore: store)
+            ReactNativeScreen().ignoresSafeArea()
+                .onOpenURL { url in
+                    if !GIDSignIn.sharedInstance.handle(url) { RCTLinkingManager.application(UIApplication.shared,open:url,options:[:]) }
+                }
+                .onChange(of:scenePhase) { _,phase in
+                    if phase == .active { FoodRunReactRuntime.shared.groups.foreground() } else { FoodRunReactRuntime.shared.groups.background() }
+                }
                 .preferredColorScheme(.light)
                 .tint(FoodTheme.orange)
         }

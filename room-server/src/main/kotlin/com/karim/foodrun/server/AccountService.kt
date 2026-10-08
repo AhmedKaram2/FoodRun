@@ -13,7 +13,7 @@ import java.util.Base64
 class AccountService(private val db: RoomDatabase, private val provider: IdentityProvider?, private val rooms: RoomService, private val clock: () -> Long) {
     private val memberships = AccountMemberships(db)
     private val support = SupportSessions(db, clock)
-    private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
+    private var cloudStatus = if (db.cloudDurable) "Order and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
     private var lastProfileSyncKey = ""
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
     private fun session(token: String): AccountSession {
@@ -211,7 +211,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 cloud().saveHubRecord(identity(next.tokenHash, saved), next.hubId, "metadata", "Food Run hub")
                 db.putRecord("cloud-owner", orderJson.encodeToString(next))
                 db.allRooms().forEach { db.enqueueCloud("room-${it.id}", orderJson.encodeToString(it)) }
-                cloudStatus = "Connected to Firebase · syncing room data"
+                cloudStatus = "Connected to Firebase · syncing order data"
                 home(c.identityToken)
             }
             else -> error("Unsupported account action.")
@@ -222,7 +222,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         syncProfiles()
         if (db.cloudDurable) return
         val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) } ?: return
-        val next = db.pendingCloud() ?: run { cloudStatus = "All room changes saved to Firebase"; return }
+        val next = db.pendingCloud() ?: run { cloudStatus = "All order changes saved to Firebase"; return }
         try {
             val saved = db.record("identity:${owner.tokenHash}")?.let { orderJson.decodeFromString<AccountSession>(it) } ?: error("Cloud owner must sign in and reconnect storage.")
             val identity = identity(owner.tokenHash, saved)
@@ -232,7 +232,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             chunks.forEachIndexed { index, chunk -> cloud().saveHubRecord(identity, owner.hubId, "${next.first}-$version-$index", chunk) }
             cloud().saveHubRecord(identity, owner.hubId, next.first, "{\"version\":\"$version\",\"chunks\":${chunks.size}}")
             db.finishCloud(next.first, next.second)
-            cloudStatus = "Room changes saved to Firebase"
+            cloudStatus = "Order changes saved to Firebase"
         } catch (_: Exception) { cloudStatus = "Saved on this hub · Firebase sync pending. Check connectivity, Firestore rules, and the cloud owner's session." }
     }
 

@@ -36,6 +36,6 @@ fun main(args: Array<String>) {
             require(store.load() == null) { "The target store was initialized by another process." }
             store.commit(records.associateBy { it.id })
         }
-        println("Imported ${profiles.size} existing profiles and ${catalog.restaurants.size} restaurants. No room or wallet balances were synthesized.")
+        println("Imported ${profiles.size} existing profiles and ${catalog.restaurants.size} restaurants. No order or wallet balances were synthesized.")
     }
 }

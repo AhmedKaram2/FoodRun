@@ -75,7 +75,7 @@ internal fun GroupController.favoriteOrder(value: String) {
     val restaurantId = choice.restaurantId.ifBlank {
         reply?.room?.restaurant?.takeIf { it.name.equals(choice.order.restaurantName, ignoreCase = true) }?.id.orEmpty()
     }
-    require(restaurantId.isNotBlank()) { "Open a room for this restaurant before saving this older receipt as a favorite." }
+    require(restaurantId.isNotBlank()) { "Open an order for this restaurant before saving this older receipt as a favorite." }
     val lines = choice.receipt.lines.map { line ->
         FavoriteOrderLine(
             itemId = line.itemId,
@@ -158,7 +158,7 @@ internal fun prepareNativeReorder(restaurant: Restaurant, source: List<FavoriteO
 internal fun GroupController.reorderContent(): GroupFlowContent {
     fun tr(en: String, ar: String) = if(library.language == "ar") ar else en
     val valid = room().id == reorderRoom && room().orderNumber == reorderNumber && room().phase in reusablePhases
-    if(!valid) return GroupFlowContent(cards = listOf(GroupCard("reorder-expired", tr("This order changed", "تغير هذا الطلب"), tr("Return to the room and choose the saved order again.", "ارجع للغرفة واختر الطلب المحفوظ مجدداً."))))
+    if(!valid) return GroupFlowContent(cards = listOf(GroupCard("reorder-expired", tr("This order changed", "تغير هذا الطلب"), tr("Return to the order and choose the saved order again.", "ارجع للطلب واختر الطلب المحفوظ مجدداً."))))
     val entries = prepareNativeReorder(room().restaurant, reorderSource)
     return GroupFlowContent(cards = listOf(GroupCard("reorder-review", tr("Review before adding", "راجع قبل الإضافة"),
         tr("Available items use today's prices. Unavailable items will be skipped. You can edit your cart before submitting.", "الأصناف المتاحة بأسعار اليوم. سيتم تخطي غير المتاح. يمكنك تعديل السلة قبل إرسال طلبك."))) +
@@ -171,7 +171,7 @@ internal fun GroupController.reorderContent(): GroupFlowContent {
 
 internal fun GroupController.confirmReorder() {
     val currentRoom = room()
-    require(online && currentRoom.id == reorderRoom && currentRoom.orderNumber == reorderNumber && currentRoom.phase in reusablePhases) { "This order changed. Return to the room and review it again." }
+    require(online && currentRoom.id == reorderRoom && currentRoom.orderNumber == reorderNumber && currentRoom.phase in reusablePhases) { "This order changed. Return to the order and review it again." }
     val reusable = prepareNativeReorder(currentRoom.restaurant, reorderSource).mapNotNull { it.line?.copy(id = platform.uuid()) }
     require(reusable.isNotEmpty()) { "This saved order no longer has items available on the current menu." }
     val merged = myCart().lines.toMutableList()

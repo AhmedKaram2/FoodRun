@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
-    MARKETING_VERSION: "1.6.2"
-    CURRENT_PROJECT_VERSION: "12"
+    MARKETING_VERSION: "1.7.1"
+    CURRENT_PROJECT_VERSION: "19"
     GENERATE_INFOPLIST_FILE: YES
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
@@ -17,6 +17,12 @@ settings:
       - "$(inherited)"
       - "$(SRCROOT)/shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
 packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    exactVersion: 9.2.0
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    exactVersion: 12.19.0
   IosComponents:
     path: Packages/IosComponents
 targets:
@@ -24,12 +30,6 @@ targets:
     type: application
     platform: iOS
     sources: [FoodRun]
-    info:
-      path: FoodRun/Info.plist
-      properties:
-        NSBonjourServices: ["_foodrun._tcp"]
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
     entitlements:
       path: FoodRun/FoodRun.entitlements
       properties:
@@ -38,14 +38,32 @@ targets:
           - "$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)"
     dependencies:
       - package: IosComponents
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: Firebase
+        product: FirebaseMessaging
+      - package: Firebase
+        product: FirebaseAuth
     preBuildScripts:
       - name: Build shared Kotlin framework
         script: 'bash "$SRCROOT/Scripts/build-shared-ios.sh"'
         basedOnDependencyAnalysis: false
+    postBuildScripts:
+      - name: Bundle React Native code and images
+        script: |
+          export PROJECT_ROOT="$SRCROOT/mobileApp"
+          export FORCE_BUNDLING=1
+          WITH_ENVIRONMENT="$SRCROOT/mobileApp/node_modules/react-native/scripts/xcode/with-environment.sh"
+          REACT_NATIVE_XCODE="$SRCROOT/mobileApp/node_modules/react-native/scripts/react-native-xcode.sh"
+          /bin/sh -c "$WITH_ENVIRONMENT $REACT_NATIVE_XCODE"
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.karim.foodrun
-        INFOPLIST_KEY_CFBundleDisplayName: Intrvioo
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: FoodRun/Info.plist
+        APS_ENVIRONMENT: development
+        INFOPLIST_KEY_CFBundleDisplayName: FoodRun
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Join your Intrvioo room and watch the same spin with people on your Wi-Fi.
         INFOPLIST_KEY_NSCameraUsageDescription: Scan the pairing QR shown by your Intrvioo server.
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.food-and-drink

@@ -20,6 +20,9 @@ import java.util.concurrent.Executors
 
 /** Retained native services; the current Activity is attached only while it exists. */
 class GroupAndroidPlatform(context: Context) : GroupPlatform {
+    private var photoPicker: ActivityResultLauncher<String>? = null
+    private var photoCallback: GroupReplyCallback? = null
+    private var receiptPhoto = false
     private val context = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val files = Executors.newSingleThreadExecutor()
@@ -93,6 +96,32 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
     fun attach(activity: ComponentActivity) {
         check(!closed)
         this.activity = activity
+        photoPicker = activity.registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            val callback = photoCallback; photoCallback = null
+            if(uri == null) callback?.complete("", "") else files.execute {
+                try {
+                    val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
+                        val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
+                        while(true) { val count = input.read(buffer); if(count < 0) break; output.write(buffer,0,count); require(output.size() <= 10 * 1024 * 1024) { "Choose a photo under 10 MB." } }
+                        output.toByteArray()
+                    }
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "This photo could not be opened." }
+                    val decode = android.graphics.BitmapFactory.Options().apply { while(maxOf(bounds.outWidth,bounds.outHeight)/inSampleSize > 2800) inSampleSize *= 2 }
+                    val source = requireNotNull(android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,decode))
+                    val side = minOf(source.width,source.height)
+                    val square = if(receiptPhoto) source else android.graphics.Bitmap.createBitmap(source,(source.width-side)/2,(source.height-side)/2,side,side)
+                    val limit = if(receiptPhoto) 1200.0 else 320.0; val scale = minOf(1.0,limit/maxOf(square.width,square.height))
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(square,maxOf(1,(square.width*scale).toInt()),maxOf(1,(square.height*scale).toInt()),true)
+                    val output = java.io.ByteArrayOutputStream(); scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG,78,output)
+                    if(receiptPhoto && output.size() > 440_000) { output.reset(); scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG,50,output) }
+                    require(output.size() <= if(receiptPhoto) 440_000 else 128_000) { "Choose a smaller photo." }
+                    val value = "data:image/jpeg;base64," + android.util.Base64.encodeToString(output.toByteArray(),android.util.Base64.NO_WRAP)
+                    main.post { if(!closed) callback?.complete(value,"") }
+                } catch(e: Exception) { main.post { if(!closed) callback?.complete("",e.message ?: "This photo could not be opened.") } }
+            }
+        }
         // Registration order stays stable so Android can deliver results after recreation.
         documents = activity.registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             val callback = importCallback
@@ -127,7 +156,13 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
             this.activity = null
             documents = null
             scanner = null
+            photoPicker = null
         }
+    }
+    fun choosePhoto(receipt: Boolean, callback: GroupReplyCallback) {
+        if(photoCallback != null) { callback.complete("", "Finish selecting the current photo first."); return }
+        val picker = photoPicker ?: run { callback.complete("", "Open the app before choosing a photo."); return }
+        receiptPhoto = receipt; photoCallback = callback; picker.launch("image/*")
     }
 
     override fun adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) = transport.request(hub, body, callback, "admin/native")

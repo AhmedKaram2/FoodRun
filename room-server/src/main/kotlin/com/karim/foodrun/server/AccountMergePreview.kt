@@ -31,7 +31,7 @@ internal object AccountMergePreview {
                 check(wallets.keys == db.records("wallet:").map { it.first }.toSet())
                 check(db.record("profile:${plan.sourceUserId}") == null)
                 println(orderJson.encodeToString(result))
-                println("PASS: room bills, carts, transfers, roles and wallet transaction IDs are preserved.")
+                println("PASS: order bills, carts, transfers, roles and wallet transaction IDs are preserved.")
                 println("Unified wallet balances: " + WalletService.snapshot(db, plan.targetUserId).balances.filter { it.customerId == plan.targetUserId }.joinToString { Money.format(it.available, it.currency) })
             }
         } finally { directory.deleteRecursively() }

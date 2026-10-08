@@ -5,6 +5,17 @@ import FoodRunShared
 @testable import FoodRun
 
 final class GroupNativeTests: XCTestCase {
+    func testGoogleAndRoomCallbacksAreRegisteredInTheBuiltApp() throws {
+        let types = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        XCTAssertTrue(schemes.contains("foodrun"))
+        let url = try XCTUnwrap(Bundle.main.url(forResource:"GoogleService-Info",withExtension:"plist"))
+        let configuration = try XCTUnwrap(NSDictionary(contentsOf:url))
+        let clientID = try XCTUnwrap(configuration["CLIENT_ID"] as? String)
+        let reversed = clientID.split(separator: ".").reversed().joined(separator: ".")
+        XCTAssertTrue(schemes.contains(reversed))
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,"FoodRun")
+    }
     @MainActor
     func testDefaultPlatformPersistsReceiptUsingRealKeychain() throws {
         // Injected test keys cannot detect a missing application signing entitlement.
@@ -118,6 +129,14 @@ final class GroupNativeTests: XCTestCase {
 }
 
 private final class MemoryGroupPlatform: GroupPlatform {
+    func accountSignedOut() {}
+    func adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete(body: "", error: "Not configured in this fixture") }
+    func disablePush() {}
+    func googleSignIn(callback: GroupReplyCallback) { callback.complete(body: "", error: "Not configured in this fixture") }
+    func localOffsetSeconds(timeMillis: Int64) -> Int32 { 0 }
+    func notificationRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete(body: "", error: "Not configured in this fixture") }
+    func pushToken(prompt: Bool, callback: GroupReplyCallback) { callback.complete(body: "", error: "") }
+    func schedule(delayMillis: Int64, callback: GroupScheduledCallback) {}
     func notify(title: String, body: String) {}
     func enableNotifications() {}
     func read(key: String) -> String { "" }

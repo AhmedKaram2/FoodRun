@@ -1,7 +1,7 @@
 package com.karim.foodrun.shared.orders
 
 /** Presentation grouping shared by the native renderers. All domain actions remain unchanged. */
-data class GroupSection(val title: String, val cards: List<GroupCard>, val collapsed: Boolean = false)
+@kotlinx.serialization.Serializable data class GroupSection(val title: String, val cards: List<GroupCard>, val collapsed: Boolean = false)
 
 internal object GroupLayout {
     val roomUtilities = setOf(

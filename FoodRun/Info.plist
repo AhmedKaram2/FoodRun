@@ -2,14 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Poppins-Regular.ttf</string>
-		<string>Poppins-Medium.ttf</string>
-		<string>Poppins-SemiBold.ttf</string>
-		<string>Poppins-Bold.ttf</string>
-		<string>NotoSansArabic.ttf</string>
-	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>
@@ -32,9 +24,33 @@
 	<array>
 		<string>_foodrun._tcp</string>
 	</array>
+	<key>RCTNewArchEnabled</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Poppins-Regular.ttf</string>
+		<string>Poppins-Medium.ttf</string>
+		<string>Poppins-SemiBold.ttf</string>
+		<string>Poppins-Bold.ttf</string>
+		<string>NotoSansArabic.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>CFBundleDisplayName</key>
+	<string>FoodRun</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>foodrun</string>
+				<string>com.googleusercontent.apps.461326313648-992pdoa6r1s30evmmof9ng3fbasueeb3</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

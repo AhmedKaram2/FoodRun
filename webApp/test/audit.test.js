@@ -203,9 +203,9 @@ test('Arabic translation preserves user supplied strings and protocol values', a
   assert.equal(t('DECLARE_TRANSFER', 'ar'), 'DECLARE_TRANSFER');
   assert.equal(t('Wallet dashboard', 'en'), 'Wallet dashboard');
   assert.equal(t('Breakfast', 'ar'), 'فطار');
-  assert.equal(t('Create room', 'ar'), 'اعمل الغرفة');
+  assert.equal(t('Create order', 'ar'), 'اعمل الطلب');
   assert.equal(tf('Join {name}', { name: 'Home & AED 8.00' }, 'ar'), 'ادخل Home & AED 8.00');
-  assert.equal(tf('Room code: {code}', { code: '001234' }, 'ar'), 'كود الغرفة: 001234');
+  assert.equal(tf('Order code: {code}', { code: '001234' }, 'ar'), 'كود الطلب: 001234');
 });
 
 test('known menu prices immediately include quantity, selected size and extras', async () => {

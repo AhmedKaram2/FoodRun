@@ -29,12 +29,12 @@ export function normalizeReply(reply) {
 export async function request(hub, command, signal) {
   // A sleeping internet hub can need about a minute to start. Only account
   // connection gets this longer deadline; order/payment commands are not retried.
-  const timeoutMs = command.kind === 'IDENTITY' && command.identity?.action === 'FIREBASE_SIGN_IN' ? 90000 : 20000;
+  const timeoutMs = command.kind === 'COMMAND_STATUS' || command.kind === 'IDENTITY' && command.identity?.action === 'FIREBASE_SIGN_IN' ? 90000 : 20000;
   const abort = new AbortController();
   const cancel = () => abort.abort(signal.reason);
   if (signal?.aborted) cancel();
   else signal?.addEventListener('abort', cancel, { once: true });
-  const timer = setTimeout(() => abort.abort(new DOMException('The room server took too long to respond.', 'TimeoutError')), timeoutMs);
+  const timer = setTimeout(() => abort.abort(new DOMException("The order server took too long to respond.", 'TimeoutError')), timeoutMs);
   try {
     abort.signal.throwIfAborted();
     const response = await fetch(`${hub}/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command), signal: abort.signal, credentials: 'omit', redirect: 'error' });
@@ -47,7 +47,7 @@ export async function request(hub, command, signal) {
     return normalizeReply(reply);
   } catch (error) {
     if (signal?.aborted) throw signal.reason;
-    if (abort.signal.aborted) throw Object.assign(Error(t('The room server took too long to respond. Please try again.')), { code: 'TIMEOUT', definitive: false });
+    if (abort.signal.aborted) throw Object.assign(Error(t("The order server took too long to respond. Please try again.")), { code: 'TIMEOUT', definitive: false });
     throw error;
   } finally {
     clearTimeout(timer);

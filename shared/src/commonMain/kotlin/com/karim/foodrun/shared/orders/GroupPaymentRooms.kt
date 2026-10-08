@@ -68,7 +68,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
         val selectedCurrency = currency(); Money.precision(selectedCurrency)
         val account = requireNotNull(profile().payment) { "Add your receiving details in your profile first." }.let {
             if(it.method == PaymentMethod.AANI) it else it.copy(currency = selectedCurrency)
-        }.normalized().also { it.validate(); require(it.currency == selectedCurrency) { "Aani payment rooms use AED. Choose AED or use a bank account." } }
+        }.normalized().also { it.validate(); require(it.currency == selectedCurrency) { "Aani payment orders use AED. Choose AED or use a bank account." } }
         c.replaceLibrary(c.library.copy(selectedHub = c.library.identityHub))
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.CREATE_PAYMENT_ROOM,
             text = c.smartDefaults.submittedName(GroupFieldKey.PAYMENT_ROOM_NAME), name = c.text(GroupFieldKey.PAYMENT_RESTAURANT).trim(), amount = total,
@@ -95,7 +95,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
             if(mode == "create" && editing != profile().userId) listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Already received · ${currency()}", "المستلم بالفعل · ${currency()}")) else emptyList(),
             buttons = listOf(GroupButton(tr("Save share", "حفظ الحصة"), GroupAction.SAVE_PAYMENT_SHARE, primary = true)))
         val fields = mutableListOf<GroupField>()
-        if(mode == "create") fields += listOf(field(GroupFieldKey.PAYMENT_ROOM_NAME, "Room name", "اسم الغرفة"), field(GroupFieldKey.PAYMENT_RESTAURANT, "Restaurant", "المطعم"), GroupField(GroupFieldKey.PAYMENT_CURRENCY, tr("Currency", "العملة"), currency(), choices = Money.currencies.map { GroupChoice(it, it) }), field(GroupFieldKey.PAYMENT_TOTAL, "Receipt total · ${currency()}", "إجمالي الإيصال · ${currency()}"))
+        if(mode == "create") fields += listOf(field(GroupFieldKey.PAYMENT_ROOM_NAME, "Order name", "اسم الطلب"), field(GroupFieldKey.PAYMENT_RESTAURANT, "Restaurant", "المطعم"), GroupField(GroupFieldKey.PAYMENT_CURRENCY, tr("Currency", "العملة"), currency(), choices = Money.currencies.map { GroupChoice(it, it) }), field(GroupFieldKey.PAYMENT_TOTAL, "Receipt total · ${currency()}", "إجمالي الإيصال · ${currency()}"))
         fields += field(GroupFieldKey.PAYMENT_DETAILS, "Order details", "تفاصيل الطلب", true)
         fields += field(GroupFieldKey.RECEIPT_PHOTO, "Receipt photo (optional)", "صورة الإيصال (اختياري)")
         val cards = mutableListOf<GroupCard>()
@@ -109,7 +109,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
             }
             if(profile().payment == null) cards += GroupCard("payment-account-missing", tr("Add receiving details", "أضف بيانات الاستلام"), buttons = listOf(GroupButton(tr("Open profile", "فتح الملف الشخصي"), GroupAction.OPEN_PROFILE)))
         }
-        return GroupFlowContent(fields, cards, listOf(GroupButton(if(mode == "create") tr("Create payment room", "إنشاء غرفة دفع") else tr("Save receipt", "حفظ الإيصال"), GroupAction.SAVE_PAYMENT_ROOM, primary = true)))
+        return GroupFlowContent(fields, cards, listOf(GroupButton(if(mode == "create") tr("Create payment order", "إنشاء طلب دفع") else tr("Save receipt", "حفظ الإيصال"), GroupAction.SAVE_PAYMENT_ROOM, primary = true)))
     }
     fun roomCards(): List<GroupCard> {
         val r = c.room(); val details = r.paymentRoom ?: return emptyList()

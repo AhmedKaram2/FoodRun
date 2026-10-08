@@ -46,7 +46,7 @@ internal class GroupNotifications(private val c: GroupController) {
         request(NotificationRequest(c.library.identityToken))
     }
     fun register(prompt: Boolean) {
-        if(registering || c.library.home?.notificationPreferences?.pushEnabled == false) return
+        if(c.supportActive || registering || c.library.home?.notificationPreferences?.pushEnabled == false) return
         if(!prompt && registered.startsWith(c.library.identityToken) && registered.endsWith(c.library.language) && registered.isNotEmpty()) return
         if(c.library.identityToken.isEmpty()) { if(prompt) c.error = tr("Sign in to enable notifications.", "سجل الدخول لتفعيل الإشعارات."); return }
         val identity = c.library.identityToken
@@ -70,6 +70,7 @@ internal class GroupNotifications(private val c: GroupController) {
         })
     }
     fun disable() {
+        if(c.supportActive) return
         if(token.isNotEmpty()) request(NotificationRequest(c.library.identityToken, "unregister", token = token))
         c.platform.disablePush(); registered = ""; token = ""; deviceEnabled = false
     }
@@ -86,7 +87,7 @@ internal class GroupNotifications(private val c: GroupController) {
             request(NotificationRequest(c.library.identityToken, "read", notificationId = id)); selected = null; c.page = GroupPage.PROFILE; return
         }
         val session = c.library.sessions.firstOrNull { it.roomId == item.roomId && c.sameHub(it.hub, c.library.identityHub) }
-            ?: error(tr("This room is no longer available.", "الغرفة لم تعد متاحة."))
+            ?: error(tr("This order is no longer available.", "الطلب لم تعد متاحة."))
         selected = item
         intendedAction = action.takeIf { value -> value == "open" || item.actions.any { it.id == value } } ?: "open"
         request(NotificationRequest(c.library.identityToken, "read", notificationId = id))
@@ -147,7 +148,7 @@ internal class GroupNotifications(private val c: GroupController) {
             }
             "accept" -> button("Accept selection", "قبول الاختيار", "accept")
             "pay" -> button("Open my payment", "فتح دفعتي", "pay")
-            "expired" -> detail = tr("This action is no longer available. Check the current room below.", "هذا الإجراء لم يعد متاحاً. راجع الغرفة الحالية بالأسفل.")
+            "expired" -> detail = tr("This action is no longer available. Check the current order below.", "هذا الإجراء لم يعد متاحاً. راجع الطلب الحالي بالأسفل.")
         }
         actions += GroupButton(tr("Close", "إغلاق"), GroupAction.NOTIFICATION_ACTION, "close")
         return GroupCard("notification-action", item.title, detail, buttons = actions)

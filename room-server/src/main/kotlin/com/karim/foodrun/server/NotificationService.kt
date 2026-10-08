@@ -71,11 +71,11 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         addUser(uid, null, eventId, kind, title, body, listOf("wallet"))
     fun friendRoom(uid: String, invitation: FoodInvitation, room: Room) = addUser(uid,room,invitation.id,"friend_room_invitation",
         "You're invited to ${room.name}" to "دعوة للانضمام إلى ${room.name}",
-        "${invitation.invitedBy} invited you. Room code: ${room.code}." to "دعاك ${invitation.invitedBy}. رمز الغرفة: ${room.code}.",listOf("join"),invitation.id)
+        "${invitation.invitedBy} invited you. Order code: ${room.code}." to "دعاك ${invitation.invitedBy}. رمز الطلب: ${room.code}.",listOf("join"),invitation.id)
     fun friendGroup(uid: String, group: FriendGroup, creator: String, eventId: String) = addUser(uid,null,eventId,"friend_group_added",
         "Added to ${group.name}" to "تمت إضافتك إلى ${group.name}", "$creator added you to this friend group." to "أضافك $creator إلى مجموعة الأصدقاء.",listOf("groups"))
     fun friendRoomCreated(uid: String, room: Room, eventId: String) = addUser(uid,room,eventId,"friend_room_created",
-        "${room.name} is ready" to "${room.name} جاهزة", "Your group room is ready. Room code: ${room.code}." to "غرفة مجموعتك جاهزة. رمز الغرفة: ${room.code}.",listOf("open"))
+        "${room.name} is ready" to "${room.name} جاهزة", "Your group order is ready. Order code: ${room.code}." to "طلب مجموعتك جاهزة. رمز الطلب: ${room.code}.",listOf("open"))
     fun reminder(room: Room, memberId: String, eventId: String, body: String) = add(room,memberId,eventId,"payment_reminder",
         "Payment reminder" to "تذكير بالدفع",body to body,listOf("pay","open"))
     private fun addUser(uid: String, room: Room?, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>, actions: List<String>, transferId: String = "") {
@@ -83,9 +83,9 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         val key = "notification:$uid:$id"
         if (db.record(key) != null) return
         val ar = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it).language == "ar" } == true
-        val labels = mapOf("open" to ("Open room" to "فتح الغرفة"), "order" to ("Review & send order" to "مراجعة وإرسال الطلب"),
+        val labels = mapOf("open" to ("Open order" to "فتح الطلب"), "order" to ("Review & send order" to "مراجعة وإرسال الطلب"),
             "copy" to ("Copy order" to "نسخ الطلب"), "share" to ("Share order" to "مشاركة الطلب"), "pay" to ("Payment sent" to "أرسلت الدفع"),
-            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"), "join" to ("Join room" to "الانضمام للغرفة"), "groups" to ("View group" to "عرض المجموعة"))
+            "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"), "join" to ("Join order" to "الانضمام للطلب"), "groups" to ("View group" to "عرض المجموعة"))
         val item = FoodNotification(id, room?.id.orEmpty(), room?.orderNumber ?: 0, kind, if(ar) title.second else title.first,
             if(ar) body.second else body.first, actions.map { action -> NotificationAction(action, labels.getValue(action).let { if(ar) it.second else it.first }) }, transferId, clock())
         db.putRecord(key, orderJson.encodeToString(item))

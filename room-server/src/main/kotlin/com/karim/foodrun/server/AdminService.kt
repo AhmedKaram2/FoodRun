@@ -15,6 +15,7 @@ class AdminService(
         val actor = authorize("Bearer " + rooms.nativeAdminToken(request.identityToken))
         var preview: AdminCleanupPreview? = null
         when(request.action) {
+            "support-start" -> return NativeAdminReply(support = rooms.startSupport(actor,orderJson.decodeFromString<AdminSupportRequest>(request.payload).userId))
             "access" -> return NativeAdminReply()
             "dashboard" -> Unit
             "user" -> mutateUser(orderJson.decodeFromString(request.payload), actor.userId)
@@ -26,7 +27,7 @@ class AdminService(
             "cleanup-delete" -> cleanup(orderJson.decodeFromString(request.payload), actor.userId)
             else -> error("Unsupported admin action.")
         }
-        return NativeAdminReply(dashboard = dashboard().let { it.copy(users = it.users.map { user -> user.copy(email = "") }) }, preview = preview)
+        return NativeAdminReply(dashboard = dashboard().let { if(request.emailDetails) it else it.copy(users = it.users.map { user -> user.copy(email = "") }) }, preview = preview)
     }
     fun authorize(header: String?): CloudIdentity {
         require(header?.startsWith("Bearer ") == true) { "Sign in with the administrator account." }
@@ -60,7 +61,7 @@ class AdminService(
         val contributionKey = "$CONTRIBUTOR_PREFIX${saved.id}"
         if (existing != null) require(db.record(contributionKey) == actorId ||
             rooms.ownsCatalogRestaurant(change.roomId, change.roomToken, saved.id) || rooms.isAdministrator(change.identityToken)) {
-            "Shared restaurants can only be edited by their contributor, their room owner, or an administrator."
+            "Shared restaurants can only be edited by their contributor, their order owner, or an administrator."
         }
         val next = current.filterNot { it.id == saved.id } + saved
         require(next.size <= 100) { "Restaurant catalog limit reached." }
@@ -129,7 +130,7 @@ class AdminService(
                 val block = change.action == "block" || change.action == "status" && change.disabled
                 require(change.durationHours in 0..8760) { "Choose a duration of up to 365 days." }
                 require(AccountRestrictions.current(db, change.userId, clock())?.removed != true) { "Restore this removed user first." }
-                require(change.scopeRoomId.isEmpty() || db.room(change.scopeRoomId) != null) { "Room was not found." }
+                require(change.scopeRoomId.isEmpty() || db.room(change.scopeRoomId) != null) { "Order was not found." }
                 val restrictionKey = if(change.scopeRoomId.isEmpty()) "admin:restriction:${change.userId}" else "admin:room-restriction:${change.userId}:${change.scopeRoomId}"
                 if(change.scopeRoomId.isEmpty()) db.deleteRecord("admin:disabled:${change.userId}")
                 if (block) db.putRecord(restrictionKey, orderJson.encodeToString(AccountRestriction(
@@ -143,7 +144,7 @@ class AdminService(
                 require(change.confirmation == change.userId) { "Confirm the selected user before removal." }
                 require(memberships.none { membership -> db.room(membership.roomId)?.let { room ->
                     room.phase !in listOf(RoomPhase.ARCHIVED, RoomPhase.CANCELLED) && room.activeMembers.any { it.id == membership.memberId }
-                } == true }) { "Finish or cancel this user's active rooms before removing them." }
+                } == true }) { "Finish or cancel this user's active orders before removing them." }
                 db.transaction {
                     db.revokeUserSessions(change.userId)
                     db.deleteRecord("profile:${change.userId}")
@@ -178,19 +179,19 @@ class AdminService(
         when(change.action) {
             "cancel" -> rooms.adminCancel(change.roomId)
             "delete" -> {
-                val room = requireNotNull(db.room(change.roomId)) { "Room was not found." }
-                require(deletable(room)) { "Only cancelled or fully settled archived rooms can be deleted." }
-                require(change.expectedRevision == room.revision && change.confirmation == room.code) { "The room changed or its confirmation code does not match. Refresh and try again." }
+                val room = requireNotNull(db.room(change.roomId)) { "Order was not found." }
+                require(deletable(room)) { "Only cancelled or fully settled archived orders can be deleted." }
+                require(change.expectedRevision == room.revision && change.confirmation == room.code) { "The order changed or its confirmation code does not match. Refresh and try again." }
                 db.transaction { db.deleteRoom(room.id); audit(actorId, "delete-room", room.id) }
                 rooms.adminChanged(listOf(room.id))
             }
-            else -> error("Unsupported room action.")
+            else -> error("Unsupported order action.")
         }
         if(change.action == "cancel") audit(actorId, "cancel-room", change.roomId)
     }
     fun cleanupPreview(request: AdminCleanupRequest): AdminCleanupPreview = synchronized(rooms) {
         require(request.olderThanDays in 0..3650) { "Choose an age between 0 and 3650 days." }
-        require(request.scope in listOf("closedRooms", "history")) { "Choose rooms or order history." }
+        require(request.scope in listOf("closedRooms", "history")) { "Choose orders or order history." }
         val dateRange = request.fromDate.isNotEmpty() || request.toDate.isNotEmpty()
         val bounds = if (dateRange) {
             require(request.fromDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && request.toDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Choose both a start date and an end date." }

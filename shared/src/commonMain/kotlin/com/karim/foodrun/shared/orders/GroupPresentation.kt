@@ -2,6 +2,10 @@ package com.karim.foodrun.shared.orders
 
 import com.karim.foodrun.orders.*
 
+private fun Restaurant.branchLabel(language: String): String = listOf(
+    localizedName(language), if(language == "ar" && branchNameAr.isNotBlank()) branchNameAr else branchName,
+).filter { it.isNotBlank() }.joinToString(" · ")
+
 private fun localizedReceiptDescription(room: Room, line: ReceiptLine, language: String): String {
     if(language != "ar" || line.itemId.isBlank()) return line.description
     val item = room.restaurant.menu.items.firstOrNull { it.id == line.itemId } ?: return line.description
@@ -271,7 +275,7 @@ internal class GroupPresentation(private val c: GroupController) {
         field(GroupFieldKey.RESTAURANT_POLL, "Let the room vote for the restaurant", toggle = true)
         if (c.flag(GroupFieldKey.RESTAURANT_POLL)) {
             val choices = c.library.restaurants.filter { it.restaurant.id in c.pollRestaurantIds }
-            card("poll-choices", tr("${choices.size} restaurants in the poll", "${choices.size} مطاعم في التصويت"), choices.joinToString(" · ") { it.restaurant.localizedName(language) })
+            card("poll-choices", tr("${choices.size} restaurants in the poll", "${choices.size} مطاعم في التصويت"), choices.joinToString(" · ") { it.restaurant.branchLabel(language) })
             button(tr("Choose poll restaurants", "اختر مطاعم التصويت"), GroupAction.OPEN_POLL_RESTAURANTS)
         }
         card(
@@ -284,7 +288,7 @@ internal class GroupPresentation(private val c: GroupController) {
         field(GroupFieldKey.DELIVERY, "Delivery to us", toggle = true)
         if(c.flag(GroupFieldKey.DELIVERY)) field(GroupFieldKey.DESTINATION, tr("Delivery address · optional; otherwise the selected orderer arranges it", "عنوان التوصيل · اختياري؛ وإلا يتولى الشخص المختار ترتيبه"))
         feeFields()
-        card("restaurant", c.selectedRestaurant?.restaurant?.localizedName(language) ?: tr("Choose a restaurant", "اختر مطعماً"), c.selectedRestaurant?.restaurant?.menu?.items?.size?.let { tr("$it menu items", "$it صنفاً") } ?: tr("Create, import or select a saved menu.", "أنشئ أو استورد أو اختر قائمة محفوظة."))
+        card("restaurant", c.selectedRestaurant?.restaurant?.branchLabel(language) ?: tr("Choose a restaurant", "اختر مطعماً"), c.selectedRestaurant?.restaurant?.menu?.items?.size?.let { tr("$it menu items", "$it صنفاً") } ?: tr("Create, import or select a saved menu.", "أنشئ أو استورد أو اختر قائمة محفوظة."))
         if (!c.flag(GroupFieldKey.RESTAURANT_POLL)) button("Choose restaurant", GroupAction.OPEN_LIBRARY)
         button(if(c.nextOrder) tr("Start next order", "بدء الطلب التالي") else "Create room", GroupAction.CREATE_ROOM, primary = true)
     }
@@ -341,11 +345,11 @@ internal class GroupPresentation(private val c: GroupController) {
             val detail = listOf(location, cuisine, rating, "${restaurant.menu.items.size} ${tr("items", "صنفاً")}").filter { it.isNotBlank() }.joinToString(" · ")
             if (c.choosingPollRestaurants) {
                 val selected = restaurant.id in c.pollRestaurantIds
-                card("restaurant:${restaurant.id}", restaurant.localizedName(language), detail, actions = listOf(GroupButton(
+                card("restaurant:${restaurant.id}", restaurant.branchLabel(language), detail, actions = listOf(GroupButton(
                     if (selected) tr("✓ Selected · remove", "✓ محدد · إزالة") else tr("Add to poll", "إضافة للتصويت"),
                     GroupAction.TOGGLE_POLL_RESTAURANT, restaurant.id, enabled = selected || c.pollRestaurantIds.size < 12,
                 )))
-            } else card("restaurant:${restaurant.id}", restaurant.localizedName(language), detail, actions = listOf(
+            } else card("restaurant:${restaurant.id}", restaurant.branchLabel(language), detail, actions = listOf(
             GroupButton(tr("Use for order", "استخدام للطلب"), GroupAction.SELECT_RESTAURANT, e.restaurant.id), GroupButton(tr("Edit", "تعديل"), GroupAction.EDIT_RESTAURANT, e.restaurant.id), GroupButton(tr("Share JSON", "مشاركة القائمة"), GroupAction.EXPORT_MENU, e.restaurant.id), GroupButton(tr("Delete saved copy", "حذف النسخة"), GroupAction.DELETE_RESTAURANT, e.restaurant.id, destructive = true))) }
         if (visible.isEmpty() && c.library.restaurants.isNotEmpty()) card("empty-filter", tr("No matching restaurants", "لا توجد مطاعم مطابقة"), tr("Try another name, emirate, area or meal.", "جرّب اسماً أو إمارة أو منطقة أو وجبة أخرى."))
         if (c.library.restaurants.isEmpty() && c.importPreview == null) card("empty", "Your next favorite starts here", "Add a restaurant and its menu, or import a menu shared by a friend.")

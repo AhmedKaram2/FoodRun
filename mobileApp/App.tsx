@@ -35,6 +35,8 @@ import HomeBanner from "./src/components/HomeBanner";
 import BottomSheet from "./src/components/BottomSheet";
 import RoomAttention from "./src/components/RoomAttention";
 import SelectionScreen from "./src/components/SelectionScreen";
+import GuidedFlowScreen from "./src/components/GuidedFlowScreen";
+import { useGuidedFlow } from "./src/guidedFlows";
 import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
 import { roomCodeFromLink } from "./src/roomLink";
@@ -76,6 +78,7 @@ function Application() {
     [menu, setMenu] = useState(false),
     [selected, setSelected] = useState(0),
     [options, setOptions] = useState(false);
+  const guided = useGuidedFlow(snapshot);
   useEffect(() => {
     let alive = true;
     const accept = (body: string) => {
@@ -121,6 +124,7 @@ function Application() {
         dispatch("DISMISS_WALLET_HISTORY");
         return true;
       }
+      if (guided.back()) return true;
       if (snapshot?.state.canGoBack) {
         dispatch("BACK");
         return true;
@@ -128,7 +132,7 @@ function Application() {
       return false;
     });
     return () => event.remove();
-  }, [snapshot?.state.canGoBack, snapshot?.state.walletHistoryPrompt, menu]);
+  }, [snapshot?.state.canGoBack, snapshot?.state.walletHistoryPrompt, menu, guided.kind, guided.step, guided.picker, snapshot?.state.busy]);
   useEffect(() => {
     const open = (value: string) => {
       const room = roomCodeFromLink(value);
@@ -314,7 +318,9 @@ function Application() {
       >
         {state.page === "QUICK_SPIN" ? (
           <QuickWheel state={snapshot.quick} rtl={rtl} />
-        ) : ["ITEM", "ACCOUNT", "SELECTION_OVERRIDE"].includes(state.page) ? (
+        ) : guided.kind && guided.screen ? (
+          <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
+        ) : (["ITEM", "ACCOUNT", "SELECTION_OVERRIDE", "PAYMENT_SHARE"].includes(state.page) || state.page === "MENU_ENTITY") ? (
           <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
           <>

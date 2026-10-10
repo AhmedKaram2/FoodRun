@@ -22,3 +22,12 @@ Selecting the emulator's existing Google account prompted Google's Verify it's y
 The local Android Firebase file has a web OAuth client but no Android OAuth entry. Firebase Management access returned HTTP 403 for the available CLI, Google Cloud and service accounts; the remote signing registration could not be verified or updated. The project owner should confirm package com.karim.foodrun and release SHA-1 27:87:46:C2:1F:4D:3B:A9:85:20:29:49:89:3C:67:58:75:9B:3F:DF in the Firebase Android app, then confirm native sign-in with a current Google device session. This build uses the generated web client ID rather than an Android client ID.
 
 The paired iPhone 15 remained unavailable. Installation/launch of the final 1.7.4 archive on that physical phone is pending reconnection; simulator previews and the signed IPA are separate evidence. This IPA is for devices covered by the current development profile; Safari installation remains the public iOS option without an Apple account.
+
+## Publication verified on 10 October 2026
+
+- Application commit and public v1.7.4 tag: `732a2ebf735062ffa52261c5b03dccc349dd0802`. The authorized fork was aligned with the local branch.
+- GitHub release: https://github.com/AhmedKaram2/FoodRun/releases/tag/v1.7.4, published at 12:45 UTC. Anonymous APK and IPA downloads matched the signed local artifact hashes.
+- Website production deploy: `6aca33e67693205c5ea440af`. The exact served JavaScript bundle at https://intrvioo.com matched the local production build; existing payment function OPTIONS checks passed.
+- Render deployment: `dep-db5364942hec73fi7rr0`, live at 12:49 UTC on the application commit. API health passed with durable Firestore storage.
+- APK SHA-256: `f5b66b944342ba4a4e53bcce8285b03e4ad7d11ba8f74c2374f9988be70de51e`.
+- IPA SHA-256: `26f0a34e14425a1c8b1f4e5a85d4a46e1a2f50a29ede3f764ecc160444633f28`. The actual paired iPhone 15 identity is covered by the exported development profile; the device connection remained unavailable.

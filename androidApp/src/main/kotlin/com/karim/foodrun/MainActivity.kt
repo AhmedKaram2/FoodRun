@@ -13,11 +13,11 @@ class MainActivity : ReactActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         app.platform.attach(this)
         super.onCreate(savedInstanceState)
-        app.platform.handleGoogleCallback(intent?.data); handleNotification(intent)
+        handleNotification(intent)
     }
-    override fun onStart() { super.onStart(); app.groups.foreground(); app.platform.googleForegrounded() }
-    override fun onStop() { app.platform.googleBackgrounded(); app.groups.background(); super.onStop() }
-    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); setIntent(intent); app.platform.handleGoogleCallback(intent.data); handleNotification(intent) }
+    override fun onStart() { super.onStart(); app.groups.foreground() }
+    override fun onStop() { app.groups.background(); super.onStop() }
+    override fun onNewIntent(intent: android.content.Intent) { super.onNewIntent(intent); setIntent(intent); handleNotification(intent) }
     private fun handleNotification(intent: android.content.Intent?) {
         val id = intent?.getStringExtra("notificationId") ?: return
         app.groups.openNotification(id,intent.getStringExtra("notificationAction") ?: "open")

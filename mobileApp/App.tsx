@@ -39,6 +39,7 @@ import GuidedFlowScreen from "./src/components/GuidedFlowScreen";
 import { useGuidedFlow } from "./src/guidedFlows";
 import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
+import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./src/screens/AccountScreens";
 import { roomCodeFromLink } from "./src/roomLink";
 import { isRoom, roomSections, roomActionTab, roomFieldTab } from "./src/roomTabs";
 
@@ -254,11 +255,12 @@ function Application() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={tx(rtl, "More options", "خيارات إضافية")}
-            style={ui.icon}
-            onPress={() => setMenu(true)}
+            accessibilityLabel={tx(rtl, `Notifications${snapshot.notificationUnread ? `, ${snapshot.notificationUnread} unread` : ""}`, `الإشعارات${snapshot.notificationUnread ? `، ${snapshot.notificationUnread} غير مقروءة` : ""}`)}
+            style={[ui.icon, {backgroundColor:colors.mint,borderRadius:16}]}
+            onPress={() => dispatch(snapshot.authenticated ? "OPEN_NOTIFICATIONS" : "OPEN_PROFILE")}
           >
-            <Icon name="menu" />
+            <Icon name="bell" color={colors.forest}/>
+            {!!snapshot.notificationUnread && <View pointerEvents="none" style={{position:"absolute",top:2,right:0,minWidth:17,height:17,paddingHorizontal:3,borderRadius:9,backgroundColor:colors.primary,alignItems:"center",justifyContent:"center"}}><Text style={{fontFamily:font("semibold",false),fontSize:9,color:colors.white}}>{snapshot.notificationUnread > 99 ? "99+" : snapshot.notificationUnread}</Text></View>}
           </Pressable>
         </View>
       </View>
@@ -320,6 +322,12 @@ function Application() {
           <QuickWheel state={snapshot.quick} rtl={rtl} />
         ) : guided.kind && guided.screen ? (
           <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
+        ) : state.page === "NOTIFICATIONS" ? (
+          <NotificationCenter key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "PROFILE" && snapshot.authenticated && snapshot.profile ? (
+          <ProfileScreen key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "LIBRARY" ? (
+          <LibraryScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : (["ITEM", "ACCOUNT", "SELECTION_OVERRIDE", "PAYMENT_SHARE"].includes(state.page) || state.page === "MENU_ENTITY") ? (
           <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
@@ -654,28 +662,7 @@ function Application() {
           </TabButton>
         ))}
       </View>
-      <BottomSheet visible={menu} title={tx(rtl,"More","المزيد")} rtl={rtl} onClose={() => setMenu(false)}>
-            <ScrollView contentContainerStyle={{ gap: 10 }}>
-              {menuActions
-                .filter(
-                  (button) =>
-                    snapshot.authenticated ||
-                    ["OPEN_PROFILE", "OPEN_LIBRARY"].includes(button.action),
-                )
-                .map((button, index) => (
-                  <Button
-                    key={button.action + index}
-                    action={button}
-                    rtl={rtl}
-                    busy={busy}
-                    onPress={() => {
-                      setMenu(false);
-                      dispatch(button.action, button.value);
-                    }}
-                  />
-                ))}
-            </ScrollView>
-      </BottomSheet>
+      <MoreSheet snapshot={snapshot} visible={menu} actions={menuActions} onClose={() => setMenu(false)}/>
       <BottomSheet visible={!!state.walletHistoryPrompt} title={state.walletHistoryPrompt?.title || tx(rtl,"Transactions","المعاملات")} rtl={rtl} onClose={() => dispatch("DISMISS_WALLET_HISTORY")}>
         {state.walletHistoryPrompt && <>
                 <Text style={textStyle(rtl)}>

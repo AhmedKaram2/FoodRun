@@ -11,6 +11,7 @@ import {
 import { native, events } from "../src/native";
 import type { Snapshot, Field, Card } from "../src/types";
 import { roomCodeFromLink } from "../src/roomLink";
+import { NotificationCenter, ProfileScreen, LibraryScreen } from "../src/screens/AccountScreens";
 jest.mock("../src/native", () => ({
   native: {
     getSnapshot: jest.fn(),
@@ -94,6 +95,59 @@ beforeEach(() => {
   (native.getSnapshot as jest.Mock).mockResolvedValue(
     JSON.stringify(snapshot()),
   );
+});
+
+test("header opens notifications with the live unread badge and More stays in the bottom tabs", async () => {
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(snapshot({notificationUnread:3})));
+  const view=render(<App/>);
+  fireEvent.press(await view.findByLabelText("Notifications, 3 unread"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_NOTIFICATIONS", "");
+  expect(view.queryByLabelText("More options")).toBeNull();
+  fireEvent.press(view.getByTestId("nav:MORE"));
+  expect(view.getByText("Explore FoodRun")).toBeTruthy();
+});
+
+test("notification filters follow read acknowledgements and open the original notification", () => {
+  const unread={...card("notification:new","New invitation"),badge:"New",detail:"Breakfast"};
+  const read=card("notification:read","Confirmed payment");
+  const value=snapshot({topCards:[unread,read]});
+  const view=render(<NotificationCenter snapshot={value}/>);
+  fireEvent.press(view.getByRole("tab",{name:"Unread (1)"}));
+  expect(view.queryByText("Confirmed payment")).toBeNull();
+  fireEvent.press(view.getByLabelText("New invitation. Breakfast"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_NOTIFICATION","new:open");
+  view.rerender(<NotificationCenter snapshot={{...value,topCards:[{...unread,badge:""},read]}}/>);
+  expect(view.getByText("You're all caught up")).toBeTruthy();
+});
+
+test("profile tabs keep edits through snapshots and save to the same native profile action", () => {
+  const value=snapshot({profile:{name:"Same user",photo:""},mainFields:[field("NAME",{value:"Same user"}),field("AANI",{toggle:true,value:"true"}),field("IBAN",{value:"0501234567"})],primaryAction:action("Save profile","SAVE_PROFILE","",true)});
+  const view=render(<ProfileScreen snapshot={value}/>);
+  fireEvent.press(view.getByRole("tab",{name:"Details"}));
+  fireEvent.changeText(view.getByTestId("NAME"),"New display name");
+  expect(native.update).toHaveBeenLastCalledWith("NAME","New display name");
+  fireEvent.press(view.getByRole("tab",{name:"Receiving payments"}));
+  view.rerender(<ProfileScreen snapshot={{...value,mainFields:[field("NAME",{value:"New display name"}),...value.mainFields.slice(1)]}}/>);
+  expect(view.getByTestId("IBAN")).toBeTruthy();
+  fireEvent.press(view.getByText("Save profile"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("SAVE_PROFILE","");
+  expect(native.dispatch).not.toHaveBeenCalledWith("REGISTER","");
+});
+
+test("profile wallet cards still open transaction history", () => {
+  const wallet={...card("profile-dashboard:wallet-funds","My balance"),selection:action("Transactions","OPEN_WALLET_HISTORY","balance:original")};
+  const view=render(<ProfileScreen snapshot={snapshot({profile:{name:"User",photo:""},topCards:[wallet]})}/>);
+  fireEvent.press(view.getByLabelText("My balance"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_WALLET_HISTORY","balance:original");
+});
+
+test("restaurant card opens management sheet without changing rooms until explicitly selected", () => {
+  const restaurant={...card("restaurant:ajman","Mama'esh · Ajman"),buttons:[action("Use for room","SELECT_RESTAURANT","ajman"),action("Edit menu","EDIT_RESTAURANT","ajman")]};
+  const view=render(<LibraryScreen snapshot={snapshot({topCards:[restaurant]})}/>);
+  fireEvent.press(view.getByTestId("library:restaurant:ajman"));
+  expect(native.dispatch).not.toHaveBeenCalled();
+  fireEvent.press(view.getByText("Edit menu"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("EDIT_RESTAURANT","ajman");
 });
 test("bottom navigation opens Home Rooms Wallet Profile and More", async () => {
   const view = render(<App />);
@@ -284,7 +338,7 @@ test("return from owner support remains accessible during a pending request", as
 test("more menu exposes restaurants, quick wheel and notification preferences", async () => {
   const view = render(<App />);
   await view.findByText("Rooms");
-  fireEvent.press(view.getByLabelText("More options"));
+  fireEvent.press(view.getByTestId("nav:MORE"));
   expect(view.getByText("Restaurants & menus")).toBeTruthy();
   expect(view.getByText("Quick pick")).toBeTruthy();
   fireEvent.press(view.getByText("Notification preferences"));

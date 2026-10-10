@@ -1202,7 +1202,7 @@ export async function runIosInstallAudit(){
  assert(sheet.getBoundingClientRect().width<=innerWidth,'Install sheet overflows');
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause();assert(!document.querySelector('.ios-install-sheet'),'Escape did not close installation');
  assert(document.activeElement===button,'Focus was not restored');
- const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.3.ipa'),'IPA download is missing');
+ const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.4.ipa'),'IPA download is missing');
  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false};
 }
 

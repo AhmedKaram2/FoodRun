@@ -57,6 +57,7 @@ export type QuickWheel = {
 };
 export type Snapshot = {
   profile?: { name: string; photo: string } | null;
+  notificationUnread?: number;
   adminAvailable?: boolean;
   supportActive: boolean;
   accountId: string;

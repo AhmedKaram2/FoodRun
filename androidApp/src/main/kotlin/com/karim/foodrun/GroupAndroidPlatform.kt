@@ -8,6 +8,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialManagerCallback
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.karim.foodrun.orders.HubPairing
@@ -38,60 +50,62 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
     private var notificationPermission: ActivityResultLauncher<String>? = null
     private var notificationCallback: GroupReplyCallback? = null
     private var googleCallback: GroupReplyCallback? = null
-    private var googleVerifier = ""
-    private var googleChallenge = ""
-    private var googleWasBackgrounded = false
+    private var googleCancellation: android.os.CancellationSignal? = null
     private var googleGeneration = 0
 
     override fun googleSignIn(callback: GroupReplyCallback) {
-        googleCallback?.complete("", "Sign-in was restarted.")
-        googleGeneration++
+        if (googleCallback != null) { callback.complete("", "Finish the current Google sign-in first."); return }
+        val current = activity ?: run { callback.complete("", "Open FoodRun before signing in with Google."); return }
+        val generation = ++googleGeneration
         googleCallback = callback
-        googleVerifier = (UUID.randomUUID().toString() + UUID.randomUUID().toString()).replace("-", "")
-        googleChallenge = java.security.MessageDigest.getInstance("SHA-256").digest(googleVerifier.toByteArray()).joinToString("") { "%02x".format(it) }
-        googleWasBackgrounded = false
-        try { requireNotNull(activity).startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://intrvioo.com/?nativeSignIn=$googleChallenge"))) }
-        catch (_: Exception) { finishGoogle("", "Could not open Google sign-in. Check your browser.") }
+        val cancellation = android.os.CancellationSignal()
+        googleCancellation = cancellation
+        try {
+            // The explicit button flow includes new accounts and accounts needing re-authentication.
+            val option = GetSignInWithGoogleOption.Builder(context.getString(R.string.default_web_client_id)).build()
+            val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+            CredentialManager.create(context).getCredentialAsync(current, request, cancellation, { main.post(it) },
+                object : CredentialManagerCallback<GetCredentialResponse, GetCredentialException> {
+                    override fun onResult(result: GetCredentialResponse) {
+                        if (!isCurrentGoogle(generation)) return
+                        googleCancellation = null
+                        try {
+                            val credential = result.credential
+                            require(credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+                            val token = GoogleIdTokenCredential.createFrom(credential.data).idToken
+                            // Exchange Google's ID token for Firebase's token: the hub verifies the same UID as web/iOS.
+                            FirebaseAuth.getInstance().signInWithCredential(GoogleAuthProvider.getCredential(token, null))
+                                .addOnCompleteListener { signIn ->
+                                    if (!isCurrentGoogle(generation)) return@addOnCompleteListener
+                                    val user = if (signIn.isSuccessful) signIn.result?.user else null
+                                    if (user == null) finishGoogle("", "Could not connect this Google account. Please try again.")
+                                    else user.getIdToken(true).addOnCompleteListener { firebase ->
+                                        if (isCurrentGoogle(generation)) {
+                                            val body = if (firebase.isSuccessful) firebase.result?.token.orEmpty() else ""
+                                            finishGoogle(body, if (body.isEmpty()) "Could not connect this Google account. Please try again." else "")
+                                        }
+                                    }
+                                }
+                        } catch (_: Exception) { finishGoogle("", "Google sign-in could not finish. Please try again.") }
+                    }
+                    override fun onError(error: GetCredentialException) {
+                        if (!isCurrentGoogle(generation)) return
+                        finishGoogle("", when (error) {
+                            is GetCredentialCancellationException -> "Google sign-in was cancelled. Try again."
+                            is NoCredentialException -> "Add a Google account on this device, then try again."
+                            else -> "Google sign-in could not start. Update Google Play services and try again."
+                        })
+                    }
+                })
+        } catch (_: Exception) { finishGoogle("", "Google sign-in could not start. Please try again.") }
     }
-    fun googleBackgrounded() { if (googleCallback != null) googleWasBackgrounded = true }
-    fun googleForegrounded() {
-        if (googleWasBackgrounded && googleCallback != null) main.postDelayed({
-            if (googleWasBackgrounded && googleCallback != null) finishGoogle("", "Google sign-in was cancelled. Try again.")
-        }, 1000)
-    }
-    fun handleGoogleCallback(uri: android.net.Uri?) {
-        if (uri?.scheme != "foodrun" || uri.host != "signin" || googleCallback == null) return
-        if (uri.getQueryParameter("state") != googleChallenge) return
-        val code = uri.getQueryParameter("code").orEmpty()
-        if (!code.matches(Regex("[A-Za-z0-9_-]{43}"))) return
-        googleWasBackgrounded = false
-        val verifier = googleVerifier
-        val generation = googleGeneration
-        googleChallenge = ""
-        files.execute {
-            var token = ""
-            var error = ""
-            try {
-                val url = java.net.URL("https://foodrun-api-q6b9.onrender.com/auth/native/exchange")
-                val connection = url.openConnection() as javax.net.ssl.HttpsURLConnection
-                try {
-                    connection.requestMethod = "POST"; connection.doOutput = true
-                    connection.connectTimeout = 15000; connection.readTimeout = 15000
-                    connection.setRequestProperty("Content-Type", "application/json")
-                    connection.outputStream.use { it.write(org.json.JSONObject().put("code", code).put("verifier", verifier).toString().toByteArray()) }
-                    require(connection.responseCode == 200)
-                    val json = connection.inputStream.bufferedReader().use { it.readText() }
-                    token = org.json.JSONObject(json).getString("firebaseToken")
-                } finally { connection.disconnect() }
-            } catch (_: Exception) { error = "Google sign-in could not finish. Start again in the app." }
-            main.post { if (!closed && generation == googleGeneration) finishGoogle(token, error) }
-        }
-    }
+    private fun isCurrentGoogle(generation: Int) = !closed && generation == googleGeneration && googleCallback != null
     private fun finishGoogle(token: String, error: String) {
         val callback = googleCallback
-        googleCallback = null; googleVerifier = ""; googleChallenge = ""; googleWasBackgrounded = false
+        googleCallback = null; googleCancellation = null
         callback?.complete(token, error)
     }
+    override fun accountSignedOut() { FirebaseAuth.getInstance().signOut() }
 
     fun attach(activity: ComponentActivity) {
         check(!closed)
@@ -153,6 +167,11 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
 
     fun detach(activity: ComponentActivity) {
         if (this.activity === activity) {
+            if (googleCancellation != null) {
+                googleGeneration++
+                googleCancellation?.cancel()
+                finishGoogle("", "Google sign-in was interrupted. Please try again.")
+            }
             this.activity = null
             documents = null
             scanner = null
@@ -268,7 +287,7 @@ class GroupAndroidPlatform(context: Context) : GroupPlatform {
 
     fun close() {
         closed = true
-        googleCallback = null; googleVerifier = ""; googleChallenge = ""; googleGeneration++
+        googleGeneration++; googleCallback = null; googleCancellation?.cancel(); googleCancellation = null
         transport.close()
         discovery.close()
         files.shutdownNow()

@@ -33,11 +33,19 @@ export function Button({
   busy = false,
   rtl = false,
   onPress,
+  tile,
+  icon,
+  caption,
+  surface,
 }: {
   action: Action;
   busy?: boolean;
   rtl?: boolean;
   onPress?: () => void;
+  tile?: boolean;
+  icon?: string;
+  caption?: string;
+  surface?: string;
 }) {
   const disabled = busy || !action.enabled;
   const motion = usePressMotion();
@@ -71,8 +79,10 @@ export function Button({
         action.destructive && styles.danger,
         disabled && styles.disabled,
         pressed && { opacity: 0.75 },
+        tile && { alignItems: rtl ? "flex-end" : "flex-start", padding: 16, borderRadius: 22, minHeight: 132, gap: 8, backgroundColor: surface || colors.mint },
       ]}
     >
+      {!!icon && <Icon name={icon} color={colors.forest} size={26}/>}
       <Animated.Text
         style={[
           textStyle(rtl, "semibold"),
@@ -89,6 +99,7 @@ export function Button({
       >
         {action.title}
       </Animated.Text>
+      {!!caption && <Text style={[textStyle(rtl), {fontSize: 11, lineHeight: 19, color:colors.muted}]}>{caption}</Text>}
     </Pressable>
   );
 }

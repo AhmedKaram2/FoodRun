@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
     val state: GroupState, val adminAvailable: Boolean, val supportActive: Boolean, val accountId: String, val authenticated: Boolean, val mainFields: List<GroupField>, val extraFields: List<GroupField>,
     val topCards: List<GroupCard>, val sections: List<GroupSection>, val primaryAction: GroupButton?,
     val inlineButtons: List<GroupButton>, val utilityButtons: List<GroupButton>, val quick: ReactQuickWheel, val profile: ReactProfile? = null,
+    val notificationUnread: Int = 0,
 )
 @Serializable data class ReactProfile(val name: String, val photo: String)
 @Serializable data class ReactWheelPerson(val id: Int, val name: String, val active: Boolean, val removable: Boolean)
@@ -31,6 +32,7 @@ class GroupReactBridge(val groups: GroupController, private val wheel: FoodRunCo
                 quick.historyItems.map { ReactWheelHistory(it.id,it.person.name,it.dateLabel) },quick.winner?.name.orEmpty(),quick.isSpinning,quick.canSpin,
                 quick.spinPlan?.startRotation ?: 0.0,quick.spinPlan?.endRotation ?: 0.0,quick.destination.name,quick.nameDraft,quick.nameErrorMessage.orEmpty(),quick.wheelRevision),
             groups.library.home?.profile?.let { ReactProfile(it.name,it.photo) },
+            if(groups.library.identityToken.isNotEmpty()) groups.notifications.items.count { !it.read } else 0,
         ))
     }
     fun dispatch(action: String, value: String) {

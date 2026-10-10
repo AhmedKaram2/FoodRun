@@ -71,6 +71,22 @@ class GroupReactBridgeTest {
         assertEquals("owner",c.library.home!!.profile.userId)
         assertFalse(GroupReactBridge(c,FoodRunController(Storage(),UtcFoodRunTimeZone())).snapshotJson().contains("private-room-token"))
     }
+    @Test fun unreadBadgeUpdatesFromTheInboxAndClearsWhenReadOrSignedOut() {
+        val phone = Phone(); val c = owner(phone); phone.deferNotifications = true
+        val bridge = GroupReactBridge(c,FoodRunController(Storage(),UtcFoodRunTimeZone()))
+        c.dispatch(GroupAction.OPEN_NOTIFICATIONS)
+        val unread = FoodNotification("notice","room",1,"wallet_charge","Wallet update","Payment received",createdAt = 1000)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply(notifications = listOf(unread,unread.copy(id="old",read=true)))),"")
+        fun badge() = orderJson.parseToJsonElement(bridge.snapshotJson()).jsonObject.getValue("notificationUnread").jsonPrimitive.int
+        assertEquals(1,badge())
+        c.dispatch(GroupAction.OPEN_NOTIFICATION,"notice:open")
+        assertEquals(GroupPage.WALLET,c.page)
+        assertEquals("read",phone.notificationRequests.last().first.action)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply(notifications=listOf(unread.copy(read=true)))),"")
+        assertEquals(0,badge())
+        c.library=c.library.copy(identityToken="")
+        assertEquals(0,badge())
+    }
     @Test fun sharedQuickWheelKeepsRosterAndHistoryInTheExistingNativeStorage() {
         val phone = Phone();val storage = Storage();val wheel = FoodRunController(storage,UtcFoodRunTimeZone())
         val bridge = GroupReactBridge(GroupController(phone),wheel)

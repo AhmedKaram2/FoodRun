@@ -46,7 +46,11 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         }
         val items = db.records("notification:$uid:").map { orderJson.decodeFromString<FoodNotification>(it.second) }
             .filter { accessible(uid, it) }.sortedByDescending { it.createdAt }.take(100)
-        return NotificationReply(notifications = items, pushAvailable = pushAvailable)
+        val walletIds = if(items.any { it.kind.startsWith("wallet_") && it.transferId.isEmpty() }) WalletService.snapshot(db,uid).let { wallet ->
+            (wallet.topUps.map { it.id } + wallet.payments.map { it.id } + wallet.batches.map { it.id }).associateBy { RoomService.hash("wallet:0:$it:$uid").take(40) }
+        } else emptyMap()
+        return NotificationReply(notifications = items.map { item -> if(item.kind.startsWith("wallet_") && item.transferId.isEmpty())
+            item.copy(transferId=walletIds[item.id].orEmpty()) else item }, pushAvailable = pushAvailable)
     }
 
     private fun devices() = db.records("push-device:").map { it.first to orderJson.decodeFromString<PushDevice>(it.second) }
@@ -68,7 +72,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         addUser(uid, room, eventId, kind, title, body, actions, transferId)
     }
     fun wallet(uid: String, eventId: String, kind: String, title: Pair<String, String>, body: Pair<String, String>) =
-        addUser(uid, null, eventId, kind, title, body, listOf("wallet"))
+        addUser(uid, null, eventId, kind, title, body, listOf("wallet"),transferId=eventId)
     fun friendRoom(uid: String, invitation: FoodInvitation, room: Room) = addUser(uid,room,invitation.id,"friend_room_invitation",
         "You're invited to ${room.name}" to "دعوة للانضمام إلى ${room.name}",
         "${invitation.invitedBy} invited you. Room code: ${room.code}." to "دعاك ${invitation.invitedBy}. رمز الغرفة: ${room.code}.",listOf("join"),invitation.id)

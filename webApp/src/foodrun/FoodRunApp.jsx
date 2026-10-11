@@ -2,6 +2,8 @@ import { declinedOrdering } from './declinedOrdering.js';
 import LiveSelectionOverlay from './LiveSelectionOverlay.jsx';
 import GroupSheet from './GroupSheet.jsx';
 import FriendGroups from './FriendGroups.jsx';
+import QuickChoice from './QuickChoice.jsx';
+import QuickChoiceOverlay from './QuickChoiceOverlay.jsx';
 import AppNavigation from './AppNavigation.jsx';
 import IosInstallSheet from './IosInstallSheet.jsx';
 import MobilePageLayout from './MobilePageLayout.jsx';
@@ -82,8 +84,8 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.5/FoodRun-Android-1.7.5.apk';
-const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.5/FoodRun-iOS-RegisteredDevices-1.7.5.ipa';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.6/FoodRun-Android-1.7.6.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.6/FoodRun-iOS-RegisteredDevices-1.7.6.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -235,7 +237,7 @@ function Avatar({ profile, small = false }) {
 function LiveSelectionWheel(props) {
   return props.style === 'names' ? <RunningNames {...props} /> : <WheelAnimation {...props} />;
 }
-function WheelAnimation({ spin, members, serverTime, active }) {
+function WheelAnimation({ spin, members, serverTime, active, general = false }) {
   const candidates = spin.memberIds.map(id => members.find(member => member.id === id)).filter(Boolean);
   const winnerIndex = spin.memberIds.indexOf(spin.winnerId);
   const finalRotation = spinRotation(spin, spin.startAt + spin.duration);
@@ -302,7 +304,7 @@ function WheelAnimation({ spin, members, serverTime, active }) {
       </g>
       <circle className="wheel-hub-shadow" cx="200" cy="205" r="43" />
       <circle className="wheel-hub" cx="200" cy="200" r="40" />
-      <text className="wheel-hub-icon" x="200" y="196" textAnchor="middle">🥡</text>
+      <text className="wheel-hub-icon" x="200" y="196" textAnchor="middle">{general ? '✦' : '🥡'}</text>
       <text className="wheel-hub-label" x="200" y="219" textAnchor="middle">INTRVIOO</text>
       <g className="wheel-pointer"><path d="M184 7 Q184 2 190 2 L200 36 Q202 42 205 36 L216 7 Q217 2 211 2 Z" /></g>
     </svg>
@@ -586,6 +588,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
     <button className="secondary" onClick={() => setPage('friends')}>{tx('Friend groups', 'مجموعات الأصدقاء')}</button>
     <HomeBanner rtl={uiLanguage.startsWith('ar')} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
     <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
+      <button className="home-shortcut" onClick={() => setPage('quick-choice')}><span aria-hidden="true">✦</span><span><b>{tx('Quick Choice','الاختيار السريع')}</b><small>{tx('Choose someone for any occasion','اختَر شخصاً لأي مناسبة')}</small></span><span aria-hidden="true">↗</span></button>
       <button className="home-shortcut" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}><span aria-hidden="true">↔</span><span><b>{t("Payment room")}</b><small>{tx('Keep every share clear', 'حساب كل واحد واضح')}</small></span><span aria-hidden="true">↗</span></button>
       <button className="home-shortcut" onClick={openRestaurants}><span aria-hidden="true">☷</span><span><b>{t("Add restaurant & menu")}</b><small>{tx('Your favorites, ready for next time', 'مطاعمك المفضلة جاهزة للطلب الجاي')}</small></span><span aria-hidden="true">↗</span></button>
       {canAccessAdmin(data.user) && <button className="secondary" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}
@@ -1390,16 +1393,23 @@ function FoodRunClientContent({ useData = useFoodRun } = {}) {
   if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
   const home = data.home;
   let content;
-  if (page === 'notifications') content = <NotificationCenter notifications={notifications} onOpen={openNotification} onBack={() => setPage('home')} />;
+  if (page === 'notifications') content = <NotificationCenter notifications={notifications} data={data} renderPayment={item => {
+    const reply=data.rooms[item.roomId],room=reply?.room,saved=data.sessions[item.roomId];
+    if(!room || !saved || room.orderNumber!==item.orderNumber || !['payment_sent','payment_reminder','payment_due'].includes(item.kind)) return null;
+    const transfer=room.transfers.find(value=>value.id===item.transferId && String(value.status).toLowerCase()==='declared');
+    const memberId=transfer?.memberId || saved.memberId,receipt=reply.receipts.find(value=>value.memberId===memberId);
+    return receipt ? <PaymentActionLine room={room} receipt={receipt} memberId={saved.memberId} data={data}/> : null;
+  }} onOpen={openNotification} onBack={() => setPage('home')} />;
   else if (page === 'downloads') content = <Page title={t("Get Intrvioo")} subtitle={t("Install the mobile app and keep your table close.")} onBack={() => setPage('home')}><AppDownloads /></Page>;
   else if (page === 'friends') content = <FriendGroups data={data} onBack={() => setPage('home')} />;
+  else if (page === 'quick-choice') content = <QuickChoice key={home.profile.userId} home={home} startQuickChoice={data.startQuickChoice} onBack={() => setPage('home')} />;
   else if (page === 'profile') content = <ProfileScreen data={{...data,enablePush:()=>notifications.enable(true)}} openRoom={openRoom} onBack={closeRoom} onSaved={() => setPage(inviteCode ? 'join' : 'home')} />;
   else if (page === 'restaurants') content = <RestaurantLibraryScreen language={uiLanguage} data={data} room={restaurantRoomId ? data.rooms[restaurantRoomId]?.room : null} onBack={() => { setPage(restaurantRoomId ? 'room' : 'home'); setRestaurantRoomId(''); }} />;
   else if (page === 'payment-create') content = <CreatePaymentRoom data={data} onBack={() => setPage('home')} openRoom={openRoom} openProfile={() => setPage('profile')} />;
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}<MobilePageLayout key={page} pageKey={page}>{content}</MobilePageLayout><LiveSelectionOverlay key={data.user.uid} data={data} renderWheel={props => <LiveSelectionWheel key={props.spin.id} {...props}/>}/><footer className="mobile-app-nav"><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('profile')}>{t("Wallet")}</button><button onClick={() => setPage('friends')}>{tx('Friends','الأصدقاء')}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button><details className="mobile-nav-more"><summary>{tx('More','المزيد')}</summary><div>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></div></details></footer></></HomeNavigation.Provider>;
+  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}<MobilePageLayout key={page} pageKey={page}>{content}</MobilePageLayout><QuickChoiceOverlay key={data.user.uid+"-quick"} data={data} renderSelection={props => <LiveSelectionWheel {...props}/>} /><LiveSelectionOverlay key={data.user.uid} data={data} renderWheel={props => <LiveSelectionWheel key={props.spin.id} {...props}/>}/><footer className="mobile-app-nav"><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('profile')}>{t("Wallet")}</button><button onClick={() => setPage('friends')}>{tx('Friends','الأصدقاء')}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button><details className="mobile-nav-more"><summary>{tx('More','المزيد')}</summary><div>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></div></details></footer></></HomeNavigation.Provider>;
 }
 
 function FoodRunClient(props) {

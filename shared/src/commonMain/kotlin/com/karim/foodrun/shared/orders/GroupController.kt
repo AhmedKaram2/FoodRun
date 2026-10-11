@@ -16,6 +16,30 @@ class GroupController(val platform: GroupPlatform) {
     internal val friends = GroupFriends(this)
     internal val walletAnnouncement = GroupWalletAnnouncement(this)
     internal val smartDefaults = GroupSmartDefaults(this)
+    internal var quickSelection: QuickChoiceSession? = null
+    internal var quickSelectionOffset = 0L
+    internal var quickChoiceBusy = false
+    internal fun acceptQuickChoice(reply: RoomReply) {
+        if(reply.code != "QUICK_CHOICE_LIVE") return
+        quickSelection = reply.quickChoice
+        quickSelectionOffset = reply.serverTime - platform.now()
+    }
+    internal fun quickChoice(request: QuickChoiceRequest) {
+        if(quickChoiceBusy) return
+        val hub = library.identityHub ?: library.selectedHub ?: return
+        val token = library.identityToken
+        if(token.isEmpty()) { error = "Sign in to share a quick choice."; publish(); return }
+        quickChoiceBusy = true; publish()
+        platform.request(hub,encodeCommand(RoomCommand(commandId=platform.uuid(),kind=CommandKind.QUICK_CHOICE,identityToken=token,quickChoice=request)),object : GroupReplyCallback {
+            override fun complete(body: String, failure: String) {
+                if(library.identityToken != token) return
+                quickChoiceBusy = false
+                try { require(failure.isBlank()) { failure }; val reply = decodeReply(body); require(reply.ok) { reply.error }; acceptQuickChoice(reply) }
+                catch(problem: Exception) { error = problem.message ?: "Could not start the quick choice. Try again." }
+                publish()
+            }
+        })
+    }
     private var recoveringCommand: String? = null
     private var recoveryAt = 0L
     internal var page = GroupPage.HOME
@@ -793,6 +817,7 @@ class GroupController(val platform: GroupPlatform) {
     }
     private val homeTimes = mutableMapOf<String, Long>()
     private fun acceptHome(home: HomePayload, hub: HubPairing, serverTime: Long = 0) {
+        if(library.home?.profile?.userId != home.profile.userId) { quickSelection=null;quickChoiceBusy=false;quickSelectionOffset=0 }
         val key = "${hub.url}:${home.profile.userId}"
         if(serverTime > 0 && serverTime < (homeTimes[key] ?: 0)) return
         if(serverTime > 0) homeTimes[key] = serverTime
@@ -829,11 +854,11 @@ class GroupController(val platform: GroupPlatform) {
         stopHomeWatching(); val epoch = homeGeneration
         val hub = library.identityHub
         if (hub != null && library.identityToken.isNotEmpty()) {
-            val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.HOME, identityToken = library.identityToken)
+            val request = RoomCommand(commandId = platform.uuid(), kind = CommandKind.HOME, identityToken = library.identityToken, name="quick-choice-v1")
             homeWatching = platform.watch(hub, encodeCommand(request), object : GroupReplyCallback {
                 override fun complete(body: String, error: String) {
                     if(epoch != homeGeneration || error.isNotEmpty()) return
-                    try { val next = decodeReply(body); if (next.ok) next.home?.let { acceptHome(it, hub, next.serverTime); watchSavedRooms(epoch); publish() } }
+                    try { val next = decodeReply(body); if(next.ok) { acceptQuickChoice(next); next.home?.let { acceptHome(it, hub, next.serverTime); watchSavedRooms(epoch) }; publish() } }
                     catch (_: Exception) { /* Existing home stays available; the next update retries. */ }
                 }
             })

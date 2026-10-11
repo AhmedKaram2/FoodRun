@@ -303,7 +303,7 @@ function Application() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {state.page === "QUICK_SPIN" ? (
-          <QuickWheel state={snapshot.quick} rtl={rtl} />
+          <QuickWheel key={snapshot.accountId} state={snapshot.quick} rtl={rtl} />
         ) : guided.kind && guided.screen ? (
           <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
         ) : state.page === "NOTIFICATIONS" ? (
@@ -683,7 +683,13 @@ function Application() {
         <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Copy latest list","نسخ القائمة الحالية"),"SHARE_RESTAURANT_ORDER")}/>
         <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Not sent yet","لم أرسل الطلب بعد"),"DISMISS_RESTAURANT_SEND")}/>
       </BottomSheet>
-      <LiveSelectionOverlay key={snapshot.accountId} wheel={state.wheel} rtl={rtl} onVisibility={setSelectionOpen}/>
+      <LiveSelectionOverlay key={snapshot.accountId} wheel={snapshot.quickSelection ? {
+        roomName:snapshot.quickSelection.purpose || tx(rtl,"Food pickup","إحضار الطعام"),names:snapshot.quickSelection.people.map(person=>person.name),
+        round:snapshot.quickSelection.spin,serverOffset:snapshot.quickSelectionOffset || 0,
+        winner:snapshot.quickSelection.people.find(person=>person.id===snapshot.quickSelection?.spin.winnerId)?.name || "",style:snapshot.quickSelection.style,
+      } : state.wheel} general={!!snapshot.quickSelection} expiresAt={snapshot.quickSelection?.expiresAt} rtl={rtl} onVisibility={setSelectionOpen}
+      busy={snapshot.quick.spinning} onRetry={snapshot.quickSelection?.ownerId === snapshot.accountId ? ()=>native.quickAction("retry-live",snapshot.quickSelection!.id) : undefined}
+      onClose={snapshot.quickSelection?.ownerId === snapshot.accountId ? ()=>native.quickAction("close-live",snapshot.quickSelection!.id) : undefined}/>
     </SafeAreaView></SelectionPriority.Provider>
   );
 }

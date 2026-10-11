@@ -26,12 +26,13 @@ function Countdown({number,rtl}:{number:number;rtl:boolean}) {
   useEffect(() => { pulse.setValue(0); if(!motion) return; const animation=Animated.timing(pulse,{toValue:1,duration:750,easing:Easing.out(Easing.back(1.5)),useNativeDriver:true}); animation.start(); return () => animation.stop(); },[number,motion,pulse]);
   return <View style={styles.countdown} testID="selection-countdown"><Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Everyone’s here. Ready?","كلنا جاهزين للاختيار؟")}</Text><Animated.Text accessibilityLiveRegion="assertive" style={[textStyle(rtl,"bold"),styles.digit,motion && {opacity:pulse.interpolate({inputRange:[0,.2,1],outputRange:[0,1,1]}),transform:[{scale:pulse.interpolate({inputRange:[0,1],outputRange:[.55,1]})}]}]}>{number}</Animated.Text><Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"The selection starts together.","هنبدأ الاختيار مع بعض.")}</Text></View>;
 }
-export default function LiveSelectionOverlay({ wheel, rtl, onVisibility }: {wheel?:Wheel|null;rtl:boolean;onVisibility:(visible:boolean)=>void}) {
+export default function LiveSelectionOverlay({ wheel, rtl, onVisibility, general=false, expiresAt, onRetry, onClose, busy=false }: {wheel?:Wheel|null;rtl:boolean;onVisibility:(visible:boolean)=>void;general?:boolean;expiresAt?:number;onRetry?:()=>void;onClose?:()=>void;busy?:boolean}) {
   const [now,setNow] = useState(Date.now()), [dismissed,setDismissed] = useState(""), [presenting,setPresenting] = useState(false);
   const motion = useMotionEnabled(), end = wheel ? wheel.round.startAt + wheel.round.duration : 0;
   const ended = !!wheel && now+wheel.serverOffset >= end;
   const countdown = wheel ? selectionCountdown(wheel.round.startAt,now+wheel.serverOffset) : 0;
-  const visible = !!wheel && dismissed !== wheel.round.id && now+wheel.serverOffset < end+6000;
+  const visible = !!wheel && dismissed !== wheel.round.id && now+wheel.serverOffset < (expiresAt || end+6000);
+  const close = () => { if(!ended || busy || !wheel) return; onClose?.(); setDismissed(wheel.round.id); };
   useEffect(() => { setNow(Date.now()); const timer=setInterval(() => setNow(Date.now()),250); return () => clearInterval(timer); },[wheel?.round.id]);
   useEffect(() => {
     setPresenting(false);
@@ -46,13 +47,13 @@ export default function LiveSelectionOverlay({ wheel, rtl, onVisibility }: {whee
     return () => clearTimeout(timer);
   },[visible,onVisibility]);
   useEffect(() => () => onVisibility(false),[onVisibility]);
-  return <>{visible && !presenting && <View style={[StyleSheet.absoluteFill,styles.screen,{zIndex:9999}]} accessibilityViewIsModal/>}<Modal visible={visible && presenting} animationType={motion ? "fade" : "none"} presentationStyle="fullScreen" onDismiss={() => { if(!visible) onVisibility(false); }} onRequestClose={() => { if(ended && wheel) setDismissed(wheel.round.id); }}>
+  return <>{visible && !presenting && <View style={[StyleSheet.absoluteFill,styles.screen,{zIndex:9999}]} accessibilityViewIsModal/>}<Modal visible={visible && presenting} animationType={motion ? "fade" : "none"} presentationStyle="fullScreen" onDismiss={() => { if(!visible) onVisibility(false); }} onRequestClose={close}>
     <SafeAreaView style={styles.screen} edges={["top","bottom"]}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[textStyle(rtl,"semibold"),styles.caption]}>{wheel?.roomName || tx(rtl,"Your room","غرفتك")}</Text>
-        <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={[textStyle(rtl,"bold"),styles.title]}>{ended ? tx(rtl,"We have our person!","تم اختيار مسؤول الطلب!") : tx(rtl,"Who’s ordering today?","مين هيطلب لنا النهارده؟")}</Text>
+        <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={[textStyle(rtl,"bold"),styles.title]}>{general ? tx(rtl,ended ? "We have our pick!" : "Who will it be?",ended ? "تم الاختيار!" : "مَن سيكون الاختيار؟") : ended ? tx(rtl,"We have our person!","تم اختيار مسؤول الطلب!") : tx(rtl,"Who’s ordering today?","مين هيطلب لنا النهارده؟")}</Text>
         {countdown ? <Countdown number={countdown} rtl={rtl}/> : wheel && <LiveWheel key={wheel.round.id} wheel={wheel} rtl={rtl}/>}
-        {ended && <><Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Time for a delicious team meal.","وقت الأكل الحلو مع أصحابك.")}</Text><Button rtl={rtl} action={action(tx(rtl,"Continue","متابعة"),"CONTINUE","",true)} onPress={() => { if(wheel) setDismissed(wheel.round.id); }}/></>}
+        {ended && <><Text style={[textStyle(rtl),styles.subtitle]}>{general ? tx(rtl,"A quick choice, shared with everyone included.","اختيار سريع، والنتيجة نفسها لكل المشاركين.") : tx(rtl,"Time for a delicious team meal.","وقت الأكل الحلو مع أصحابك.")}</Text>{onRetry && <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Try again","حاول مرة أخرى"),"RETRY","",true)} onPress={onRetry}/>}<Button rtl={rtl} busy={busy} action={action(general ? tx(rtl,"Close","إغلاق") : tx(rtl,"Continue","متابعة"),"CONTINUE","",!onRetry)} onPress={close}/></>}
       </ScrollView>
       {visible && ended && <Celebration key={wheel?.round.id} rtl={rtl}/>}
     </SafeAreaView>

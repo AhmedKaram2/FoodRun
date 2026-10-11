@@ -45,8 +45,8 @@ export type Wheel = {
   style: string;
 };
 export type QuickWheel = {
-  people: { id: number; name: string; active: boolean; removable: boolean }[];
-  history: { id: string; name: string; date: string }[];
+  people: { id: string; name: string; active: boolean; removable: boolean }[];
+  history: { id: string; name: string; date: string; purpose?: string }[];
   winner: string;
   spinning: boolean;
   canSpin: boolean;
@@ -56,8 +56,15 @@ export type QuickWheel = {
   nameDraft: string;
   error: string;
   revision: number;
+  purpose?: string;
+  style?: string;
+  groupId?: string;
+  audience?: string;
+  groups?: { id: string; name: string; count: number }[];
 };
 export type Snapshot = {
+  quickSelection?: { id:string; ownerId:string; ownerName:string; purpose:string; style:string; people:{id:string;name:string}[]; spin:Wheel['round']; expiresAt:number } | null;
+  quickSelectionOffset?: number;
   profile?: { name: string; photo: string } | null;
   notificationUnread?: number;
   adminAvailable?: boolean;

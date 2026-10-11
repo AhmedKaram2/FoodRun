@@ -50,7 +50,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                 require(recipient?.person?.userId == selectedUser && selectedUser.isNotEmpty())
                 send(CommandKind.WALLET_TOP_UP, amount = Money.parse(c.text(GroupFieldKey.WALLET_AMOUNT), currency()), text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = returnPage)
             }
-            "top-up-yes", "top-up-no" -> send(CommandKind.WALLET_REVIEW_TOP_UP, transferId = id, flag = action == "top-up-yes", returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE)
+            "top-up-yes", "top-up-no" -> send(CommandKind.WALLET_REVIEW_TOP_UP, transferId = id, flag = action == "top-up-yes", returnPage = if(c.page == GroupPage.NOTIFICATIONS) GroupPage.NOTIFICATIONS else if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE)
             "batch" -> {
                 batchRoomId = ""
                 returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE

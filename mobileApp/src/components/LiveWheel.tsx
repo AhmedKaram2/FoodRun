@@ -154,7 +154,7 @@ export default function LiveWheel({
       {wheel.style === "names" ? (
         <View style={styles.running}>
           <Text style={[styles.name, { fontFamily: font("bold", rtl) }]}>
-            {ended ? wheel.winner : wheel.names[index]}
+            {ended ? wheel.winner : reduced ? tx(rtl,"Choosing…","جارٍ الاختيار…") : wheel.names[index]}
           </Text>
         </View>
       ) : (

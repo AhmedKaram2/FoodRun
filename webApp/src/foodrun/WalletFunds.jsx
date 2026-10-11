@@ -110,6 +110,28 @@ export default function WalletFunds({ data, mode="all" }) {
   </section>;
 }
 
+export function WalletNotificationActions({data,item}) {
+  const wallet=data.home?.wallet,userId=uid(data);
+  if(!wallet)return null;
+  const topUp=wallet.topUps?.find(value=>value.id===item.transferId && value.holderId===userId && value.status==='PENDING');
+  const batch=wallet.batches?.find(value=>value.id===item.transferId && value.recipientId===userId && value.status==='PENDING');
+  const payment=wallet.payments?.find(value=>value.id===item.transferId);
+  const review=(kind,id,flag)=>data.send(kind,{transferId:id,flag});
+  if(topUp || batch) return <div className="stack"><strong>{money((topUp || batch).amount,(topUp || batch).currency)}</strong><p>{tx('Confirm only after receiving the full amount','أكد فقط بعد استلام كامل المبلغ')}</p><div className="hero-actions"><button className="primary" disabled={data.busy} onClick={()=>review(topUp ? 'WALLET_REVIEW_TOP_UP' : 'WALLET_REVIEW_BATCH',(topUp || batch).id,true)}>{tx('Confirm received','تأكيد الاستلام')}</button><button className="secondary" disabled={data.busy} onClick={()=>review(topUp ? 'WALLET_REVIEW_TOP_UP' : 'WALLET_REVIEW_BATCH',(topUp || batch).id,false)}>{tx('Not received','لم أستلم')}</button></div></div>;
+  const room=payment ? data.rooms?.[payment.roomId]?.room : null;
+  const claim=room?.orderNumber===payment?.orderNumber ? room?.transfers?.find(value=>value.id===`wallet-${payment.id}` && String(value.status).toLowerCase()==='declared') : null;
+  if(payment?.recipientId===userId && claim) {
+    const currentBatch=payment.batchId ? wallet.batches?.find(value=>value.id===payment.batchId && value.status==='PENDING') : null;
+    const decide=flag=>currentBatch ? review('WALLET_REVIEW_BATCH',currentBatch.id,flag) : data.send(flag ? 'CONFIRM_TRANSFER' : 'REJECT_TRANSFER',{transferId:claim.id},room.id);
+    return <div className="hero-actions"><button className="primary" disabled={data.busy} onClick={()=>decide(true)}>{currentBatch ? `${tx('Confirm received','تأكيد الاستلام')} · ${money(currentBatch.amount,currentBatch.currency)}` : tx('Approve wallet payment','الموافقة على الدفع بالمحفظة')}</button><button className="secondary" disabled={data.busy} onClick={()=>decide(false)}>{t('Decline')}</button></div>;
+  }
+  if(payment?.holderId===userId && payment.status==='OWING') {
+    const group=walletPaymentGroups(wallet,userId).find(value=>value.recipientId===payment.recipientId && value.currency===payment.currency);
+    return group ? <BatchPayment group={group} data={data}/> : null;
+  }
+  return null;
+}
+
 export function WalletPaymentOption({ data, room, receipt, canPay }) {
   const wallet = data.home?.wallet, userId = data.home ? uid(data) : '';
   const available = walletAvailable(wallet, userId, receipt.currency);

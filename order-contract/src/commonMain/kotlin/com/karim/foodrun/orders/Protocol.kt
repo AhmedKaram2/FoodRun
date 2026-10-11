@@ -5,7 +5,7 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @Serializable enum class CommandKind {
-    COMMAND_STATUS, ADD_MENU_ITEMS, PUBLISH_RESTAURANT,
+    QUICK_CHOICE, COMMAND_STATUS, ADD_MENU_ITEMS, PUBLISH_RESTAURANT,
     FRIEND_LOOKUP, FRIEND_SEARCH, SAVE_FRIEND_GROUP, DELETE_FRIEND_GROUP, LEAVE_FRIEND_GROUP, SET_NOTIFICATION_PREFERENCES,
     WALLET_PEOPLE, WALLET_RECIPIENT, WALLET_HISTORY, WALLET_TOP_UP, WALLET_REVIEW_TOP_UP, PAY_WITH_WALLET, WALLET_DECLARE_BATCH, WALLET_REVIEW_BATCH,
     CREATE_PAYMENT_ROOM, UPDATE_PAYMENT_RECEIPT, UPDATE_PAYMENT_SHARE, RECORD_PAYMENT, IDENTITY, HOME, REQUEST_BLOCK, PRICE_ITEM, CREATE, JOIN, SNAPSHOT, NEXT_ORDER, APPROVE, APPROVE_LATE_JOIN, REMOVE, PARTICIPATE, READY,
@@ -18,6 +18,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
 }
 @Serializable data class RoomCommand(
     val protocolVersion: Int = 1, val commandId: String, val kind: CommandKind,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val quickChoice: QuickChoiceRequest? = null,
     val roomId: String = "", val token: String = "", val expectedRevision: Long = -1,
     val name: String = "", val code: String = "", val memberId: String = "", val text: String = "",
     val flag: Boolean = false, val guest: Boolean = false, val eligible: Boolean = false,
@@ -122,6 +125,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
 @Serializable data class RestaurantOrderSummary(val lines: List<ReceiptLine>, val total: Long, val currency: String)
 @Serializable data class RoomReply(
     val protocolVersion: Int = 1, val ok: Boolean = true, val error: String = "", val code: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val quickChoice: QuickChoiceSession? = null,
     val room: Room? = null, val token: String = "", val memberId: String = "", val serverTime: Long = 0,
     val receipts: List<Receipt> = emptyList(), val history: List<PastOrder> = emptyList(), val historyNextOffset: Int = -1,
     @OptIn(ExperimentalSerializationApi::class)

@@ -365,6 +365,7 @@ fun Application.hubRoutes(
             var lastPresenceAt = 0L
             var memberId = ""
             var lastHome: HomePayload? = null
+            var lastQuickChoice: QuickChoiceSession? = null
             while (isActive) {
                 val now = socketClock()
                 if (memberId.isNotEmpty() && now - lastPresenceAt >= 5_000) {
@@ -392,9 +393,10 @@ fun Application.hubRoutes(
                     // Room edits signal HOME globally. Do not resend the whole catalog when
                     // this user's home payload did not actually change.
                     val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails, request.friendMembershipDetails, request.notificationPreferencesDetails, request.restaurantOrderDetails)
-                    if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome) {
+                    if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome || projected.quickChoice != lastQuickChoice) {
                         send(Frame.Text(orderJson.encodeToString(projected)))
                         lastHome = projected.home
+                        lastQuickChoice = projected.quickChoice
                     }
                     if (!snapshot.ok) break
                     if (request.liveRoomDetails && snapshot.room?.phase?.ongoing == false && (!request.autoArchiveDetails || snapshot.room?.paymentsPending != true)) break

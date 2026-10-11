@@ -50,7 +50,7 @@ class GroupReactBridgeTest {
         val phone = Phone(); val c = GroupController(phone)
         c.library = c.library.copy(selectedHub = hub)
         c.dispatch(GroupAction.OPEN_PROFILE); c.update(GroupFieldKey.PASSWORD,"private-password")
-        val bridge = GroupReactBridge(c,FoodRunController(Storage(),UtcFoodRunTimeZone()))
+        val bridge = GroupReactBridge(c)
         val body = bridge.snapshotJson(); val data = orderJson.parseToJsonElement(body).jsonObject
         assertFalse(body.contains("private-password"))
         val fields = data.getValue("mainFields").jsonArray + data.getValue("extraFields").jsonArray
@@ -69,11 +69,11 @@ class GroupReactBridgeTest {
         c.dispatch(GroupAction.OPEN_HOME)
         assertEquals(GroupPage.HOME,c.page); assertEquals(listOf(saved),c.library.sessions)
         assertEquals("owner",c.library.home!!.profile.userId)
-        assertFalse(GroupReactBridge(c,FoodRunController(Storage(),UtcFoodRunTimeZone())).snapshotJson().contains("private-room-token"))
+        assertFalse(GroupReactBridge(c).snapshotJson().contains("private-room-token"))
     }
     @Test fun unreadBadgeUpdatesFromTheInboxAndClearsWhenReadOrSignedOut() {
         val phone = Phone(); val c = owner(phone); phone.deferNotifications = true
-        val bridge = GroupReactBridge(c,FoodRunController(Storage(),UtcFoodRunTimeZone()))
+        val bridge = GroupReactBridge(c)
         c.dispatch(GroupAction.OPEN_NOTIFICATIONS)
         val unread = FoodNotification("notice","room",1,"wallet_charge","Wallet update","Payment received",createdAt = 1000)
         phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply(notifications = listOf(unread,unread.copy(id="old",read=true)))),"")
@@ -87,13 +87,17 @@ class GroupReactBridgeTest {
         c.library=c.library.copy(identityToken="")
         assertEquals(0,badge())
     }
-    @Test fun sharedQuickWheelKeepsRosterAndHistoryInTheExistingNativeStorage() {
-        val phone = Phone();val storage = Storage();val wheel = FoodRunController(storage,UtcFoodRunTimeZone())
-        val bridge = GroupReactBridge(GroupController(phone),wheel)
+    @Test fun quickPickerIsTemporaryAndDoesNotPersistRoomsOrWheelHistory() {
+        val phone = Phone();val c = owner(phone);val bridge = GroupReactBridge(c)
+        val before = phone.saved.toMap()
         bridge.quickAction("crew","");bridge.quickAction("add","");bridge.quickAction("name","New friend");bridge.quickAction("save","")
-        assertTrue(FoodRunController(storage,UtcFoodRunTimeZone()).state.people.any { it.name == "New friend" })
-        bridge.quickAction("dismiss","");bridge.quickAction("spin","0");bridge.quickAction("finish","")
-        assertEquals(1,FoodRunController(storage,UtcFoodRunTimeZone()).state.historyItems.size)
+        val snapshot=orderJson.parseToJsonElement(bridge.snapshotJson()).jsonObject.getValue("quick").jsonObject
+        assertEquals("New friend",snapshot.getValue("people").jsonArray.single().jsonObject.getValue("name").jsonPrimitive.content)
+        assertEquals(before,phone.saved)
+        bridge.quickAction("dismiss","");bridge.quickAction("spin","")
+        assertEquals(CommandKind.QUICK_CHOICE,phone.requests.last().first.kind)
+        assertEquals("",phone.requests.last().first.roomId)
+        assertNull(c.library.pending)
     }
     @Test fun supportDoesNotOverwriteOwnerStorageOrReassignDevicePushAndExpires() {
         val phone = Phone();val c = owner(phone);c.persist();val original = phone.saved.toMap()

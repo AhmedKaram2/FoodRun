@@ -7,12 +7,10 @@ final class FoodRunReactRuntime {
     static let shared = FoodRunReactRuntime()
     let platform = GroupIosPlatform()
     let groups: GroupController
-    let wheel: FoodRunController
     let viewBridge: GroupReactBridge
     private init() {
         groups = GroupController(platform: platform)
-        wheel = FoodRunController(storage: IosFoodRunStorage(defaults: .standard),timeZone: IosFoodRunTimeZone())
-        viewBridge = GroupReactBridge(groups:groups,wheel:wheel)
+        viewBridge = GroupReactBridge(groups:groups)
         platform.onNotification = { [weak groups] id, action in groups?.openNotification(id:id,action:action) }
     }
 }
@@ -21,13 +19,12 @@ final class FoodRunReactRuntime {
 final class FoodRunReactModule: RCTEventEmitter, GroupObserver, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     private let runtime = FoodRunReactRuntime.shared
     private var listening = false
-    private var observation: FoodRunObservation?
     private var photoResolve: RCTPromiseResolveBlock?
     private var photoReject: RCTPromiseRejectBlock?
     private var receiptPhoto = false
     override static func requiresMainQueueSetup() -> Bool { true }
     override var methodQueue: DispatchQueue! { DispatchQueue.main }
-    override init() { super.init();runtime.groups.observe(observer:self);observation = runtime.wheel.observe { [weak self] _ in self?.emit() } }
+    override init() { super.init();runtime.groups.observe(observer:self) }
     override func supportedEvents() -> [String]! { ["FoodRunState"] }
     override func startObserving() { listening = true;emit() }
     override func stopObserving() { listening = false }
@@ -63,5 +60,5 @@ final class FoodRunReactModule: RCTEventEmitter, GroupObserver, UIImagePickerCon
         guard let data,data.count <= (receiptPhoto ? 440_000 : 128_000) else { photoReject?("PHOTO","Choose a smaller photo.",nil);return }
         photoResolve?("data:image/jpeg;base64,"+data.base64EncodedString())
     }
-    override func invalidate() { runtime.groups.removeObserver(observer:self);observation?.cancel();observation = nil;super.invalidate() }
+    override func invalidate() { runtime.groups.removeObserver(observer:self);super.invalidate() }
 }

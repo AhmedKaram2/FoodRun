@@ -6,7 +6,6 @@ import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.ViewManager
-import com.karim.foodrun.shared.FoodRunObservation
 import com.karim.foodrun.shared.orders.*
 
 class FoodRunReactPackage : ReactPackage {
@@ -17,9 +16,8 @@ class FoodRunReactModule(context: ReactApplicationContext) : ReactContextBaseJav
     private val app = context.applicationContext as FoodRunApplication
     private val main = Handler(Looper.getMainLooper())
     private var listeners = 0
-    private var quickObservation: FoodRunObservation? = null
     override fun getName() = "FoodRun"
-    override fun initialize() { super.initialize(); main.post { app.groups.observe(this); quickObservation = app.quickWheel.observe { emit() } } }
+    override fun initialize() { super.initialize(); main.post { app.groups.observe(this) } }
     override fun changed(state: GroupState) = emit()
     private fun emit() { if(listeners > 0 && reactApplicationContext.hasActiveReactInstance()) reactApplicationContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("FoodRunState",app.viewBridge.snapshotJson()) }
     @ReactMethod fun addListener(event: String) { main.post { listeners++; emit() } }
@@ -36,5 +34,5 @@ class FoodRunReactModule(context: ReactApplicationContext) : ReactContextBaseJav
         if(key !in listOf("PHOTO","ADMIN_PHOTO","RECEIPT_PHOTO")) { promise.reject("PHOTO","Choose a profile or receipt photo."); return@post }
         app.platform.choosePhoto(key == "RECEIPT_PHOTO",object : GroupReplyCallback { override fun complete(body: String,error: String) { if(error.isEmpty()) promise.resolve(body) else promise.reject("PHOTO",error) } })
     } }
-    override fun invalidate() { main.post { listeners = 0; app.groups.removeObserver(this); quickObservation?.cancel(); quickObservation = null }; super.invalidate() }
+    override fun invalidate() { main.post { listeners = 0; app.groups.removeObserver(this) }; super.invalidate() }
 }

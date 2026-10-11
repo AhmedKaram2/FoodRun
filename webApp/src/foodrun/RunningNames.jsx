@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { t, tf } from './i18n.js';
 import { runningNameIndex } from './wheel.js';
 
-export default function RunningNames({ spin, members, serverTime, active }) {
+export default function RunningNames({ spin, members, serverTime, active, general = false, purpose = '' }) {
   const clock = useRef({ server: Number(serverTime) || Date.now(), monotonic: performance.now() });
   const [now, setNow] = useState(clock.current.server);
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -26,6 +26,6 @@ export default function RunningNames({ spin, members, serverTime, active }) {
   return <div className={`running-names ${done ? 'finished' : ''}`} role="img" aria-label={done ? tf('{name} was selected', { name: names[index] }) : tf('Selecting one of {count} people', { count: names.length })}>
     <span className="name-runner-dot">{done ? '✓' : '✦'}</span>
     <div className="name-runner-window" aria-hidden="true"><div className="name-runner-neighbor">{!reduced && !done ? names[(index + names.length - 1) % names.length] : ''}</div><div className="name-runner-selected" key={shown}>{shown}</div><div className="name-runner-neighbor">{!reduced && !done ? names[(index + 1) % names.length] : ''}</div></div>
-    <p>{done ? t('Selected to order') : t('Who will order?')}</p>
+    <p>{general ? purpose : done ? t('Selected to order') : t('Who will order?')}</p>
   </div>;
 }

@@ -50,6 +50,8 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     homeReply.current = reply; setHome(reply.home); return true;
   };
   const [home, setHome] = useState(null), [rooms, setRooms] = useState({}), [online, setOnline] = useState({});
+  const [quickSelection,setQuickSelection] = useState(null);
+  const acceptQuick = reply => { if(reply.code === 'QUICK_CHOICE_LIVE') setQuickSelection(reply.quickChoice ? {...reply.quickChoice,serverOffset:reply.serverTime-Date.now()} : null); };
   const { error, setError, notice, setNotice, feedback, dismissFeedback } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [paymentReminderTimes, setPaymentReminderTimes] = useState({});
@@ -75,6 +77,7 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     setUser(next); setAuthReady(true);
   }), []);
   useEffect(() => {
+    setQuickSelection(null);
     const epoch = ++alive.current; setSessionScope(''); homeReply.current = null; setHome(null); setRooms({}); roomRef.current = {}; setSessions({}); setOnline({}); setBusy(false); inFlight.current = false; setIdentityToken(''); setAccessBlock(null); setRoomBlocks({}); setJoinBlock(null); setPaymentReminderTimes({}); setPaymentReminderStates({}); seen.current.clear(); pending.current = null;
     setConnectionState(''); setError('');
     if (!user || !hub) return;
@@ -97,8 +100,9 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
         if (!current()) return;
         readBlock(reply); setAccessBlock(null); setIdentityToken(reply.identityToken); setSessionScope(sessionStorageKey(user.uid, hub)); applyHome(reply); if (!pending.current) setError('');
         setSessions(Object.fromEntries(reply.home.rooms.map(room => [room.roomId, room])));
-        return watch(hub, command('HOME', { identityToken: reply.identityToken }), next => {
+        return watch(hub, command('HOME', { identityToken: reply.identityToken,name:'quick-choice-v1' }), next => {
           if (!current()) return;
+          acceptQuick(next);
           if (!applyHome(next)) return; readBlock(next);
           setSessions(Object.fromEntries(next.home.rooms.map(room => [room.roomId, room])));
           next.home.invitations.forEach(invite => alert(`invite:${invite.id}`, `You're invited to ${invite.roomName}.`, t("Join from your home screen.")));
@@ -256,5 +260,5 @@ export function useFoodRun({ supportSession = null, onSupportEnd } = {}) {
     } catch { /* A later status check can recover after a network interruption. */ }
   };
   const walletQuery = (kind, fields = {}, signal) => request(hub, command(kind, { identityToken, ...fields }), signal);
-  return { walletQuery, identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, connectionState, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
+  return { quickSelection, startQuickChoice: async quickChoice => { const epoch = alive.current; const reply = await walletQuery("QUICK_CHOICE",{quickChoice}); if(epoch === alive.current) acceptQuick(reply); return reply; }, walletQuery, identityToken, accessBlock, roomBlocks, joinBlock, clearJoinBlock: () => setJoinBlock(null), user, authReady, hub, connectionState, home, rooms, sessions, online, error, setError, notice, setNotice, feedback, dismissFeedback, busy, send, retry, loadOlderHistory, hasPending: !!pending.current, connect, offlineReceipts, clearOfflineReceipts, paymentReminderTimes, paymentReminderStates, checkPaymentReminder };
 }

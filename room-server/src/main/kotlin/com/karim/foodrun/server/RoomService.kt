@@ -12,6 +12,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private val wallets = WalletService(db, accounts, notifications, clock, ::signalRoom)
     private val friends = FriendGroupService(db, accounts, emails, notifications, clock)
     private val support = SupportSessions(db, clock)
+    private val quickChoices = QuickChoiceService(clock, ::signalHome, random)
     @Synchronized internal fun startSupport(actor: CloudIdentity, userId: String): RoomReply = db.transaction {
         val token = support.start(actor, userId)
         accounts.home(token).copy(identityToken = token)
@@ -81,8 +82,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         return member.copy(approved = true, participating = participating, ready = participating,
             eligible = participating, latePayerApproved = false)
     }
-    @Synchronized fun eventVersion(kind: CommandKind, roomId: String): Long =
-        if (kind == CommandKind.HOME) homeEvents else roomEvents[roomId] ?: 0L
+    @Synchronized fun eventVersion(kind: CommandKind, roomId: String): Long {
+        quickChoices.prune()
+        return if (kind == CommandKind.HOME) homeEvents else roomEvents[roomId] ?: 0L
+    }
     @Synchronized fun touch(memberId: String) { if (memberId.isNotEmpty()) presence[memberId] = clock() }
     private fun signalRoom(roomId: String) {
         roomEvents[roomId] = ++eventSequence
@@ -105,7 +108,14 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             reply.room?.let { signalRoom(it.id) }
         }
         else if(c.kind == CommandKind.COMMAND_STATUS) commandStatus(c)
-        else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken)
+        else if (c.kind == CommandKind.QUICK_CHOICE) {
+            val home = requireNotNull(accounts.home(c.identityToken).home)
+            val selected = quickChoices.execute(home.profile.userId,home,requireNotNull(c.quickChoice))
+            RoomReply(code="QUICK_CHOICE_LIVE",quickChoice=selected,serverTime=clock())
+        }
+        else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken).let { reply ->
+            if(c.name == "quick-choice-v1") reply.copy(code="QUICK_CHOICE_LIVE",quickChoice=quickChoices.view(requireNotNull(reply.home).profile.userId)) else reply
+        }
         else if (c.kind in listOf(CommandKind.ADD_MENU_ITEMS, CommandKind.PUBLISH_RESTAURANT)) db.transaction {
             val uid = accounts.userId(c.identityToken)
             val restaurant = requireNotNull(c.restaurant) { "Choose a restaurant and menu." }

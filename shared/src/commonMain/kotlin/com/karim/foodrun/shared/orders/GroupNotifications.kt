@@ -131,8 +131,37 @@ internal class GroupNotifications(private val c: GroupController) {
         }
     }
     fun inbox(): GroupFlowContent {
-        val cards = items.map { item -> GroupCard("notification:${item.id}", item.title, item.body, if(item.read) "" else tr("New", "جديد"),
-            item.actions.map { GroupButton(it.title, GroupAction.OPEN_NOTIFICATION, "${item.id}:${it.id}") }) }
+        val walletCards = c.walletFunds.cards("")
+        val cards = items.map { item ->
+            val direct = if(item.kind.startsWith("wallet_")) {
+                val matching = walletCards.filter { it.id in listOf("wallet-top-up:${item.transferId}","wallet-batch:${item.transferId}","wallet-payment:${item.transferId}") }
+                val payment = c.library.home?.wallet?.payments?.firstOrNull { it.id == item.transferId }
+                val grouped = payment?.takeIf { it.holderId == c.library.home?.profile?.userId && it.status == WalletPaymentStatus.OWING }?.let { target ->
+                    val first = c.library.home?.wallet?.payments?.firstOrNull { it.holderId == target.holderId && it.recipientId == target.recipientId && it.currency == target.currency && it.status == WalletPaymentStatus.OWING }
+                    walletCards.filter { it.id == "wallet-group:${first?.id}" }
+                }.orEmpty()
+                val room = payment?.let { c.library.snapshots[it.roomId]?.room }
+                val saved = payment?.let { p -> c.library.sessions.firstOrNull { it.roomId == p.roomId } }
+                val claim = payment?.let { p -> room?.transfers?.firstOrNull { it.id == "wallet-${p.id}" && it.status == TransferStatus.DECLARED } }
+                val approval = if(room?.orderNumber == payment?.orderNumber && room?.payerId == saved?.memberId && claim != null)
+                    listOf(GroupButton(tr("Approve wallet payment","الموافقة على دفعة المحفظة"),GroupAction.WALLET_CONFIRM,"${room!!.id}|${claim.memberId}",enabled=!c.busy),
+                        GroupButton(tr("Decline","رفض"),GroupAction.WALLET_REJECT,"${room.id}|${claim.memberId}",enabled=!c.busy)) else emptyList()
+                (matching + grouped).flatMap { it.buttons }.filter { it.action == GroupAction.WALLET_FUNDS_ACTION } + approval
+            } else emptyList()
+            val room = c.library.snapshots[item.roomId]?.room
+            val saved = c.library.sessions.firstOrNull { it.roomId == item.roomId }
+            val transfer = room?.transfers?.firstOrNull { it.id == item.transferId && it.status == TransferStatus.DECLARED }
+            val confirm = if(room?.orderNumber == item.orderNumber && room.payerId == saved?.memberId && transfer?.refund == false)
+                listOf(GroupButton(tr("Confirm payment received", "تأكيد استلام الدفعة"),GroupAction.WALLET_CONFIRM,"${room.id}|${transfer.memberId}",enabled=!c.busy),
+                    GroupButton(tr("Not received", "لم أستلم"),GroupAction.WALLET_REJECT,"${room.id}|${transfer.memberId}",enabled=!c.busy)) else emptyList()
+            val receipt = c.library.snapshots[item.roomId]?.receipts?.firstOrNull { it.memberId == saved?.memberId }
+            val canPay = room?.orderNumber == item.orderNumber && room.restaurantPaid && room.payerId != saved?.memberId && receipt != null && receipt.balance > 0 &&
+                room.transfers.none { it.memberId == saved?.memberId && it.status == TransferStatus.DECLARED }
+            val pay = if(canPay && item.actions.any { it.id == "pay" }) listOf(GroupButton(
+                tr("I sent the full amount", "أرسلت كامل المبلغ") + " · " + Money.format(requireNotNull(receipt).balance,receipt.currency),GroupAction.WALLET_PAY,"${room!!.id}|${saved!!.memberId}",enabled=!c.busy)) else emptyList()
+            GroupCard("notification:${item.id}",item.title,item.body,if(item.read) "" else tr("New","جديد"),
+                direct + confirm + pay + item.actions.map { GroupButton(it.title,GroupAction.OPEN_NOTIFICATION,"${item.id}:${it.id}") })
+        }
             .ifEmpty { listOf(GroupCard("notifications-empty", tr("No notifications yet", "لا توجد إشعارات بعد"), tr("Order and payment updates will appear here.", "ستظهر تحديثات الطلبات والمدفوعات هنا."))) }
         return GroupFlowContent(cards = cards, buttons = if(deviceEnabled) listOf(
             GroupButton(tr("Turn off device notifications", "إيقاف إشعارات الجهاز"), GroupAction.DISABLE_ALERTS))

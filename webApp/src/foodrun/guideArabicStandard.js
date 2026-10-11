@@ -1,4 +1,4 @@
-// Neutral Arabic instructions are shared by Standard and Emirati Arabic help pages.
+// Standard Arabic has its own guide; Emirati Arabic uses guideArabicEmirati.
 export const guideArabicStandard = {
  eyebrow:'طلبك الأول مع FoodRun',title:'من اختيار الطعام إلى تسوية الحساب.',
  intro:'تجمع الغرفة الأصدقاء والطعام ومسؤول الطلب والمدفوعات. اتبع الخطوات المناسبة لدورك، وعد إلى الدليل متى احتجت إلى مساعدة.',

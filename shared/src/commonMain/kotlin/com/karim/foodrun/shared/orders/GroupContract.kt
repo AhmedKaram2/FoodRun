@@ -80,7 +80,8 @@ enum class GroupFieldKey { TRANSFER_AMOUNT_MODE, CUSTOM_UNIT_PRICE, ITEM_UNIT_PR
         }
     }
     val mainFields: List<GroupField> get() = fields.filterNot { it in extraFields }
-    val topCards: List<GroupCard> get() = if (profileDetailsFolded) cards.filter { it.id in setOf("profile-dashboard:wallet-funds", "profile-dashboard:wallet-summary") }
+    val topCards: List<GroupCard> get() = if(page == GroupPage.WALLET) cards.filter { it.id == "profile-dashboard:wallet-summary" }
+        else if (profileDetailsFolded) cards.filter { it.id in setOf("profile-dashboard:wallet-funds", "profile-dashboard:wallet-summary") }
         else if(page in listOf(GroupPage.ROOM, GroupPage.PAYMENT)) cards.filter {
         it.id.startsWith("half-item:") || it.id in setOf("notification-action", "order-summary", "wallet-summary", "my-payment-status", "restaurant-balance", "placement-blocked", "settlement-next-step")
     } else emptyList()

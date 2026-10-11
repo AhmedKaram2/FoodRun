@@ -403,6 +403,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 settlement()
                 val transfer = r.transfers.singleOrNull { it.id == c.transferId } ?: error("Transfer not found.")
                 require(transfer.status == TransferStatus.DECLARED) { "This transfer was already resolved." }
+                require(!transfer.id.startsWith("wallet-own-") && r.walletPayments.none { "wallet-${it.id}" == transfer.id && it.status == WalletPaymentStatus.SENT && it.batchId.isNotEmpty() }) { "Confirm or reject the full grouped payment from Wallet." }
                 if (transfer.refund) require(actorId == transfer.memberId) { "The refund recipient must confirm." } else payer()
                 if (c.kind == CommandKind.CONFIRM_REFUND) require(transfer.refund)
                 val status = if (c.kind == CommandKind.REJECT_TRANSFER) { reason(); TransferStatus.REJECTED } else TransferStatus.CONFIRMED

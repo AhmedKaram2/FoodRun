@@ -19,6 +19,26 @@ import WalletCustody from '../src/foodrun/WalletCustody.jsx';
 
 let root, host;
 export const commands = [];
+export async function runRoomWalletSettlementAudit() {
+ await mountAudit('room','FULFILLED');commands.length=0;
+ const account={id:'bank',holder:'Payer',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED'};
+ const payment={id:'alice',customerId:'alice',customerName:'Alice',holderId:'holder',holderName:'Holder',recipientId:'payer',recipientName:'Payer',roomId:'audit-room',roomName:'Audit room',orderNumber:1,memberId:'alice',amount:1500,currency:'AED',status:'OWING',batchId:''};
+ const room={id:'audit-room',name:'Audit room',orderNumber:1,revision:2,phase:'FULFILLED',restaurantPaid:true,payerId:'payer',restaurant:{currency:'AED'},walletPayments:[payment],transfers:[],account,accounts:[],members:[]};
+ const fixture={...data,home:{...data.home,profile:{userId:'holder',name:'Holder'},wallet:{balances:[],topUps:[],payments:[payment],batches:[]}},sessions:{'audit-room':{memberId:'holder'}},rooms:{'audit-room':{room,receipts:[{memberId:'holder',balance:2000,currency:'AED'}]}},send:async(kind,fields,roomId)=>{commands.push({kind,fields,roomId});return true;}};
+ const render=()=>root.render(<WalletCustody room={room} data={fixture}/>);render();await pause();
+ assert(host.textContent.includes('Alice') && host.textContent.includes('35.00'),'Room does not show own plus held wallet amount');
+ const settle=[...host.querySelectorAll('button')].find(node=>node.textContent===t('Settle all payments'));assert(settle && !settle.disabled,'Holder cannot settle room obligations');settle.click();await pause();
+ const dialog=document.querySelector('[role=dialog]');assert(dialog && !dialog.querySelector('input,textarea'),'Settle all asks for an amount or note');
+ dialog.querySelector('.primary').click();await pause();
+ assert(commands.at(-1).kind==='WALLET_DECLARE_BATCH' && commands.at(-1).roomId==='audit-room' && commands.at(-1).fields.amount===3500 && commands.at(-1).fields.flag===true,'Combined room command is not correctly scoped');
+ payment.status='SENT';payment.batchId='combined';fixture.home.wallet.batches=[{id:'combined',holderId:'holder',holderName:'Holder',recipientId:'payer',recipientName:'Payer',amount:3500,currency:'AED',status:'PENDING',paymentIds:['alice'],account,note:'Own share AED 20.00 + wallets AED 15.00'}];
+ render();await pause();assert(!host.querySelector('.wallet-custody .hero-actions .primary'),'Sender can approve own combined payment');
+ fixture.home.profile.userId='payer';render();await pause();commands.length=0;
+ const confirm=host.querySelector('.wallet-custody .hero-actions .primary');assert(confirm,'Recipient cannot approve room batch');confirm.click();await pause();
+ assert(commands.at(-1).kind==='WALLET_REVIEW_BATCH' && commands.at(-1).fields.transferId==='combined' && commands.at(-1).fields.flag===true,'Recipient approval is incorrect');
+ assert(document.documentElement.scrollWidth<=innerWidth+1,'Room Wallet overflows');
+ return {passed:true,language:getLanguage(),width:innerWidth,total:3500,own:2000,wallet:1500,recipientOnlyApproval:true};
+}
 const pause = () => new Promise(resolve => setTimeout(resolve, 60));
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 const data = {

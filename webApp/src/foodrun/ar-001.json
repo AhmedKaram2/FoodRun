@@ -87,5 +87,12 @@
   "or use email": "أو استخدم البريد الإلكتروني",
   "New here? Create account": "مستخدم جديد؟ أنشئ حساباً",
   "Already have an account? Sign in": "لديك حساب؟ سجّل الدخول",
-  "My account": "حسابي"
+  "My account": "حسابي",
+  "Required payments": "الدفعات المطلوبة",
+  "Your total to pay": "إجمالي المطلوب دفعه",
+  "On behalf of others": "نيابة عن الآخرين",
+  "Settle all payments": "تسوية جميع الدفعات",
+  "Send the full amount first. The recipient confirms all these payments together.": "أرسل كامل المبلغ أولاً. يؤكد المستلم جميع هذه الدفعات معاً.",
+  "Confirm or reject the full grouped payment from Wallet.": "أكد أو ارفض كامل الدفعة المجمعة من المحفظة.",
+  "Choose this order's payment recipient and currency.": "اختر مستلم الدفع وعملة هذا الطلب."
 }

@@ -4,6 +4,64 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class WalletServiceTest {
+    @Test fun failureDuringGroupedReviewRollsBackItsCashAndOwnShareChanges() = Setup().use { s ->
+        s.credit();val room=s.bill(listOf(s.a to 1500L,s.holder to 2000L)).room!!;s.pay(s.a,room.id);s.approveClaims(room.id)
+        val batch=s.f.execute(s.roomCommand(s.holder,room.id,CommandKind.WALLET_DECLARE_BATCH).copy(flag=true,userId="Recipient",accountId=s.account.id,amount=3500)).home!!.wallet!!.batches.single()
+        val before=s.f.db.room(room.id)!!;s.f.db.save(before.copy(walletPayments=emptyList()))
+        assertFalse(s.f.service.execute(s.command(s.recipient,CommandKind.WALLET_REVIEW_BATCH).copy(transferId=batch.id,flag=true)).ok)
+        val stored=orderJson.decodeFromString<WalletBatch>(s.f.db.record("wallet:batch:${batch.id}")!!)
+        assertEquals(WalletStatus.PENDING,stored.status)
+        assertEquals(TransferStatus.DECLARED,s.f.db.room(room.id)!!.transfers.single { it.id=="wallet-own-${batch.id}" }.status)
+        assertEquals(WalletPaymentStatus.SENT,WalletService.payments(s.f.db).single().status)
+    }
+    @Test fun roomSettlementCombinesOwnShareAndOthersWalletMoneyAtomicallyAndSurvivesReplay() = Setup().use { s ->
+        s.credit();val room=s.bill(listOf(s.a to 1500L,s.holder to 2000L)).room!!;s.pay(s.a,room.id);s.approveClaims(room.id)
+        val command=s.roomCommand(s.holder,room.id,CommandKind.WALLET_DECLARE_BATCH).copy(flag=true,userId="Recipient",currency="AED",accountId=s.account.id,amount=3500)
+        val batch=s.f.execute(command).home!!.wallet!!.batches.single()
+        assertEquals(3500,batch.amount);assertTrue(batch.note.contains("Own share AED 20.00"))
+        val pending=s.f.db.room(room.id)!!
+        val own=pending.transfers.single { it.id=="wallet-own-${batch.id}" };assertEquals(2000,own.amount);assertEquals(TransferStatus.DECLARED,own.status)
+        assertFalse(s.f.service.execute(s.roomCommand(s.holder,room.id,CommandKind.DECLARE_TRANSFER).copy(amount=2000)).ok)
+        assertFalse(s.f.service.execute(s.roomCommand(s.recipient,room.id,CommandKind.CONFIRM_TRANSFER).copy(transferId=own.id)).ok)
+        assertFalse(s.f.service.execute(s.command(s.stranger,CommandKind.WALLET_REVIEW_BATCH).copy(transferId=batch.id,flag=true)).ok)
+        s.f.restart();s.f.execute(command)
+        assertEquals(1,s.home(s.holder).wallet!!.batches.size)
+        val review=s.command(s.recipient,CommandKind.WALLET_REVIEW_BATCH).copy(transferId=batch.id,flag=true)
+        s.f.execute(review);s.f.restart();s.f.execute(review)
+        val settled=s.f.db.room(room.id)!!
+        assertEquals(TransferStatus.CONFIRMED,settled.transfers.single { it.id==own.id }.status)
+        assertEquals(0,Billing.receipts(settled).single { it.name=="Holder" }.balance)
+        assertTrue(settled.walletPayments.all { it.status==WalletPaymentStatus.SETTLED })
+        assertEquals(8500,s.home(s.a).wallet!!.balances.single().available)
+        val history=s.send(s.a,CommandKind.WALLET_HISTORY) { it.copy(walletKey=WalletKey("Alice","Holder","AED")) }.walletHistory!!
+        val cash=history.transactions.single { it.kind==WalletTransactionKind.CASH_TRANSFER }
+        assertEquals(1500,cash.amount);assertFalse(cash.note.contains("Own share"))
+        assertTrue(s.f.db.records("wallet:batch-own:").isNotEmpty())
+    }
+    @Test fun rejectedCombinedPaymentReopensBothCashObligationsWithoutRestoringSpentWalletCredit() = Setup().use { s ->
+        s.credit();val room=s.bill(listOf(s.a to 1500L,s.holder to 2000L)).room!!;s.pay(s.a,room.id);s.approveClaims(room.id)
+        val batch=s.f.execute(s.roomCommand(s.holder,room.id,CommandKind.WALLET_DECLARE_BATCH).copy(flag=true,userId="Recipient",accountId=s.account.id,amount=3500)).home!!.wallet!!.batches.single()
+        s.send(s.recipient,CommandKind.WALLET_REVIEW_BATCH) { it.copy(transferId=batch.id,flag=false) }
+        val current=s.f.db.room(room.id)!!
+        assertEquals(TransferStatus.REJECTED,current.transfers.single { it.id=="wallet-own-${batch.id}" }.status)
+        assertEquals(2000,Billing.receipts(current).single { it.name=="Holder" }.balance)
+        assertEquals(WalletPaymentStatus.OWING,current.walletPayments.single().status)
+        assertEquals(8500,s.home(s.a).wallet!!.balances.single().available)
+    }
+    @Test fun combinedSettlementRejectsWrongTotalsRolesAndKeepsOtherRoomsSeparate() = Setup().use { s ->
+        s.credit();val room=s.bill(listOf(s.a to 1500L,s.holder to 2000L)).room!!;s.pay(s.a,room.id);s.approveClaims(room.id)
+        val other=s.bill(listOf(s.a to 500L)).room!!;s.pay(s.a,other.id);s.approveClaims(other.id)
+        val command=s.roomCommand(s.holder,room.id,CommandKind.WALLET_DECLARE_BATCH).copy(flag=true,userId="Recipient",accountId=s.account.id,amount=3500)
+        assertFalse(s.f.service.execute(command.copy(amount=4000)).ok)
+        assertFalse(s.f.service.execute(command.copy(identityToken=s.stranger.identityToken)).ok)
+        assertFalse(s.f.service.execute(command.copy(userId="Stranger")).ok)
+        assertFalse(s.f.service.execute(command.copy(currency="USD")).ok)
+        assertFalse(s.f.service.execute(command.copy(expectedRevision=0)).ok)
+        assertTrue(s.home(s.holder).wallet!!.batches.isEmpty());assertTrue(s.f.db.records("wallet:batch-own:").isEmpty())
+        val batch=s.f.execute(command).home!!.wallet!!.batches.single()
+        assertEquals(1,batch.paymentIds.size)
+        assertEquals(WalletPaymentStatus.OWING,s.f.db.room(other.id)!!.walletPayments.single().status)
+    }
     private class Provider : IdentityProvider {
         private val profiles = mutableMapOf<String, FoodProfile>()
         private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid, "$uid@example.test", true)

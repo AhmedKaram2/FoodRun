@@ -4,6 +4,12 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class ArabicVariantsTest {
+    @Test fun emiratiActionsUseLocalWordsWithoutChangingOtherArabicVariants() {
+        for((key,word) in listOf("What would you like?" to "شو تبا تطلب؟","Mark paid" to "طرّشت المبلغ","Half" to "نص","Friends" to "الربع","Confirm received" to "هيه، استلمت")) {
+            assertEquals(word,GroupUiText.translate(key,"ar-AE"))
+            assertNotEquals(word,GroupUiText.translate(key,"ar-001"))
+        }
+    }
     @Test fun allArabicStylesUseRtlAndKeepRestaurantNamesArabic() {
         for((locale,word) in listOf("ar-EG" to "مبلغ تاني","ar-AE" to "مبلغ ثاني","ar-001" to "مبلغ آخر")) {
             assertEquals(word,GroupUiText.translate("Another amount",locale))

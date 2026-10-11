@@ -470,11 +470,10 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
   }
   return <MobilePageLayout pageKey="wallet-sections"><section className={`user-dashboard ${compact ? 'compact' : ''}`}>
     <div className="section-title"><div><p className="eyebrow">{t("MY MONEY & ORDERS")}</p><h2>{t("Wallet")}</h2></div><span>{dashboard.entries.length}</span></div>
-    <div data-mobile-section="funds" data-mobile-label={tx("Wallet balance", "رصيد المحفظة")}><WalletFunds data={data} /></div>
-    <div className="wallet-directions">{[
+    <div data-mobile-section="required-payments" data-mobile-label={t('Required payments')} className="wallet-directions"><WalletFunds data={data} mode="actions"/>{[
       { key: 'pay', title: t("I need to pay"), total: dashboard.toPay, entries: dashboard.payEntries, empty: tx('You have no payments due.', 'لا توجد مبالغ مستحقة عليك.') },
       { key: 'receive', title: t("I need to receive"), total: dashboard.toReceive, entries: dashboard.receiveEntries, empty: tx('No one owes you a payment.', 'لا توجد مبالغ مستحقة لك.') },
-    ].map(section => <section data-mobile-section={section.key} data-mobile-label={section.title} className={`card wallet-direction ${section.key}`} key={section.key} aria-label={section.title}>
+    ].map(section => <section className={`card wallet-direction ${section.key}`} key={section.key} aria-label={section.title}>
       <div className="wallet-direction-heading"><h3>{section.title}</h3><span>{totalsByCurrency(section.entries).map(([currency, total]) => <strong key={currency}>{money(total, currency)}</strong>)}</span></div>
       {!section.entries.length && <p className="muted">{section.empty}</p>}
       <PagedList items={section.entries}>{entry => <article className="wallet-person" key={`${entry.roomId}:${entry.personId}`}>
@@ -486,7 +485,8 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
         {section.key === 'pay' && entry.kind !== 'refund' && <PaymentDetails account={entry.room.account} accounts={entry.room.accounts} data={data} />}
         <button className="secondary wide" onClick={() => openRoom(entry.roomId)}>{t('Order and payment details')}</button>
       </article>}</PagedList>
-    </section>)}</div>
+    </section>)}{dashboard.pendingEntries.length > 0 && <section className="card wallet-direction" aria-label={t('Awaiting recipient confirmation')}><h3>{t('Awaiting recipient confirmation')}</h3><PagedList items={dashboard.pendingEntries}>{entry => <article className="wallet-person" key={`${entry.roomId}:${entry.personId}`}><h4>{entry.person} · {money(entry.amount,entry.currency)}</h4><p>{entry.roomName} · #{entry.room.orderNumber}</p><PaymentActionLine room={entry.room} receipt={entry.receipt} memberId={entry.memberId} data={data}/><button className="secondary" onClick={()=>openRoom(entry.roomId)}>{t('Order and payment details')}</button></article>}</PagedList></section>}</div>
+    <div data-mobile-section="funds" data-mobile-label={tx("Wallet balance", "رصيد المحفظة")}><WalletFunds data={data} mode="balances" /></div>
     <section data-mobile-section="payment-history" data-mobile-label={t("Payment history")} id="payment-history" className="card payment-history"><h3>{t("Payment history")}</h3><p className="muted">{t("Order totals and confirmed payments, newest first.")}</p>
       {!dashboard.paymentHistory.length && <p>{t("No payment history yet")}</p>}
       <PagedList items={dashboard.paymentHistory} pageSize={compact ? 3 : 8}>{entry => <article className="payment-history-row" key={entry.key}>
@@ -1006,7 +1006,8 @@ function PaymentActionLine({ room, receipt, memberId, data }) {
   if (receipt.memberId === room.payerId) return <p className="field-help">{t("Your own share")} · {money(receipt.total, receipt.currency)}</p>;
   const canConfirm = pending && (pending.refund ? pending.memberId === memberId : payer);
   const walletPayment = pending?.id.startsWith('wallet-') ? room.walletPayments?.find(payment => `wallet-${payment.id}` === pending.id) : null;
-  const walletBatch = walletPayment?.status === 'SENT' ? data.home.wallet?.batches?.find(batch => batch.id === walletPayment.batchId && batch.status === 'PENDING' && batch.recipientId === data.home.profile.userId) : null;
+  const batchId=pending?.id.startsWith('wallet-own-') ? pending.id.slice('wallet-own-'.length) : walletPayment?.status==='SENT' ? walletPayment.batchId : '';
+  const walletBatch = batchId ? data.home.wallet?.batches?.find(batch => batch.id === batchId && batch.status === 'PENDING' && batch.recipientId === data.home.profile.userId) : null;
   const canDeclare = room.restaurantPaid && !pending && (payer ? receipt.balance < 0 : receipt.memberId === memberId && receipt.balance > 0);
   const submit = async event => {
     event.preventDefault();

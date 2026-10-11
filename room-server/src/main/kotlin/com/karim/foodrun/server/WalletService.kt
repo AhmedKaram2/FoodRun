@@ -48,7 +48,7 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
                     "${value.holderName} · ${Money.format(value.amount, value.currency)}" to "${value.holderName} · ${Money.format(value.amount, value.currency)}")
             }
             CommandKind.PAY_WITH_WALLET -> pay(c, uid, requireNotNull(actor))
-            CommandKind.WALLET_DECLARE_BATCH -> declareBatch(c, uid)
+            CommandKind.WALLET_DECLARE_BATCH -> declareBatch(c, uid, actor)
             CommandKind.WALLET_REVIEW_BATCH -> reviewBatch(c, uid)
             else -> error("Unknown wallet action.")
         }
@@ -145,18 +145,36 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
             "${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.recipientName} · ${Money.format(value.amount, value.currency)}")
         return result
     }
-    private fun declareBatch(c: RoomCommand, uid: String) {
-        val pending = payments(db).filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == c.userId && it.currency == c.currency && it.status == WalletPaymentStatus.OWING }.sortedBy { it.id }
+    @kotlinx.serialization.Serializable private data class OwnShare(val roomId: String, val orderNumber: Long, val memberId: String, val transferId: String, val amount: Long)
+    private fun declareBatch(c: RoomCommand, uid: String, actor: String?) {
+        val room = if(c.flag) requireNotNull(db.room(c.roomId)) else null
+        if(room != null) {
+            require(actor != null && db.record("member-user:${room.id}:$actor") == uid) { "Sign in with the account that owns this room membership." }
+            require(room.members.any { it.id==actor && it.approved && !it.removed && !it.guest }) { "Join this order before settling wallet payments." }
+            require(room.orderNumber == c.expectedOrderNumber && room.revision == c.expectedRevision) { "The order changed. Refresh and try again." }
+            require(room.settlementOpen && room.restaurantPaid) { "Wait until the order and restaurant payment are settled." }
+            require(db.record("member-user:${room.id}:${room.payerId}") == c.userId && uid != c.userId && room.restaurant.currency == c.currency) { "Choose this order's payment recipient and currency." }
+            require(room.transfers.none { it.memberId == actor && it.status == TransferStatus.DECLARED }) { "Resolve your pending direct payment first." }
+        }
+        val pending = payments(db).filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == c.userId && it.currency == c.currency && it.status == WalletPaymentStatus.OWING && (room == null || (it.roomId == room.id && it.orderNumber == room.orderNumber)) }.sortedBy { it.id }
         require(pending.isNotEmpty() && pending.size <= 500) { "There are no wallet payments to send in this group." }
-        val total = pending.sumOf { it.amount }
+        val ownAmount = room?.let { Billing.receipts(it).firstOrNull { receipt -> receipt.memberId == actor }?.balance?.coerceAtLeast(0) } ?: 0L
+        val total = pending.sumOf { it.amount } + ownAmount
         require(c.amount == total) { "The group amount changed. Refresh before marking the full payment sent." }
         val recipient = accounts.paymentRoomProfile(c.userId)
-        val method = methods(recipient, c.currency).singleOrNull { it.id == c.accountId } ?: error("Choose the recipient's current receiving method.")
-        val note = c.text.trim().ifBlank {
-            "Wallet payment · ${Money.format(total, c.currency)} · " + pending.distinctBy { it.roomId to it.orderNumber }.joinToString("; ") { "${it.roomName} #${it.orderNumber}" }
+        val availableMethods = if(room == null) methods(recipient, c.currency) else room.receivingAccounts
+        val method = availableMethods.singleOrNull { it.id == c.accountId } ?: error("Choose the recipient's current receiving method.")
+        val note = c.text.trim().takeIf { room==null }.orEmpty().ifBlank {
+            (if(ownAmount > 0) "Own share ${Money.format(ownAmount, c.currency)} + wallets ${Money.format(total-ownAmount,c.currency)} · " else "Wallet payment · ${Money.format(total, c.currency)} · ") + pending.distinctBy { it.roomId to it.orderNumber }.joinToString("; ") { "${it.roomName} #${it.orderNumber}" }
         }.take(160)
         val batch = WalletBatch(id(), uid, pending.first().holderName, c.userId, recipient.name, total, c.currency, pending.map { it.id }, method, note, createdAt = clock())
         put(batch)
+        if(room != null && ownAmount > 0) {
+            val transferId = "wallet-own-${batch.id}"
+            val own = OwnShare(room.id, room.orderNumber, requireNotNull(actor), transferId, ownAmount)
+            db.putRecord("wallet:batch-own:${batch.id}", orderJson.encodeToString(own))
+            db.save(room.copy(transfers=room.transfers + Transfer(transferId,actor,ownAmount,note,method,createdAt=clock()),revision=room.revision+1,updatedAt=clock()))
+        }
         updatePayments(pending.map { it.copy(status = WalletPaymentStatus.SENT, batchId = batch.id) })
         notifications.wallet(batch.recipientId, batch.id, "wallet_batch", "Grouped wallet payment: confirm receipt" to "دفعة محافظ مجمعة: أكد الاستلام",
             "${batch.holderName} · ${Money.format(total, c.currency)} · ${pending.size} payments" to "${batch.holderName} · ${Money.format(total, c.currency)} · ${pending.size} دفعات")
@@ -166,9 +184,19 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         require(batch.recipientId == uid) { "Only the receiving person can confirm this payment." }
         require(batch.status == WalletStatus.PENDING) { "This payment was already reviewed." }
         val values = batch.paymentIds.map { paymentId -> requireNotNull(db.record("wallet:payment:$paymentId")).let { orderJson.decodeFromString<WalletPayment>(it) } }
-        require(values.all { it.status == WalletPaymentStatus.SENT && it.batchId == batch.id } && values.sumOf { it.amount } == batch.amount) { "The grouped payment changed." }
+        val own = db.record("wallet:batch-own:${batch.id}")?.let { orderJson.decodeFromString<OwnShare>(it) }
+        if(own != null) {
+            val room = requireNotNull(db.room(own.roomId))
+            require(room.orderNumber == own.orderNumber && room.transfers.any { it.id == own.transferId && it.memberId == own.memberId && it.amount == own.amount && it.status == TransferStatus.DECLARED }) { "The grouped payment changed." }
+        }
+        require(values.all { it.status == WalletPaymentStatus.SENT && it.batchId == batch.id } && values.sumOf { it.amount } + (own?.amount ?: 0L) == batch.amount) { "The grouped payment changed." }
         put(batch.copy(status = if(c.flag) WalletStatus.CONFIRMED else WalletStatus.REJECTED, resolvedAt = clock()))
         updatePayments(values.map { it.copy(status = if(c.flag) WalletPaymentStatus.SETTLED else WalletPaymentStatus.OWING, batchId = if(c.flag) batch.id else "") })
+        if(own != null) {
+            val room = requireNotNull(db.room(own.roomId))
+            db.save(room.copy(transfers=room.transfers.map { if(it.id == own.transferId) it.copy(status=if(c.flag) TransferStatus.CONFIRMED else TransferStatus.REJECTED) else it },revision=room.revision+1,updatedAt=clock()))
+            changed(room.id)
+        }
         (values.map { it.customerId } + batch.holderId).distinct().forEach { person -> notifications.wallet(person, "${batch.id}:review", "wallet_batch_reviewed",
             if(c.flag) "Wallet payment received" to "تم استلام دفعة المحفظة" else "Wallet transfer not received" to "لم يتم استلام تحويل المحفظة",
             "${batch.recipientName} · ${Money.format(batch.amount, batch.currency)}" to "${batch.recipientName} · ${Money.format(batch.amount, batch.currency)}") }

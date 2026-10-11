@@ -113,7 +113,7 @@ internal class GroupPresentation(private val c: GroupController) {
             GroupPage.PROFILE -> profile()
             GroupPage.WALLET -> {
                 dashboardCards("profile-dashboard:"); title = tr("Wallet", "المحفظة"); subtitle = tr("Your balance and payments, in one place.", "رصيدك ومدفوعاتك في مكان واحد.")
-                cards.removeAll { !it.id.startsWith("profile-dashboard:wallet") }
+                cards.removeAll { !it.id.startsWith("profile-dashboard:wallet") && !it.id.startsWith("profile-dashboard:payment-history") }
                 button(tr("Refresh", "تحديث"), GroupAction.REFRESH)
             }
             GroupPage.PEOPLE -> people()
@@ -768,10 +768,11 @@ internal class GroupPresentation(private val c: GroupController) {
             tr("You need to pay ${totals(toPay)} · You need to receive ${totals(toReceive)}", "عليك دفع ${totals(toPay)} · لك لدى الآخرين ${totals(toReceive)}"),
             tr("${payableRows.count { it.receipt != null }} active balances", "${payableRows.count { it.receipt != null }} أرصدة حالية"))
         data class BalanceRow(val row: SnapshotRow, val receipt: Receipt, val person: String, val receive: Boolean)
+        fun pendingInWallet(row: SnapshotRow, receipt: Receipt) = c.page == GroupPage.WALLET && row.room.transfers.any { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
         val balances = payableRows.flatMap { row ->
-            if(row.room.payerId == row.session.memberId) row.reply.receipts.filter { it.memberId != row.session.memberId && it.balance != 0L && (it.balance > 0 || it.amountStillToSend(row.room) > 0) }
+            if(row.room.payerId == row.session.memberId) row.reply.receipts.filter { it.memberId != row.session.memberId && it.balance != 0L && (it.balance > 0 || it.amountStillToSend(row.room) > 0 || pendingInWallet(row, it)) }
                 .map { BalanceRow(row, it, it.name, it.balance > 0) }
-            else listOfNotNull(row.receipt?.takeIf { it.balance != 0L && (it.balance < 0 || it.amountStillToSend(row.room) > 0) }?.let {
+            else listOfNotNull(row.receipt?.takeIf { it.balance != 0L && (it.balance < 0 || it.amountStillToSend(row.room) > 0 || pendingInWallet(row, it)) }?.let {
                 BalanceRow(row, it, row.room.members.firstOrNull { member -> member.id == row.room.payerId }?.name ?: tr("Selected orderer", "الشخص المختار"), it.balance < 0)
             })
         }
@@ -781,6 +782,8 @@ internal class GroupPresentation(private val c: GroupController) {
                 if(entries.isEmpty()) tr("No outstanding payments", "لا توجد دفعات مستحقة") else tr("Payments by person", "الدفعات حسب الشخص"), totals(if(receive) toReceive else toPay))
             entries.forEach { (row, receipt, person, _) ->
                 val pending = row.room.transfers.firstOrNull { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
+                val batchId=if(pending?.id?.startsWith("wallet-own-")==true) pending.id.removePrefix("wallet-own-") else row.room.walletPayments.firstOrNull { "wallet-${it.id}"==pending?.id && it.status==WalletPaymentStatus.SENT }?.batchId
+                val batch=c.library.home?.wallet?.batches?.firstOrNull { it.id==batchId && it.status==WalletStatus.PENDING && it.recipientId==c.library.home?.profile?.userId }
                 val status = pending?.let { tr("${Money.format(it.amount, receipt.currency)} sent · awaiting recipient approval", "تم إرسال ${Money.format(it.amount, receipt.currency)} · بانتظار موافقة المستلم") } ?: ""
                 val value = "${row.room.id}:${receipt.memberId}"
                 val target = "${row.room.id}|${receipt.memberId}"
@@ -791,7 +794,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 c.walletFunds.payButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 c.walletFunds.topUpButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
-                    actions += GroupButton(if(pending.id.startsWith("wallet-")) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
+                    actions += GroupButton(if(batch!=null) "${ui("Confirm full amount received")} · ${Money.format(batch.amount,batch.currency)}" else if(pending.id.startsWith("wallet-")) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)
                 } else if (pending == null && row.room.restaurantPaid) {
                     if (payer && receipt.balance < 0) actions += GroupButton(ui("Mark refund sent"), GroupAction.WALLET_REFUND, target, primary = true)
@@ -803,7 +806,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 card("${prefix}wallet:$value", person,
                     listOf("${row.room.name} · #${row.room.orderNumber} · ${row.room.restaurant.localizedName(language)}",
                         "${ui("Order")} ${receipt.totalText} · ${ui("Paid")} ${Money.format(receipt.paid, receipt.currency)}",
-                        account, status).filter { it.isNotBlank() }.joinToString("\n"), Money.format(if(receive) kotlin.math.abs(receipt.balance) else receipt.amountStillToSend(row.room), receipt.currency), actions)
+                        account, status,batch?.note.orEmpty()).filter { it.isNotBlank() }.joinToString("\n"), Money.format(if(batch!=null) batch.amount else if(pending != null && c.page == GroupPage.WALLET) pending.amount else if(receive) kotlin.math.abs(receipt.balance) else receipt.amountStillToSend(row.room), receipt.currency), actions)
 
             }
         }
@@ -875,7 +878,8 @@ internal class GroupPresentation(private val c: GroupController) {
         val r = c.reply?.room ?: return
         r.transfers.forEach { transfer ->
             val payment = r.walletPayments.firstOrNull { "wallet-${it.id}" == transfer.id }
-            val batch = payment?.takeIf { it.status == WalletPaymentStatus.SENT }?.let { value -> c.library.home?.wallet?.batches?.firstOrNull { it.id == value.batchId && it.status == WalletStatus.PENDING && it.recipientId == c.library.home?.profile?.userId } }
+            val batchId=if(transfer.id.startsWith("wallet-own-")) transfer.id.removePrefix("wallet-own-") else payment?.takeIf { it.status==WalletPaymentStatus.SENT }?.batchId
+            val batch = c.library.home?.wallet?.batches?.firstOrNull { it.id == batchId && it.status == WalletStatus.PENDING && it.recipientId == c.library.home?.profile?.userId }
             val actions = if(transfer.status == TransferStatus.DECLARED) when {
                 transfer.refund && transfer.memberId == c.me() -> listOf(GroupButton(ui("Confirm refund received"), GroupAction.CONFIRM_REFUND, transfer.id), GroupButton(ui("Reject refund claim"), GroupAction.REJECT_TRANSFER, transfer.id))
                 !transfer.refund && r.payerId == c.me() && batch != null -> listOf(GroupButton(ui("Confirm received") + " · " + Money.format(batch.amount, batch.currency), GroupAction.WALLET_FUNDS_ACTION, "batch-yes|${batch.id}"), GroupButton(ui("Not received"), GroupAction.WALLET_FUNDS_ACTION, "batch-no|${batch.id}"))

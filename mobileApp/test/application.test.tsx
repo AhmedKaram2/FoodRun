@@ -283,6 +283,15 @@ test("wallet opens its transaction sheet and requests older pages without mutati
   fireEvent(view.getByTestId("scroll-load"),"layout",{nativeEvent:{layout:{x:0,y:550,width:390,height:20}}});
   await waitFor(() => expect(native.dispatch).toHaveBeenLastCalledWith("LOAD_WALLET_HISTORY", ""));
 });
+test("Wallet starts with required payments and exposes pay-on-behalf and approval actions",async()=>{
+ const value=snapshot();value.state.page="WALLET";
+ value.sections=[{title:"Required payments",collapsed:false,cards:[{...card("wallet-group:alice","Pay Payer for Alice"),buttons:[action("Settle Alice payment","WALLET_FUNDS_ACTION","batch|alice")]},{...card("wallet-batch:incoming","Confirm received transfer"),buttons:[action("Approve received amount","WALLET_FUNDS_ACTION","batch-yes|incoming")]}]},{title:"Wallet balance",collapsed:false,cards:[card("wallet-balance","Available AED 50")]},{title:"Payment history",collapsed:false,cards:[]}];
+ (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));const view=render(<App/>);
+ await view.findByText("Pay Payer for Alice");expect(view.queryByText("Available AED 50")).toBeNull();
+ fireEvent.press(view.getByText("Settle Alice payment"));expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","batch|alice");
+ fireEvent.press(view.getByText("Approve received amount"));expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","batch-yes|incoming");
+ fireEvent.press(view.getByRole("tab",{name:"Wallet balance"}));expect(view.getByText("Available AED 50")).toBeTruthy();
+});
 test("country selector uses a native sheet and writes the selected code", () => {
   const view = render(
     <FieldInput

@@ -551,6 +551,12 @@ class GroupController(val platform: GroupPlatform) {
         val receipt = cached.receipts.single { it.memberId == memberId }
         val pending = room.transfers.firstOrNull { it.memberId == memberId && it.status == TransferStatus.DECLARED }
         val payer = room.payerId == saved.memberId
+        val batchId = pending?.let { transfer -> if(transfer.id.startsWith("wallet-own-")) transfer.id.removePrefix("wallet-own-") else room.walletPayments.firstOrNull { "wallet-${it.id}"==transfer.id && it.status==WalletPaymentStatus.SENT }?.batchId }.orEmpty()
+        if(batchId.isNotEmpty() && action in listOf(GroupAction.WALLET_CONFIRM,GroupAction.WALLET_REJECT)) {
+            require(payer && pending?.refund==false)
+            send(RoomCommand(commandId=platform.uuid(),kind=CommandKind.WALLET_REVIEW_BATCH,identityToken=library.identityToken,transferId=batchId,flag=action==GroupAction.WALLET_CONFIRM,currency=receipt.currency),returnPage=page)
+            return
+        }
         val kind = when (action) {
             GroupAction.WALLET_REMIND_PAYMENT -> { require(PaymentReminderRules.eligible(room, saved.memberId, receipt)); CommandKind.REMIND_PAYMENT }
             GroupAction.WALLET_PAY -> { require(!payer && memberId == saved.memberId && receipt.balance > 0 && pending == null && room.restaurantPaid); CommandKind.DECLARE_TRANSFER }

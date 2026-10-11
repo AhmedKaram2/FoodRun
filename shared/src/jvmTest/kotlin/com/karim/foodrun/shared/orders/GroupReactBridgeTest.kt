@@ -142,7 +142,7 @@ class GroupReactBridgeTest {
         c.dispatch(GroupAction.OPEN_WALLET)
         assertEquals(GroupPage.WALLET, c.state.page)
         assertTrue(c.state.cards.any { it.id == "profile-dashboard:wallet-summary" })
-        assertTrue(c.state.cards.all { it.id.startsWith("profile-dashboard:wallet") })
+        assertTrue(c.state.cards.all { it.id.startsWith("profile-dashboard:wallet") || it.id.startsWith("profile-dashboard:payment-history") })
         assertTrue(c.state.fields.isEmpty())
         assertFalse(c.state.buttons.any { it.action == GroupAction.SAVE_PROFILE })
         assertTrue(phone.requests.isEmpty())

@@ -9,6 +9,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
     private var selectedUser = ""
     private var batchRecipient = ""
     private var batchCurrency = "AED"
+    private var batchRoomId = ""
     var returnPage = GroupPage.PROFILE; private set
     private val uid get() = c.library.home?.profile?.userId.orEmpty()
     private val wallet get() = c.library.home?.wallet ?: WalletSnapshot()
@@ -16,10 +17,13 @@ internal class GroupWalletFunds(private val c: GroupController) {
     private fun currency() = if(c.page == GroupPage.WALLET_BATCH) batchCurrency else c.text(GroupFieldKey.WALLET_CURRENCY).ifBlank { "AED" }
     private fun action(title: String, value: String, enabled: Boolean = true) = GroupButton(title, GroupAction.WALLET_FUNDS_ACTION, value, enabled = enabled)
     private fun send(kind: CommandKind, transferId: String = "", flag: Boolean = false, userId: String = selectedUser, amount: Long = 0, text: String = "", returnPage: GroupPage = c.page) {
-        val methods = recipient?.accounts.orEmpty().filter { it.currency == currency() }
+        val methods = (if(c.page==GroupPage.WALLET_BATCH && batchRoomId.isNotEmpty()) c.library.snapshots[batchRoomId]?.room?.receivingAccounts.orEmpty() else recipient?.accounts.orEmpty()).filter { it.currency == currency() }
         val accountId = c.text(GroupFieldKey.WALLET_ACCOUNT).takeIf { choice -> methods.any { it.id == choice } } ?: methods.firstOrNull()?.id.orEmpty()
+        val saved=if(kind == CommandKind.WALLET_DECLARE_BATCH && batchRoomId.isNotEmpty()) c.library.sessions.single { it.roomId == batchRoomId } else null
+        val room=saved?.let { c.library.snapshots[it.roomId]?.room }
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = kind, identityToken = c.library.identityToken, userId = userId,
-            currency = currency(), amount = amount, accountId = accountId, transferId = transferId, flag = flag, text = text), returnPage = returnPage)
+            currency = currency(), amount = amount, accountId = accountId, transferId = transferId, flag = flag || saved != null, text = text,
+            roomId=saved?.roomId.orEmpty(),token=saved?.token.orEmpty(),expectedRevision=room?.revision ?: 0,expectedOrderNumber=room?.orderNumber ?: 0), returnPage = returnPage)
     }
     fun accept(reply: RoomReply, command: RoomCommand) {
         reply.walletPeople?.takeIf { c.page == GroupPage.WALLET_TOP_UP && command.text.trim().isNotEmpty() && command.text.trim() == c.text(GroupFieldKey.WALLET_SEARCH).trim() }?.let { people = it; searched = true }
@@ -48,12 +52,19 @@ internal class GroupWalletFunds(private val c: GroupController) {
             }
             "top-up-yes", "top-up-no" -> send(CommandKind.WALLET_REVIEW_TOP_UP, transferId = id, flag = action == "top-up-yes", returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE)
             "batch" -> {
+                batchRoomId = ""
                 returnPage = if(c.page == GroupPage.WALLET) GroupPage.WALLET else GroupPage.PROFILE
                 val payment = wallet.payments.single { it.id == id }
                 batchRecipient = payment.recipientId; batchCurrency = payment.currency; recipient = null; c.draft.remove(GroupFieldKey.WALLET_NOTE)
                 c.page = GroupPage.WALLET_BATCH; send(CommandKind.WALLET_RECIPIENT, userId = batchRecipient)
             }
-            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, returnPage = returnPage)
+            "settle-room" -> {
+                val room=requireNotNull(c.library.snapshots[id]?.room)
+                val payment=room.walletPayments.first { it.holderId==uid && it.holderId!=it.recipientId && it.status==WalletPaymentStatus.OWING }
+                returnPage=c.page;batchRoomId=id;batchRecipient=payment.recipientId;batchCurrency=payment.currency;recipient=null
+                c.page=GroupPage.WALLET_BATCH;c.draft.remove(GroupFieldKey.WALLET_NOTE);send(CommandKind.WALLET_RECIPIENT,userId=batchRecipient)
+            }
+            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount } + ownAmount(), returnPage = returnPage)
             "batch-yes", "batch-no" -> send(CommandKind.WALLET_REVIEW_BATCH, transferId = id, flag = action == "batch-yes", returnPage = c.page)
             "copy" -> c.platform.copyToClipboard(recipient!!.accounts.single { it.id == id }.identifier)
             else -> error("Unknown wallet action.")
@@ -66,13 +77,17 @@ internal class GroupWalletFunds(private val c: GroupController) {
         c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.PAY_WITH_WALLET, roomId = roomId, token = session.token,
             expectedRevision = room.revision, expectedOrderNumber = room.orderNumber, amount = receipt.balance), returnPage = if(c.page in listOf(GroupPage.HOME, GroupPage.PROFILE, GroupPage.WALLET)) c.page else GroupPage.PAYMENT)
     }
-    private fun group() = wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == batchRecipient && it.currency == batchCurrency && it.status == WalletPaymentStatus.OWING }
+    private fun group() = wallet.payments.filter { it.holderId == uid && it.holderId != it.recipientId && it.recipientId == batchRecipient && it.currency == batchCurrency && it.status == WalletPaymentStatus.OWING && (batchRoomId.isEmpty() || (it.roomId==batchRoomId && it.orderNumber==c.library.snapshots[batchRoomId]?.room?.orderNumber)) }
+    private fun ownAmount():Long {
+        val saved=c.library.sessions.firstOrNull { it.roomId==batchRoomId } ?: return 0
+        return c.library.snapshots[batchRoomId]?.receipts?.firstOrNull { it.memberId==saved.memberId }?.balance?.coerceAtLeast(0) ?: 0
+    }
     fun payButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {
         if(c.library.home?.wallet == null || receipt.balance <= 0 || receipt.memberId != memberId || room.payerId == memberId || !room.restaurantPaid || !room.settlementOpen || room.transfers.any { it.memberId == memberId && it.status == TransferStatus.DECLARED }) return null
         val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
         return GroupButton("${tr("Pay with wallet", "الدفع بالمحفظة")} · ${Money.format(receipt.balance, receipt.currency)}", GroupAction.PAY_WITH_WALLET, room.id, enabled = balance >= receipt.balance)
     }
-    fun clear() { c.walletHistory.dismiss(); people = emptyList(); recipient = null; selectedUser = ""; batchRecipient = "" }
+    fun clear() { c.walletHistory.dismiss(); people = emptyList(); recipient = null; selectedUser = ""; batchRecipient = ""; batchRoomId="" }
     fun topUpButton(room: Room, memberId: String, receipt: Receipt): GroupButton? {
         if (payButton(room, memberId, receipt)?.enabled != false) return null
         val balance = wallet.balances.filter { it.customerId == uid && it.currency == receipt.currency }.sumOf { it.available }
@@ -89,7 +104,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
             buttons = listOf(action(tr("Charge wallet", "شحن المحفظة"), "charge")))
         mine.forEach { cards += GroupCard("${prefix}wallet-held:${it.holderId}:${it.currency}", "${tr("Held by", "لدى")} ${it.holderName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
         wallet.balances.filter { it.holderId == uid && it.customerId != uid }.forEach { cards += GroupCard("${prefix}wallet-holding:${it.customerId}:${it.currency}", "${tr("Money I hold for", "أموال لدي تخص")} ${it.customerName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
-        wallet.topUps.forEach { topUp ->
+        wallet.topUps.filter { c.page != GroupPage.WALLET || it.status == WalletStatus.PENDING }.forEach { topUp ->
             val buttons = if(topUp.holderId == uid && topUp.status == WalletStatus.PENDING) listOf(action(tr("Confirm received", "تأكيد الاستلام"), "top-up-yes|${topUp.id}"), action(tr("Not received", "لم أستلم"), "top-up-no|${topUp.id}")) else emptyList()
             cards += GroupCard("${prefix}wallet-top-up:${topUp.id}", "${topUp.customerName} → ${topUp.holderName}",
                 "${Money.format(topUp.amount, topUp.currency)}\n${topUp.account.bank} · ${topUp.account.identifier}\n${topUp.note}", when(topUp.status) {
@@ -108,7 +123,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                 "${Money.format(batch.amount, batch.currency)}\n${batch.paymentIds.size} ${tr("payments", "دفعات")}\n${batch.note}", tr("Confirm only after receiving the full amount", "أكد فقط بعد استلام كامل المبلغ"),
                 if(batch.recipientId == uid) listOf(action(tr("Confirm full amount received", "تأكيد استلام كامل المبلغ"), "batch-yes|${batch.id}"), action(tr("Not received", "لم أستلم"), "batch-no|${batch.id}")) else emptyList())
         }
-        wallet.payments.filter { it.customerId == uid || it.recipientId == uid }.forEach { payment ->
+        wallet.payments.filter { (it.customerId == uid || it.recipientId == uid) && (c.page != GroupPage.WALLET || it.status != WalletPaymentStatus.SETTLED) }.forEach { payment ->
             cards += GroupCard("${prefix}wallet-payment:${payment.id}", "${payment.customerName} · ${payment.roomName} #${payment.orderNumber}",
                 "${Money.format(payment.amount, payment.currency)} · ${payment.holderName} → ${payment.recipientName}", status(payment))
         }
@@ -120,16 +135,24 @@ internal class GroupWalletFunds(private val c: GroupController) {
         WalletPaymentStatus.SETTLED -> tr("Cash settled", "تمت تسوية النقد")
     }
     fun roomCards(room: Room): List<GroupCard> {
-        val payments = room.walletPayments.filter { payment -> payment.status != WalletPaymentStatus.SETTLED && room.transfers.none { it.id == "wallet-${payment.id}" && it.status == TransferStatus.DECLARED } }
+        val payments = room.walletPayments.filter { it.status != WalletPaymentStatus.SETTLED }
         val cards = payments.map { payment -> GroupCard("wallet-custody:${payment.id}",
             "${payment.holderName} · ${Money.format(payment.amount, payment.currency)}",
             tr("On behalf of ${payment.customerName} · pay to ${payment.recipientName}", "نيابة عن ${payment.customerName} · الدفع إلى ${payment.recipientName}"), status(payment)) }.toMutableList()
         val batchIds = payments.filter { it.status == WalletPaymentStatus.SENT }.map { it.batchId }.toSet()
-        wallet.batches.filter { it.id in batchIds && it.status == WalletStatus.PENDING && it.recipientId == uid }.forEach { batch ->
+        val mine=payments.filter { it.holderId==uid && it.holderId!=it.recipientId && it.status==WalletPaymentStatus.OWING }
+        if(mine.isNotEmpty()) {
+            val saved=c.library.sessions.firstOrNull { it.roomId==room.id }
+            val own=c.library.snapshots[room.id]?.receipts?.firstOrNull { it.memberId==saved?.memberId }?.balance?.coerceAtLeast(0) ?: 0L
+            val held=mine.sumOf { it.amount }
+            cards.add(0,GroupCard("wallet-custody-total",tr("Your total to pay","إجمالي المطلوب منك"),"${tr("Your own share","حصتك")} · ${Money.format(own,room.restaurant.currency)}\n${tr("On behalf of others","نيابة عن الآخرين")} · ${Money.format(held,room.restaurant.currency)}",Money.format(own+held,room.restaurant.currency),
+                listOf(action(tr("Settle all payments","تسوية كل الدفعات"),"settle-room|${room.id}",room.settlementOpen && room.restaurantPaid && saved!=null && room.transfers.none { it.memberId==saved.memberId && it.status==TransferStatus.DECLARED }))))
+        }
+        wallet.batches.filter { it.id in batchIds && it.status == WalletStatus.PENDING && (it.recipientId == uid || it.holderId == uid) }.forEach { batch ->
             cards += GroupCard("wallet-custody-batch:${batch.id}", "${batch.holderName} · ${Money.format(batch.amount, batch.currency)}",
-                wallet.payments.filter { it.id in batch.paymentIds }.joinToString("\n") { "${it.customerName} · ${it.roomName} #${it.orderNumber} · ${Money.format(it.amount, it.currency)}" },
+                wallet.payments.filter { it.id in batch.paymentIds }.joinToString("\n") { "${it.customerName} · ${it.roomName} #${it.orderNumber} · ${Money.format(it.amount, it.currency)}" } + "\n${batch.note}",
                 tr("Confirm after receiving the full grouped amount", "أكد بعد استلام كامل المبلغ المجمع"),
-                listOf(action(tr("Confirm full amount received", "تأكيد استلام كامل المبلغ"), "batch-yes|${batch.id}"), action(tr("Not received", "لم أستلم"), "batch-no|${batch.id}")))
+                if(batch.recipientId==uid) listOf(action(tr("Confirm full amount received", "تأكيد استلام كامل المبلغ"), "batch-yes|${batch.id}"), action(tr("Not received", "لم أستلم"), "batch-no|${batch.id}")) else emptyList())
         }
         return cards
     }
@@ -146,11 +169,12 @@ internal class GroupWalletFunds(private val c: GroupController) {
             if (query.isNotEmpty() && searched && people.isEmpty()) cards += GroupCard("wallet-search-empty", tr("No matching users", "لا يوجد مستخدمون مطابقون"), tr("Try another name or email.", "جرّب اسماً آخر أو بريداً إلكترونياً."))
         } else {
             val values = group()
-            cards += GroupCard("wallet-group-total", tr("Full group amount", "كامل المبلغ المجمع"), Money.format(values.sumOf { it.amount }, batchCurrency))
+            cards += GroupCard("wallet-group-total", if(batchRoomId.isEmpty()) tr("Full group amount", "كامل المبلغ المجمع") else tr("Settle all payments","تسوية كل الدفعات"), Money.format(values.sumOf { it.amount }+ownAmount(), batchCurrency))
+            if(ownAmount()>0) cards += GroupCard("wallet-group-own",tr("Your own share","حصتك"),Money.format(ownAmount(),batchCurrency))
             values.forEach { cards += GroupCard("wallet-group-person:${it.id}", it.customerName, "${it.roomName} #${it.orderNumber} · ${Money.format(it.amount, it.currency)}") }
         }
         recipient?.let { person ->
-            val methods = person.accounts.filter { it.currency == currency() }
+            val methods = (if(c.page==GroupPage.WALLET_BATCH && batchRoomId.isNotEmpty()) c.library.snapshots[batchRoomId]?.room?.receivingAccounts.orEmpty() else person.accounts).filter { it.currency == currency() }
             cards += GroupCard("wallet-recipient", person.person.name, tr("Send money using their receiving method, then mark sent. This button records payment; it does not transfer money from your bank.", "أرسل المبلغ باستخدام وسيلة الاستلام ثم أكد الإرسال. هذا الزر يسجل الدفع ولا يحول الأموال من البنك."))
             fields += GroupField(GroupFieldKey.WALLET_ACCOUNT, tr("Receiving method", "وسيلة الاستلام"), c.text(GroupFieldKey.WALLET_ACCOUNT), choices = methods.map { GroupChoice(it.id, "${it.bank} · ${it.identifier}") })
             if(c.page == GroupPage.WALLET_TOP_UP) fields += GroupField(GroupFieldKey.WALLET_NOTE, tr("Payment note (optional)", "ملاحظة الدفع (اختياري)"), c.text(GroupFieldKey.WALLET_NOTE))

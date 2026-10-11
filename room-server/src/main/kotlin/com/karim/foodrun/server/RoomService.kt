@@ -140,7 +140,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else if (c.kind in WALLET_COMMANDS) db.transaction {
             val uid = accounts.userId(c.identityToken)
-            val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
+            val actor = if(c.kind == CommandKind.PAY_WITH_WALLET || (c.kind == CommandKind.WALLET_DECLARE_BATCH && c.flag)) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
                 visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
             db.previous(c.commandId, digest)?.let {

@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import {t,tf,setLanguage,getLanguage,baseLanguage,normalizeLanguage,languageOptions} from '../src/foodrun/i18n.js';
 import {restaurantOrderText} from '../src/foodrun/restaurantOrderText.js';
 import {localizedGuide,guideContent} from '../src/foodrun/howToUse.js';
+import emirati from '../src/foodrun/ar-AE.json' with {type:'json'};
+import neutral from '../src/foodrun/ar.json' with {type:'json'};
+test('Emirati copy covers existing UI messages with local actions and its own complete guide',()=>{
+ for(const key of Object.keys(neutral))assert.ok(emirati[key],key);
+ for(const [key,value] of Object.entries(emirati))assert.deepEqual([...key.matchAll(/\{\w+\}/g)].map(match=>match[0]).sort(),[...value.matchAll(/\{\w+\}/g)].map(match=>match[0]).sort(),key);
+ for(const [key,value] of [['What would you like?','شو تبا تطلب؟'],['Mark paid','طرّشت المبلغ'],['Half','نص'],['Friends','الربع'],['Confirm received','هيه، استلمت']])assert.equal(t(key,'ar-AE'),value);
+ const guide=localizedGuide('ar-AE');
+ assert.match(guide.sections.find(section=>section.id==='food').title,/شو تبا/);
+ assert.match(guide.sections.find(section=>section.id==='collector').title,/طرّش/);
+ assert.match(guide.sections.find(section=>section.id==='selection').title,/منو/);
+ assert.notDeepEqual(guide.faqs,localizedGuide('ar-001').faqs);
+ assert.notDeepEqual(guide.sections,localizedGuide('ar-001').sections);
+});
 test('four language choices preserve Egyptian preferences and use distinct Arabic wording',()=>{
   assert.deepEqual(languageOptions.map(option=>option.value),['en','ar-EG','ar-AE','ar-001']);
   assert.equal(normalizeLanguage('ar'),'ar-EG');

@@ -50,7 +50,9 @@ internal class WalletHistoryService(private val db: RoomDatabase) {
             val covered = batch.paymentIds.mapNotNull { byId[it] }
             if(covered.isNotEmpty()) entries += WalletTransaction("cash:${batch.id}", WalletTransactionKind.CASH_TRANSFER, covered.sumOf { it.amount }, batch.currency,
                 when(batch.status) { WalletStatus.PENDING -> WalletTransactionStatus.SENT; WalletStatus.CONFIRMED -> WalletTransactionStatus.SETTLED; WalletStatus.REJECTED -> WalletTransactionStatus.REJECTED },
-                0, batch.createdAt, batch.resolvedAt, batch.holderName, batch.recipientName, batch.note, batch.account, covered.map(::order))
+                0, batch.createdAt, batch.resolvedAt, batch.holderName, batch.recipientName,
+                if(uid!=batch.holderId && db.record("wallet:batch-own:${batch.id}")!=null) covered.distinctBy { it.roomId to it.orderNumber }.joinToString("; ") { "Wallet payment · ${it.roomName} #${it.orderNumber}" } else batch.note,
+                batch.account, covered.map(::order))
         }
         val ordered = entries.sortedWith(compareByDescending<WalletTransaction> { it.createdAt }.thenByDescending { it.id })
         val page = ordered.filter { cursor == null || it.createdAt < cursor.createdAt || it.createdAt == cursor.createdAt && it.id < cursor.id }.take(PAGE_SIZE + 1)

@@ -1,4 +1,5 @@
 import {guideArabicStandard} from './guideArabicStandard.js';
+import {guideArabicEmirati} from './guideArabicEmirati.js';
 // Keep button names and responsibilities aligned with the actual room and settlement flows.
 export const guideContent = {
   en: {
@@ -86,7 +87,6 @@ export const guideContent = {
 export function localizedGuide(language) {
   if(language === 'en') return guideContent.en;
   if(language === 'ar' || language === 'ar-EG') return guideContent.ar;
-  const content={...guideContent.ar,...guideArabicStandard,sections:guideContent.ar.sections.map(section=>({...section,...guideArabicStandard.sections[section.id]}))};
-  if(language === 'ar-AE') return {...content,title:'من اختيار الأكل لين تسوية الحساب.',intro:'اجمع ربعك في غرفة وحدة. اختاروا أكلكم، وحدّدوا مسؤول الطلب، وخلّوا حساب كل شخص واضح.'};
-  return content;
+  const wording=language === 'ar-AE' ? guideArabicEmirati : guideArabicStandard;
+  return {...guideContent.ar,...wording,sections:guideContent.ar.sections.map(section=>({...section,...wording.sections[section.id]}))};
 }

@@ -4,6 +4,25 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupSettlementPresentationTest {
+    @Test fun walletShowsRequiredDirectPaymentsAndPendingApprovalsWithCorrectRoomActions() {
+        val due=room().copy(phase=RoomPhase.FULFILLED,restaurantPaid=true,account=account)
+        val member=controller(due,"member")
+        member.library=member.library.copy(home=HomePayload(FoodProfile("member-user","Hassan")),sessions=listOf(member.session!!),snapshots=mapOf(due.id to member.reply!!));member.page=GroupPage.WALLET
+        val row=member.state.sections.first().cards.single { it.id.startsWith("profile-dashboard:wallet:") }
+        assertEquals("AED 10.00",row.badge)
+        assertTrue(row.buttons.any { it.action==GroupAction.WALLET_PAY && it.value=="room|member" })
+        assertFalse(row.buttons.any { it.action==GroupAction.WALLET_CONFIRM })
+        val pending=due.copy(transfers=listOf(transfer()))
+        member.library=member.library.copy(snapshots=mapOf(due.id to member.reply!!.copy(room=pending)))
+        val sent=member.state.sections.first().cards.single { it.id.startsWith("profile-dashboard:wallet:") }
+        assertEquals("AED 10.00",sent.badge);assertTrue(sent.detail.contains("awaiting recipient approval"))
+        assertFalse(sent.buttons.any { it.action==GroupAction.WALLET_PAY || it.action==GroupAction.WALLET_CONFIRM })
+        assertTrue(member.state.topCards.single().detail.contains("You need to pay AED 0.00"))
+        val payer=controller(pending)
+        payer.library=payer.library.copy(home=HomePayload(FoodProfile("payer-user","Karim")),sessions=listOf(payer.session!!),snapshots=mapOf(due.id to payer.reply!!));payer.page=GroupPage.WALLET
+        assertTrue(payer.state.sections.first().cards.any { it.buttons.any { button -> button.action==GroupAction.WALLET_CONFIRM } })
+        assertTrue(payer.state.sections.any { it.title=="Payment history" })
+    }
     @Test fun basicRegistrationSkipsStaleContactAndPaymentDraftsAndReturnsHome() {
         val device=Device()
         val c=GroupController(device).apply { library=library.copy(selectedHub=HubPairing("https://localhost:8443"));page=GroupPage.PROFILE }

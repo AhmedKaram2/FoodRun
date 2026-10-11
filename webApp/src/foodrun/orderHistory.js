@@ -49,7 +49,7 @@ export function uniqueRoomPreviousOrders(history, memberId, restaurant, matching
 
 
 export function userDashboard(data) {
-  const entries = [], currentOrders = [], paymentHistory = [];
+  const entries = [], pendingEntries = [], currentOrders = [], paymentHistory = [];
   let toPay = 0, toReceive = 0;
   Object.values(data.sessions || {}).forEach(session => {
     const reply = data.rooms?.[session.roomId], room = reply?.room;
@@ -75,6 +75,7 @@ export function userDashboard(data) {
         const amount = receipt.balance < 0 ? Math.max(0, -receipt.balance - (pending?.refund ? pending.amount : 0)) : receipt.balance;
         if (receipt.balance > 0) toReceive += amount; else toPay += amount;
         if(amount) entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: receipt.name, personId: receipt.memberId, amount, currency: receipt.currency, pending, kind: receipt.balance > 0 ? 'receive' : 'refund', text: receipt.balance > 0 ? `${receipt.name} needs to pay you` : `Refund ${receipt.name}` });
+        else if(pending) pendingEntries.push({room,receipt,memberId:session.memberId,roomId:room.id,roomName:room.name,person:receipt.name,personId:receipt.memberId,amount:pending.amount,currency:receipt.currency,pending,kind:'refund'});
       });
     } else {
       const receipt = (reply.receipts || []).find(value => value.memberId === session.memberId);
@@ -84,9 +85,10 @@ export function userDashboard(data) {
       if (receipt.balance > 0) toPay += amount; else toReceive += amount;
       const recipient = payerName;
       if(amount) entries.push({ room, receipt, memberId: session.memberId, roomId: room.id, roomName: room.name, person: recipient, personId: room.payerId, amount, currency: receipt.currency, pending, kind: receipt.balance > 0 ? 'pay' : 'receive', text: receipt.balance > 0 ? `Pay ${recipient}` : `${payerName} needs to refund you` });
+      else if(pending) pendingEntries.push({room,receipt,memberId:session.memberId,roomId:room.id,roomName:room.name,person:recipient,personId:room.payerId,amount:pending.amount,currency:receipt.currency,pending,kind:'pay'});
     }
   });
   currentOrders.sort((a, b) => (b.room.createdAt || 0) - (a.room.createdAt || 0));
   paymentHistory.sort((a, b) => b.at - a.at);
-  return { paymentHistory, toPay, toReceive, entries, payEntries: entries.filter(entry => entry.kind !== 'receive'), receiveEntries: entries.filter(entry => entry.kind === 'receive'), currentOrders };
+  return { paymentHistory, pendingEntries, toPay, toReceive, entries, payEntries: entries.filter(entry => entry.kind !== 'receive'), receiveEntries: entries.filter(entry => entry.kind === 'receive'), currentOrders };
 }

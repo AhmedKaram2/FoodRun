@@ -4,6 +4,72 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupWalletFundsTest {
+    @Test fun roomShowsWalletObligationsAndSettlesOnlyItsOwnOrderIncludingPersonalShare() {
+        val device=Device();val c=controller(device)
+        val payment=WalletPayment("due","alice","Alice","me","Me","payer","Payer","room","Lunch",1,"alice",1500,"AED",createdAt=10000)
+        val room=Room("room","123456","payer","Lunch",Restaurant("r","Restaurant"),phase=RoomPhase.FULFILLED,payerId="payer",restaurantPaid=true,account=account,members=listOf(Member("me","Me",approved=true),Member("payer","Payer",approved=true)),walletPayments=listOf(payment))
+        val receipt=Receipt("me","Me",emptyList(),2000,0,0,0,0,2000,0,2000,1,"AED")
+        c.library=c.library.copy(home=home.copy(wallet=WalletSnapshot(payments=listOf(payment,payment.copy(id="elsewhere",roomId="another",amount=500)))),sessions=listOf(StoredSession(hub,"room","room-token","me","Lunch")),snapshots=mapOf("room" to RoomReply(room=room,receipts=listOf(receipt))))
+        c.page=GroupPage.ROOM
+        val cards=c.walletFunds.roomCards(room)
+        val total=cards.first();assertEquals("wallet-custody-total",total.id);assertEquals("AED 35.00",total.badge)
+        assertTrue(cards.any { it.detail.contains("Alice") })
+        device.response=RoomReply(walletRecipient=WalletRecipient(FoodPerson("payer","Payer"),listOf(account)))
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"settle-room|room")
+        assertEquals(GroupPage.WALLET_BATCH,c.page)
+        assertEquals("AED 35.00",c.state.cards.first { it.id=="wallet-group-total" }.detail)
+        assertEquals("AED 20.00",c.state.cards.first { it.id=="wallet-group-own" }.detail)
+        device.response=RoomReply(ok=false,error="Captured")
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"send-batch")
+        assertEquals(CommandKind.WALLET_DECLARE_BATCH,device.sent!!.kind);assertTrue(device.sent!!.flag)
+        assertEquals(3500,device.sent!!.amount);assertEquals("room",device.sent!!.roomId);assertEquals("room-token",device.sent!!.token)
+        assertEquals(hub,device.hub)
+    }
+    @Test fun walletTabPutsOtherPeoplesPaymentsAndApprovalsBeforeBalances() {
+        val device=Device();val c=controller(device);c.page=GroupPage.WALLET
+        val payment=WalletPayment("due","alice","Alice","me","Me","payer","Payer","room","Lunch",1,"alice",1500,"AED",createdAt=10000)
+        val topUp=WalletTopUp("credit","alice","Alice","me","Me",2000,"AED",account,"",createdAt=10000)
+        val batch=WalletBatch("incoming","holder","Holder","me","Me",4000,"AED",listOf("other"),account,"",createdAt=10000)
+        c.library=c.library.copy(home=home.copy(wallet=WalletSnapshot(payments=listOf(payment),topUps=listOf(topUp),batches=listOf(batch),balances=listOf(WalletBalance("me","Me","holder","Holder","AED",5000)))))
+        val state=c.state
+        assertEquals(listOf("Required payments","Wallet balance","Payment history"),state.sections.map { it.title })
+        val required=state.sections.first().cards
+        assertTrue(required.first().buttons.any { it.action==GroupAction.WALLET_FUNDS_ACTION })
+        assertTrue(required.single { it.id.endsWith("wallet-group:due") }.detail.contains("Alice"))
+        assertEquals("batch|due",required.single { it.id.endsWith("wallet-group:due") }.buttons.single().value)
+        assertTrue(required.single { it.id.endsWith("wallet-top-up:credit") }.buttons.any { it.value=="top-up-yes|credit" })
+        assertTrue(required.single { it.id.endsWith("wallet-batch:incoming") }.buttons.any { it.value=="batch-yes|incoming" })
+        device.response=RoomReply(home=c.library.home)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"top-up-yes|credit")
+        assertEquals(CommandKind.WALLET_REVIEW_TOP_UP,device.sent!!.kind);assertTrue(device.sent!!.flag)
+        assertEquals(hub,device.hub);assertEquals(GroupPage.WALLET,c.page)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"batch-yes|incoming")
+        assertEquals(CommandKind.WALLET_REVIEW_BATCH,device.sent!!.kind);assertTrue(device.sent!!.flag)
+        assertEquals(GroupPage.WALLET,c.page)
+    }
+    @Test fun sendingOnBehalfOfWalletOwnersReturnsToWalletWithoutNotes() {
+        val device=Device();val c=controller(device);c.page=GroupPage.WALLET
+        val payment=WalletPayment("due","alice","Alice","me","Me","payer","Payer","room","Lunch",1,"alice",1500,"AED",createdAt=10000)
+        c.library=c.library.copy(home=home.copy(wallet=WalletSnapshot(payments=listOf(payment))))
+        device.response=RoomReply(walletRecipient=WalletRecipient(FoodPerson("payer","Payer"),listOf(account)))
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"batch|due")
+        assertEquals(GroupPage.WALLET_BATCH,c.page)
+        assertFalse(c.state.fields.any { it.key==GroupFieldKey.WALLET_NOTE })
+        assertTrue(c.state.cards.any { it.title=="Alice" })
+        device.response=RoomReply(home=c.library.home)
+        c.dispatch(GroupAction.WALLET_FUNDS_ACTION,"send-batch")
+        assertEquals(CommandKind.WALLET_DECLARE_BATCH,device.sent!!.kind)
+        assertEquals(1500,device.sent!!.amount);assertEquals("payer",device.sent!!.userId);assertEquals("",device.sent!!.text)
+        assertEquals(GroupPage.WALLET,c.page)
+    }
+    @Test fun walletSenderCannotApproveSomeoneElsesTopUpOrBatch() {
+        val c=controller(Device());c.page=GroupPage.WALLET
+        val topUp=WalletTopUp("credit","me","Me","holder","Holder",2000,"AED",account,"",createdAt=10000)
+        val batch=WalletBatch("outgoing","me","Me","payer","Payer",4000,"AED",listOf("other"),account,"",createdAt=10000)
+        c.library=c.library.copy(home=home.copy(wallet=WalletSnapshot(topUps=listOf(topUp),batches=listOf(batch))))
+        val buttons=c.state.sections.first().cards.flatMap { it.buttons }
+        assertFalse(buttons.any { it.value.startsWith("top-up-yes|") || it.value.startsWith("top-up-no|") || it.value.startsWith("batch-yes|") || it.value.startsWith("batch-no|") })
+    }
     private class Device : GroupPlatform {
         var response = RoomReply()
         var sent: RoomCommand? = null

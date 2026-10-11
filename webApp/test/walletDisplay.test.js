@@ -12,10 +12,19 @@ test('sent money leaves the sender payment tasks while the recipient still has c
   const sender = userDashboard(data());
   assert.equal(sender.toPay,0); assert.deepEqual(sender.payEntries,[]);
   assert.equal(sender.paymentHistory[0].pending.amount,700);
+  assert.equal(sender.pendingEntries[0].amount,700);assert.equal(sender.pendingEntries[0].person,'Baraa');
   const recipient = userDashboard(data(700,'DECLARED',700,'baraa'));
   assert.equal(recipient.toReceive,700); assert.equal(recipient.receiveEntries[0].pending.amount,700);
   assert.equal(userDashboard(data(700,'REJECTED')).toPay,700);
   assert.equal(userDashboard(data(1000,'DECLARED',700)).toPay,300);
+  assert.equal(userDashboard(data(1000,'DECLARED',700)).pendingEntries.length,0);
+});
+test('a sent refund remains visible while it awaits member confirmation without asking for another transfer',()=>{
+ const fixture=data(-700,'DECLARED',700,'baraa');fixture.rooms.room.room.transfers[0].refund=true;
+ const result=userDashboard(fixture);
+ assert.equal(result.toPay,0);assert.equal(result.payEntries.length,0);
+ assert.equal(result.pendingEntries[0].amount,700);assert.equal(result.pendingEntries[0].kind,'refund');
+ assert.equal(userDashboard(data(700,'CONFIRMED')).pendingEntries.length,0);
 });
 test('a wallet claim awaiting approval cannot count as cash received or a transfer to oneself', () => {
   const room = {payerId:'baraa',walletPayments:[{id:'a',holderId:'baraa',recipientId:'baraa',amount:700,status:'OWING'}],transfers:[{id:'wallet-a',amount:700,status:'DECLARED'}]};

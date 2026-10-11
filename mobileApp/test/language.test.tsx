@@ -7,3 +7,10 @@ test('language sheet has all Arabic styles and native controls use the selected 
  }
  setUiLanguage('ar-EG');
 });
+test('Emirati native controls use local payment and food wording',()=>{
+ setUiLanguage('ar-AE');
+ expect(translateUi('Half','fallback')).toBe('نص');
+ expect(translateUi('Mark paid','fallback')).toBe('طرّشت المبلغ');
+ expect(translateUi('Confirm received','fallback')).toBe('هيه، استلمت');
+ setUiLanguage('ar-EG');
+});

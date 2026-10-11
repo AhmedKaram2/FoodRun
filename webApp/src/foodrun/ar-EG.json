@@ -785,5 +785,12 @@
   "Sign in to your FoodRun account.": "ادخل بحسابك في FoodRun.",
   "or use email": "أو ادخل بالإيميل",
   "New here? Create account": "أول مرة هنا؟ اعمل حساب",
-  "My account": "حسابي"
+  "My account": "حسابي",
+  "Required payments": "المدفوعات المطلوبة",
+  "Your total to pay": "إجمالي اللي عليك تدفعه",
+  "On behalf of others": "عن الناس اللي رصيدهم عندك",
+  "Settle all payments": "سوّي كل المدفوعات",
+  "Send the full amount first. The recipient confirms all these payments together.": "حوّل المبلغ كله الأول. المستلم هيأكد المدفوعات دي مع بعض.",
+  "Confirm or reject the full grouped payment from Wallet.": "أكد أو ارفض الدفعة المجمعة كلها من المحفظة.",
+  "Choose this order's payment recipient and currency.": "اختار مستلم الدفع وعملة الطلب ده."
 }

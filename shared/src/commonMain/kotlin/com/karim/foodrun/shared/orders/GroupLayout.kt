@@ -15,6 +15,18 @@ internal object GroupLayout {
     )
 
     fun sections(page: GroupPage, cards: List<GroupCard>): List<GroupSection> {
+        if (page == GroupPage.WALLET) {
+            val groups = cards.groupBy {
+                when {
+                    it.id.startsWith("profile-dashboard:payment-history") -> "Payment history"
+                    it.id.startsWith("profile-dashboard:wallet-funds") || it.id.startsWith("profile-dashboard:wallet-held:") || it.id.startsWith("profile-dashboard:wallet-holding:") -> "Wallet balance"
+                    else -> "Required payments"
+                }
+            }
+            return listOf("Required payments", "Wallet balance", "Payment history").mapNotNull { title ->
+                groups[title]?.let { values -> GroupSection(title, if(title == "Required payments") values.sortedByDescending { card -> card.buttons.any { it.action !in setOf(GroupAction.RESUME,GroupAction.WALLET_COPY,GroupAction.OPEN_WALLET_HISTORY) } } else values) }
+            }
+        }
         if (page == GroupPage.PROFILE) {
             val groups = cards.groupBy {
                 when {

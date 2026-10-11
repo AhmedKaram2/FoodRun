@@ -14,7 +14,9 @@ Delivery is the default for new rooms. An unsaved restaurant can have an optiona
 
 Transfers default to the current remaining balance. Another amount opens an amount-only form. Payment and refund notes are generated from the room, order number and amount; wallet batches fill their order details automatically. Existing partial-payment limits, pending-claim guards and recipient confirmation remain enforced.
 
-The language selector offers English, Egyptian Arabic, Emirati Arabic and Standard Arabic. Arabic layouts and menu names stay right-to-left, and language preferences survive account refreshes. Native controls and web screens use the same reviewed dictionaries. Emirati Arabic uses its own wording for common actions with neutral Arabic elsewhere. Native language selection uses a sheet. Push registrations retain the server's compatible Arabic language code.
+The language selector offers English, Egyptian Arabic, Emirati Arabic and Standard Arabic. Arabic layouts and menu names stay right-to-left, and language preferences survive account refreshes. Native controls and web screens use the same dictionaries. Emirati Arabic has local wording across account, ordering, half items, wallet payments and alerts, including «شو تبا تطلب؟», «طرّشت المبلغ», «الربع» and «نص». Its ten-section help guide and FAQs have their own Emirati sentences. Native language selection uses a sheet. Push registrations retain the server's compatible Arabic language code.
+
+Wallet opens on Required payments, with balance and payment history in separate tabs. Direct payments, top-up approvals, payments on behalf of wallet owners and grouped receipt approvals stay actionable. Sent payments remain visible while waiting for confirmation, with zero additional amount due from the sender. Room payments also show wallet obligations before and after approval. A money holder can settle their own remaining share plus other people's wallet obligations for the current room/order in one transfer. The server records all parts atomically and the recipient confirms or rejects them together. Other rooms, currencies, existing pending transfers and recipient authority remain guarded; a failed review rolls back every part. Individual approval cannot partially settle a grouped transfer. Public wallet-batch contracts remain compatible, with the own-share association stored privately on the server.
 
 Native sign-in shows Google or email/password only. Registration asks for name, email and password; optional contact and receiving-account details remain in Profile. Registration ignores old contact/payment drafts and returns to Home. iOS has a floating navigation dock; Android has a Material-style bar. Both have animated selection, accessible tabs, shorter labels, RTL support and reduced-motion behavior, and hide the bar while entering text.
 
@@ -22,17 +24,18 @@ Database record-prefix reads now search the existing primary-key index instead o
 
 ## Validation
 
-- Domain: 43 passed; shared: 210 passed; server: 277 passed. Five Firestore emulator tests skipped because no emulator was configured.
-- React Native: TypeScript and 45 interaction tests passed.
-- Web: 119 tests and production build passed.
+- Domain: 43 passed; shared: 216 passed; server: 281 passed. Five Firestore emulator tests skipped because no emulator was configured. Final Wallet tests also covered member authorization, automatic notes, restart/replay and rollback.
+- React Native: TypeScript and 47 interaction tests passed.
+- Web: 121 tests and production build passed.
 - Eight browser fixture checks passed in English/Arabic at 320, 390 and 1280 pixels: groups, restaurant drafts/prices, send confirmation, global selection, timeline/scroll/countdown, owner controls, refusal/removal and connection defaults.
 - An additional 24 browser checks covered all four languages and amount-only transfers at the same widths.
+- Twelve room-settlement browser checks covered combined totals, amount-free/note-free sheets and recipient-only approval across all four languages at those widths.
 - Native room timeline/member previews and wheel-to-sheet restoration were inspected in an isolated iPhone simulator.
 - Android release build and lint passed. iOS signed archive/export use version 1.7.5, build 23.
 
 ## Runtime boundaries
 
-Notification recipients, outbox persistence and retries were tested with fixtures, without sending test messages to system users. Production push credentials and matching Firebase project configuration were verified; this does not prove a notification was received by a physical phone. The iPhone was paired during the build but became unavailable at installation. Physical installation requires it to remain connected and unlocked; its final outcome is reported separately.
+Notification recipients, outbox persistence and retries were tested with fixtures, without sending test messages to system users. Production push credentials and matching Firebase project configuration were verified; this does not prove a notification was received by a physical phone. The native-navigation build was installed and launched on the attached iPhone. The later Wallet/Emirati archive was signed and exported; the phone became unavailable during its final installation check. Its final installation outcome is reported separately.
 
 The iOS IPA uses the existing registered-device development distribution. The public Safari installation option remains available. This release does not establish an authenticated Google sign-in result beyond the previously documented native picker checks.
 

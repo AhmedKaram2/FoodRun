@@ -1,3 +1,5 @@
+import SelectionCountdown from './SelectionCountdown.jsx';
+import SelectionCelebration from './SelectionCelebration.jsx';
 import { useEffect, useState } from 'react';
 import GroupSheet from './GroupSheet.jsx';
 import {getLanguage,t} from './i18n.js';
@@ -15,8 +17,8 @@ export default function QuickChoiceOverlay({data,renderSelection}) {
   return <GroupSheet fullScreen title={purpose} busy={!ended || busy} onClose={close} tx={tx}>
     <h1 className="selection-title" aria-live="polite">{ended ? tx('We have our pick!','تم الاختيار!') : tx('Who will it be?','مَن سيكون الاختيار؟')}</h1>
     <p>{choice.ownerName} · {tx('Quick Choice','الاختيار السريع')}</p>
-    {countdown ? <div className="selection-countdown"><p>{tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')}</p><strong key={countdown} aria-live="assertive">{countdown}</strong></div> : renderSelection({key:choice.id,style:choice.style,spin:choice.spin,members:choice.people,serverTime:time,active:!ended,general:true,purpose})}
-    {ended && <><p className="selection-winner" role="status">🎉 {choice.people.find(person=>person.id===choice.spin.winnerId)?.name}</p><div className="selection-confetti" aria-hidden="true">{Array.from({length:24},(_,i)=><span key={i} style={{left:`${i*17%100}%`,'--delay':`${i%6*.08}s`,'--turn':`${i%2?540:-540}deg`,background:['#ed775c','#245c49','#f7c765','#91c9ff'][i%4]}}/>)}</div><div className="hero-actions">{owner && <button className="primary" disabled={busy} onClick={()=>run('retry')}>{tx('Try again','حاول مرة أخرى')}</button>}<button className="secondary" disabled={busy} onClick={close}>{t('Close')}</button></div></>}
+    {countdown ? <SelectionCountdown number={countdown} ready={tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')} subtitle={tx('The selection starts together.','هنبدأ الاختيار مع بعض.')}/> : renderSelection({key:choice.id,style:choice.style,spin:choice.spin,members:choice.people,serverTime:time,active:!ended,general:true,purpose})}
+    {ended && <><p className="selection-winner" role="status">🎉 {choice.people.find(person=>person.id===choice.spin.winnerId)?.name}</p><SelectionCelebration/><div className="hero-actions">{owner && <button className="primary" disabled={busy} onClick={()=>run('retry')}>{tx('Try again','حاول مرة أخرى')}</button>}<button className="secondary" disabled={busy} onClick={close}>{t('Close')}</button></div></>}
     {error && <p role="alert" className="form-message">{error}</p>}
   </GroupSheet>;
 }

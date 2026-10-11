@@ -35,7 +35,7 @@ export async function runQuickChoiceAudit(language='en',style='names') {
     offset=1100;await pause();assert(document.querySelector('.selection-countdown strong')?.textContent==='2','Countdown 2 missing');
     offset=2100;await pause();assert(document.querySelector('.selection-countdown strong')?.textContent==='3','Countdown 3 missing');
     offset=3200;await pause();assert(document.querySelector(style==='names' ? '.running-names' : '.live-wheel'),'Animation missing');
-    offset=8700;await pause();assert(document.querySelector('.selection-winner')?.textContent.includes('Alice') && document.querySelectorAll('.selection-confetti span').length===24,'Shared result/celebration missing');
+    offset=8700;await pause();assert(document.querySelector('.selection-winner')?.textContent.includes('Alice') && document.querySelectorAll('.selection-confetti span').length===54 && document.querySelectorAll('.selection-burst i').length===18,'Shared result/celebration missing');
     click('Try again');await pause();assert(commands.at(-1).action==='retry','Retry missing');
     assert(document.documentElement.scrollWidth<=innerWidth+1,'Horizontal overflow');
     const imageChecks={language,style,width:innerWidth,countdown:true,celebration:true,excluded:true};

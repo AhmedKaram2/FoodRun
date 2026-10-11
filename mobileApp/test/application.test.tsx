@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, waitFor, act } from "@testing-library/react-native";
+import { fireEvent, render, waitFor, act, within } from "@testing-library/react-native";
 import { Alert } from "react-native";
 import App from "../App";
 import {
@@ -586,5 +586,12 @@ test.each(['ios','android'] as const)('native %s tab styling keeps all destinati
   const view=render(<NativeTabBar tabs={tabs} rtl={false} busy={false} onSelect={select}/>);
   expect(view.getByTestId(`native-tabs:${platform}`)).toBeTruthy();expect(view.getByRole('tab',{name:'HOME'}).props.accessibilityState.selected).toBe(true);
   for(const tab of tabs){fireEvent.press(view.getByTestId(`nav:${tab.id}`));expect(select).toHaveBeenLastCalledWith(tab.id);}
+  if(platform==='ios') {
+   expect(within(view.getByTestId('ios-tab-dock')).queryByTestId('nav:MORE')).toBeNull();
+   expect(within(view.getByTestId('ios-more-bubble')).getByTestId('nav:MORE')).toBeTruthy();
+   view.rerender(<NativeTabBar tabs={tabs.map(tab=>({...tab,selected:tab.id==='MORE',label:tab.id==='MORE'?'المزيد':tab.label}))} rtl busy={false} onSelect={select}/>);
+   expect(view.getByRole('tab',{name:'المزيد'}).props.accessibilityState.selected).toBe(true);
+   fireEvent.press(view.getByRole('tab',{name:'المزيد'}));expect(select).toHaveBeenLastCalledWith('MORE');
+  } else expect(view.queryByTestId('ios-more-bubble')).toBeNull();
  }finally{Object.defineProperty(Platform,'OS',{value:previous,configurable:true});}
 });

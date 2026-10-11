@@ -1,3 +1,5 @@
+import SelectionCountdown from './SelectionCountdown.jsx';
+import SelectionCelebration from './SelectionCelebration.jsx';
 import { useEffect, useRef, useState } from 'react';
 import GroupSheet from './GroupSheet.jsx';
 import { getLanguage, t } from './i18n.js';
@@ -18,7 +20,7 @@ export default function LiveSelectionOverlay({ data, renderWheel }) {
   if(!visible) return null;
   return <GroupSheet fullScreen title={room.name} busy={!ended} onClose={() => setDismissed(spin.id)} tx={tx}>
     <h1 className="selection-title" aria-live="polite">{ended ? tx('We have our person!','تم اختيار مسؤول الطلب!') : tx('Who’s ordering today?','مين هيطلب لنا النهارده؟')}</h1>
-    {countdown ? <div className="selection-countdown"><p>{tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')}</p><strong key={countdown} aria-live="assertive">{countdown}</strong><p>{tx('The selection starts together.','هنبدأ الاختيار مع بعض.')}</p></div> : renderWheel({style:room.selectionStyle,spin,members:room.members,serverTime:candidate.serverTime,active:!ended})}
-    {ended && <><p className="selection-winner" aria-live="polite">🎉 {room.members.find(member => member.id === spin.winnerId)?.name}</p><div className="selection-confetti" aria-hidden="true">{Array.from({length:24},(_,i) => <span key={i} style={{left:`${i*17%100}%`,'--delay':`${i%6*.08}s`,'--turn':`${i%2?540:-540}deg`,background:['#ed775c','#245c49','#f7c765','#91c9ff'][i%4]}}/>)}</div><button className="primary" onClick={() => setDismissed(spin.id)}>{tx('Continue','متابعة')}</button></>}
+    {countdown ? <SelectionCountdown number={countdown} ready={tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')} subtitle={tx('The selection starts together.','هنبدأ الاختيار مع بعض.')}/> : renderWheel({style:room.selectionStyle,spin,members:room.members,serverTime:candidate.serverTime,active:!ended})}
+    {ended && <><p className="selection-winner" aria-live="polite">🎉 {room.members.find(member => member.id === spin.winnerId)?.name}</p><SelectionCelebration/><button className="primary" onClick={() => setDismissed(spin.id)}>{tx('Continue','متابعة')}</button></>}
   </GroupSheet>;
 }

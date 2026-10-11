@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, G, Path, Text as SvgText } from "react-native-svg";
+import {RunningNameDisplay} from "./SelectionMotion";
 import type { Wheel } from "../types";
 import { colors, font, tx } from "../theme";
 // The website and mobile apps use identical weighted geometry and server timing.
@@ -152,11 +153,7 @@ export default function LiveWheel({
         {tx(rtl, "LIVE SELECTION", "الاختيار المباشر")}
       </Text>
       {wheel.style === "names" ? (
-        <View style={styles.running}>
-          <Text style={[styles.name, { fontFamily: font("bold", rtl) }]}>
-            {ended ? wheel.winner : reduced ? tx(rtl,"Choosing…","جارٍ الاختيار…") : wheel.names[index]}
-          </Text>
-        </View>
+        <RunningNameDisplay name={ended ? wheel.winner : reduced ? tx(rtl,"Choosing…","جارٍ الاختيار…") : wheel.names[index]} previous={wheel.names[(index+wheel.names.length-1)%wheel.names.length]} next={wheel.names[(index+1)%wheel.names.length]} index={index} ended={ended} motion={!reduced&&active} rtl={rtl}/>
       ) : (
         <WheelDrawing
           names={wheel.names}
@@ -211,12 +208,4 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textAlign: "center",
   },
-  running: {
-    height: 200,
-    justifyContent: "center",
-    width: "100%",
-    backgroundColor: colors.mint,
-    borderRadius: 20,
-  },
-  name: { fontSize: 30, textAlign: "center", color: colors.ink },
 });

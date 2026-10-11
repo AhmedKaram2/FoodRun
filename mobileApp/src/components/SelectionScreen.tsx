@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "./ScrollArea";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Snapshot } from "../types";
@@ -16,7 +17,7 @@ export default function SelectionScreen({snapshot,roomTitle}:{snapshot:Snapshot;
     <View style={styles.contextCard}><Icon name={snapshot.state.page==="ITEM"?"food":"wallet"} size={32} color={colors.forest}/><Text style={[textStyle(rtl,"bold"),styles.roomTitle]}>{roomTitle || snapshot.state.title}</Text></View>
     <BottomSheet visible title={snapshot.state.title} rtl={rtl} onClose={()=>dispatch("BACK")}>
       {!!snapshot.state.subtitle && <Text style={[textStyle(rtl),styles.subtitle]}>{snapshot.state.subtitle}</Text>}
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         {cards.map(card=>{
           const choice=card.buttons.find(button=>button.action==="SELECT_VARIANT"), selected=!!card.badge;
           return choice ? <Pressable key={card.id} accessibilityRole="radio" accessibilityLabel={`${card.title} · ${card.detail}`} accessibilityState={{selected,disabled:busy || !choice.enabled}} disabled={busy || !choice.enabled} onPress={()=>dispatch(choice.action,choice.value)} style={[styles.choice,selected && styles.selected,rtl && {flexDirection:"row-reverse"}]}>
@@ -26,7 +27,7 @@ export default function SelectionScreen({snapshot,roomTitle}:{snapshot:Snapshot;
         {choices.map(button=>{const checked=button.title.startsWith("✓ ");return <Pressable key={button.value} accessibilityRole="checkbox" accessibilityLabel={button.title.replace(/^✓ /,"")} accessibilityState={{checked,disabled:busy || !button.enabled}} disabled={busy || !button.enabled} onPress={()=>dispatch(button.action,button.value)} style={[styles.choice,checked && styles.selected,rtl && {flexDirection:"row-reverse"}]}><Text style={[textStyle(rtl),{flex:1}]}>{button.title.replace(/^✓ /,"")}</Text><View style={[styles.check,checked && {backgroundColor:colors.forest,borderColor:colors.forest}]}>{checked && <Icon name="check" size={16} color={colors.white}/>}</View></Pressable>;})}
         {[...snapshot.mainFields,...snapshot.extraFields].map(field=><FieldInput key={field.key} field={field} rtl={rtl} busy={busy}/>)}
         {actions.map((button,index)=><Button key={`${button.action}:${index}`} rtl={rtl} busy={busy} action={button}/>)}
-      </ScrollView>
+      </ScrollArea>
       {!!snapshot.primaryAction && <Button rtl={rtl} busy={busy} action={snapshot.primaryAction}/>}
     </BottomSheet>
   </View>;

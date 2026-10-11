@@ -26,6 +26,8 @@ export type Card = {
 };
 export type Section = { title: string; cards: Card[]; collapsed: boolean };
 export type Wheel = {
+  roomName?: string;
+  roomId?: string;
   names: string[];
   round: {
     id: string;
@@ -73,6 +75,10 @@ export type Snapshot = {
     roomCode: string;
     canGoBack: boolean;
     progressStep: number;
+    roomPhase?: string;
+    roomStage?: string;
+    joinedCount?: number;
+    historyNextOffset?: number;
     inviteLink: string;
     inviteSummary: string;
     rtl: boolean;
@@ -83,6 +89,7 @@ export type Snapshot = {
       address: string;
       error: string;
     } | null;
+    restaurantSendPrompt?: { blocker:string; canConfirm:boolean } | null;
     walletHistoryPrompt?: {
       title: string;
       subtitle: string;
@@ -91,6 +98,7 @@ export type Snapshot = {
       loading: boolean;
       error: string;
       hasMore: boolean;
+      nextCursor?: string;
     } | null;
     feedback?: {
       id: number;

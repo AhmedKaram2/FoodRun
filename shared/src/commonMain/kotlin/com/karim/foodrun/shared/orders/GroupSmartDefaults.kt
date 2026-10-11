@@ -21,6 +21,9 @@ internal class GroupSmartDefaults(private val c: GroupController) {
     fun roomName(key: GroupFieldKey = GroupFieldKey.ROOM_NAME): String = currentRoomName().also { suggestedNames[key] = it }
     fun submittedName(key: GroupFieldKey): String = c.text(key).trim().let { if (it == suggestedNames[key]) currentRoomName() else it }
     fun seed() {
+        c.editingSetupMenu = false
+        c.draft[GroupFieldKey.DELIVERY] = "true"
+        c.draft[GroupFieldKey.RESTAURANT_NAME] = ""; c.draft[GroupFieldKey.PHONE] = ""
         c.draft[GroupFieldKey.ROOM_NAME] = roomName()
         val saved = key()?.let { runCatching { orderJson.decodeFromString<RoomPreferences>(c.platform.read(it)) }.getOrNull() }
         c.draft[GroupFieldKey.DESTINATION] = saved?.destination ?: "Mohre, Backside Parking, Security gate, Opposite Suni's Restaurant https://maps.app.goo.gl/cLba7hYb9Rtfqyjr5"

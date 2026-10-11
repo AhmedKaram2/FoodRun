@@ -60,4 +60,32 @@ class GroupSmartDefaultsTest {
         c.smartDefaults.seed()
         assertTrue(c.text(GroupFieldKey.ROOM_NAME).isNotBlank())
     }
+    @Test fun newRoomsDefaultToDeliveryAndTheCreatorCanChoosePickup() {
+        val c = GroupController(Device())
+        c.dispatch(GroupAction.CREATE)
+        assertTrue(c.flag(GroupFieldKey.DELIVERY))
+        c.update(GroupFieldKey.DELIVERY, "false")
+        c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.BACK)
+        assertFalse(c.flag(GroupFieldKey.DELIVERY))
+        c.dispatch(GroupAction.CREATE)
+        assertTrue(c.flag(GroupFieldKey.DELIVERY))
+    }
+    @Test fun optionalSetupMenuReturnsToTheRoomWithoutPublishingOrLosingDelivery() {
+        val c = GroupController(Device())
+        c.dispatch(GroupAction.CREATE)
+        c.update(GroupFieldKey.RESTAURANT_NAME, "New place")
+        c.dispatch(GroupAction.USE_OPEN_ORDER)
+        assertTrue(c.selectedRestaurant!!.restaurant.openOrdering)
+        assertTrue(c.selectedRestaurant!!.restaurant.menu.items.isEmpty())
+        c.dispatch(GroupAction.OPEN_SETUP_MENU)
+        c.update(GroupFieldKey.MENU_ITEM_NAME, "Falafel")
+        c.update(GroupFieldKey.MENU_ITEM_PRICE, "7.50")
+        c.dispatch(GroupAction.ADD_MENU_ITEM)
+        c.dispatch(GroupAction.DONE_SETUP_MENU)
+        assertEquals(GroupPage.SETUP, c.page)
+        assertEquals(750L, c.selectedRestaurant!!.restaurant.menu.items.single().basePriceMinor)
+        assertTrue(c.flag(GroupFieldKey.DELIVERY))
+        assertFalse(c.editingSetupMenu)
+        assertNull(c.library.pending)
+    }
 }

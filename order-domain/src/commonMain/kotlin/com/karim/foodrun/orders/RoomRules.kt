@@ -1,6 +1,7 @@
 package com.karim.foodrun.orders
 
 object RoomRules {
+    fun declinedOrdering(room: Room, id: String): Boolean = room.members.any { it.id == id && it.approved && !it.removed && !it.eligible } && room.pastSpins.any { it.winnerId == id }
     fun member(room: Room, id: String): Member = room.members.singleOrNull { it.id == id && !it.removed } ?: error("Membership has been removed. Ask the organizer to join again.")
     fun validateRoom(room: Room) {
         require(room.selectionStyle in listOf("wheel", "names")) { "Invalid selection style." }

@@ -68,7 +68,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
         }
         val published = c.library.home?.restaurants?.firstOrNull { it.id == c.editingRestaurant?.restaurant?.id }
         if(navigate && type == "item" && published != null && published.menu.items.none { it.id == id } &&
-            !c.administration.editingRestaurant && c.editingRoomOrder == null && c.library.identityToken.isNotEmpty()) {
+            !c.administration.editingRestaurant && !c.editingSetupMenu && c.editingRoomOrder == null && c.library.identityToken.isNotEmpty()) {
             val restaurant = c.editingRestaurant!!.restaurant
             c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.ADD_MENU_ITEMS,
                 restaurant = restaurant.copy(menu = restaurant.menu.copy(items = listOf(menu.items.single { it.id == id })))), returnPage = GroupPage.MENU_EDITOR)
@@ -102,7 +102,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
             menu.categories.sortedBy { it.sortOrder }.map { row("category", it.id, it.localizedName(c.library.language)) } +
             menu.items.map { row("item", it.id, it.localizedName(c.library.language), Money.format(it.basePriceMinor, currency)) } +
             menu.optionGroups.map { row("group", it.id, it.localizedName(c.library.language), "${it.minSelections}–${it.maxSelections}") },
-            buttons = listOf(GroupButton(if(c.library.home?.restaurants?.any { it.id == c.editingRestaurant?.restaurant?.id } == true && !c.administration.editingRestaurant && c.editingRoomOrder == null) tr("Add & save item", "إضافة الصنف وحفظه") else tr("Add item to draft", "إضافة الصنف للمسودة"), GroupAction.ADD_MENU_ITEM, primary = true), button("Add category", "إضافة قسم", "category|"), button("Add item", "إضافة صنف", "item|"), button("Add extras group", "إضافة مجموعة إضافات", "group|")))
+            buttons = listOf(GroupButton(if(c.library.home?.restaurants?.any { it.id == c.editingRestaurant?.restaurant?.id } == true && !c.administration.editingRestaurant && !c.editingSetupMenu && c.editingRoomOrder == null) tr("Add & save item", "إضافة الصنف وحفظه") else tr("Add item to draft", "إضافة الصنف للمسودة"), GroupAction.ADD_MENU_ITEM, primary = true), button("Add category", "إضافة قسم", "category|"), button("Add item", "إضافة صنف", "item|"), button("Add extras group", "إضافة مجموعة إضافات", "group|")) + if(c.editingSetupMenu) listOf(GroupButton(tr("Use this menu", "استخدام هذه القائمة"), GroupAction.DONE_SETUP_MENU, primary = true)) else emptyList())
         val fields = mutableListOf(field(GroupFieldKey.MENU_ENTITY_NAME, "Name · English", "الاسم · إنجليزي"), field(GroupFieldKey.MENU_ENTITY_AR, "Name · Arabic", "الاسم · عربي"))
         val cards = mutableListOf<GroupCard>(); val buttons = mutableListOf<GroupButton>()
         when(type) {

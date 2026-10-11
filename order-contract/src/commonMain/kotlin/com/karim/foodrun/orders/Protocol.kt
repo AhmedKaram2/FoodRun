@@ -108,6 +108,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val notificationPreferencesDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val restaurantOrderDetails: Boolean = false,
 
 )
 @Serializable data class OrderProgress(
@@ -115,6 +118,8 @@ import kotlinx.serialization.ExperimentalSerializationApi
     val canReview: Boolean = false, val reviewBlocker: String = "",
     val canArchive: Boolean = false, val archiveBlocker: String = "",
 )
+/** Food and restaurant bill only; member payments and receiving details stay private. */
+@Serializable data class RestaurantOrderSummary(val lines: List<ReceiptLine>, val total: Long, val currency: String)
 @Serializable data class RoomReply(
     val protocolVersion: Int = 1, val ok: Boolean = true, val error: String = "", val code: String = "",
     val room: Room? = null, val token: String = "", val memberId: String = "", val serverTime: Long = 0,
@@ -149,6 +154,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val friendContacts: List<FriendContact>? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val restaurantOrder: RestaurantOrderSummary? = null,
 
 )
 /** A private LAN hub uses a pinned fingerprint; a public API uses normal CA-validated HTTPS. */

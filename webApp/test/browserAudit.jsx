@@ -1,4 +1,6 @@
+import PagedList from '../src/foodrun/PagedList.jsx';
 import bundledRestaurants from '../src/foodrun/builtInRestaurants.json';
+import LiveSelectionOverlay from '../src/foodrun/LiveSelectionOverlay.jsx';
 import FriendGroups from '../src/foodrun/FriendGroups.jsx';
 import { AdminUsers } from '../src/foodrun/AdminApp.jsx';
 import { mealRoomName } from '../src/foodrun/smartDefaults.js';
@@ -7,7 +9,7 @@ import { mealRoomName } from '../src/foodrun/smartDefaults.js';
 // It captures commands locally; no account, restaurant order, or payment is sent.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { FoodRunClient, CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants, normalizeRestaurant } from '../src/foodrun/FoodRunApp.jsx';
+import { RestaurantOrderCard, LiveSelectionWheel, MemberOrderPanel, FoodRunClient, CreateRoom, Home, ProfileScreen, RoomScreen, loadRestaurants, storeRestaurants, normalizeRestaurant } from '../src/foodrun/FoodRunApp.jsx';
 import RestaurantLibraryScreen from '../src/foodrun/RestaurantLibraryScreen.jsx';
 import { t, getLanguage } from '../src/foodrun/i18n.js';
 import { NotificationCenter, NotificationActionCard } from '../src/foodrun/NotificationCenter.jsx';
@@ -41,7 +43,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
   };
   Object.assign(room, options.room || {});
   const roomData = { ...data, ...(options.baseData || {}), sessions: { [room.id]: { roomId: room.id, roomName: room.name, memberId: options.memberId || 'me' } },
-    rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
+    rooms: { [room.id]: { room, receipts: options.receipts || [], progress: options.progress, restaurantOrder: options.restaurantOrder, history: options.history || [], serverTime: Date.now() } }, online: { [room.id]: true } };
   const props = { data: options.data || (screen === 'room' || options.room ? roomData : data), onBack: () => {}, openRoom: () => {}, setPage: () => {} };
   if (options.send) roomData.send = options.send;
   if (options.liveCart || options.liveCommands) roomData.send = async (kind, fields) => {
@@ -465,10 +467,12 @@ export async function runOrderFlowAudit() {
   assert(!eta.required && eta.value === '', 'Expected arrival should start empty and optional');
   assert(!button('Order sent').disabled, 'Missing expected arrival blocks submission');
   button('Order sent').click(); await pause();
+  const confirm = document.querySelector('[role=dialog] .primary'); assert(confirm && !confirm.disabled,'Missing order-sent confirmation'); confirm.click(); await pause();
   assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '', 'Placement without expected arrival failed');
   setValue(eta, '   '); await pause();
   assert(!button('Order sent').disabled, 'Whitespace expected arrival blocks submission');
   button('Order sent').click(); await pause();
+  document.querySelector('[role=dialog] .primary').click(); await pause();
   assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '', 'Whitespace expected arrival was not treated as empty');
   setValue(eta, '30 minutes'); await pause();
   const whatsapp = new URL(host.querySelector('a[href^="https://wa.me/"]').href);
@@ -479,6 +483,7 @@ export async function runOrderFlowAudit() {
   assert(host.querySelector('.restaurant-phone').textContent.includes('+971'), 'Restaurant phone hidden');
   assert(button('Copy phone number'), 'Phone copy action missing');
   button('Order sent').click(); await pause();
+  document.querySelector('[role=dialog] .primary').click(); await pause();
   assert(commands.at(-1).kind === 'PLACE' && commands.at(-1).fields.text === '30 minutes', 'Direct placement missing');
   assert(!button('Confirm my total and recipient'), 'Redundant total confirmation remains');
   assert(!measureAudit().overflow, 'Restaurant order overflows');
@@ -1042,30 +1047,40 @@ export async function runFriendsTimerAudit() {
 export async function runGroupMembershipAudit() {
   await mountAudit('home'); commands.length = 0;
   const ar = getLanguage() === 'ar';
-  const find = (en, arabic, scope = host) => { const node = [...scope.querySelectorAll('button')].find(value => value.textContent.trim() === (ar ? arabic : en)); assert(node, 'Missing '+en); return node; };
+  const find = (en, arabic, scope = document) => { const node = [...scope.querySelectorAll('button')].find(value => value.textContent.trim() === (['Edit','Remove','Save','Cancel'].includes(en) ? t(en) : ar ? arabic : en)); assert(node, 'Missing '+en); return node; };
+  const dialog = () => document.querySelector('[role=dialog]');
   const group = {id:'owned',name:'Office friends',favourite:true,revision:4,members:[{email:'bob@example.test',userId:'bob',name:'Bob'},{email:'charlie@example.test',userId:'charlie',name:'Charlie'}]};
   const joined = {ownerId:'alice',ownerName:'Alice',group:{...group,id:'joined',name:'Friday lunch'}};
   const fixture = {...data,home:{...data.home,friendGroups:[group],joinedFriendGroups:[joined]},walletQuery:async (kind, fields)=> kind === 'FRIEND_SEARCH' ? ({friendContacts:[{email:'dana@example.test',userId:'dana',name:'Dana'}]}) : ({friendContact:{email:fields.text,userId:'dana',name:'Dana'}})};
   root.render(<FriendGroups data={fixture} onBack={()=>{}} />); await pause();
-  button('Edit').click(); await pause();
-  setValue(host.querySelector('input'), 'Team lunch'); await pause();
-  button('Remove').click(); await pause();
-  setValue(host.querySelector('input[role=combobox]'), 'dana@example.test'); await pause();
-  await new Promise(resolve => setTimeout(resolve,400));
-  const pick = host.querySelector('.friend-search-person'); if(pick) pick.click(); else [...host.querySelectorAll('button')].find(value => value.textContent.includes(ar ? 'دعوة بالبريد' : 'Invite by email')).click(); await pause();
-  button('Save').click(); await pause();
+  find('Edit','تعديل',host).click(); await pause();
+  setValue(dialog().querySelector('input'), 'Team lunch'); await pause();
+  find('Remove','إزالة',dialog()).click(); await pause();
+  setValue(dialog().querySelector('input[role=combobox]'), 'dana@example.test'); await new Promise(resolve => setTimeout(resolve,400));
+  dialog().querySelector('.friend-search-person').click(); await pause();
+  find('Save','حفظ',dialog()).click(); await pause();
   const saved = commands.at(-1); assert(saved?.kind==='SAVE_FRIEND_GROUP' && saved.fields.friendGroup.name==='Team lunch' && saved.fields.friendGroup.revision===4,'Owner edit lost name or revision');
   assert(saved.fields.friendGroup.members.map(value=>value.userId).join(',')==='charlie,dana','Owner add/remove did not update members');
-  find('View group','عرض المجموعة').click(); await pause();
-  const details = [...host.querySelectorAll('section[aria-label]')].find(value=>value.getAttribute('aria-label')===(ar?'تفاصيل المجموعة':'Group details'));
-  assert(details?.textContent.includes('Alice') && details.textContent.includes('bob@example.test'),'Member cannot view group and members');
-  assert(!host.querySelector('input') && ![...details.querySelectorAll('button')].some(value=>['Edit','Remove','Save'].some(label=>value.textContent.trim()===t(label))),'Joined group exposed editing controls');
-  find('Leave group','مغادرة المجموعة',details).click(); await pause();
+  find('Joined groups','المجموعات المنضم إليها',host).click(); await pause();
+  find('View group','عرض المجموعة',host).click(); await pause();
+  assert(dialog()?.textContent.includes('Alice') && dialog().textContent.includes('bob@example.test'),'Joined details are hidden');
+  assert(!dialog().querySelector('input') && ![...dialog().querySelectorAll('button')].some(value=>['Edit','Remove','Save'].some(label=>value.textContent.trim()===t(label))),'Joined group exposed editing controls');
+  find('Leave group','مغادرة المجموعة',dialog()).click(); await pause();
+  assert(commands.at(-1)?.kind !== 'LEAVE_FRIEND_GROUP','Leave ran without confirmation');
+  find('Confirm leave','تأكيد المغادرة',dialog()).click(); await pause();
   assert(commands.at(-1)?.kind==='LEAVE_FRIEND_GROUP' && commands.at(-1).fields.friendGroupId==='joined' && commands.at(-1).fields.friendGroupOwnerId==='alice','Member leave targeted wrong group');
+  assert(!dialog(),'Successful leave did not close details');
   root.render(<FriendGroups data={{...fixture,home:{...fixture.home,joinedFriendGroups:[]}}} onBack={()=>{}} />); await pause();
   assert(!host.textContent.includes('Friday lunch'),'Left group is still listed');
+  // Failed leave keeps the details and a visible error, and prevents duplicate requests.
+  const failed = {...fixture,send:async(kind,fields)=>{commands.push({kind,fields});return null;}};
+  root.render(<FriendGroups data={failed} onBack={()=>{}} />); await pause();
+  find('View group','عرض المجموعة',host).click(); await pause(); find('Leave group','مغادرة المجموعة',dialog()).click(); await pause();
+  find('Confirm leave','تأكيد المغادرة',dialog()).click(); await pause();
+  assert(dialog()?.querySelector('[role=alert]'),'Failed leave error is hidden');
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); await pause(); assert(!dialog(),'Escape did not close details');
   assert(!measureAudit().overflow,'Group membership screen overflows');
-  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false,ownerEditing:true,memberView:true,memberLeave:true};
+  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false,ownerEditing:true,memberView:true,memberLeave:true,failedLeave:true};
 }
 
 export async function runWalletApprovalAudit() {
@@ -1111,7 +1126,7 @@ export async function runMobilePagesAudit() {
     if(screen === 'room' && innerWidth <= 640) {
       const tabs = [...host.querySelectorAll('.mobile-room-tabs button')];
       assert(tabs.length === 4, 'Room does not have four mobile tabs');
-      assert(tabs.map(node => node.textContent).join('|') === ['Overview','My food','Payments','Members'].map(label => t(label)).join('|'), 'Room tab order or labels changed');
+      assert(tabs.map(node => node.textContent).join('|') === [t('Overview'),t('My food'),t('Payments'),`${t('Members')} (1)`].join('|'), 'Room tab order or labels changed');
       for (let index = 0; index < tabs.length; index++) {
         tabs[index].click(); await pause();
         const id = ['room-overview','room-food','room-payments','room-members'][index];
@@ -1137,7 +1152,7 @@ export async function runMobilePagesAudit() {
   const walletData = {...data,home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},wallet:{balances:[balance],topUps:[],payments:[],batches:[]}},walletQuery:async(kind,fields)=>{ assert(kind==='WALLET_HISTORY','History used mutation');historyReads++;return {walletHistory:{balance,transactions:fields.walletHistoryCursor?transactions.slice(20):transactions.slice(0,20),nextCursor:fields.walletHistoryCursor?'':'older'}};}};
   root.render(<WalletFunds data={walletData}/>); await pause(); host.querySelector('.wallet-selectable').click(); await pause();
   let dialog = document.querySelector('.wallet-history-dialog[open]'); assert(dialog,'Wallet history popup missing'); assert(dialog.textContent.includes('Holder') && dialog.textContent.includes('Reference 0'),'Missing transaction details');
-  [...dialog.querySelectorAll('button')].find(node=>node.textContent.includes(getLanguage()==='ar'?'تحميل معاملات أقدم':'Load older transactions')).click(); await pause();
+  dialog.querySelector('.scroll-load').scrollIntoView({block:'end'}); await pause(); await pause();
   assert(historyReads===2 && dialog.textContent.includes('Reference 24'),'Wallet older page missing'); assert(!measureAudit().overflow,'Wallet popup overflow');
   dialog.querySelector('button').click(); await pause(); assert(!document.querySelector('.wallet-history-dialog[open]'),'Wallet popup did not close');
   commands.length=0; root.render(<NotificationPreferences data={{...data,home:{...data.home,notificationPreferences:{pushEnabled:true,emailEnabled:true}}}}/>); await pause();
@@ -1155,7 +1170,7 @@ export async function runMobilePagesAudit() {
       setValue(search,''); await pause(); assert(!measureAudit().overflow,'Admin full tab overflow');
     }
     const usersTab = [...host.querySelectorAll('.admin-tabs button')].find(node=>node.textContent===t('Users'));usersTab.click(); await pause();
-    assert(host.querySelectorAll('.admin-person').length===8 && host.querySelector('.list-pagination'),'Admin pagination missing');
+    assert(host.querySelectorAll('.admin-person').length>=8 && !host.querySelector('.list-pagination'),'Admin scroll pagination missing');
     setValue(host.querySelector('.admin-search input'),'user17@example.test'); await pause();assert(host.querySelectorAll('.admin-person').length===1 && host.textContent.includes('User 17'),'Admin email search failed');
   } finally { window.fetch = savedFetch; }
   const cleanupCalls = [];
@@ -1202,7 +1217,7 @@ export async function runIosInstallAudit(){
  assert(sheet.getBoundingClientRect().width<=innerWidth,'Install sheet overflows');
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await pause();assert(!document.querySelector('.ios-install-sheet'),'Escape did not close installation');
  assert(document.activeElement===button,'Focus was not restored');
- const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.4.ipa'),'IPA download is missing');
+ const ipa=host.querySelector('.ipa-test-download a');assert(ipa?.href.endsWith('FoodRun-iOS-RegisteredDevices-1.7.5.ipa'),'IPA download is missing');
  return {passed:true,language:getLanguage(),width:innerWidth,overflow:false};
 }
 
@@ -1222,4 +1237,135 @@ export async function runInternetDefaultsAudit() {
   assert(host.querySelector('.mode-cards'),'Connection choices did not open after failure');
   assert(!measureAudit().overflow,'Connection choices overflow');
   return {passed:true,language:getLanguage(),width:innerWidth,defaultStyle:'names',fallbackAfterFailure:true};
+}
+
+export async function runRestaurantDraftAndPricesAudit() {
+  localStorage.removeItem('foodrun-room-preferences:audit-only');
+  await mountAudit('create'); commands.length=0;
+  const unknown = [...host.querySelectorAll('input')].find(input => input.closest('label')?.textContent.includes(t('Restaurant / order name')));
+  assert(unknown,'Unknown restaurant entry is missing'); setValue(unknown,'New neighbourhood kitchen'); await pause();
+  const optional=host.querySelector('input[type=tel]'); assert(optional && !optional.required,'New restaurant requires a phone before creation');
+  const menu = [...host.querySelectorAll('details')].find(node => /Add menu items|إضافة أصناف/.test(node.querySelector('summary')?.textContent));
+  assert(menu,'Optional quick menu is missing'); menu.open=true;
+  setValue(menu.querySelectorAll('input')[0],'Falafel'); setValue(menu.querySelectorAll('input')[1],'7.50'); await pause();
+  menu.querySelector('button').click(); await pause();
+  assert(menu.textContent.includes('AED 7.50'),'Quick menu price is incorrect');
+  const delivery=[...host.querySelectorAll('.delivery-choice button')].find(node => node.textContent===t('Delivery'));
+  assert(delivery?.getAttribute('aria-pressed')==='true','Delivery is not the new-room default');
+  host.querySelector('form').requestSubmit(); await pause();
+  const created=commands.at(-1); assert(created?.kind==='CREATE' && created.fields.flag && created.fields.restaurant.menu.items[0].basePriceMinor===750,'Created room lost the optional menu or delivery');
+  const restaurant={...created.fields.restaurant,contact:{phoneE164:'+971501234567'},openOrdering:true};
+  const room={id:'custom',restaurant,halfItemOffers:[]}, cart={memberId:'me',revision:0,submitted:false,lines:[]};
+  let added;
+  root.render(<MemberOrderPanel room={room} cart={cart} favorites={[]} previousOrders={[]} onSave={async lines=>{added=lines;return {ok:true};}} onSubmit={()=>{}}/>); await pause();
+  const custom=host.querySelector('.item-form'); const inputs=custom.querySelectorAll('input');
+  // A saved menu and the typed-item form can coexist; target the custom form by its name input.
+  const typed=[...host.querySelectorAll('form')].find(form => form.querySelector(`input[placeholder="${t('Falafel sandwich')}"]`));
+  assert(typed,'Custom item form is missing');
+  const food=typed.querySelector(`input[placeholder="${t('Falafel sandwich')}"]`); setValue(food,'Shawarma');
+  const price=[...typed.querySelectorAll('input')].find(input=>input.inputMode==='decimal'); setValue(price,'12.50'); await pause();
+  typed.requestSubmit(); await pause(); assert(added?.[0]?.unitPrice===1250,'Member price was not sent with their typed item');
+  assert(!measureAudit().overflow,'Restaurant or typed-item forms overflow');
+  return {passed:true,language:getLanguage(),width:innerWidth,optionalMenu:true,memberPrice:true,delivery:true};
+}
+
+export async function runOrderSendConfirmationAudit() {
+  await mountAudit('home'); commands.length=0;
+  const restaurant=normalizeRestaurant(bundledRestaurants[0]); restaurant.contact={phoneE164:'+971501234567',whatsappE164:'+971501234567'};
+  let room={id:'send-room',name:'Lunch',phase:'COLLECTING',revision:7,orderNumber:1,payerId:'me',members:[{id:'me',name:'Alice'}],restaurant,destination:'Gate 2',restaurantReference:''};
+  const receipts=[{memberId:'me',name:'Alice',lines:[{description:'Falafel',quantity:2,amount:1500}],total:1500}];
+  let complete;
+  const fixture={...data,send:(kind,fields)=>{commands.push({kind,fields}); return new Promise(resolve=>{complete=resolve;});}};
+  const render=()=>root.render(<RestaurantOrderCard room={room} receipts={receipts} data={fixture} expectedArrival="30 minutes" setExpectedArrival={()=>{}} canPlace/>);
+  render(); await pause();
+  const share=()=>{const link=host.querySelector('a[href^="https://wa.me/"]');link.addEventListener('click',event=>event.preventDefault(),{once:true});link.click();};
+  share(); await pause(); assert(document.querySelector('[role=dialog]'),'Sharing did not show a confirmation'); assert(!commands.length,'Sharing prematurely locked the room');
+  room={...room,revision:8}; render(); await pause(); assert(document.querySelector('[role=dialog] .primary').disabled,'A stale shared list can be confirmed');
+  document.querySelector('[role=dialog] .icon-button').click(); await pause(); share(); await pause();
+  const confirm=document.querySelector('[role=dialog] .primary'); confirm.click();confirm.click();await pause();
+  assert(commands.length===1 && commands[0].kind==='PLACE' && commands[0].fields.expectedRevision===8 && commands[0].fields.expectedOrderNumber===1,'Confirmation did not lock the exact shared order once');
+  complete({ok:true});await pause();assert(!document.querySelector('[role=dialog]'),'Confirmation did not close after acknowledgement');
+  assert(!measureAudit().overflow,'Order confirmation overflows');
+  return {passed:true,language:getLanguage(),width:innerWidth,staleCopyBlocked:true,singleConfirmation:true};
+}
+
+export async function runLiveSelectionOverlayAudit() {
+  await mountAudit('home');
+  const now=Date.now(), room={id:'live',name:'Lunch',phase:'SPINNING',selectionStyle:'wheel',members:[{id:'me',name:'Alice',approved:true},{id:'bob',name:'Bob',approved:true}],spin:{id:'new-round',memberIds:['me','bob'],winnerId:'bob',startAt:now-1500,duration:3000,turns:7,weights:[80,80]}};
+  const fixture={...data,rooms:{live:{room,serverTime:now}},sessions:{live:{memberId:'me'}},online:{live:true}};
+  root.render(<><FriendGroups data={{...data,home:{...data.home,friendGroups:[],joinedFriendGroups:[]}}} onBack={()=>{}}/><LiveSelectionOverlay data={fixture} renderWheel={props=><LiveSelectionWheel key={props.spin.id} {...props}/>}/></>);await pause();
+  const dialog=document.querySelector('[role=dialog]');assert(dialog?.classList.contains('selection-screen'),'Live selection did not cover another page');
+  assert(!dialog.textContent.includes('🎉 Bob'),'Winner was celebrated before the spin ended');
+  await new Promise(resolve=>setTimeout(resolve,1700));
+  assert(document.querySelector('.selection-winner')?.textContent.includes('Bob'),'Server winner celebration is missing');
+  assert(dialog.getBoundingClientRect().width<=innerWidth+1,'Live selection overflows');
+  const proceed=[...dialog.querySelectorAll('button')].find(button=>button.classList.contains('primary'));proceed.click();await pause();
+  assert(!document.querySelector('[role=dialog]') && host.textContent.includes(getLanguage()==='ar'?'مجموعات الأصدقاء':'Friend groups'),'Live selection lost the previous page');
+  return {passed:true,language:getLanguage(),width:innerWidth,globalOverlay:true,sharedWinner:'Bob'};
+}
+
+export async function runRoomTimelineScrollAndCountdownAudit() {
+  const {default:MobilePageLayout}=await import('../src/foodrun/MobilePageLayout.jsx');
+  await mountAudit('room','COLLECTING',{room:{members:[{id:'me',name:'Alice',approved:true,participating:true},{id:'bob',name:'Bob',approved:true,participating:true}],carts:[{memberId:'bob',submitted:true,lines:[]}]}});
+  const component=root._auditComponent;
+  root.render(<MobilePageLayout pageKey="room-latest">{component.node}</MobilePageLayout>);await pause();
+  if(innerWidth <= 640) {
+    const members=[...host.querySelectorAll('[role=tab]')].find(tab=>tab.textContent===`${t('Members')} (2)`);
+    assert(members,'Joined count missing from Members tab');members.click();await pause();
+    assert(host.querySelector('.room-general-status').getBoundingClientRect().height > 0,'Room general status hidden on Members');
+  }
+  assert(host.querySelector('.progress-steps').children.length===6,'Room timeline incomplete');
+  assert([...host.querySelectorAll('.member small')].some(node=>node.textContent===t('Food submitted')),'Submitted member status missing');
+  root.render(<PagedList pageSize={8} items={Array.from({length:25},(_,i)=>i)}>{i=><div className="scroll-fixture" style={{height:150}} key={i}>Row {i}</div>}</PagedList>);await pause();
+  assert(host.querySelectorAll('.scroll-fixture').length===8,'First scroll chunk incorrect');
+  host.querySelector('.scroll-load').scrollIntoView({block:'end'});await pause();await pause();
+  assert(host.querySelectorAll('.scroll-fixture').length>=16 && host.textContent.includes('Row 0'),'Scrolling removed earlier rows');
+  assert(!host.querySelector('.list-pagination'),'Page buttons remain');
+  // A browser modal underneath must be blocked by the live selection, then restored.
+  const underlying=document.createElement('dialog');underlying.textContent='Previous wallet sheet';document.body.append(underlying);underlying.showModal();
+  const now=Date.now(),room={id:'scoped',name:'Team lunch',phase:'SPINNING',selectionStyle:'wheel',members:[{id:'me',name:'Alice',approved:true},{id:'bob',name:'Bob',approved:true}],spin:{id:'countdown-round',memberIds:['me','bob'],winnerId:'bob',startAt:now+3000,duration:500,turns:7,weights:[80,80]}};
+  const fixture={...data,rooms:{scoped:{room,serverTime:now}},sessions:{scoped:{memberId:'me'}},online:{scoped:true}};
+  const render=()=>root.render(<LiveSelectionOverlay data={fixture} renderWheel={props=><LiveSelectionWheel {...props}/>}/>);
+  render();await pause();
+  assert(document.querySelector('.selection-countdown strong')?.textContent==='1','Shared countdown 1 missing');
+  assert(document.querySelector('.selection-screen').matches(':modal'),'Wheel does not block another open dialog');
+  assert(document.querySelector('.selection-screen .icon-button').disabled,'Countdown can be dismissed');
+  await new Promise(resolve=>setTimeout(resolve,1020));assert(document.querySelector('.selection-countdown strong')?.textContent==='2','Shared countdown 2 missing');
+  await new Promise(resolve=>setTimeout(resolve,1020));assert(document.querySelector('.selection-countdown strong')?.textContent==='3','Shared countdown 3 missing');
+  await new Promise(resolve=>setTimeout(resolve,1800));assert(document.querySelector('.selection-winner')?.textContent.includes('Bob'),'Shared result missing');
+  document.querySelector('.selection-screen .primary').click();await pause();assert(underlying.open,'Previous sheet lost after wheel');underlying.close();underlying.remove();
+  // Neither another room nor a pending/unapproved participant can block this account.
+  fixture.sessions={scoped:{memberId:'outsider'}};room.spin.id='outside-round';room.spin.startAt=Date.now()+3000;fixture.rooms.scoped.serverTime=Date.now();render();await pause();assert(!document.querySelector('.selection-screen'),'Outside user was blocked by a room');
+  return {passed:true,language:getLanguage(),width:innerWidth,timeline:true,joinedCount:2,scrollPagination:true,countdown:[1,2,3],roomMembersOnly:true};
+}
+
+export async function runOwnerRestaurantActionsAudit() {
+  const receipts=[{memberId:'me',name:'Alice',lines:[{description:'Sandwich',quantity:1,amount:500}],total:500,food:500,paid:0,balance:500,currency:'AED'},{memberId:'bob',name:'Bob',lines:[{description:'Falafel',quantity:1,amount:300}],total:300,food:300,paid:0,balance:0,currency:'AED'}];
+  const restaurant={payerId:'bob',members:[{id:'me',name:'Alice',approved:true,participating:true},{id:'bob',name:'Bob',approved:true,participating:true}],carts:receipts.map(receipt=>({memberId:receipt.memberId,submitted:true,lines:[]}))};
+  await mountAudit('room','COLLECTING',{room:restaurant,receipts:[receipts[0]],restaurantOrder:{lines:receipts.flatMap(receipt=>receipt.lines),total:800,currency:'AED'},liveCommands:true,progress:{canReview:true,reviewBlocker:''}});
+  const card=host.querySelector('#restaurant-actions');assert(card,'Room owner cannot access the restaurant actions');
+  assert(card.querySelector('pre').textContent.includes('Falafel'),'Owner copy omits another member food');
+  [...card.querySelectorAll('button')].find(node=>node.textContent===t('Order sent')).click();await pause();
+  const prompt=document.querySelector('[role=dialog]');assert(prompt,'Owner sent action skips confirmation');
+  commands.length=0;prompt.querySelector('.primary').click();await pause();assert(commands.at(-1)?.kind==='PLACE','Owner cannot confirm restaurant send');
+  await mountAudit('room','PLACED',{room:restaurant,receipts:[receipts[0]],restaurantOrder:{lines:receipts.flatMap(receipt=>receipt.lines),total:800,currency:'AED'},liveCommands:true});
+  const paid=[...host.querySelectorAll('#restaurant-actions button')].find(node=>node.textContent.includes(t('Mark restaurant paid')));
+  assert(paid,'Owner cannot mark restaurant paid');commands.length=0;paid.click();await pause();
+  assert(commands.at(-1)?.kind==='PAY_RESTAURANT' && commands.at(-1).fields.amount===800,'Owner payment omits another member share');
+  assert(![...host.querySelectorAll('#restaurant-actions button')].some(node=>node.textContent===t('Food collected / delivered')),'Owner has an unsupported fulfilment action');
+  return {passed:true,language:getLanguage(),width:innerWidth,ownerCanSend:true,ownerCanRecordRestaurantPayment:true,selectedPersonRetained:true};
+}
+
+export async function runRefusedSelectionAudit() {
+  await mountAudit('room','LOBBY',{room:{payerId:null,pastSpins:[{id:'previous',winnerId:'bob'}],members:[{id:'me',name:'Alice',approved:true,participating:true,eligible:true},{id:'bob',name:'Bob',approved:true,participating:true,eligible:false}]},liveCommands:true});
+  const retry=[...host.querySelectorAll('button')].find(node=>node.textContent===(getLanguage()==='ar'?'إعادة تشغيل العجلة':'Retry wheel'));
+  assert(retry && !retry.disabled,'Owner retry wheel option missing');commands.length=0;retry.click();await pause();assert(commands.at(-1)?.kind==='PREPARE_SPIN','Retry did not start shared selection');
+  const previousPrompt=window.prompt;window.prompt=()=>{throw Error('Refused member removal requested a note');};
+  try {
+    host.querySelector('.member-remove').click();await pause();const dialog=document.querySelector('[role=dialog]');
+    assert(dialog && !dialog.querySelector('input,textarea'),'No-note removal confirmation missing');
+    commands.length=0;dialog.querySelector('.primary').click();await pause();
+    assert(commands.at(-1)?.kind==='REMOVE' && commands.at(-1).fields.memberId==='bob' && !commands.at(-1).fields.text,'Refused removal sent a note or wrong member');
+  } finally {window.prompt=previousPrompt;}
+  return {passed:true,language:getLanguage(),width:innerWidth,retryWheel:true,removeRefusedWithoutNote:true};
 }

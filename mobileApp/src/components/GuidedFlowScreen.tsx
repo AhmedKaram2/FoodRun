@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "./ScrollArea";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { Action, Card, Field, Snapshot } from "../types";
@@ -28,7 +29,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
   useEffect(() => { if (!busy) submitted.current = false; }, [busy, snapshot.state.feedback?.id, snapshot.state.error]);
   const title = kind === "room" && !fields.some(f => f.key === "ROOM_NAME") ? snapshot.state.title : tx(rtl, kind === "room" ? "Create a room" : kind === "restaurant" ? "Restaurant" : kind === "payment" ? "Payment room" : "Menu entry", kind === "room" ? "إنشاء غرفة" : kind === "restaurant" ? "المطعم" : kind === "payment" ? "غرفة الدفع" : "بيانات الصنف");
   const knownFields = new Set(steps.flatMap(s => [...s.fields, ...s.optional]));
-  const unknownFields = fields.filter(f => !knownFields.has(f.key) && !(kind === "room" && f.key === "RESTAURANT_NAME"));
+  const unknownFields = fields.filter(f => !knownFields.has(f.key) && !(kind === "room" && ["RESTAURANT_NAME","PHONE"].includes(f.key)));
   const primary = snapshot.primaryAction;
   const unknownActions = actions.filter(a => a !== primary && !["CREATE_ROOM", "SAVE_RESTAURANT", "SAVE_PAYMENT_ROOM", "MENU_SAVE", "RETRY", "SET_LANGUAGE", "BACK", "OPEN_LIBRARY", "OPEN_POLL_RESTAURANTS", "USE_OPEN_ORDER", "OPEN_CONNECTION_OPTIONS", ...steps.flatMap(s => s.actions)].includes(a.action));
   const contentCards = cards.filter(current.cards).filter(c => !(kind === "menu" || kind === "payment" && c.id.startsWith("share:")));
@@ -78,7 +79,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
       </View>
       <Text style={[textStyle(rtl,"medium"),styles.counter]}>{tx(rtl, `Step ${index + 1} of ${steps.length}`, `الخطوة ${index + 1} من ${steps.length}`)}</Text>
     </View>
-    <ScrollView ref={scroll} testID="flow-content" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+    <ScrollArea ref={scroll} testID="flow-content" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       <PageMotion motionKey={`${kind}:${index}:${rtl}`}>
         <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.stepTitle]}>{current.title}</Text>
         <Text style={[textStyle(rtl),styles.hint]}>{current.hint}</Text>
@@ -122,7 +123,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
           {kind === "payment" && cards.filter(c => c.id === "payment-account-missing").map(c => <CardView key={c.id} card={c} rtl={rtl} busy={busy}/>)}
         </>}
       </PageMotion>
-    </ScrollView>
+    </ScrollArea>
     <View style={[styles.footer,rtl && styles.reverse]}>
       {index > 0 && <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Back","السابق"),"FLOW_BACK")} onPress={() => move(index - 1)}/>}
       <View style={{flex:1}}>{review && primary ? <Button rtl={rtl} busy={busy} action={primary} onPress={finish}/> : <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Continue","التالي"),"FLOW_NEXT","",true)} onPress={advance}/>}</View>
@@ -131,7 +132,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
     <BottomSheet visible={!!sheet} title={tx(rtl,sheet === "open" ? "An open menu" : sheet === "people" ? "People & shares" : sheet === "menu" ? "Sizes & extras" : "Your choices",sheet === "open" ? "قائمة مفتوحة" : sheet === "people" ? "الأشخاص والحصص" : sheet === "menu" ? "الأحجام والإضافات" : "اختياراتك")} rtl={rtl} onClose={() => setSheet(null)}>
       {sheet === "open" && <>
         <Text style={[textStyle(rtl),styles.hint]}>{tx(rtl,"Everyone can type their food items. Prices can be added in the room.","يمكن للجميع كتابة أصنافهم، وتُضاف الأسعار داخل الغرفة.")}</Text>
-        {fields.filter(f => f.key === "RESTAURANT_NAME").map(renderField)}
+        {fields.filter(f => ["RESTAURANT_NAME","PHONE"].includes(f.key)).map(renderField)}
         {open && <Button rtl={rtl} busy={busy} action={{...open,primary:true}} onPress={() => {run(open);setSheet(null);}}/>}
       </>}
       {sheet === "people" && <>
@@ -140,12 +141,12 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
           ListEmptyComponent={<Text style={[textStyle(rtl),styles.hint]}>{tx(rtl,"No matching people","لا توجد أسماء مطابقة")}</Text>}
           renderItem={({item}) => <CompactPerson card={item} rtl={rtl} busy={busy} run={run}/>}/>
       </>}
-      {sheet === "menu" && <ScrollView keyboardShouldPersistTaps="handled"><PagedCards cards={cards} rtl={rtl} busy={busy}/></ScrollView>}
-      {sheet === "details" && <ScrollView contentContainerStyle={{gap:12}}>
+      {sheet === "menu" && <ScrollArea keyboardShouldPersistTaps="handled"><PagedCards cards={cards} rtl={rtl} busy={busy}/></ScrollArea>}
+      {sheet === "details" && <ScrollArea contentContainerStyle={{gap:12}}>
         {fields.filter(f => !f.secret && f.value).map(f => <View key={f.key} style={[styles.summary,{flexDirection:"column",alignItems:"stretch"}]}><Text style={[textStyle(rtl,"medium"),styles.detail]}>{f.label}</Text><Text style={textStyle(rtl)}>{fieldValue(f,rtl)}</Text></View>)}
         {kind === "room" && restaurant && <Text style={textStyle(rtl)}>{restaurant.title}{"\n"}{restaurant.detail}</Text>}
         {kind === "payment" && assigned.map(c => <Text key={c.id} style={textStyle(rtl)}>{c.title}{"\n"}{c.detail}</Text>)}
-      </ScrollView>}
+      </ScrollArea>}
     </BottomSheet>
   </View>;
 }

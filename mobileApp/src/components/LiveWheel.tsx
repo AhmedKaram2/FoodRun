@@ -79,11 +79,12 @@ export function WheelDrawing({
                   <SvgText
                     x={point[0]}
                     y={point[1]}
-                    fontSize={Math.max(8, Math.min(14, 90 / names.length + 7))}
+                    fontSize={Math.min(names.length <= 4 ? 18 : names.length <= 7 ? 15 : 12, Math.max(7,slice.sweep/3))}
+                    fontFamily={font("semibold", /[\u0600-\u06ff]/.test(name))}
                     fontWeight="600"
                     fill={colors.ink}
                     textAnchor="middle"
-                    transform={`rotate(${slice.center} ${point[0]} ${point[1]})`}
+                    transform={`rotate(${slice.center+90} ${point[0]} ${point[1]})`}
                   >
                     {geometry.wheelLabel(name)}
                   </SvgText>

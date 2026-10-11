@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "./ScrollArea";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -239,7 +240,7 @@ export function FieldInput({
             onClose={() => setSelect(false)}
           >
                 {field.choices.length > 8 && <TextInput accessibilityLabel={tx(rtl,"Search options","البحث في الخيارات")} placeholder={tx(rtl,"Type a name or keyword…","اكتب اسماً أو كلمة للبحث…")} placeholderTextColor={colors.muted} value={query} onChangeText={setQuery} style={[styles.input,textStyle(rtl)]}/>}
-                <ScrollView keyboardShouldPersistTaps="handled">
+                <ScrollArea keyboardShouldPersistTaps="handled">
                   {field.choices.filter(choice => choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((choice) => (
                     <Pressable
                       key={choice.value}
@@ -259,7 +260,7 @@ export function FieldInput({
                     </Pressable>
                   ))}
                   {!field.choices.some(choice => choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && <Text style={[textStyle(rtl),{paddingVertical:24}]}>{tx(rtl,"No matching options","لا توجد خيارات مطابقة")}</Text>}
-                </ScrollView>
+                </ScrollArea>
           </BottomSheet>
         </>
       ) : (
@@ -411,39 +412,11 @@ export function PagedCards({
   rtl: boolean;
   pageSize?: number;
 }) {
-  const [page, setPage] = useState(0),
-    pages = Math.ceil(cards.length / pageSize),
-    current = Math.min(page, Math.max(0, pages - 1));
-  return (
-    <View style={{ gap: 12 }}>
-      {cards.slice(current * pageSize, (current + 1) * pageSize).map((card) => (
-        <CardView key={card.id} card={card} busy={busy} rtl={rtl} />
-      ))}
-      {pages > 1 && (
-        <View style={styles.pagination}>
-          <Button
-            rtl={rtl}
-            action={{
-              ...action(tx(rtl, "Previous", "السابق"), "PAGE"),
-              enabled: current > 0,
-            }}
-            onPress={() => setPage(current - 1)}
-          />
-          <Text style={textStyle(rtl)}>
-            {current + 1} / {pages}
-          </Text>
-          <Button
-            rtl={rtl}
-            action={{
-              ...action(tx(rtl, "Next", "التالي"), "PAGE"),
-              enabled: current + 1 < pages,
-            }}
-            onPress={() => setPage(current + 1)}
-          />
-        </View>
-      )}
-    </View>
-  );
+  const [limit, setLimit] = useState(pageSize);
+  return <View style={{gap:12}}>
+    {cards.slice(0,limit).map(card => <CardView key={card.id} card={card} busy={busy} rtl={rtl}/>)}
+    {cards.length > limit && <ScrollLoad loadKey={limit} onLoad={() => setLimit(value => value+pageSize)}><Text style={[textStyle(rtl),{fontSize:12,color:colors.muted,textAlign:"center"}]}>{tx(rtl,"Scroll for more","مرّر لعرض المزيد")}</Text></ScrollLoad>}
+  </View>;
 }
 export const styles = StyleSheet.create({
   button: {

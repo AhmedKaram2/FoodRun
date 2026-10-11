@@ -19,6 +19,39 @@ class NotificationServiceTest {
     private fun device(f: RoomFixture, user: String, token: String = "fixture-push-token-123456789", installation: String = "fixture-installation-123456") =
         f.service.notificationRequest(NotificationRequest(signIn(f,user), "register", token = token, platform = "android", installationId = installation), true)
 
+    @Test fun finishedWheelNotifiesEveryApprovedMemberOnceAndHonorsPushPreferences() = RoomFixture(Identity()).use { f ->
+        val member=f.join()
+        val quiet=f.join("Quiet")
+        f.send(quiet,CommandKind.PARTICIPATE) { it.copy(flag=false) }
+        device(f,"fixture-owner","fixture-owner-push-token-123456","fixture-owner-installation-123456")
+        device(f,"Member","fixture-member-push-token-123456","fixture-member-installation-123456")
+        device(f,"Quiet","fixture-quiet-push-token-123456","fixture-quiet-installation-123456")
+        f.db.putRecord("notification-preferences:Quiet",orderJson.encodeToString(NotificationPreferences(pushEnabled=false)))
+        val spin=f.send(f.owner,CommandKind.PREPARE_SPIN).room!!.spin!!
+        assertEquals(f.now+3000,spin.startAt)
+        f.join("Late") // Pending approval; not yet a joined member.
+        f.now=spin.endAt-1; f.service.tick()
+        assertTrue(inbox(f,"Member").none { it.kind.startsWith("selection_") })
+        assertNull(f.service.nextPush())
+        f.now=spin.endAt; f.service.tick()
+        val winner=inbox(f,"fixture-owner").single { it.kind == "selection_pending" }
+        assertEquals(listOf("accept","open"),winner.actions.map { it.id })
+        val result=inbox(f,"Member").single { it.kind == "selection_result" }
+        assertEquals(listOf("open"),result.actions.map { it.id })
+        assertTrue(result.title.contains("Owner"))
+        assertEquals(1,inbox(f,"Quiet").count { it.kind == "selection_result" })
+        assertTrue(inbox(f,"Late").none { it.kind.startsWith("selection_") })
+        f.restart(); f.service.tick(); f.state(member)
+        assertEquals(result.id,inbox(f,"Member").single { it.kind == "selection_result" }.id)
+        val recipients=mutableSetOf<String>()
+        while(true) {
+            val delivery=f.service.nextPush() ?: break
+            assertTrue(recipients.add(delivery.job.userId))
+            f.service.finishPush(delivery,PushResult.SENT)
+        }
+        assertEquals(setOf("fixture-owner","Member"),recipients)
+    }
+
     @Test fun submissionsNotifyOnlyThePayerAndTheLastOneProvidesCopyShareAndSendActions() = RoomFixture(Identity()).use { f ->
         val member = f.join()
         f.send(f.owner, CommandKind.SELECT_PAYER) { it.copy(memberId = f.owner.memberId) }

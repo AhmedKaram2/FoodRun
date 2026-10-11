@@ -131,7 +131,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
         else if(c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) db.transaction {
             val uid = accounts.userId(c.identityToken)
-            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
+            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
             db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
                 val reply = friends.execute(c)
                 if(c.kind !in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH)) { db.record(c.commandId, digest, reply); support.record(c); signalHome() }
@@ -142,7 +142,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             val uid = accounts.userId(c.identityToken)
             val actor = if(c.kind == CommandKind.PAY_WITH_WALLET) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
-                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
             db.previous(c.commandId, digest)?.let {
                 val current = accounts.home(c.identityToken)
                 if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
@@ -169,7 +169,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -509,7 +509,8 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val authorized = member.approved && !member.removed
         val orderer = authorized && !member.guest && member.participating
         val payer = authorized && room.payerId == actor
-        val canViewPrices = payer || authorized && room.ownerId == actor && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED)
+        val restaurantManager = payer || authorized && room.ownerId == actor
+        val canViewPrices = payer || authorized && room.ownerId == actor && room.phase !in listOf(RoomPhase.CANCELLED, RoomPhase.ARCHIVED)
         val receipts = if (orderer) Billing.receipts(room).filter { payer || it.memberId == actor } else emptyList()
         val visible = if (!authorized) room.copy(
             restaurant = Restaurant("pending", "Waiting for organizer approval"), expectedNames = emptyList(),
@@ -539,8 +540,11 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             transfers = room.transfers.filter { orderer && (payer || it.memberId == actor) },
             audit = room.audit.filter { orderer && it.action in listOf("DECLINE_DUTY", "REMOVE", "REOPEN", "CANCEL", "ARCHIVE", "HANDOVER", "ADJUST_BILL", "UPDATE_RESTAURANT") },
         )
+        val restaurantOrder = if(restaurantManager && room.paymentRoom == null) Billing.receipts(room).let { all ->
+            RestaurantOrderSummary(all.flatMap { it.lines },all.sumOf { it.total },room.restaurant.currency)
+        } else null
         return RoomReply(room = visible, memberId = actor, receipts = receipts, serverTime = clock(),
-            progress = if (authorized) progress(room, actor) else null)
+            restaurantOrder = restaurantOrder, progress = if (authorized) progress(room, actor) else null)
     }
     private fun progress(room: Room, actor: String): OrderProgress {
         val reviewStage = (actor == room.ownerId || actor == room.payerId) && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)

@@ -21,6 +21,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var page = GroupPage.HOME
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
+    internal val restaurantSend = GroupRestaurantSend(this)
     internal val feedbacks = GroupFeedbacks(platform::now)
     internal var error = ""
         set(value) {
@@ -39,6 +40,7 @@ class GroupController(val platform: GroupPlatform) {
     internal var session: StoredSession? = null
     internal var selectedRestaurant: RestaurantExport? = null
     internal var editingRestaurant: RestaurantExport? = null
+    internal var editingSetupMenu = false
     internal var editingRoomOrder: Pair<String, Long>? = null
     internal var importPreview: RestaurantExport? = null
     internal var selectedItem: MenuItem? = null
@@ -245,21 +247,28 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.OPEN_PEOPLE -> { require(library.identityToken.isNotEmpty()) { "Sign in from your profile to invite registered people." }; page = GroupPage.PEOPLE }
             GroupAction.INVITE_PERSON -> identity(IdentityAction.INVITE, value)
             GroupAction.ACCEPT_INVITE -> identity(IdentityAction.ACCEPT_INVITE, value)
+            GroupAction.OPEN_SETUP_MENU -> {
+                editingSetupMenu = true; editingRoomOrder = null; editingRestaurant = requireNotNull(selectedRestaurant)
+                draft[GroupFieldKey.CURRENCY] = editingRestaurant!!.restaurant.currency
+                draft[GroupFieldKey.MENU_ITEM_NAME] = ""; draft[GroupFieldKey.MENU_ITEM_PRICE] = ""; menuEditor.open()
+            }
+            GroupAction.DONE_SETUP_MENU -> finishSetupMenu()
             GroupAction.USE_OPEN_ORDER -> {
-                val restaurant = Restaurant(platform.uuid(), text(GroupFieldKey.RESTAURANT_NAME).trim().ifEmpty { "Group food order" }, openOrdering = true)
+                val restaurant = Restaurant(platform.uuid(), text(GroupFieldKey.RESTAURANT_NAME).trim().ifEmpty { "Group food order" }, openOrdering = true, contact = RestaurantContact(phoneE164 = text(GroupFieldKey.PHONE).trim().takeIf { it.isNotEmpty() }))
+                MenuValidation.validate(restaurant)
                 selectedRestaurant = RestaurantExport(exportId = restaurant.id, restaurant = restaurant)
             }
-            GroupAction.OPEN_CUSTOM_ITEM -> { editingCartLineId = null; draft[GroupFieldKey.CUSTOM_NAME] = ""; draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.CUSTOM_ITEM }
+            GroupAction.OPEN_CUSTOM_ITEM -> { editingCartLineId = null; draft[GroupFieldKey.CUSTOM_UNIT_PRICE] = ""; draft[GroupFieldKey.CUSTOM_NAME] = ""; draft[GroupFieldKey.QUANTITY] = "1"; draft[GroupFieldKey.NOTE] = ""; page = GroupPage.CUSTOM_ITEM }
             GroupAction.ADD_CUSTOM_ITEM -> {
                 val cart = myCart()
-                val line = CartLine(editingCartLineId ?: platform.uuid(), "", text(GroupFieldKey.QUANTITY).toIntOrNull() ?: 0, notes = text(GroupFieldKey.NOTE), description = text(GroupFieldKey.CUSTOM_NAME).trim())
+                val line = CartLine(editingCartLineId ?: platform.uuid(), "", text(GroupFieldKey.QUANTITY).toIntOrNull() ?: 0, notes = text(GroupFieldKey.NOTE), description = text(GroupFieldKey.CUSTOM_NAME).trim(), unitPrice = text(GroupFieldKey.CUSTOM_UNIT_PRICE).trim().takeIf { it.isNotEmpty() }?.let { Money.parse(it, room().restaurant.currency) })
                 require(line.description.isNotEmpty()) { "Enter the food item." }
                 val lines = if(editingCartLineId == null) cart.lines + line else cart.lines.map { if(it.id == editingCartLineId) line else it }
                 Billing.lines(room().restaurant, cart.copy(lines = lines))
                 command(CommandKind.CART, cart = cart.copy(lines = lines), revision = cart.revision)
             }
-            GroupAction.OPEN_PRICE_ITEM -> { val parts = value.split(':'); require(parts.size == 2); pricingTarget = parts[0] to parts[1]; draft[GroupFieldKey.AMOUNT] = ""; page = GroupPage.PRICE_ITEM }
-            GroupAction.SAVE_ITEM_PRICE -> { val target = requireNotNull(pricingTarget); command(CommandKind.PRICE_ITEM, memberId = target.first, text = target.second, amount = Money.parse(text(GroupFieldKey.AMOUNT), room().restaurant.currency)) }
+            GroupAction.OPEN_PRICE_ITEM -> { val parts = value.split(':'); require(parts.size == 2); pricingTarget = parts[0] to parts[1]; val cart = room().carts.single { it.memberId == parts[0] }; val line = cart.lines.single { it.id == parts[1] }; draft[GroupFieldKey.ITEM_UNIT_PRICE] = if(line.description.isNotEmpty() && line.unitPrice == null) "" else Money.format(Billing.lines(room().restaurant, cart)[cart.lines.indexOf(line)].amount / line.quantity, room().restaurant.currency).substringAfter(' '); page = GroupPage.PRICE_ITEM }
+            GroupAction.SAVE_ITEM_PRICE -> { val target = requireNotNull(pricingTarget); command(CommandKind.PRICE_ITEM, memberId = target.first, text = target.second, amount = Money.parse(text(GroupFieldKey.ITEM_UNIT_PRICE), room().restaurant.currency)) }
             GroupAction.BACK -> back()
             GroupAction.QUICK_SPIN -> page = GroupPage.QUICK_SPIN
             GroupAction.CREATE, GroupAction.JOIN -> { accountEditing = false; if (action == GroupAction.CREATE) {
@@ -315,7 +324,7 @@ class GroupController(val platform: GroupPlatform) {
                 val line = myCart().lines.single { it.id == value }; editingCartLineId = line.id
                 draft[GroupFieldKey.QUANTITY] = line.quantity.toString(); draft[GroupFieldKey.NOTE] = line.notes
                 if(line.description.isNotEmpty()) {
-                    selectedItem = null; draft[GroupFieldKey.CUSTOM_NAME] = line.description; page = GroupPage.CUSTOM_ITEM
+                    selectedItem = null; draft[GroupFieldKey.CUSTOM_NAME] = line.description; draft[GroupFieldKey.CUSTOM_UNIT_PRICE] = line.unitPrice?.let { Money.format(it, room().restaurant.currency).substringAfter(' ') }.orEmpty(); page = GroupPage.CUSTOM_ITEM
                 } else {
                     selectedItem = room().restaurant.menu.items.single { it.id == line.itemId }
                     variant = line.variantId; options = line.optionIds; page = GroupPage.ITEM
@@ -353,13 +362,17 @@ class GroupController(val platform: GroupPlatform) {
                 val contact = room().restaurant.contact.phoneE164 ?: room().restaurant.contact.whatsappE164 ?: error("Restaurant contact is missing.")
                 platform.openLink("tel:" + contact.filter { it.isDigit() || it == '+' })
             }
+            GroupAction.PLACE -> restaurantSend.open()
+            GroupAction.CONFIRM_RESTAURANT_SEND -> restaurantSend.confirm()
+            GroupAction.DISMISS_RESTAURANT_SEND -> restaurantSend.close()
             GroupAction.SHARE_RESTAURANT_ORDER -> {
                 platform.copyToClipboard(GroupPresentation(this).restaurantOrderText())
-                platform.notify("Order list copied", "Paste it directly into the restaurant chat or ordering app.")
+                restaurantSend.open()
             }
             GroupAction.SHARE_ORDER_WHATSAPP -> {
                 val number = restaurantWhatsAppNumber(room().restaurant)
                 platform.openLink("https://wa.me/$number?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
+                restaurantSend.open()
             }
             GroupAction.COPY_RESTAURANT_PHONE -> platform.copyToClipboard(room().restaurant.contact.phoneE164 ?: room().restaurant.contact.whatsappE164 ?: error("Restaurant phone is unavailable."))
             GroupAction.WALLET_PAY, GroupAction.WALLET_REFUND, GroupAction.WALLET_CONFIRM, GroupAction.WALLET_REJECT, GroupAction.WALLET_COPY, GroupAction.WALLET_REMIND_PAYMENT -> walletAction(action, value)
@@ -474,8 +487,11 @@ class GroupController(val platform: GroupPlatform) {
             joinTimerMinutes = if(flag(GroupFieldKey.JOIN_TIMER)) (text(GroupFieldKey.JOIN_TIMER_MINUTES).toIntOrNull()?.takeIf { it in 1..1440 } ?: error("Choose between 1 and 1440 minutes.")) else 0))
     }
     private fun back() {
+        if(restaurantSend.prompt != null) { restaurantSend.close(); return }
+        if(page == GroupPage.FRIENDS && friends.inDetail) { friends.open(); return }
         if(walletHistory.prompt != null) { walletHistory.dismiss(); return }
         if (page == GroupPage.SELECTION_OVERRIDE) { selectionOverride.close(); return }
+        if(page == GroupPage.MENU_EDITOR && editingSetupMenu) { finishSetupMenu(); return }
         if(page in listOf(GroupPage.MENU_EDITOR, GroupPage.MENU_ENTITY)) { menuEditor.back(); return }
         if(page in listOf(GroupPage.ADMIN_USER, GroupPage.ADMIN_CONFIRM) || page == GroupPage.RESTAURANT && administration.editingRestaurant) {
             if(page == GroupPage.RESTAURANT) formDrafts.finishRestaurant(draft)
@@ -956,7 +972,7 @@ class GroupController(val platform: GroupPlatform) {
         }) } catch (_: Exception) { recoveringCommand = null }
     }
     fun tickAccessBlock() { if(supportActive && platform.now() >= supportExpiresAt) endSupport(); recoverPending(); if (accessBlock != null || reply?.room?.joinDeadlineAt?.let { it > 0 } == true) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true, notificationPreferencesDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true, notificationPreferencesDetails = true, restaurantOrderDetails = true))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

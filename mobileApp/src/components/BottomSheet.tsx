@@ -1,14 +1,16 @@
-import React, { useEffect, useRef } from "react";
+import React, { createContext, useContext, useEffect, useRef } from "react";
 import { Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, font, tx } from "../theme";
 import Icon from "./Icon";
 import { useMotionEnabled } from "./Motion";
 
+export const SelectionPriority = createContext(false);
+
 export default function BottomSheet({ visible, title, rtl, onClose, children }: {
   visible: boolean; title: string; rtl: boolean; onClose: () => void; children: React.ReactNode;
 }) {
-  const insets = useSafeAreaInsets(), motion = useMotionEnabled();
+  const insets = useSafeAreaInsets(), motion = useMotionEnabled(), selection = useContext(SelectionPriority);
   const offset = useRef(new Animated.Value(0)).current;
   useEffect(() => { if (visible) offset.setValue(0); }, [visible, offset]);
   const handle = PanResponder.create({
@@ -20,7 +22,7 @@ export default function BottomSheet({ visible, title, rtl, onClose, children }: 
     },
     onPanResponderTerminate: () => offset.setValue(0),
   });
-  return <Modal visible={visible} transparent presentationStyle="overFullScreen" animationType={motion ? "slide" : "none"} statusBarTranslucent onRequestClose={onClose}>
+  return <Modal visible={visible && !selection} transparent presentationStyle="overFullScreen" animationType={motion ? "slide" : "none"} statusBarTranslucent onRequestClose={onClose}>
     <View style={styles.backdrop}>
       <Pressable testID="sheet-backdrop" accessibilityRole="button" accessibilityLabel={tx(rtl, "Dismiss sheet", "إغلاق النافذة")} onPress={onClose} style={StyleSheet.absoluteFill} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.position} pointerEvents="box-none">

@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "./src/components/ScrollArea";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,7 +33,8 @@ import {
 } from "./src/components/Controls";
 import LiveWheel from "./src/components/LiveWheel";
 import HomeBanner from "./src/components/HomeBanner";
-import BottomSheet from "./src/components/BottomSheet";
+import LiveSelectionOverlay from "./src/components/LiveSelectionOverlay";
+import BottomSheet, { SelectionPriority } from "./src/components/BottomSheet";
 import RoomAttention from "./src/components/RoomAttention";
 import SelectionScreen from "./src/components/SelectionScreen";
 import GuidedFlowScreen from "./src/components/GuidedFlowScreen";
@@ -40,34 +42,15 @@ import { useGuidedFlow } from "./src/guidedFlows";
 import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
 import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./src/screens/AccountScreens";
+import RoomTimeline from "./src/components/RoomTimeline";
+import RoomMembers from "./src/components/RoomMembers";
+import FriendsScreen from "./src/screens/FriendsScreen";
 import { roomCodeFromLink } from "./src/roomLink";
 import { isRoom, roomSections, roomActionTab, roomFieldTab } from "./src/roomTabs";
 
 function sectionsFor(snapshot: Snapshot): Section[] {
   const { state } = snapshot;
   if (isRoom(state.page)) return roomSections(snapshot);
-  if (state.page === "FRIENDS") {
-    const cards = snapshot.sections.flatMap((section) => section.cards);
-    return [
-      {
-        title: tx(state.rtl, "Edit group", "تعديل المجموعة"),
-        cards: cards.filter((card) =>
-          /^friend-(email|result|searching|view)/.test(card.id),
-        ),
-        collapsed: false,
-      },
-      {
-        title: tx(state.rtl, "Your groups", "مجموعاتك"),
-        cards: cards.filter((card) => card.id.startsWith("friend-group:")),
-        collapsed: false,
-      },
-      {
-        title: tx(state.rtl, "Groups I joined", "المجموعات التي انضممت إليها"),
-        cards: cards.filter((card) => card.id.startsWith("friend-joined:")),
-        collapsed: false,
-      },
-    ];
-  }
   return snapshot.sections;
 }
 function Application() {
@@ -80,6 +63,7 @@ function Application() {
     [selected, setSelected] = useState(0),
     [options, setOptions] = useState(false);
   const guided = useGuidedFlow(snapshot);
+  const [selectionOpen,setSelectionOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     const accept = (body: string) => {
@@ -110,13 +94,8 @@ function Application() {
     setOptions(false);
   }, [snapshot?.state.page, snapshot?.state.roomCode, snapshot?.accountId]);
   useEffect(() => {
-    if (snapshot?.state.wheel?.round.id) {
-      setSelected(0);
-      savedRoomTab.current = {key:`${snapshot.accountId}:${snapshot.state.roomCode}`,tab:0};
-    }
-  }, [snapshot?.state.wheel?.round.id]);
-  useEffect(() => {
     const event = BackHandler.addEventListener("hardwareBackPress", () => {
+      if(selectionOpen) return true;
       if (menu) {
         setMenu(false);
         return true;
@@ -133,7 +112,7 @@ function Application() {
       return false;
     });
     return () => event.remove();
-  }, [snapshot?.state.canGoBack, snapshot?.state.walletHistoryPrompt, menu, guided.kind, guided.step, guided.picker, snapshot?.state.busy]);
+  }, [snapshot?.state.canGoBack, snapshot?.state.walletHistoryPrompt, menu, guided.kind, guided.step, guided.picker, snapshot?.state.busy, selectionOpen]);
   useEffect(() => {
     const open = (value: string) => {
       const room = roomCodeFromLink(value);
@@ -227,7 +206,7 @@ function Application() {
         )),
   );
   return (
-    <SafeAreaView edges={["top", "bottom"]} style={ui.root}>
+    <SelectionPriority.Provider value={selectionOpen}><SafeAreaView edges={["top", "bottom"]} style={ui.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.cream} />
       <View style={[ui.header, rtl && ui.reverse]}>
         <Pressable
@@ -328,6 +307,8 @@ function Application() {
           <ProfileScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : state.page === "LIBRARY" ? (
           <LibraryScreen key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "FRIENDS" ? (
+          <FriendsScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : (["ITEM", "ACCOUNT", "SELECTION_OVERRIDE", "PAYMENT_SHARE"].includes(state.page) || state.page === "MENU_ENTITY") ? (
           <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
@@ -357,24 +338,25 @@ function Application() {
               </View>
               {busy && <ActivityIndicator color={colors.coral} />}
             </View>}
+            {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={state.roomStage || ""} rtl={rtl}/>}
             {(sections.length > 1 ||
               (profileDetails && snapshot.extraFields.length > 0)) && (
               <View style={room && ui.roomTabs}>
-              {room ? <View style={[ui.roomTabRow, rtl && ui.reverse]}>
+              {room ? <ScrollArea horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[ui.roomTabRow, rtl && ui.reverse]}>
                 {sections.map((item, index) => (
                   <TabButton selected={selected === index} key={index} testID={`room-tab:${index}`}
                     accessibilityRole="tab" accessibilityLabel={item.title}
                     accessibilityState={{ selected: selected === index }}
                     onPress={() => changeTab(index)}
                     style={[ui.roomTab, selected === index && ui.selectedRoomTab]}>
-                    <Icon name={["room", "food", "wallet", "friends"][index]}
+                    <View style={[{flexDirection:"row",alignItems:"center",gap:8},rtl && ui.reverse]}><Icon name={["room", "food", "wallet", "friends"][index]}
                       size={20} color={selected === index ? colors.forest : colors.muted} />
                     <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
                       style={[textStyle(rtl, selected === index ? "semibold" : "medium"), ui.roomTabLabel,
-                        { color: selected === index ? colors.forest : colors.muted }]}>{item.title}</Text>
+                        { color: selected === index ? colors.forest : colors.muted }]}>{item.title}</Text></View>
                   </TabButton>
                 ))}
-              </View> : <ScrollView
+              </ScrollArea> : <ScrollArea
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={ui.tabs}
@@ -418,11 +400,11 @@ function Application() {
                     </Text>
                   </Pressable>
                 )}
-              </ScrollView>}
+              </ScrollArea>}
               </View>
             )}
             {adminTabs && (
-              <ScrollView
+              <ScrollArea
                 horizontal
                 style={ui.tabs}
                 contentContainerStyle={ui.tabRow}
@@ -436,10 +418,10 @@ function Application() {
                     rtl={rtl}
                   />
                 ))}
-              </ScrollView>
+              </ScrollArea>
             )}
             <View style={{flex:1}}>
-            <ScrollView
+            <ScrollArea
               ref={content}
               key={`${state.page}:${state.roomCode}:${snapshot.accountId}`}
               keyboardShouldPersistTaps="handled"
@@ -474,9 +456,9 @@ function Application() {
                   />
                 </View>
               )}
-              {!!state.wheel && (!room || selected === 0) && <LiveWheel wheel={state.wheel} rtl={rtl} />}
-              {state.progressStep >= 0 && (!room || selected === 0) && (
-                <ScrollView
+              {!!state.wheel && !selectionOpen && (!room || selected === 0) && <LiveWheel wheel={state.wheel} rtl={rtl} />}
+              {state.progressStep >= 0 && !room && (
+                <ScrollArea
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ gap: 8 }}
@@ -513,7 +495,7 @@ function Application() {
                       {label}
                     </Text>
                   ))}
-                </ScrollView>
+                </ScrollArea>
               )}
               {(!room ? snapshot.topCards : selected === 0 ? snapshot.topCards.filter(card => card.id.startsWith("half-item:")) : []).map((card) => (
                 <CardView key={card.id} card={card} busy={busy} rtl={rtl} />
@@ -526,24 +508,20 @@ function Application() {
                   rtl={rtl}
                 />
               ))}
-              {inline.map((button, index) => (
-                <Button
-                  key={button.action + button.value + index}
-                  action={button}
-                  busy={busy}
-                  rtl={rtl}
-                />
-              ))}
+              {inline.filter(button => button.action !== "LOAD_OLDER_HISTORY").map((button,index) => <Button key={button.action+button.value+index} action={button} busy={busy} rtl={rtl}/>)}
+              {room && selected === 3 && section && <RoomMembers cards={section.cards.filter(card => card.id.startsWith("member:"))} busy={busy} rtl={rtl}/>}
               {section && (
                 <PagedCards
                   key={state.page + section.title}
                   cards={section.cards.filter(
-                    (card) => card.id !== "admin-tabs",
+                    (card) => card.id !== "admin-tabs" && !(room && selected === 3 && card.id.startsWith("member:")),
                   )}
                   busy={busy}
                   rtl={rtl}
+                  pageSize={state.page === "HISTORY" ? 100000 : 8}
                 />
               )}
+              {inline.some(button => button.action === "LOAD_OLDER_HISTORY") && !busy && !state.error && <ScrollLoad loadKey={state.historyNextOffset ?? snapshot.sections.flatMap(section => section.cards).map(card => card.id).join(":")} onLoad={() => dispatch("LOAD_OLDER_HISTORY")}><Text style={textStyle(rtl)}>{tx(rtl,"Scroll for older receipts","مرّر لعرض إيصالات أقدم")}</Text></ScrollLoad>}
               {room && selected !== 0 && section?.cards.length === 0 && fields.length === 0 && inline.length === 0 && (
                 <View style={ui.empty}>
                   <Icon name={["room", "food", "wallet", "friends"][selected]} size={32} color={colors.forest} />
@@ -591,7 +569,7 @@ function Application() {
                 </>
               )}
               </PageMotion>
-            </ScrollView>
+            </ScrollArea>
             {room && <RoomAttention snapshot={snapshot} selected={selected} onOpenTab={changeTab}/>}
             </View>
             {!!snapshot.primaryAction && !(state.page === "HOME" && snapshot.authenticated) && (!room || roomActionTab(snapshot.primaryAction) === selected) && (
@@ -671,9 +649,10 @@ function Application() {
                 <Text style={[textStyle(rtl, "bold"), { fontSize: 20 }]}>
                   {state.walletHistoryPrompt.balance}
                 </Text>
-                <ScrollView contentContainerStyle={{ gap: 12 }}>
+                <ScrollArea contentContainerStyle={{ gap: 12 }}>
                   <PagedCards
                     cards={state.walletHistoryPrompt.cards}
+                    pageSize={100000}
                     busy={false}
                     rtl={rtl}
                   />
@@ -693,21 +672,8 @@ function Application() {
                       "REFRESH_WALLET_HISTORY",
                     )}
                   />
-                  {state.walletHistoryPrompt.hasMore && (
-                    <Button
-                      rtl={rtl}
-                      busy={state.walletHistoryPrompt.loading}
-                      action={action(
-                        tx(
-                          rtl,
-                          "Load older transactions",
-                          "تحميل معاملات أقدم",
-                        ),
-                        "LOAD_WALLET_HISTORY",
-                      )}
-                    />
-                  )}
-                </ScrollView>
+                  {state.walletHistoryPrompt.hasMore && !state.walletHistoryPrompt.loading && !state.walletHistoryPrompt.error && <ScrollLoad loadKey={state.walletHistoryPrompt.nextCursor || state.walletHistoryPrompt.cards.map(card => card.id).join(":")} onLoad={() => dispatch("LOAD_WALLET_HISTORY")}><Text style={textStyle(rtl)}>{tx(rtl,"Scroll for older transactions","مرّر لعرض معاملات أقدم")}</Text></ScrollLoad>}
+                </ScrollArea>
 
         </>}
       </BottomSheet>
@@ -752,7 +718,16 @@ function Application() {
 
         </>}
       </BottomSheet>
-    </SafeAreaView>
+      <BottomSheet visible={!!state.restaurantSendPrompt} title={tx(rtl,"Have you sent the order?","هل أرسلت الطلب للمطعم؟")} rtl={rtl} onClose={() => { if(!busy) dispatch("DISMISS_RESTAURANT_SEND"); }}>
+        <Text style={textStyle(rtl)}>{tx(rtl,"Confirm after sending the list to the restaurant. This locks food changes for everyone.","أكد بعد إرسال القائمة للمطعم. بعد التأكيد لن يتمكن الأعضاء من تعديل الطعام.")}</Text>
+        {!!state.restaurantSendPrompt?.blocker && <Text accessibilityRole="alert" style={[textStyle(rtl),{color:colors.danger}]}>{state.restaurantSendPrompt.blocker}</Text>}
+        {!!state.error && <Text accessibilityRole="alert" style={[textStyle(rtl),{color:colors.danger}]}>{state.error}</Text>}
+        <Button rtl={rtl} busy={busy} action={{...action(tx(rtl,"Order sent · lock food edits","تم الإرسال · إغلاق تعديل الطعام"),"CONFIRM_RESTAURANT_SEND","",true),enabled:state.restaurantSendPrompt?.canConfirm === true}}/>
+        <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Copy latest list","نسخ القائمة الحالية"),"SHARE_RESTAURANT_ORDER")}/>
+        <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Not sent yet","لم أرسل الطلب بعد"),"DISMISS_RESTAURANT_SEND")}/>
+      </BottomSheet>
+      <LiveSelectionOverlay key={snapshot.accountId} wheel={state.wheel} rtl={rtl} onVisibility={setSelectionOpen}/>
+    </SafeAreaView></SelectionPriority.Provider>
   );
 }
 export default function App() {
@@ -824,10 +799,10 @@ const ui = StyleSheet.create({
   },
   activeTab: { backgroundColor: colors.forest, borderColor: colors.forest },
   roomTabs: { marginHorizontal: 16, marginBottom: 4, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
-  roomTabRow: { flexDirection: "row", padding: 5 },
-  roomTab: { flex: 1, minHeight: 62, borderRadius: 15, alignItems: "center", justifyContent: "center", gap: 3, paddingHorizontal: 2 },
+  roomTabRow: { flexDirection: "row", padding: 5, gap: 6 },
+  roomTab: { minWidth: 110, minHeight: 48, borderRadius: 15, flexDirection:"row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 14 },
   selectedRoomTab: { backgroundColor: colors.mint },
-  roomTabLabel: { fontSize: 12, lineHeight: 22 },
+  roomTabLabel: { fontSize: 14, lineHeight: 24 },
   empty: { padding: 28, alignItems: "center", gap: 14, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
   emptyText: { fontSize: 15, lineHeight: 26, textAlign: "center" },
   bottom: {

@@ -145,7 +145,20 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         if (ready(room) && (!ready(before) || before.payerId != room.payerId)) payer("all_submitted", "Everyone submitted their order" to "الجميع أرسل طلبه", listOf("copy", "share", "order"),
             body = "${room.name} · Review, copy or share the full order, then mark it sent." to "${room.name} · راجع الطلب الكامل وانسخه أو شاركه ثم أكد إرساله.")
     }
-    fun selected(room: Room) { room.spin?.let { spin -> add(room, spin.winnerId, "spin:${spin.id}", "selection_pending", "You were chosen!" to "وقع الاختيار عليك!", room.name to room.name, listOf("accept", "open")) } }
+    fun selected(room: Room) {
+        val spin = room.spin ?: return
+        val winner = room.members.firstOrNull { it.id == spin.winnerId } ?: return
+        // The shared spin ID makes result delivery idempotent across ticks, retries and restarts.
+        room.activeMembers.mapNotNull { member ->
+            db.record("member-user:${room.id}:${member.id}")?.let { AccountAliases.resolve(db,it) to member }
+        }.distinctBy { it.first }.forEach { (uid, member) ->
+            val chosen = member.id == winner.id
+            addUser(uid, room, "spin:${spin.id}", if(chosen) "selection_pending" else "selection_result",
+                if(chosen) "You were chosen!" to "وقع الاختيار عليك!" else "${winner.name} was chosen!" to "تم اختيار ${winner.name}!",
+                "${room.name} · Waiting for ${winner.name} to accept." to "${room.name} · بانتظار موافقة ${winner.name}.",
+                if(chosen) listOf("accept", "open") else listOf("open"))
+        }
+    }
     fun paymentRoom(room: Room) { room.orderingMembers.filter { it.id != room.payerId }.forEach { add(room, it.id, "created", "payment_due", "Your payment share is ready" to "حصتك جاهزة للدفع", room.name to room.name, listOf("pay", "open")) } }
 
     fun pending(): PushDelivery? {

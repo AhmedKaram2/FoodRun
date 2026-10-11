@@ -17,6 +17,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
     private val owner = r.ownerId == me
     private val orderer = r.orderingMembers.any { it.id == me }
     private val receipts = c.reply!!.receipts
+    private val restaurantTotal = c.reply!!.restaurantOrder?.total ?: receipts.sumOf { it.total }
     private val currency = r.restaurant.currency
     private fun name(id: String?) = r.members.firstOrNull { it.id == id }?.name ?: "the organizer"
     private fun money(amount: Long) = Money.format(amount, currency)
@@ -68,24 +69,24 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         cards += walletCards()
         cards += c.walletFunds.roomCards(r)
         cards += GroupCard("review-next-step", tr("Ready for the restaurant", "جاهز للمطعم"),
-            if (payer) tr("Copy or share the order, then mark it as sent. You can add the expected arrival if known. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها أكّد إن الطلب اتبعت. ممكن تضيف معاد الوصول لو معروف. مش محتاج تأكيد تاني من الناس.")
+            if (owner || payer) tr("Copy or share the order, then mark it as sent. You can add the expected arrival if known. No second confirmation is needed from members.", "انسخ الطلب أو ابعته، وبعدها أكّد إن الطلب اتبعت. ممكن تضيف معاد الوصول لو معروف. مش محتاج تأكيد تاني من الناس.")
             else tr("${name(r.payerId)} is sending the order to the restaurant.", "${name(r.payerId)} بيبعت الطلب للمطعم."))
-        if (payer) {
+        if (owner || payer) {
             val blocker = placementBlocker()
             fields += field(GroupFieldKey.REFERENCE, tr("Restaurant confirmation / ETA (optional)", "تأكيد المطعم ووقت الوصول المتوقع (اختياري)"))
-            cards += GroupCard("review-total", tr("Total to pay the restaurant", "إجمالي المبلغ المطلوب للمطعم"), "${money(receipts.sumOf { it.total })}\nYour own food share is included. Other members reimburse their individual shares after restaurant payment.")
+            cards += GroupCard("review-total", tr("Total to pay the restaurant", "إجمالي المبلغ المطلوب للمطعم"), "${money(restaurantTotal)}\nYour own food share is included. Other members reimburse their individual shares after restaurant payment.")
             buttons += GroupButton(tr("Order sent", "الطلب اتبعت"), GroupAction.PLACE,
                 primary = true, enabled = blocker.isEmpty())
             if (blocker.isNotEmpty()) cards += GroupCard("placement-blocked", tr("Before placing the order", "قبل إرسال الطلب"), blocker,
                 buttons = if (r.restaurant.contact.phoneE164.isNullOrBlank() && r.restaurant.contact.whatsappE164.isNullOrBlank() || r.restaurant.pricing.taxTreatment == TaxTreatment.UNSPECIFIED)
                     listOf(GroupButton(tr("Edit restaurant details", "تعديل بيانات المطعم"), GroupAction.EDIT_ROOM_RESTAURANT)) else emptyList())
-            if (r.phase == RoomPhase.REVIEW) buttons += GroupButton(tr("Change receiving account", "تغيير حساب الاستلام"), GroupAction.OPEN_ACCOUNT)
+            if (payer && r.phase == RoomPhase.REVIEW) buttons += GroupButton(tr("Change receiving account", "تغيير حساب الاستلام"), GroupAction.OPEN_ACCOUNT)
         }
         if (r.phase == RoomPhase.REVIEW && (owner || payer)) buttons += GroupButton(tr("Reopen for changes", "إعادة فتح التعديل"), GroupAction.REOPEN)
         return GroupFlowContent(fields, cards, buttons)
     }
 
-    private fun placementBlocker(): String = c.reply?.progress?.reviewBlocker?.takeIf { it.isNotBlank() } ?: when {
+    private fun placementBlocker(): String = c.reply?.progress?.let { if(it.canReview) "" else it.reviewBlocker } ?: when {
         r.account == null -> tr("Share a receiving account before placing the order.", "شارك حساب استلام الأموال قبل إرسال الطلب.")
         r.restaurant.contact.phoneE164.isNullOrBlank() && r.restaurant.contact.whatsappE164.isNullOrBlank() ->
             tr("Add a restaurant contact to this order. Updating only contact details keeps everyone's food and confirmations.", "أضف رقم المطعم إلى الطلب. تعديل بيانات التواصل فقط يحافظ على الطلبات والتأكيدات.")
@@ -115,13 +116,15 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             }
             cards += GroupCard("bill-adjustment", tr("Revised bill · revision ${r.billRevision}", "الفاتورة المعدلة · إصدار ${r.billRevision}"), detail)
         }
-        if (payer) {
+        if (owner || payer) {
             if (!r.restaurantPaid) {
-                cards += GroupCard("restaurant-balance", tr("Restaurant bill: ${money(receipts.sumOf { it.total })}", "فاتورة المطعم: ${money(receipts.sumOf { it.total })}"),
+                cards += GroupCard("restaurant-balance", tr("Restaurant bill: ${money(restaurantTotal)}", "فاتورة المطعم: ${money(restaurantTotal)}"),
                     tr("Pay the restaurant, then record the full amount paid. This only records payment; it does not move money.", "ادفع للمطعم ثم سجل المبلغ الكامل. هذا يوثق الدفع ولا يحول الأموال."))
                 fields += field(GroupFieldKey.AMOUNT, tr("Full amount paid to restaurant", "كامل المبلغ المدفوع للمطعم"))
                 buttons += GroupButton(tr("Confirm restaurant paid", "تأكيد دفع المطعم"), GroupAction.PAY_RESTAURANT, primary = true)
             }
+        }
+        if (payer) {
             if (r.phase == RoomPhase.PLACED) buttons += GroupButton(tr("Food collected / delivered", "تم استلام الطعام أو توصيله"), GroupAction.FULFILL, primary = r.restaurantPaid)
             if (r.restaurantPaid && receipts.any { refundAvailable(r, it) }) {
                 fields += field(GroupFieldKey.AMOUNT, tr("Refund amount sent", "المبلغ المرتجع المرسل"))

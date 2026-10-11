@@ -3,10 +3,13 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 internal class GroupFriends(private val c: GroupController) {
+    private var accountId = ""
     private var id = ""
     private var members = emptyList<FriendContact>()
     private var revision = 0L
     private var viewing: FriendGroupMembership? = null
+    private var editing = false
+    val inDetail get() = editing || viewing != null
     private var searchVersion = 0
     private var results = emptyList<FriendContact>()
     private var searching = false
@@ -14,7 +17,7 @@ internal class GroupFriends(private val c: GroupController) {
         val version = ++searchVersion
         val query = c.text(GroupFieldKey.FRIEND_EMAIL).trim()
         results = emptyList(); searching = query.length >= 2
-        if(!searching) return
+        if(!searching || !editing) { searching = false; return }
         val identity = c.library.identityToken; val hub = c.library.identityHub ?: return
         c.platform.schedule(300, object : GroupScheduledCallback {
             override fun run() {
@@ -34,7 +37,9 @@ internal class GroupFriends(private val c: GroupController) {
     }
     private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
     private fun button(en: String, ar: String, value: String) = GroupButton(tr(en, ar), GroupAction.FRIENDS_ACTION, value)
-    fun open(group: FriendGroup? = null) {
+    fun open(group: FriendGroup? = null, edit: Boolean = false) {
+        accountId = c.library.home?.profile?.userId.orEmpty()
+        editing = edit
         ++searchVersion; results = emptyList(); searching = false
         viewing = null; revision = group?.revision ?: 0
         id = group?.id ?: c.platform.uuid(); members = group?.members.orEmpty()
@@ -49,16 +54,25 @@ internal class GroupFriends(private val c: GroupController) {
             c.draft[GroupFieldKey.FRIEND_EMAIL] = ""
             ++searchVersion; results = emptyList(); searching = false
         }
-        if(command.kind in listOf(CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) open()
+        if(command.kind in listOf(CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) {
+            open()
+            c.success(when(command.kind) {
+                CommandKind.LEAVE_FRIEND_GROUP -> tr("You left the group.", "غادرت المجموعة.")
+                CommandKind.DELETE_FRIEND_GROUP -> tr("Group deleted.", "تم حذف المجموعة.")
+                else -> tr("Friend group saved.", "تم حفظ مجموعة الأصدقاء.")
+            })
+        }
     }
     fun dispatch(value: String) {
         val action = value.substringBefore('|'); val target = value.substringAfter('|', "")
         when(action) {
-            "open", "new" -> open()
-            "edit" -> open(c.library.home?.friendGroups?.single { it.id == target })
-            "view" -> { viewing = c.library.home?.joinedFriendGroups?.single { "${it.ownerId}|${it.group.id}" == target }; c.page = GroupPage.FRIENDS }
+            "open" -> open()
+            "new" -> open(edit = true)
+            "edit" -> open(c.library.home?.friendGroups?.singleOrNull { it.id == target } ?: error("This group is no longer available."), edit = true)
+            "view-owned" -> { open(); viewing = FriendGroupMembership(c.library.home?.friendGroups?.singleOrNull { it.id == target } ?: error("This group is no longer available."), c.library.home!!.profile.userId, c.library.home!!.profile.name) }
+            "view" -> { open(); viewing = c.library.home?.joinedFriendGroups?.singleOrNull { "${it.ownerId}|${it.group.id}" == target } ?: error("This group is no longer available.") }
             "leave" -> {
-                val group = c.library.home?.joinedFriendGroups?.single { "${it.ownerId}|${it.group.id}" == target } ?: error("This group is no longer available.")
+                val group = c.library.home?.joinedFriendGroups?.singleOrNull { "${it.ownerId}|${it.group.id}" == target } ?: error("This group is no longer available.")
                 c.send(RoomCommand(commandId = c.platform.uuid(), kind = CommandKind.LEAVE_FRIEND_GROUP, friendGroupOwnerId = group.ownerId, friendGroupId = group.group.id), returnPage = GroupPage.FRIENDS)
             }
             "remove" -> members = members.filterNot { it.memberKey() == target || it.email == target }
@@ -79,28 +93,39 @@ internal class GroupFriends(private val c: GroupController) {
         }
     }
     fun content(): GroupFlowContent {
+        if(accountId != c.library.home?.profile?.userId.orEmpty()) open()
+        val home = c.library.home
         viewing?.let { selected ->
-            val latest = c.library.home?.joinedFriendGroups?.singleOrNull { it.ownerId == selected.ownerId && it.group.id == selected.group.id }
+            val owned = selected.ownerId == home?.profile?.userId
+            val latest = if(owned) home?.friendGroups?.singleOrNull { it.id == selected.group.id }?.let { selected.copy(group = it) }
+                else home?.joinedFriendGroups?.singleOrNull { it.ownerId == selected.ownerId && it.group.id == selected.group.id }
             if(latest == null) { open(); return content() }
+            val actions = if(owned) listOf(button("Edit group", "تعديل المجموعة", "edit|${latest.group.id}"), button("Delete group", "حذف المجموعة", "delete|${latest.group.id}").copy(destructive = true))
+                else listOf(button("Leave group", "مغادرة المجموعة", "leave|${latest.ownerId}|${latest.group.id}").copy(destructive = true))
             return GroupFlowContent(cards = listOf(GroupCard("friend-view", latest.group.name, tr("Created by ${latest.ownerName}", "أنشأها ${latest.ownerName}"))) + latest.group.members.map {
                 GroupCard("friend-view-member:${it.memberKey()}", it.name.ifBlank { it.email }, it.email.ifBlank { tr("App notifications available", "إشعارات التطبيق متاحة") })
-            }, buttons = listOf(button("Leave group", "مغادرة المجموعة", "leave|${latest.ownerId}|${latest.group.id}"), button("Back to groups", "العودة للمجموعات", "open")))
+            }, buttons = actions + button("Back to groups", "العودة للمجموعات", "open"))
         }
+        if(!editing) return GroupFlowContent(cards = home?.friendGroups.orEmpty().map {
+            GroupCard("friend-group:${it.id}", "${it.name}${if(it.favourite) " ★" else ""}", "${it.members.size} ${tr("friends", "أصدقاء")}",
+                buttons = listOf(button("View group", "عرض المجموعة", "view-owned|${it.id}"), button("Edit", "تعديل", "edit|${it.id}")))
+        } + home?.joinedFriendGroups.orEmpty().map {
+            GroupCard("friend-joined:${it.ownerId}:${it.group.id}", it.group.name, tr("Created by ${it.ownerName}", "أنشأها ${it.ownerName}"),
+                buttons = listOf(button("View group", "عرض المجموعة", "view|${it.ownerId}|${it.group.id}")))
+        }, buttons = listOf(button("New group", "مجموعة جديدة", "new").copy(primary = true)))
         val fields = listOf(
             GroupField(GroupFieldKey.FRIEND_GROUP_NAME, tr("Group name", "اسم المجموعة"), c.text(GroupFieldKey.FRIEND_GROUP_NAME)),
             GroupField(GroupFieldKey.FRIEND_GROUP_FAVOURITE, tr("Favourite group", "مجموعة مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_FAVOURITE), toggle = true),
             GroupField(GroupFieldKey.FRIEND_EMAIL, tr("Find people by name or email", "ابحث عن الأشخاص بالاسم أو البريد"), c.text(GroupFieldKey.FRIEND_EMAIL)))
-        val cards = c.library.home?.friendGroups.orEmpty().map { GroupCard("friend-group:${it.id}", "${it.name}${if(it.favourite) " ★" else ""}",
-            "${it.members.size} ${tr("friends", "أصدقاء")}", buttons = listOf(button("Edit", "تعديل", "edit|${it.id}"), button("Delete", "حذف", "delete|${it.id}"))) } +
-            c.library.home?.joinedFriendGroups.orEmpty().map { GroupCard("friend-joined:${it.ownerId}:${it.group.id}", it.group.name, tr("Created by ${it.ownerName}", "أنشأها ${it.ownerName}"),
-                buttons = listOf(button("View group", "عرض المجموعة", "view|${it.ownerId}|${it.group.id}"), button("Leave group", "مغادرة المجموعة", "leave|${it.ownerId}|${it.group.id}"))) } +
+        val cards = listOf(GroupCard("friend-editor", tr("Edit group", "تعديل المجموعة"), tr("${members.size}/30 selected members", "${members.size}/30 من الأعضاء المحددين"))) +
             (if(searching) listOf(GroupCard("friend-searching",tr("Searching…", "جارٍ البحث…"))) else results.filterNot { person -> members.any { it.memberKey() == person.memberKey() } }.map { person ->
                 GroupCard("friend-result:${person.memberKey()}",person.name.ifBlank { person.email },person.email,buttons = listOf(button("Add person", "إضافة الشخص", "pick|${person.memberKey()}"))) }) +
             members.map { GroupCard("friend-email:${it.memberKey()}", it.name.ifBlank { it.email }, it.email.ifBlank { tr("App notifications available", "إشعارات التطبيق متاحة") } + "\n" +
                 if(it.userId.isEmpty()) tr("Sign-up invitation will be emailed when saved", "تُرسل دعوة التسجيل بالبريد عند الحفظ") else tr("Registered user", "مستخدم مسجل"),
                 buttons = listOf(button("Remove", "إزالة", "remove|${it.memberKey()}"))) }
-        val buttons = listOf(button("New group", "مجموعة جديدة", "new"), button("Add by email", "إضافة بالبريد", "add"),
-            GroupButton(tr("Save group", "حفظ المجموعة"), GroupAction.FRIENDS_ACTION, "save", primary = true, enabled = c.text(GroupFieldKey.FRIEND_GROUP_NAME).isNotBlank()))
-        return GroupFlowContent(fields, cards, buttons)
+        return GroupFlowContent(fields, cards, listOf(
+            GroupButton(tr("Save group", "حفظ المجموعة"), GroupAction.FRIENDS_ACTION, "save", primary = true, enabled = c.text(GroupFieldKey.FRIEND_GROUP_NAME).isNotBlank()),
+            button("Add by email", "إضافة بالبريد", "add").copy(enabled = c.text(GroupFieldKey.FRIEND_EMAIL).trim().matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) && members.size < 30),
+            button("Back to groups", "العودة للمجموعات", "open")))
     }
 }

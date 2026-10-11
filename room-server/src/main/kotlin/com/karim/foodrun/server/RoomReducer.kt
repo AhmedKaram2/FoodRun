@@ -17,6 +17,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
         require(actor.approved) { "Wait for the organizer or selected person to approve your join request." }
         fun owner() { require(actorId == r.ownerId) { "Only the organizer can do this." } }
         fun payer() { require(actorId == r.payerId) { "Only the selected payer can do this." } }
+        fun restaurantManager() { require(actorId == r.ownerId || actorId == r.payerId) { "Only the room owner or selected payer can manage the restaurant order." } }
         fun joinApprover() { require(actorId == r.ownerId || actorId == r.payerId || r.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) && actorId == r.spin?.winnerId) { "Only the organizer or selected person can approve join requests." } }
         fun orderer() { require(!actor.guest && actor.participating) { "View-only guests cannot order or pay." } }
         fun phase(vararg phases: RoomPhase) { require(r.phase in phases) { "This action is unavailable at this order stage. Refresh the room." } }
@@ -111,7 +112,8 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     joinApprover(); fresh(); reason()
                     r.copy(members = r.members.map { if (it.id == requested.id) it.copy(removed = true) else it })
                 } else {
-                    owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh(); reason()
+                    owner(); phase(RoomPhase.LOBBY, RoomPhase.COLLECTING); fresh()
+                    if(r.phase != RoomPhase.LOBBY || !RoomRules.declinedOrdering(r,c.memberId)) reason()
                     require(c.memberId != r.ownerId) { "Hand over ownership before leaving." }
                     if (c.memberId.isEmpty()) r.copy(expectedNames = r.expectedNames.filterNot { it == c.name })
                     else {
@@ -194,7 +196,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(phase = RoomPhase.COLLECTING, payerId = actorId)
             }
             CommandKind.DECLINE_DUTY -> {
-                phase(RoomPhase.ACCEPTING); require(r.spin?.winnerId == actorId); reason()
+                phase(RoomPhase.ACCEPTING); require(r.spin?.winnerId == actorId)
                 r.copy(phase = RoomPhase.LOBBY, pastSpins = r.pastSpins + listOfNotNull(r.spin), spin = null, members = r.members.map { if (it.id == actorId) it.copy(eligible = false, ready = true) else it })
             }
             CommandKind.SHARE_ACCOUNT -> {
@@ -213,11 +215,10 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 val old = r.carts.singleOrNull { it.memberId == actorId } ?: MemberCart(actorId)
                 val draft = requireNotNull(c.cart)
                 require(draft.memberId == actorId && c.expectedRevision == old.revision) { "Your cart changed. Review the latest cart." }
-                // CART cannot assign prices, including when sent by the payer. Keep only
-                // server-approved prices for unchanged selections; edited items need repricing.
+                // Members can price their own typed items. Saved menu prices remain server-controlled.
                 val sanitized = draft.copy(lines = draft.lines.map { line ->
                     val previous = old.lines.singleOrNull { it.id == line.id }
-                    line.copy(unitPrice = previous?.unitPrice.takeIf {
+                    line.copy(unitPrice = if(line.description.isNotBlank()) line.unitPrice else previous?.unitPrice.takeIf {
                         previous?.description == line.description && previous.itemId == line.itemId &&
                             previous.variantId == line.variantId && previous.optionIds.sorted() == line.optionIds.sorted() &&
                             previous.quantity == line.quantity && previous.notes == line.notes
@@ -270,7 +271,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             }
             CommandKind.PRICE_ITEM -> {
                 require(actorId == r.ownerId || actorId == r.payerId) { "Only the room owner or selected payer can edit item prices." }
-                phase(RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
+                phase(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING, RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED); fresh()
                 MenuValidation.price(c.amount)
                 val target = r.carts.singleOrNull { it.memberId == c.memberId } ?: error("Order not found.")
                 val line = target.lines.singleOrNull { it.id == c.text } ?: error("Item not found.")
@@ -281,7 +282,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     lines = target.lines.map { if (it.id == line.id) it.copy(unitPrice = price) else it })
                 if (line.unitPrice == price) r
                 else r.copy(carts = r.carts.map { if (it.memberId == target.memberId) priced else it },
-                    phase = if (placed) r.phase else RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1,
+                    phase = if (r.phase == RoomPhase.REVIEW) RoomPhase.COLLECTING else r.phase, quoteRevision = r.quoteRevision + 1,
                     billRevision = r.billRevision + if (placed) 1 else 0,
                     restaurantPaid = r.restaurantPaid && (!placed || r.paymentRoom != null),
                     adjustmentApprovals = emptyList())
@@ -347,7 +348,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                     phase = RoomPhase.COLLECTING, quoteRevision = r.quoteRevision + 1).also { Billing.receipts(it) }
             }
             CommandKind.PLACE -> {
-                payer(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); RoomRules.requirePlaceable(r)
+                restaurantManager(); phase(RoomPhase.COLLECTING, RoomPhase.REVIEW); fresh(); RoomRules.requirePlaceable(r)
                 require(c.text.length <= 500) { "Restaurant confirmation / ETA must be 500 characters or fewer." }
                 r.copy(phase = RoomPhase.PLACED, restaurantReference = c.text.trim())
             }
@@ -377,7 +378,7 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 r.copy(transfers = r.transfers + Transfer(id(), c.memberId, c.amount, c.text, requireNotNull(r.account), status = TransferStatus.CONFIRMED, createdAt = now))
             }
             CommandKind.PAY_RESTAURANT -> {
-                payer(); settlement(); fresh()
+                restaurantManager(); settlement(); fresh()
                 require(c.amount == Billing.receipts(r).sumOf { it.total }) { "Paid amount differs from the bill. Update item prices or the bill adjustment first." }
                 r.copy(restaurantPaid = true)
             }
@@ -435,6 +436,9 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
             val cart = result.carts.single { it.memberId == offer.memberId }
             offer.copy(line = Billing.lines(result.restaurant, cart)[cart.lines.indexOfFirst { it.id == offer.lineId }])
         }
-        return result.copy(halfItemOffers = offers, revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, c.text.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND, CommandKind.DECLARE_WHEEL_PAYMENT) } ?: "", now))
+        val auditReason = c.text.ifBlank {
+            if(c.kind == CommandKind.DECLINE_DUTY || c.kind == CommandKind.REMOVE && r.phase == RoomPhase.LOBBY && RoomRules.declinedOrdering(r,c.memberId)) "Declined ordering duty." else ""
+        }
+        return result.copy(halfItemOffers = offers, revision = r.revision + 1, updatedAt = now, audit = (if (c.kind == CommandKind.NEXT_ORDER) emptyList() else r.audit) + AuditEntry(c.commandId, actorId, c.kind.name, auditReason.take(500).takeIf { c.kind !in listOf(CommandKind.ACK_SPIN, CommandKind.DECLARE_TRANSFER, CommandKind.DECLARE_REFUND, CommandKind.DECLARE_WHEEL_PAYMENT) } ?: "", now))
     }
 }

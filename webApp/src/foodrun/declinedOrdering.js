@@ -1,0 +1,1 @@
+export const declinedOrdering = (room, memberId) => room.phase === 'LOBBY' && room.members.some(member => member.id === memberId && member.approved && !member.removed && !member.eligible) && (room.pastSpins || []).some(spin => spin.winnerId === memberId);

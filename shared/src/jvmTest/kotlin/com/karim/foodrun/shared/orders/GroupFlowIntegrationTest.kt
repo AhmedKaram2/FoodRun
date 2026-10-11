@@ -70,7 +70,7 @@ class GroupFlowIntegrationTest {
         private fun create(c: GroupController, bus: Bus) {
             connect(c); c.update(GroupFieldKey.NAME, "Karim"); c.update(GroupFieldKey.ROOM_NAME, "The lunch table")
             c.dispatch(GroupAction.OPEN_LIBRARY); c.dispatch(GroupAction.IMPORT_MENU); c.dispatch(GroupAction.CONFIRM_IMPORT); c.dispatch(GroupAction.SELECT_RESTAURANT, "kitchen")
-            c.update(GroupFieldKey.DELIVERY_FEE, "10"); c.dispatch(GroupAction.CREATE_ROOM); bus.drain(); bus.sync()
+            c.update(GroupFieldKey.DELIVERY, "false"); c.update(GroupFieldKey.DELIVERY_FEE, "10"); c.dispatch(GroupAction.CREATE_ROOM); bus.drain(); bus.sync()
             assertEquals("", c.state.error); assertEquals(GroupPage.ROOM, c.state.page)
         }
         private fun join(c: GroupController, name: String, host: GroupController, bus: Bus) {
@@ -104,7 +104,7 @@ class GroupFlowIntegrationTest {
         private fun placeAndPay(host: GroupController, member: GroupController, bus: Bus) {
             review(host, member, bus)
             listOf(host, member).forEach { it.dispatch(GroupAction.CONFIRM_QUOTE); bus.drain(); bus.sync() }
-            host.update(GroupFieldKey.REFERENCE, "Restaurant confirmed"); host.dispatch(GroupAction.PLACE); bus.drain(); bus.sync()
+            host.update(GroupFieldKey.REFERENCE, "Restaurant confirmed"); host.dispatch(GroupAction.PLACE); host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain(); bus.sync()
             host.update(GroupFieldKey.AMOUNT, "80"); host.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
             assertTrue(host.room().restaurantPaid)
         }
@@ -307,7 +307,7 @@ class GroupFlowIntegrationTest {
         assertNull(host.state.primaryAction)
         assertTrue(payer.state.cards.single { it.id == "contact" }.buttons.single { it.action == GroupAction.PLACE }.enabled, "The selected person can send the complete food order")
         payer.update(GroupFieldKey.REFERENCE, "Arrives in 30 minutes")
-        payer.dispatch(GroupAction.PLACE); bus.drain(); bus.sync()
+        payer.dispatch(GroupAction.PLACE); payer.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain(); bus.sync()
         assertEquals(RoomPhase.PLACED, payer.room().phase)
     }
 
@@ -382,7 +382,7 @@ class GroupFlowIntegrationTest {
         create(host, bus); join(member, "Hassan", host, bus); review(host, member, bus)
         listOf(host, member).forEach { it.dispatch(GroupAction.CONFIRM_QUOTE); bus.drain(); bus.sync() }
         host.update(GroupFieldKey.REFERENCE, "Restaurant ETA 30 minutes")
-        host.dispatch(GroupAction.PLACE); bus.drain(); bus.sync()
+        host.dispatch(GroupAction.PLACE); host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain(); bus.sync()
         assertEquals("80.00", host.text(GroupFieldKey.AMOUNT))
         assertEquals("", host.text(GroupFieldKey.REFERENCE))
         host.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
@@ -582,7 +582,7 @@ class GroupFlowIntegrationTest {
         people.forEach { it.dispatch(GroupAction.OPEN_ITEM, "burger"); it.dispatch(GroupAction.ADD_CART_ITEM); bus.drain(); bus.sync(); it.dispatch(GroupAction.SUBMIT_CART); bus.drain(); bus.sync(); assertEquals("", it.state.error) }
         host.dispatch(GroupAction.REVIEW); bus.drain(); bus.sync()
         people.forEach { it.dispatch(GroupAction.CONFIRM_QUOTE); bus.drain(); bus.sync() }
-        payer.update(GroupFieldKey.REFERENCE, "Confirmed by restaurant · 20 minutes"); payer.dispatch(GroupAction.PLACE); bus.drain(); bus.sync()
+        payer.update(GroupFieldKey.REFERENCE, "Confirmed by restaurant · 20 minutes"); payer.dispatch(GroupAction.PLACE); payer.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain(); bus.sync()
         assertEquals(RoomPhase.PLACED, host.room().phase)
         payer.update(GroupFieldKey.AMOUNT, "115.00"); payer.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
         assertTrue(host.room().restaurantPaid)
@@ -953,4 +953,90 @@ class GroupFlowIntegrationTest {
         assertEquals("The selected orderer will arrange delivery with the restaurant.", c.room().destination)
     }
 
+    @Test fun liveSelectionAppearsAcrossPagesThenExpiresWithoutChangingThePage() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Alice", host, bus); collecting(host, member, bus)
+        assertEquals(2,host.state.joinedCount)
+        assertEquals("COLLECTING",host.state.roomPhase)
+        assertEquals("Choose food",host.state.roomStage)
+        assertEquals("Selected to order",host.state.cards.single { it.id == "member:${host.me()}" }.badge)
+        val (outside, _) = bus.phone()
+        assertNull(outside.state.wheel)
+        member.dispatch(GroupAction.OPEN_HOME)
+        assertEquals(GroupPage.HOME, member.page)
+        val wheel = assertNotNull(member.state.wheel)
+        assertEquals(host.room().id, wheel.roomId)
+        assertEquals(host.room().members.single { it.id == host.room().spin!!.winnerId }.name, wheel.winner)
+        member.dispatch(GroupAction.FRIENDS_ACTION, "open")
+        assertNotNull(member.state.wheel)
+        assertEquals(GroupPage.FRIENDS, member.page)
+        bus.time += 6001; bus.sync()
+        assertNull(member.state.wheel)
+        assertEquals(GroupPage.FRIENDS, member.page)
+    }
+    @Test fun refusedSelectionCanBeRemovedAndRetriedWithoutTypingANote() = Bus().use { bus ->
+        val (host, _) = bus.phone();val (member, _) = bus.phone()
+        create(host,bus);join(member,"Alice",host,bus)
+        host.update(GroupFieldKey.ELIGIBLE,"false");host.dispatch(GroupAction.READY);bus.drain();bus.sync()
+        host.dispatch(GroupAction.PREPARE_SPIN);bus.drain();bus.sync()
+        bus.time += 10000;bus.server.tick();bus.sync()
+        assertEquals(member.me(),host.room().spin!!.winnerId)
+        member.dispatch(GroupAction.DECLINE_DUTY);bus.drain();bus.sync()
+        assertEquals("",member.state.error)
+        assertEquals("Retry wheel",host.state.buttons.single { it.action == GroupAction.PREPARE_SPIN }.title)
+        host.dispatch(GroupAction.REMOVE,member.me());bus.drain();bus.sync()
+        assertEquals("",host.state.error)
+        assertEquals(1,host.state.joinedCount)
+        host.update(GroupFieldKey.ELIGIBLE,"true");host.dispatch(GroupAction.READY);bus.drain();bus.sync()
+        host.dispatch(GroupAction.PREPARE_SPIN);bus.drain();bus.sync()
+        assertEquals(listOf(host.me()),host.room().spin!!.memberIds)
+    }
+    @Test fun ownerCanCopyConfirmAndRecordRestaurantPaymentWhenAnotherMemberIsSelected() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host,bus); join(member,"Alice",host,bus); collecting(host,member,bus,memberPays=true)
+        member.dispatch(GroupAction.OPEN_ACCOUNT);member.update(GroupFieldKey.ACCOUNT_HOLDER,"Alice")
+        member.update(GroupFieldKey.ACCOUNT_BANK,"Example Bank");member.update(GroupFieldKey.ACCOUNT_IDENTIFIER,"AE070331234567890123456")
+        member.dispatch(GroupAction.SHARE_ACCOUNT);bus.drain();bus.sync()
+        listOf(host,member).forEach { controller ->
+            controller.dispatch(GroupAction.OPEN_ITEM,"burger");controller.dispatch(GroupAction.ADD_CART_ITEM);bus.drain();bus.sync()
+            controller.dispatch(GroupAction.SUBMIT_CART);bus.drain();bus.sync()
+        }
+        assertEquals(1,host.reply!!.receipts.size)
+        assertEquals(8000,host.reply!!.restaurantOrder!!.total)
+        assertTrue(host.state.cards.flatMap { it.buttons }.any { it.action == GroupAction.PLACE })
+        host.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        assertTrue(host.state.restaurantSendPrompt!!.canConfirm)
+        host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND);bus.drain();bus.sync()
+        assertEquals(RoomPhase.PLACED,member.room().phase)
+        assertTrue(host.state.cards.flatMap { it.buttons }.any { it.action == GroupAction.PAY_RESTAURANT })
+        host.update(GroupFieldKey.AMOUNT,"80");host.dispatch(GroupAction.PAY_RESTAURANT);bus.drain();bus.sync()
+        assertEquals("",host.state.error)
+        assertTrue(member.room().restaurantPaid)
+        assertEquals(member.me(),member.room().payerId)
+        assertEquals("Alice",host.room().account!!.holder)
+    }
+    @Test fun sharingRequiresConfirmationAndChangedOrdersCannotBeConfirmedFromAnOldCopy() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Alice", host, bus); review(host, member, bus)
+        host.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        assertNotNull(host.state.restaurantSendPrompt)
+        assertEquals(RoomPhase.REVIEW, host.room().phase)
+        host.dispatch(GroupAction.DISMISS_RESTAURANT_SEND)
+        assertNull(host.state.restaurantSendPrompt)
+        assertEquals(RoomPhase.REVIEW, host.room().phase)
+        host.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        host.command(CommandKind.PRICE_ITEM, memberId = member.me(), text = member.myCart().lines.single().id, amount = 3600)
+        bus.drain(); bus.sync()
+        assertFalse(assertNotNull(host.state.restaurantSendPrompt).canConfirm)
+        host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain()
+        assertEquals(RoomPhase.COLLECTING, host.room().phase)
+        host.dispatch(GroupAction.SHARE_RESTAURANT_ORDER)
+        assertTrue(assertNotNull(host.state.restaurantSendPrompt).canConfirm)
+        host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND); bus.drain(); bus.sync()
+        assertEquals(RoomPhase.PLACED, member.room().phase)
+        assertNull(host.state.restaurantSendPrompt)
+        member.dispatch(GroupAction.OPEN_ITEM,"water"); member.dispatch(GroupAction.ADD_CART_ITEM); bus.drain(); bus.sync()
+        assertEquals(1, member.myCart().lines.size)
+        assertTrue(member.state.error.isNotBlank())
+    }
 }

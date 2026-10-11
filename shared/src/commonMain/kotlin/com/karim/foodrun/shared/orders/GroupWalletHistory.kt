@@ -2,7 +2,7 @@ package com.karim.foodrun.shared.orders
 
 import com.karim.foodrun.orders.*
 
-@kotlinx.serialization.Serializable data class GroupWalletHistoryPrompt(val title: String, val subtitle: String, val balance: String, val cards: List<GroupCard>, val loading: Boolean, val error: String, val hasMore: Boolean)
+@kotlinx.serialization.Serializable data class GroupWalletHistoryPrompt(val title: String, val subtitle: String, val balance: String, val cards: List<GroupCard>, val loading: Boolean, val error: String, val hasMore: Boolean, val nextCursor: String = "")
 
 /** Read requests stay outside the mutation queue; history is never persisted on disk. */
 internal class GroupWalletHistory(private val c: GroupController) {
@@ -73,6 +73,6 @@ internal class GroupWalletHistory(private val c: GroupController) {
         val selected = key ?: return null
         if(c.page != origin || c.library.home?.profile?.userId != userId) { dismiss(); return null }
         val balance = history?.balance
-        return GroupWalletHistoryPrompt(tr("Wallet transactions", "معاملات المحفظة"), balance?.let { "${it.customerName} · ${tr("Held by", "لدى")} ${it.holderName}" }.orEmpty(), balance?.let { "${tr("Available balance", "الرصيد المتاح")}: ${Money.format(it.available,selected.currency)}" }.orEmpty(), history?.transactions.orEmpty().map(::card), loading,failure,history?.nextCursor?.isNotEmpty() == true)
+        return GroupWalletHistoryPrompt(tr("Wallet transactions", "معاملات المحفظة"), balance?.let { "${it.customerName} · ${tr("Held by", "لدى")} ${it.holderName}" }.orEmpty(), balance?.let { "${tr("Available balance", "الرصيد المتاح")}: ${Money.format(it.available,selected.currency)}" }.orEmpty(), history?.transactions.orEmpty().map(::card), loading,failure,history?.nextCursor?.isNotEmpty() == true,history?.nextCursor.orEmpty())
     }
 }

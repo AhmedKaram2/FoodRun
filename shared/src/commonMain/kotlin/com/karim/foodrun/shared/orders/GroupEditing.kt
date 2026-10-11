@@ -3,6 +3,7 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 internal fun GroupController.restaurantEditor(export: RestaurantExport?, forRoom: Boolean = false) {
+    editingSetupMenu = false
     formDrafts.beginRestaurant(draft)
     editingRoomOrder = if(forRoom) room().let { it.id to it.orderNumber } else null
     editingRestaurant = export ?: RestaurantExport(exportId = platform.uuid(), restaurant = Restaurant(platform.uuid(), "", menu = Menu(categories = listOf(MenuCategory("main", "Menu")))))
@@ -51,7 +52,7 @@ internal fun GroupController.addMenuItem() {
     val category = export.restaurant.menu.categories.firstOrNull() ?: MenuCategory(platform.uuid(), "Menu", nameAr = "القائمة")
     val categories = export.restaurant.menu.categories.ifEmpty { listOf(category) }
     val item = MenuItem(platform.uuid(), category.id, name, basePriceMinor = Money.parse(text(GroupFieldKey.MENU_ITEM_PRICE), currency))
-    if(!administration.editingRestaurant && editingRoomOrder == null && library.identityToken.isNotEmpty() && library.home?.restaurants?.any { it.id == export.restaurant.id } == true) {
+    if(!administration.editingRestaurant && !editingSetupMenu && editingRoomOrder == null && library.identityToken.isNotEmpty() && library.home?.restaurants?.any { it.id == export.restaurant.id } == true) {
         send(RoomCommand(commandId = platform.uuid(), kind = CommandKind.ADD_MENU_ITEMS,
             restaurant = export.restaurant.copy(menu = export.restaurant.menu.copy(items = listOf(item), categories = categories))), returnPage = GroupPage.MENU_EDITOR)
         return
@@ -121,7 +122,7 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         }
         GroupAction.APPROVE -> command(CommandKind.APPROVE, memberId = value, flag = flag(GroupFieldKey.ELIGIBLE))
         GroupAction.APPROVE_LATE_JOIN -> command(CommandKind.APPROVE_LATE_JOIN, memberId = value)
-        GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = reason)
+        GroupAction.REMOVE -> command(CommandKind.REMOVE, memberId = if (value.startsWith("invite:")) "" else value, name = value.removePrefix("invite:"), text = if(r.phase == RoomPhase.LOBBY && RoomRules.declinedOrdering(r,value)) "" else reason)
         GroupAction.VOTE_RESTAURANT -> command(CommandKind.VOTE_RESTAURANT, text = value)
         GroupAction.FINALIZE_RESTAURANT -> command(CommandKind.FINALIZE_RESTAURANT, text = value)
         GroupAction.SELECT_PAYER -> {
@@ -180,4 +181,10 @@ internal fun GroupController.changeCartQuantity(lineId: String, delta: Int) {
     val next = cart.copy(lines = lines)
     Billing.lines(room().restaurant, next)
     command(CommandKind.CART, cart = next, revision = cart.revision)
+}
+
+internal fun GroupController.finishSetupMenu() {
+    val export = requireNotNull(editingRestaurant)
+    MenuValidation.validate(export.restaurant)
+    selectedRestaurant = export; editingRestaurant = null; editingSetupMenu = false; page = GroupPage.SETUP
 }

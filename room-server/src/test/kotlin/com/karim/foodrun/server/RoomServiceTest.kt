@@ -5,7 +5,7 @@ import java.util.concurrent.Executors
 import kotlin.test.*
 
 class RoomServiceTest {
-    @Test fun selectedMemberOrdersPaysAndSettlesIncludingTheirOwnFoodWithoutOwnerControl(): Unit = RoomFixture().use { f ->
+    @Test fun selectedMemberCollectsPaymentsWhileOwnerCanSendAndRecordRestaurantPayment(): Unit = RoomFixture().use { f ->
         val selected = f.join("Selected person"); f.approve(selected)
         f.send(f.owner, CommandKind.READY) { it.copy(flag = true, eligible = false) }
         val preparation = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.preparationId
@@ -27,10 +27,10 @@ class RoomServiceTest {
         assertEquals(0, receipts.single { it.memberId == selected.memberId }.balance)
         f.send(selected, CommandKind.REVIEW)
         listOf(f.owner, selected).forEach { actor -> f.send(actor, CommandKind.CONFIRM_QUOTE) { it.copy(expectedRevision = f.state(actor).room!!.quoteRevision) } }
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PLACE).copy(text = "Owner cannot place")).ok)
-        f.send(selected, CommandKind.PLACE) { it.copy(text = "Selected person placed order; 30 minutes") }
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 600)).ok)
-        f.send(selected, CommandKind.PAY_RESTAURANT) { it.copy(amount = 600) }
+        f.send(f.owner, CommandKind.PLACE) { it.copy(text = "Owner sent the restaurant order; 30 minutes") }
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 599)).ok)
+        f.send(f.owner, CommandKind.PAY_RESTAURANT) { it.copy(amount = 600) }
+        assertEquals(selected.memberId,f.state().room!!.payerId)
         assertFalse(f.service.execute(f.command(selected, CommandKind.DECLARE_TRANSFER).copy(amount = 350, text = "No self transfer")).ok)
         val transfer = f.send(f.owner, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 250, text = "Paid selected person") }.room!!.transfers.single()
         assertFalse(f.service.execute(f.command(f.owner, CommandKind.CONFIRM_TRANSFER).copy(transferId = transfer.id)).ok)
@@ -39,6 +39,32 @@ class RoomServiceTest {
         f.send(selected, CommandKind.ARCHIVE)
         assertEquals(RoomPhase.ARCHIVED, f.state().room!!.phase)
         assertTrue(f.state(selected).receipts.all { it.balance == 0L })
+    }
+
+    @Test fun nonOrderingOwnerCanManageRestaurantButOtherMembersCannot() = RoomFixture().use { f ->
+        val selected=f.join("Selected")
+        val other=f.join("Other")
+        f.send(f.owner,CommandKind.PARTICIPATE) { it.copy(flag=false) }
+        f.send(f.owner,CommandKind.SELECT_PAYER) { it.copy(memberId=selected.memberId) }
+        f.send(selected,CommandKind.SHARE_ACCOUNT) { it.copy(account=f.account.copy(holder="Selected")) }
+        assertFalse(f.service.execute(f.command(f.owner,CommandKind.PLACE)).ok) // Food still needs submission.
+        f.cart(selected,5)
+        val stale=f.command(f.owner,CommandKind.PLACE)
+        f.cart(other,0)
+        assertEquals(500,f.state().restaurantOrder!!.total)
+        assertTrue(f.state().receipts.isEmpty())
+        assertNull(f.state().room!!.account)
+        assertEquals(1,f.state(other).receipts.size)
+        assertFalse(f.service.execute(stale).ok)
+        assertFalse(f.service.execute(f.command(other,CommandKind.PLACE)).ok)
+        f.send(f.owner,CommandKind.PLACE)
+        assertFalse(f.service.execute(f.command(other,CommandKind.PAY_RESTAURANT).copy(amount=500)).ok)
+        assertFalse(f.service.execute(f.command(selected,CommandKind.CART).copy(expectedRevision=2,cart=MemberCart(selected.memberId))).ok)
+        f.send(f.owner,CommandKind.PAY_RESTAURANT) { it.copy(amount=500) }
+        assertTrue(f.state(selected).room!!.restaurantPaid)
+        assertEquals(selected.memberId,f.state().room!!.payerId)
+        assertEquals("Selected",f.state(selected).room!!.account!!.holder)
+        assertFalse(f.service.execute(f.command(f.owner,CommandKind.SHARE_ACCOUNT).copy(account=f.account)).ok)
     }
 
     @Test fun adminCannotCancelPlacedOrdersAndHideOutstandingBalances(): Unit = RoomFixture().use { f ->

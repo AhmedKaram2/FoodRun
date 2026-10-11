@@ -8,7 +8,8 @@ private fun Receipt.withoutHalfDetails(): Receipt = copy(lines = lines.map {
 })
 
 /** Preserve the wire schema accepted by each released generation of native clients. */
-internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false, halfItemDetails: Boolean = false, friendsDetails: Boolean = false, friendMembershipDetails: Boolean = false, notificationPreferencesDetails: Boolean = false): RoomReply = copy(
+internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false, halfItemDetails: Boolean = false, friendsDetails: Boolean = false, friendMembershipDetails: Boolean = false, notificationPreferencesDetails: Boolean = false, restaurantOrderDetails: Boolean = false): RoomReply = copy(
+    restaurantOrder = restaurantOrder.takeIf { restaurantOrderDetails },
     friendContact = friendContact.takeIf { friendsDetails }, friendContacts = friendContacts.takeIf { friendsDetails },
     receipts = if (halfItemDetails) receipts else receipts.map { it.withoutHalfDetails() },
     history = if (halfItemDetails) history else history.map { it.copy(receipts = it.receipts.map { receipt -> receipt.withoutHalfDetails() }) },

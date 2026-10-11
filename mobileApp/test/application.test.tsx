@@ -90,6 +90,14 @@ const snapshot = (more: Partial<Snapshot> = {}): Snapshot => ({
   },
   ...more,
 });
+function measureScroll(view:ReturnType<typeof render>,markerTop:()=>number) {
+  view.UNSAFE_root.findAll(node => typeof node.instance?.getNativeScrollRef === "function").forEach(node => {
+    node.instance.getNativeScrollRef.mockReturnValue({measureInWindow:(callback:Function) => callback(0,0,390,600)});
+  });
+  view.UNSAFE_root.findAll(node => node.props.testID === "scroll-load" && typeof node.instance?.measureInWindow === "function").forEach(node => {
+    node.instance.measureInWindow.mockImplementation((callback:Function) => callback(0,markerTop(),390,20));
+  });
+}
 beforeEach(() => {
   jest.clearAllMocks();
   (native.getSnapshot as jest.Mock).mockResolvedValue(
@@ -261,8 +269,9 @@ test("wallet opens its transaction sheet and requests older pages without mutati
     (events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value));
   });
   expect(view.getByText("Confirmed top-up")).toBeTruthy();
-  fireEvent.press(view.getByText("Load older transactions"));
-  expect(native.dispatch).toHaveBeenLastCalledWith("LOAD_WALLET_HISTORY", "");
+  measureScroll(view,() => 550);
+  fireEvent(view.getByTestId("scroll-load"),"layout",{nativeEvent:{layout:{x:0,y:550,width:390,height:20}}});
+  await waitFor(() => expect(native.dispatch).toHaveBeenLastCalledWith("LOAD_WALLET_HISTORY", ""));
 });
 test("country selector uses a native sheet and writes the selected code", () => {
   const view = render(
@@ -294,21 +303,24 @@ test("secret entry stays local and is never recovered from view snapshots", () =
   fireEvent.changeText(view.getByTestId("PASSWORD"), "fixture-pass");
   expect(native.update).toHaveBeenLastCalledWith("PASSWORD", "fixture-pass");
 });
-test("long lists page on mobile with eight records per page", () => {
-  const view = render(
-    <PagedCards
-      rtl={false}
-      busy={false}
-      cards={Array.from({ length: 18 }, (_, index) =>
-        card(String(index), `Person ${index}`),
-      )}
-    />,
-  );
+test("long lists append rows when their scroll marker reaches the viewport", () => {
+  jest.useFakeTimers();
+  const ScrollArea=require("../src/components/ScrollArea").default;
+  let markerTop=1000;
+  const view=render(<ScrollArea testID="list-area"><PagedCards rtl={false} busy={false} cards={Array.from({length:18},(_,index) => card(String(index),`Person ${index}`))}/></ScrollArea>);
+  measureScroll(view,() => markerTop);
+  act(() => jest.advanceTimersByTime(32));
   expect(view.queryByText("Person 8")).toBeNull();
-  fireEvent.press(view.getByText("Next"));
+  expect(view.queryByText("Next")).toBeNull();
+  markerTop=550;
+  measureScroll(view,() => markerTop);
+  fireEvent.scroll(view.getByTestId("list-area"),{nativeEvent:{contentOffset:{x:0,y:450},contentSize:{width:390,height:1500},layoutMeasurement:{width:390,height:600}}});
+  act(() => jest.advanceTimersByTime(32));
   expect(view.getByText("Person 8")).toBeTruthy();
-  expect(view.queryByText("Person 0")).toBeNull();
+  expect(view.getByText("Person 0")).toBeTruthy();
+  view.unmount(); jest.useRealTimers();
 });
+
 test("destructive actions require the native confirmation and busy actions cannot run", () => {
   const confirm = jest.spyOn(Alert, "alert").mockImplementation(() => {});
   const value = {
@@ -442,4 +454,96 @@ test("food options use a selection sheet and return to the same room tab",async(
   value.state.page="ROOM";value.state.title="Room";value.sections=[];value.inlineButtons=[];value.primaryAction=undefined;
   act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
   expect(view.getByTestId("room-tab:1").props.accessibilityState.selected).toBe(true);
+});
+
+test("joined group details stay visible in a sheet and leave requires confirmation", () => {
+  const FriendsScreen = require("../src/screens/FriendsScreen").default;
+  const group = {...card("friend-joined:alice:lunch","Lunch friends"),buttons:[action("View group","FRIENDS_ACTION","view|alice|lunch")]};
+  const value = snapshot({topCards:[group]}); value.state.page="FRIENDS";
+  const view=render(<FriendsScreen snapshot={value}/>);
+  fireEvent.press(view.getByRole("tab",{name:"Joined groups"}));
+  fireEvent.press(view.getByText("View group"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("FRIENDS_ACTION","view|alice|lunch");
+  const leave={...action("Leave group","FRIENDS_ACTION","leave|alice|lunch"),destructive:true};
+  const details={...value,topCards:[card("friend-view","Lunch friends"),{...card("friend-view-member:bob","Bob"),detail:"bob@example.test"}],inlineButtons:[leave,action("Back to groups","FRIENDS_ACTION","open")]};
+  const alert=jest.spyOn(Alert,"alert").mockImplementation(()=>{});
+  view.rerender(<FriendsScreen snapshot={details}/>);
+  expect(view.getByText("bob@example.test")).toBeTruthy();
+  fireEvent.press(view.getByText("Leave group"));
+  expect(native.dispatch).not.toHaveBeenCalledWith("FRIENDS_ACTION","leave|alice|lunch");
+  const choices=alert.mock.calls.at(-1)?.[2]; act(()=>choices?.[1].onPress?.());
+  expect(native.dispatch).toHaveBeenLastCalledWith("FRIENDS_ACTION","leave|alice|lunch");
+  view.rerender(<FriendsScreen snapshot={{...details,state:{...details.state,error:"Connection failed"}}}/>);
+  expect(view.getByText("Connection failed")).toBeTruthy();
+  view.rerender(<FriendsScreen snapshot={{...value,topCards:[]}}/>);
+  expect(view.queryByText("bob@example.test")).toBeNull();
+  expect(view.getByRole("tab",{name:"Joined groups"}).props.accessibilityState.selected).toBe(true);
+  alert.mockRestore();
+});
+
+test("compact room members open actions in a sheet and preserve full names", () => {
+  const RoomMembers=require("../src/components/RoomMembers").default;
+  const member={...card("member:long","Mohamed Fathy"),buttons:[{...action("Remove from room","REMOVE","long"),destructive:true}]};
+  const view=render(<RoomMembers cards={[member]} busy={false} rtl={false}/>);
+  expect(view.queryByText("Remove from room")).toBeNull();
+  fireEvent.press(view.getByTestId("compact:member:long"));
+  expect(view.getByText("Remove from room")).toBeTruthy();
+  view.rerender(<RoomMembers cards={[]} busy={false} rtl={false}/>);
+  expect(view.queryByText("Remove from room")).toBeNull();
+});
+
+test("live selection overlays a profile screen and uses the shared winner", async () => {
+  const value=snapshot(), now=Date.now(); value.state.page="PROFILE";
+  value.state.wheel={roomId:"lunch",roomName:"Team lunch",names:["Alice","Bob"],winner:"Bob",style:"names",serverOffset:0,round:{id:"round-1",memberIds:["alice","bob"],winnerId:"bob",weights:[1,1],startAt:now-2000,duration:1000,turns:5,landingOffset:.5,seed:1}};
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);
+  expect(await view.findByText("We have our person!")).toBeTruthy();
+  expect(view.getAllByText("Bob").length).toBeGreaterThan(0);
+  fireEvent.press(view.getByText("Continue"));
+  expect(view.queryByText("We have our person!")).toBeNull();
+  expect(native.dispatch).not.toHaveBeenCalledWith("SELECT_PAYER",expect.anything());
+});
+
+test("order-sent sheet confirms through the native action and keeps stale copies disabled", async () => {
+  const value=snapshot();value.state.page="ROOM";value.state.roomCode="123456";
+  value.state.restaurantSendPrompt={canConfirm:true,blocker:""};
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);
+  fireEvent.press(await view.findByText("Order sent · lock food edits"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("CONFIRM_RESTAURANT_SEND","");
+  const stale={...value,state:{...value.state,restaurantSendPrompt:{canConfirm:false,blocker:"The order changed. Copy the latest list."}}};
+  act(()=> (events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(stale)));
+  expect(view.getByTestId("action:CONFIRM_RESTAURANT_SEND:").props.accessibilityState.disabled).toBe(true);
+  expect(view.getByText("The order changed. Copy the latest list.")).toBeTruthy();
+  fireEvent.press(view.getByText("Not sent yet"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("DISMISS_RESTAURANT_SEND","");
+});
+
+test("room timeline, member status and joined count remain visible across tabs", async () => {
+  const value=snapshot(); value.state={...value.state,page:"ROOM",roomCode:"123456",roomPhase:"COLLECTING",roomStage:"Choose food",joinedCount:2};
+  value.sections=[{title:"Members",collapsed:false,cards:[{...card("member:a","Alice"),badge:"Selected to order",detail:"Organizer · Connected"},{...card("member:b","Bob"),badge:"Food submitted",detail:"Away"}]}];
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);
+  expect(await view.findByText("Members (2)")).toBeTruthy();
+  fireEvent.press(view.getByTestId("room-tab:3"));
+  expect(view.getByText("Choose food")).toBeTruthy();
+  expect(view.getByText("Food submitted")).toBeTruthy();
+  expect(view.getByText("Organizer · Connected")).toBeTruthy();
+});
+
+test("shared countdown advances 1, 2, 3 and stays blocking until the result", () => {
+  jest.useFakeTimers();jest.setSystemTime(10000);
+  const Overlay=require("../src/components/LiveSelectionOverlay").default;
+  const wheel={roomId:"lunch",roomName:"Team lunch",names:["Alice","Bob"],winner:"Bob",style:"names",serverOffset:0,round:{id:"round-count",memberIds:["alice","bob"],winnerId:"bob",weights:[1,1],startAt:13000,duration:2000,turns:5,landingOffset:.5,seed:1}};
+  const visibility=jest.fn(), view=render(<Overlay wheel={wheel} rtl={false} onVisibility={visibility}/>);
+  act(() => jest.advanceTimersByTime(500));
+  expect(view.getByText("1")).toBeTruthy();
+  expect(view.queryByText("Continue")).toBeNull();
+  act(() => jest.advanceTimersByTime(500));expect(view.getByText("2")).toBeTruthy();
+  act(() => jest.advanceTimersByTime(1000));expect(view.getByText("3")).toBeTruthy();
+  act(() => jest.advanceTimersByTime(1000));expect(view.queryByTestId("selection-countdown")).toBeNull();
+  expect(view.queryByText("Continue")).toBeNull();
+  act(() => jest.advanceTimersByTime(2000));expect(view.getByText("We have our person!")).toBeTruthy();
+  expect(view.getByText("Continue")).toBeTruthy();
+  view.unmount();jest.useRealTimers();
 });

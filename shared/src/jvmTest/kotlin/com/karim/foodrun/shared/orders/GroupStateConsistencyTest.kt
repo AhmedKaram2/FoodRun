@@ -179,6 +179,7 @@ class GroupStateConsistencyTest {
     @Test fun browsingAnotherRestaurantDoesNotChangeTheOrderFeeDraft() = Device().use { device ->
         val c = device.controller
         setup(c)
+        c.update(GroupFieldKey.DELIVERY, "false")
         c.update(GroupFieldKey.DELIVERY_FEE, "17.50")
         c.update(GroupFieldKey.SERVICE_FEE, "2.25")
         c.update(GroupFieldKey.DISCOUNT, "1.00")

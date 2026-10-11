@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "../components/ScrollArea";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -82,7 +83,7 @@ function Tabs({
   onChange: (value: number) => void;
 }) {
   return (
-    <ScrollView
+    <ScrollArea
       horizontal
       showsHorizontalScrollIndicator={false}
       style={styles.tabScroll}
@@ -109,7 +110,7 @@ function Tabs({
           </Text>
         </TabButton>
       ))}
-    </ScrollView>
+    </ScrollArea>
   );
 }
 const refresh = (snapshot: Snapshot, kind = "REFRESH") => (
@@ -184,7 +185,7 @@ export function MoreSheet({
       title={tx(rtl, "Explore FoodRun", "اكتشف FoodRun")}
       onClose={onClose}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollArea contentContainerStyle={styles.content}>
         <Text style={[textStyle(rtl), styles.detail]}>
           {tx(
             rtl,
@@ -233,7 +234,7 @@ export function MoreSheet({
             ))}
           </View>
         )}
-      </ScrollView>
+      </ScrollArea>
     </BottomSheet>
   );
 }
@@ -270,7 +271,7 @@ export function NotificationCenter({ snapshot }: { snapshot: Snapshot }) {
         selected={tab}
         onChange={setTab}
       />
-      <ScrollView
+      <ScrollArea
         refreshControl={refresh(snapshot, "OPEN_NOTIFICATIONS")}
         contentContainerStyle={styles.content}
       >
@@ -379,7 +380,7 @@ export function NotificationCenter({ snapshot }: { snapshot: Snapshot }) {
             />
           </View>
         </PageMotion>
-      </ScrollView>
+      </ScrollArea>
     </View>
   );
 }
@@ -432,7 +433,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
         selected={tab}
         onChange={switchTab}
       />
-      <ScrollView
+      <ScrollArea
         ref={scroll}
         keyboardShouldPersistTaps="handled"
         refreshControl={refresh(snapshot)}
@@ -546,7 +547,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                 selected={orders}
                 onChange={setOrders}
               />
-              <PagedCards cards={orderCards} busy={busy} rtl={rtl} />
+              <PagedCards key={orders} cards={orderCards} busy={busy} rtl={rtl} pageSize={orders === 1 ? 100000 : 8} />
               {!orderCards.length && (
                 <View style={styles.empty}>
                   <Icon name="food" size={32} color={colors.forest} />
@@ -563,7 +564,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                 actions
                   .filter((a) => a.action === "MORE_PREVIOUS_ORDERS")
                   .map((a) => (
-                    <Button key={a.action} action={a} rtl={rtl} busy={busy} />
+                    <ScrollLoad key={a.action} loadKey={orderCards.map(card => card.id).join(":")} enabled={!busy && !snapshot.state.error} onLoad={() => dispatch(a.action,a.value)}><Text style={textStyle(rtl)}>{tx(rtl,"Scroll for older orders","مرّر لعرض طلبات أقدم")}</Text></ScrollLoad>
                   ))}
             </>
           )}
@@ -606,7 +607,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
             </>
           )}
         </PageMotion>
-      </ScrollView>
+      </ScrollArea>
       {tab === 1 && save && (
         <View style={styles.footer}>
           <Button action={save} rtl={rtl} busy={busy} />
@@ -685,7 +686,7 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
           </View>
         </View>
       )}
-      <ScrollView
+      <ScrollArea
         keyboardShouldPersistTaps="handled"
         refreshControl={refresh(snapshot)}
         contentContainerStyle={styles.content}
@@ -748,7 +749,7 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
                   </View>
                 </Pressable>
               ))}
-              {restaurants.length > limit && <Button rtl={rtl} action={action(tx(rtl,"Show more restaurants","عرض المزيد من المطاعم"),"LIBRARY_MORE")} onPress={() => setLimit(value => value + 12)}/>}
+              {restaurants.length > limit && <ScrollLoad loadKey={`${queryKey}:${limit}`} onLoad={() => setLimit(value => value+12)}><Text style={textStyle(rtl)}>{tx(rtl,"Scroll for more restaurants","مرّر لعرض مطاعم أخرى")}</Text></ScrollLoad>}
               {!restaurants.length && (
                 <View style={styles.empty}>
                   <Icon name="search" size={32} color={colors.forest} />
@@ -820,14 +821,14 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
             busy={busy}
           />
         </PageMotion>
-      </ScrollView>
+      </ScrollArea>
       <BottomSheet
         visible={filters}
         title={tx(rtl, "Find your food", "اعثر على أكلتك")}
         rtl={rtl}
         onClose={() => setFilters(false)}
       >
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollArea contentContainerStyle={styles.content}>
           {filterFields.map((f) => (
             <FieldInput key={f.key} field={f} busy={busy} rtl={rtl} />
           ))}
@@ -852,7 +853,7 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
             rtl={rtl}
             onPress={() => setFilters(false)}
           />
-        </ScrollView>
+        </ScrollArea>
       </BottomSheet>
       <BottomSheet
         visible={!!current}
@@ -861,7 +862,7 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
         onClose={() => setRestaurantId("")}
       >
         {current && (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollArea contentContainerStyle={styles.content}>
             <Text style={[textStyle(rtl), styles.detail]}>
               {current.detail}
             </Text>
@@ -877,7 +878,7 @@ export function LibraryScreen({ snapshot }: { snapshot: Snapshot }) {
                 }}
               />
             ))}
-          </ScrollView>
+          </ScrollArea>
         )}
       </BottomSheet>
     </View>

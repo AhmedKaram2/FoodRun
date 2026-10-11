@@ -123,7 +123,7 @@ class HalfItemTest {
         val json = orderJson.parseToJsonElement(orderJson.encodeToString(RoomReply.serializer(), legacy)).jsonObject
         assertFalse(json["room"]!!.jsonObject.containsKey("halfItemOffers"))
         assertFalse(orderJson.encodeToString(RoomReply.serializer(), legacy).contains("halfShare"))
-        assertEquals(current, current.forClient(true, true, true, true, true, true, true, true))
+        assertEquals(current, current.forClient(true, true, true, true, true, true, true, true, restaurantOrderDetails = true))
     }
 
     @Test fun unpricedCustomItemCanBeSharedThenPricedWithoutChangingItsPhysicalQuantity() = RoomFixture().use { f ->

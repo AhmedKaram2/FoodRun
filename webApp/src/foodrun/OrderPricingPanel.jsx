@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { amount, money } from './client.js';
+import { amount, money, minorInput } from './client.js';
 import { menuLineTotal } from './cartEditing.js';
 import { t } from './i18n.js';
 
@@ -12,7 +12,7 @@ export default function OrderPricingPanel({ room, data, describeLine }) {
   const edit = (cart, line) => {
     const total = menuLineTotal(room.restaurant, line);
     setEditing({ memberId: cart.memberId, lineId: line.id, revision: room.revision,
-      value: total == null ? '' : (total / line.quantity / 100).toFixed(2) });
+      value: total == null ? '' : minorInput(total / line.quantity,currency) });
     setError('');
   };
   const save = async (event, reset = false) => {

@@ -1,3 +1,4 @@
+import ScrollLoad from './ScrollLoad.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { money } from './client.js';
@@ -46,6 +47,6 @@ export default function WalletHistoryDialog({ data, wallet, onClose }) {
     {loading && <p role="status">{t('Loading…')}</p>}{error && <p role="alert">{t(error)}</p>}
     {!loading && !error && history && !history.transactions.length && <p>{tx('No transactions yet.','لا توجد معاملات بعد.')}</p>}
     {error && <button className="secondary" disabled={loading} onClick={()=>load(history?.nextCursor || '')}>{t('Retry')}</button>}
-    {history?.nextCursor && <button className="secondary wide" disabled={loading} onClick={()=>load(history.nextCursor)}>{tx('Load older transactions','تحميل معاملات أقدم')}</button>}
+    {history?.nextCursor && <ScrollLoad loadKey={history.nextCursor} enabled={!loading && !error} onLoad={() => load(history.nextCursor)}>{tx('Scroll for older transactions','مرّر لعرض معاملات أقدم')}</ScrollLoad>}
   </dialog>,document.body);
 }

@@ -1,6 +1,7 @@
 package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
+import kotlin.test.assertNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -42,5 +43,33 @@ class OpenOrderPricingTest {
         assertEquals(2_500, memberReceipt.food)
         assertEquals("Chicken shawarma", memberReceipt.lines.single().description)
         assertEquals("No onion", memberReceipt.lines.single().notes)
+    }
+    @Test fun membersPriceOwnTypedItemsAndOwnerCorrectionsPreserveTheLobbyAndPrivacy() = RoomFixture().use { f ->
+        f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = f.restaurant.copy(openOrdering = true), text = "Open menu") }
+        val member = f.join(); f.approve(member)
+        val line = CartLine(f.id(), "", 2, description = "Falafel", unitPrice = 750, notes = "Extra sauce")
+        f.send(member, CommandKind.CART) { it.copy(expectedRevision = 0, cart = MemberCart(member.memberId, lines = listOf(line))) }
+        assertEquals(1500L, f.state(member).receipts.single().food)
+        assertEquals(line, f.state().room!!.carts.single { it.memberId == member.memberId }.lines.single())
+        val corrected = f.send(f.owner, CommandKind.PRICE_ITEM) { it.copy(memberId = member.memberId, text = line.id, amount = 800) }
+        assertEquals(RoomPhase.LOBBY, corrected.room!!.phase)
+        assertEquals(1600L, f.state(member).receipts.single().food)
+        val other = f.join("Other"); f.approve(other)
+        assertTrue(f.state(other).room!!.carts.single { it.memberId == member.memberId }.lines.isEmpty())
+        val denied = f.service.execute(f.command(other, CommandKind.PRICE_ITEM).copy(memberId = member.memberId, text = line.id, amount = 1))
+        assertFalse(denied.ok)
+        f.restart()
+        assertEquals(1600L, f.state(member).receipts.single().food)
+    }
+    @Test fun optionalPricesAndInvalidPricesAreHandledWithoutAcceptingMenuOverrides() = RoomFixture().use { f ->
+        f.send(f.owner, CommandKind.UPDATE_RESTAURANT) { it.copy(restaurant = f.restaurant.copy(openOrdering = true), text = "Open menu") }
+        val member = f.join(); f.approve(member)
+        val typed = CartLine(f.id(), "", 1, description = "Shawarma")
+        f.send(member, CommandKind.CART) { it.copy(expectedRevision = 0, cart = MemberCart(member.memberId, lines = listOf(typed, CartLine(f.id(), "meal", 1, unitPrice = 1)))) }
+        assertNull(f.state(member).room!!.carts.single().lines[0].unitPrice)
+        assertNull(f.state(member).room!!.carts.single().lines[1].unitPrice)
+        val invalid = f.service.execute(f.command(member, CommandKind.CART).copy(expectedRevision = 1, cart = MemberCart(member.memberId, lines = listOf(typed.copy(unitPrice = -1)))))
+        assertFalse(invalid.ok)
+        assertEquals(1L, f.state(member).room!!.carts.single().revision)
     }
 }

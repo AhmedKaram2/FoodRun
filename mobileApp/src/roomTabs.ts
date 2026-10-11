@@ -17,11 +17,11 @@ export function roomSections(snapshot: Snapshot): Section[] {
     tx(rtl, "Overview", "ملخص"),
     tx(rtl, "My food", "طلبي"),
     tx(rtl, "Payments", "المدفوعات"),
-    tx(rtl, "Members", "الأعضاء"),
+    `${tx(rtl, "Members", "الأعضاء")} (${snapshot.state.joinedCount ?? cards.filter(c => c.id.startsWith("member:")).length})`,
   ].map((title, index) => ({ title, cards: cards.filter(c => roomCardTab(c) === index), collapsed: false }));
 }
 export function roomActionTab(button: Action): number {
-  if (/^(OPEN_CUSTOM_ITEM|SUBMIT_CART|USE_OPEN_ORDER|REUSE_ORDER|CONFIRM_REORDER)$/.test(button.action)) return 1;
+  if (/^(OPEN_ORDER_PRICES|OPEN_CUSTOM_ITEM|SUBMIT_CART|USE_OPEN_ORDER|REUSE_ORDER|CONFIRM_REORDER)$/.test(button.action)) return 1;
   if (/^(OPEN_ACCOUNT|SHARE_ACCOUNT|DECLARE_TRANSFER|DECLARE_REFUND|PAY_WITH_WALLET|RECORD_PAYMENT|HANDOVER|FULFILL|PAY_RESTAURANT|CONFIRM_QUOTE)$/.test(button.action)) return 2;
   if (/^(OPEN_PEOPLE|APPROVE|APPROVE_LATE_JOIN|SHARE_ROOM)$/.test(button.action)) return 3;
   return 0;

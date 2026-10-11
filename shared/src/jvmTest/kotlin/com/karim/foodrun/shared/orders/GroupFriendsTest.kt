@@ -115,11 +115,13 @@ class GroupFriendsTest {
         c.dispatch(GroupAction.FRIENDS_ACTION, "save")
         assertEquals(4L, device.requests.last().second.friendGroup!!.revision)
         assertEquals("Renamed", device.requests.last().second.friendGroup!!.name)
+        device.requests.last().third.complete(orderJson.encodeToString(RoomReply(home = c.library.home)), "")
         c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = listOf(FriendGroupMembership(favourite, "owner", "Owner"))))
         c.dispatch(GroupAction.FRIENDS_ACTION, "view|owner|friends")
         c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = emptyList()))
         assertTrue(c.state.cards.none { it.id == "friend-view" })
-        assertTrue(c.state.fields.any { it.key == GroupFieldKey.FRIEND_GROUP_NAME })
+        assertTrue(c.state.fields.isEmpty())
+        assertTrue(c.state.buttons.any { it.value == "new" })
     }
 
     @Test fun nameSearchIsReadOnlyAndCannotReturnIntoAnotherIdentityOrPage() {
@@ -131,9 +133,47 @@ class GroupFriendsTest {
         c.dispatch(GroupAction.FRIENDS_ACTION,"pick|user:bob"); c.update(GroupFieldKey.FRIEND_GROUP_NAME,"Friends"); c.dispatch(GroupAction.FRIENDS_ACTION,"save")
         assertEquals("bob",device.requests.last().second.friendGroup!!.members.single().userId)
         device.requests.last().third.complete(orderJson.encodeToString(RoomReply(home = c.library.home)),"")
+        c.dispatch(GroupAction.FRIENDS_ACTION,"new")
         c.update(GroupFieldKey.FRIEND_EMAIL,"al"); val late = device.requests.last()
         c.page = GroupPage.HOME
         late.third.complete(orderJson.encodeToString(RoomReply(friendContacts = listOf(FriendContact("alice@example.test","alice","Alice")))),"")
         assertEquals(GroupPage.HOME,c.page); assertFalse(c.state.cards.any { it.id == "friend-result:user:alice" })
+    }
+    @Test fun failedLeaveKeepsDetailsAndBackReturnsToGroups() {
+        val device = Device(); val c = controller(device)
+        val joined = FriendGroupMembership(favourite, "owner", "Owner")
+        c.library = c.library.copy(home = c.library.home!!.copy(joinedFriendGroups = listOf(joined)))
+        c.dispatch(GroupAction.FRIENDS_ACTION, "view|owner|friends")
+        assertTrue(c.state.buttons.single { it.value.startsWith("leave|") }.destructive)
+        c.dispatch(GroupAction.FRIENDS_ACTION, "leave|owner|friends")
+        device.requests.last().third.complete(orderJson.encodeToString(RoomReply(ok = false, error = "Try again")), "")
+        assertTrue(c.state.cards.any { it.id == "friend-view" })
+        assertTrue(c.state.error.isNotEmpty())
+        c.dispatch(GroupAction.BACK)
+        assertEquals(GroupPage.FRIENDS, c.page)
+        assertTrue(c.state.fields.isEmpty())
+        assertTrue(c.state.cards.any { it.id == "friend-joined:owner:friends" })
+    }
+    @Test fun ownedDetailsAndDraftEditsStaySeparateFromLiveLists() {
+        val device = Device(); val c = controller(device)
+        c.dispatch(GroupAction.FRIENDS_ACTION, "open")
+        assertTrue(c.state.fields.isEmpty())
+        c.dispatch(GroupAction.FRIENDS_ACTION, "view-owned|friends")
+        assertTrue(c.state.cards.any { it.id == "friend-view" })
+        assertFalse(c.state.buttons.any { it.value.startsWith("leave|") })
+        c.dispatch(GroupAction.FRIENDS_ACTION, "edit|friends")
+        c.update(GroupFieldKey.FRIEND_GROUP_NAME, "Edited draft")
+        c.library = c.library.copy(home = c.library.home!!.copy(friendGroups = listOf(favourite.copy(name = "Live name"))))
+        assertEquals("Edited draft", c.state.fields.single { it.key == GroupFieldKey.FRIEND_GROUP_NAME }.value)
+        assertTrue(c.state.cards.any { it.id == "friend-editor" })
+    }
+    @Test fun switchingAccountsClearsThePreviousGroupDraftAndMembers() {
+        val c = controller(Device())
+        c.dispatch(GroupAction.FRIENDS_ACTION,"edit|friends")
+        c.update(GroupFieldKey.FRIEND_GROUP_NAME,"Private draft")
+        c.library = c.library.copy(home = HomePayload(FoodProfile("different","Other person")))
+        assertTrue(c.state.fields.isEmpty())
+        assertFalse(c.state.cards.any { it.id.startsWith("friend-email:") })
+        assertFalse(c.friends.inDetail)
     }
 }

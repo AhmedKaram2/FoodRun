@@ -144,7 +144,8 @@ class MenuItemPricingTest {
         assertEquals(-30L, f.state(member).receipts.single().balance)
         assertEquals(transfers, f.state(payer).room!!.transfers)
         assertFalse(f.state().room!!.restaurantPaid)
-        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 450)).ok)
+        assertFalse(f.service.execute(f.command(f.owner, CommandKind.PAY_RESTAURANT).copy(amount = 449)).ok)
+        f.send(f.owner,CommandKind.PAY_RESTAURANT) { it.copy(amount=450) }
         f.send(payer, CommandKind.FULFILL)
         price(80)
         assertEquals(RoomPhase.FULFILLED, f.state().room!!.phase)

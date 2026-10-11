@@ -32,7 +32,7 @@ export default function MobilePageLayout({ pageKey, children }) {
       if(panel) { if(event.type === 'invalid') flushSync(() => setSelected(panel.id)); else setSelected(panel.id); if(panel.node.tagName === 'DETAILS') panel.node.open = true; let parent = node?.parentElement; while(parent) { if(parent.tagName === 'DETAILS') parent.open = true; parent = parent.parentElement; } }
     };
     collect();
-    const observer = new MutationObserver(collect); observer.observe(host, { childList:true, subtree:true });
+    const observer = new MutationObserver(collect); observer.observe(host, { childList:true, subtree:true, attributes:true, attributeFilter:["data-mobile-label","data-mobile-section"] });
     host.addEventListener('invalid',activateTarget,true); host.addEventListener('click',activateTarget);
     return () => { observer.disconnect(); host.removeEventListener('invalid',activateTarget,true); host.removeEventListener('click',activateTarget); panels.current.forEach(({node}) => node.removeAttribute('data-mobile-hidden')); };
   }, [pageKey]);

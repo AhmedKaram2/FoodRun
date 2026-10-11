@@ -1,3 +1,4 @@
+import ScrollArea, { ScrollLoad } from "./ScrollArea";
 import React, { useEffect, useState } from "react";
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Action, Snapshot } from "../types";
@@ -35,9 +36,9 @@ export default function RoomAttention({ snapshot, selected, onOpenTab }: {snapsh
     </View>
     <BottomSheet visible={halvesOpen} title={tx(rtl,"Take another half","اختر النصف الآخر")} rtl={rtl} onClose={()=>setHalvesOpen(false)}>
       <Text style={textStyle(rtl)}>{tx(rtl,"Choose an available half. Your share updates for everyone when accepted.","اختر نصفاً متاحاً. تُحدَّث حصتكم لدى الجميع بعد القبول.")}</Text>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12}}>
+      <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12}}>
         {halves.map(card=><CardView key={card.id} card={card} rtl={rtl} busy={busy}/>)}
-      </ScrollView>
+      </ScrollArea>
     </BottomSheet>
   </>;
 }

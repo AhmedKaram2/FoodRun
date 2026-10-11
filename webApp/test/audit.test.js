@@ -342,3 +342,20 @@ test('administrator history deletion removes cached records and resets paging', 
   const merged = mergeRoomReply(previous, next);
   assert.deepEqual(merged.history, []); assert.equal(merged.historyNextOffset, 0);
 });
+
+test('custom items with different known or missing prices remain separate cart lines', async () => {
+  const { addMenuLine } = await import('../src/foodrun/cartEditing.js');
+  const typed={id:'one',itemId:'',quantity:1,description:'Falafel',notes:'',optionIds:[],unitPrice:750};
+  assert.equal(addMenuLine([typed],{...typed,id:'two',unitPrice:800}).length,2);
+  assert.equal(addMenuLine([typed],{...typed,id:'three',unitPrice:null}).length,2);
+  assert.equal(addMenuLine([typed],{...typed,id:'four'}).length,1);
+});
+
+test('removal without notes applies only to a proven refused selection in the lobby', async () => {
+  const {declinedOrdering}=await import('../src/foodrun/declinedOrdering.js');
+  const room={phase:'LOBBY',members:[{id:'declined',approved:true,eligible:false},{id:'ordinary',approved:true,eligible:false}],pastSpins:[{winnerId:'declined'}]};
+  assert.equal(declinedOrdering(room,'declined'),true);
+  assert.equal(declinedOrdering(room,'ordinary'),false);
+  assert.equal(declinedOrdering({...room,phase:'COLLECTING'},'declined'),false);
+  assert.equal(declinedOrdering({...room,members:[{...room.members[0],removed:true}]},'declined'),false);
+});

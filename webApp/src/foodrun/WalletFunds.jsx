@@ -4,7 +4,7 @@ import { getLanguage, t } from './i18n.js';
 import { myWalletBalances, walletAvailable, walletPaymentGroups, walletTotals } from './wallet.js';
 import WalletHistoryDialog from './WalletHistoryDialog.jsx';
 
-const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 const uid = data => data.home.profile.userId || data.user?.uid;
 
 function ReceivingMethods({ methods, selected, onSelect }) {
@@ -65,7 +65,7 @@ function TopUp({ data, onClose }) {
 }
 
 function BatchPayment({ group, data }) {
-  const [expanded, setExpanded] = useState(false), [recipient, setRecipient] = useState(null), [accountId, setAccountId] = useState(''), [note, setNote] = useState(''), [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(false), [recipient, setRecipient] = useState(null), [accountId, setAccountId] = useState(''), [error, setError] = useState('');
   useEffect(() => {
     if(!expanded) return;
     const controller = new AbortController(); setError('');
@@ -77,8 +77,8 @@ function BatchPayment({ group, data }) {
     {group.payments.map(payment => <small key={payment.id}>{payment.customerName} · {payment.roomName} #{payment.orderNumber} · {money(payment.amount, payment.currency)}</small>)}
     {!expanded ? <button className="primary" onClick={() => setExpanded(true)}>{tx('Pay full group amount', 'دفع كامل المبلغ المجمع')}</button> : <form className="stack" onSubmit={async event => {
       event.preventDefault();
-      if(await data.send('WALLET_DECLARE_BATCH', { userId: group.recipientId, currency: group.currency, amount: group.amount, accountId, text: note })) { setExpanded(false); data.setNotice(tx('Awaiting recipient confirmation for all payments in this group.', 'بانتظار تأكيد المستلم لجميع دفعات هذه المجموعة.')); }
-    }}>{recipient && <ReceivingMethods methods={recipient.accounts} selected={accountId} onSelect={setAccountId} />}<label>{t('Payment note (optional)')}<input value={note} maxLength={160} onChange={event => setNote(event.target.value)} /></label><p className="field-help">{tx('Send the full amount first. All listed payments settle together when the recipient confirms receipt.', 'أرسل كامل المبلغ أولاً. تتم تسوية جميع الدفعات المعروضة معاً بعد تأكيد المستلم.')}</p><div className="hero-actions"><button className="primary" disabled={data.busy || !accountId}>{tx('I sent the full amount', 'أرسلت كامل المبلغ')}</button><button type="button" className="secondary" onClick={() => setExpanded(false)}>{t('Cancel')}</button></div></form>}
+      if(await data.send('WALLET_DECLARE_BATCH', { userId: group.recipientId, currency: group.currency, amount: group.amount, accountId })) { setExpanded(false); data.setNotice(tx('Awaiting recipient confirmation for all payments in this group.', 'بانتظار تأكيد المستلم لجميع دفعات هذه المجموعة.')); }
+    }}>{recipient && <ReceivingMethods methods={recipient.accounts} selected={accountId} onSelect={setAccountId} />}<p className="field-help">{tx('Send the full amount first. All listed payments settle together when the recipient confirms receipt.', 'أرسل كامل المبلغ أولاً. تتم تسوية جميع الدفعات المعروضة معاً بعد تأكيد المستلم.')}</p><div className="hero-actions"><button className="primary" disabled={data.busy || !accountId}>{tx('I sent the full amount', 'أرسلت كامل المبلغ')}</button><button type="button" className="secondary" onClick={() => setExpanded(false)}>{t('Cancel')}</button></div></form>}
     {error && <p role="alert">{t(error)}</p>}
   </article>;
 }

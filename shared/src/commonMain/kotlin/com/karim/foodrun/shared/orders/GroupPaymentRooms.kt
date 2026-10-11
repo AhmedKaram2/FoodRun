@@ -9,7 +9,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
     private var mode = "create"
     private var boundRoom = ""
     private var boundOrder = 0L
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun field(key: GroupFieldKey, en: String, ar: String, multiline: Boolean = false) = GroupField(key, tr(en, ar), c.text(key), multiline)
     private fun profile() = requireNotNull(c.library.home?.profile) { "Sign in first." }
     private fun people(): List<FoodPerson> = listOf(FoodPerson(profile().userId, profile().name)) + c.library.home!!.people.filterNot { it.userId == profile().userId }

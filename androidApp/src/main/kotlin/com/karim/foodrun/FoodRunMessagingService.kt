@@ -38,7 +38,7 @@ class FoodRunMessagingService : FirebaseMessagingService() {
         if(library.identityToken.isEmpty()) return
         val installation = getSharedPreferences("push-settings", Context.MODE_PRIVATE).getString("installation", null) ?: return
         val transport = GroupTransport(this)
-        transport.request(hub, orderJson.encodeToString(NotificationRequest(library.identityToken, "register", token = token, platform = "android", installationId = installation, language = library.language)),
+        transport.request(hub, orderJson.encodeToString(NotificationRequest(library.identityToken, "register", token = token, platform = "android", installationId = installation, language = if(library.language.startsWith("ar")) "ar" else "en")),
             object : GroupReplyCallback { override fun complete(body: String, error: String) { transport.close() } }, "notifications")
     }
 }

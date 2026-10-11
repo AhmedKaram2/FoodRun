@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getLanguage, t } from './i18n.js';
-const tx = (en, ar) => getLanguage()==='ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 export default function NotificationPreferences({data}) {
   const current = data.home.notificationPreferences || {pushEnabled:true,emailEnabled:true};
   const [form,setForm]=useState(current), [dirty,setDirty]=useState(false);

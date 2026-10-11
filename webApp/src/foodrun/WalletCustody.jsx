@@ -1,7 +1,7 @@
 import { money } from './client.js';
 import { getLanguage, t } from './i18n.js';
 
-const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 
 export default function WalletCustody({ room, data }) {
   const payments = (room.walletPayments || []).filter(payment => payment.status !== 'SETTLED' && !(room.transfers || []).some(transfer => transfer.id === `wallet-${payment.id}` && String(transfer.status).toLowerCase() === 'declared'));

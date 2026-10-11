@@ -10,7 +10,7 @@ internal data class GroupFlowContent(
 
 /** Derives the next useful action from confirmed room state, including payment wait states. */
 internal class GroupSettlementPresentation(private val c: GroupController) {
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private val r = c.room()
     private val me = c.me()
     private val payer = r.payerId == me
@@ -99,6 +99,14 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         else -> ""
     }
 
+    fun transferAmountFields(remaining: Long? = null): List<GroupField> {
+        val mode = if(c.text(GroupFieldKey.TRANSFER_AMOUNT_MODE) == "other") "other" else "full"
+        return listOf(GroupField(GroupFieldKey.TRANSFER_AMOUNT_MODE, tr("Transfer amount", "مبلغ التحويل"), mode,
+            choices = listOf(GroupChoice("full", tr("Full remaining amount", "كامل المبلغ المتبقي") + (remaining?.let { " · ${money(it)}" } ?: "")),
+                GroupChoice("other", tr("Another amount", "مبلغ آخر"))))) +
+            if(mode == "other") listOf(field(GroupFieldKey.AMOUNT, tr("Amount sent", "المبلغ المرسل"))) else emptyList()
+    }
+
     fun settlement(): GroupFlowContent {
         val fields = mutableListOf<GroupField>()
         val cards = mutableListOf<GroupCard>()
@@ -127,8 +135,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         if (payer) {
             if (r.phase == RoomPhase.PLACED) buttons += GroupButton(tr("Food collected / delivered", "تم استلام الطعام أو توصيله"), GroupAction.FULFILL, primary = r.restaurantPaid)
             if (r.restaurantPaid && receipts.any { refundAvailable(r, it) }) {
-                fields += field(GroupFieldKey.AMOUNT, tr("Refund amount sent", "المبلغ المرتجع المرسل"))
-                fields += field(GroupFieldKey.REFERENCE, tr("Refund reference / cash note", "مرجع الإرجاع أو ملاحظة النقد"))
+                fields += transferAmountFields()
             }
             if (r.phase != RoomPhase.ARCHIVED) {
                 fields += field(GroupFieldKey.BILL_ADJUSTMENT, tr("Total bill adjustment · minus reduces · 0 removes", "تعديل إجمالي الفاتورة · السالب يخفضها · صفر يلغي التعديل"))
@@ -165,9 +172,7 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
             }
             cards += GroupCard("my-payment-status", if (ownPending != null) tr("Payment awaiting confirmation", "الدفعة بانتظار التأكيد") else tr("Your payment", "دفعتك"), detail)
             if (r.restaurantPaid && ownPending == null && ownReceipt != null && ownReceipt.balance > 0) {
-                fields += field(GroupFieldKey.AMOUNT, tr("Amount sent · remaining ${money(ownReceipt.balance)}", "المبلغ المرسل · المتبقي ${money(ownReceipt.balance)}"))
-                fields += field(GroupFieldKey.REFERENCE, tr("Transfer reference / cash note", "مرجع التحويل أو ملاحظة الدفع النقدي"))
-                buttons += GroupButton(if(c.library.language == "ar") "استخدام كامل المبلغ المتبقي" else tr("Use full remaining amount", "استخدام كامل المبلغ المتبقي"), GroupAction.USE_REMAINING_AMOUNT)
+                fields += transferAmountFields(ownReceipt.balance)
                 buttons += GroupButton(tr("I paid · notify recipient", "دفعت · إشعار المستلم"), GroupAction.DECLARE_TRANSFER, primary = true)
                 c.walletFunds.payButton(r, me, ownReceipt)?.let { buttons += it }
                 c.walletFunds.topUpButton(r, me, ownReceipt)?.let { buttons += it }
@@ -192,11 +197,11 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         fun quoteConfirmed(room: Room, memberId: String): Boolean = room.carts.any { it.memberId == memberId && it.submitted && it.confirmedQuote == room.quoteRevision }
         fun quoteConfirmationAction(room: Room, memberId: String, language: String = "en"): GroupButton {
             val confirmed = quoteConfirmed(room, memberId)
-            return GroupButton(if(language == "ar") { if(confirmed) "تم تأكيد الإجمالي والمستلم" else "تأكيد إجمالي طلبي والمستلم" } else if (confirmed) "Total and recipient confirmed" else "Confirm my total and recipient",
+            return GroupButton(if(language.startsWith("ar")) { if(confirmed) "تم تأكيد الإجمالي والمستلم" else "تأكيد إجمالي طلبي والمستلم" } else if (confirmed) "Total and recipient confirmed" else "Confirm my total and recipient",
                 GroupAction.CONFIRM_QUOTE, primary = !confirmed, enabled = !confirmed)
         }
         fun refundAvailable(room: Room, receipt: Receipt): Boolean = room.settlementOpen && room.restaurantPaid && receipt.balance < 0 && room.transfers.none { it.memberId == receipt.memberId && it.status == TransferStatus.DECLARED }
-        fun receiptBalanceText(receipt: Receipt, payerId: String?, language: String = "en"): String = if(language == "ar") when {
+        fun receiptBalanceText(receipt: Receipt, payerId: String?, language: String = "en"): String = if(language.startsWith("ar")) when {
             receipt.memberId == payerId -> "حصتك الشخصية — لا حاجة للتحويل لنفسك"
             receipt.balance < 0 -> "مبلغ مرتجع مستحق ${Money.format(-receipt.balance, receipt.currency)}"
             receipt.balance == 0L -> "تمت التسوية · المتبقي ${receipt.balanceText}"

@@ -102,5 +102,6 @@ internal fun GroupController.acceptFinancialDrafts(previous: Room?, room: Room, 
             else -> visibleReceipts.firstOrNull { it.memberId == me() }?.balance?.coerceAtLeast(0)
         }
         draft[GroupFieldKey.AMOUNT] = due?.let(::amount).orEmpty()
+        draft[GroupFieldKey.TRANSFER_AMOUNT_MODE] = "full"
     }
 }

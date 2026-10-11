@@ -1,4 +1,5 @@
 import tokens from "../../Branding/Intrvioo/source/brand-tokens.json";
+import { translateUi } from './language';
 export const colors = {
   coral: tokens.colors.coral,
   green: tokens.colors.fresh_green,
@@ -36,4 +37,4 @@ export const font = (
         semibold: "Poppins-SemiBold",
         bold: "Poppins-Bold",
       }[weight];
-export const tx = (rtl: boolean, en: string, ar: string) => (rtl ? ar : en);
+export const tx = (rtl: boolean, en: string, ar: string) => (rtl ? translateUi(en, ar) : en);

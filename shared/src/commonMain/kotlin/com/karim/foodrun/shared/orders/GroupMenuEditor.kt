@@ -10,7 +10,7 @@ internal class GroupMenuEditor(private val c: GroupController) {
     private var groups = emptyList<String>()
     private val menu get() = requireNotNull(c.editingRestaurant).restaurant.menu
     private val currency get() = c.text(GroupFieldKey.CURRENCY).ifBlank { requireNotNull(c.editingRestaurant).restaurant.currency }
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun set(menu: Menu) { val export = requireNotNull(c.editingRestaurant); c.editingRestaurant = export.copy(restaurant = export.restaurant.copy(menu = menu)) }
     private fun field(key: GroupFieldKey, en: String, ar: String, toggle: Boolean = false, multiline: Boolean = false, choices: List<GroupChoice> = emptyList()) = GroupField(key, tr(en, ar), c.text(key), multiline, toggle, choices = choices)
     private fun button(en: String, ar: String, value: String) = GroupButton(tr(en, ar), GroupAction.MENU_EDIT, value)

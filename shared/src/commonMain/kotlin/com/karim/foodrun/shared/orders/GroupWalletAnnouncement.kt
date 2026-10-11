@@ -7,7 +7,7 @@ internal class GroupWalletAnnouncement(private val c: GroupController) {
     private val seen = runCatching {
         c.platform.read(storageName).takeIf { it.isNotBlank() }?.let { orderJson.decodeFromString<Set<String>>(it) } ?: emptySet()
     }.getOrDefault(emptySet()).toMutableSet()
-    private fun tr(en: String, ar: String) = if (c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     fun dismiss() {
         val userId = c.library.home?.profile?.userId.orEmpty()
         if (userId.isBlank()) return

@@ -28,5 +28,5 @@ export function roomActionTab(button: Action): number {
 }
 export function roomFieldTab(field: Field): number {
   if (/^MENU_/.test(field.key)) return 1;
-  return /^(AMOUNT|REFERENCE|PAYMENT_|ACCOUNT_|AANI)/.test(field.key) ? 2 : 0;
+  return /^(TRANSFER_AMOUNT_MODE|AMOUNT|REFERENCE|PAYMENT_|ACCOUNT_|AANI)/.test(field.key) ? 2 : 0;
 }

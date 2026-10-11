@@ -11,7 +11,7 @@ internal class GroupPaymentReminders(private val c: GroupController) {
     val hasPending: Boolean get() = states.values.any { it == "pending" }
     val prompt: GroupReminderEmailPrompt? get() = recipientCommand?.let { command ->
         val room = c.library.snapshots[command.roomId]?.room ?: c.reply?.room
-        GroupReminderEmailPrompt(room?.members?.firstOrNull { it.id == command.memberId }?.name.orEmpty(), c.text(GroupFieldKey.REMINDER_EMAIL), GroupText.localized(c.error, c.library.language == "ar"))
+        GroupReminderEmailPrompt(room?.members?.firstOrNull { it.id == command.memberId }?.name.orEmpty(), c.text(GroupFieldKey.REMINDER_EMAIL), GroupUiText.translate(c.error, c.library.language))
     }
     fun state(key: String) = states[key]
     fun clear() { states.clear(); commands.clear(); checking.clear(); c.paymentReminderTimes.clear(); dismiss() }
@@ -64,16 +64,14 @@ internal fun GroupController.paymentReminderButtons(room: Room, actorId: String,
     val queued = paymentReminderTimes[key]?.let {
         platform.now() - it < PaymentReminderRules.COOLDOWN_MS
     } == true
-    val title = if (library.language == "ar") {
-        if(queued && status == "notified") "تم إرسال التذكير في التطبيق" else if (queued && status == "sent") "تم إرسال تذكير الإيميل" else if (queued) "جاري إرسال تذكير الإيميل…" else "ابعت تذكير بالدفع بالإيميل"
-    } else if(queued && status == "notified") "Reminder sent in app" else if (queued && status == "sent") "Email reminder sent" else if (queued) "Sending email reminder…" else "Send payment reminder"
+    val title = GroupUiText.translate(if(queued && status == "notified") "Reminder sent in app" else if (queued && status == "sent") "Email reminder sent" else if (queued) "Sending email reminder…" else "Send payment reminder", library.language)
     return listOf(GroupButton(title, if (wallet) GroupAction.WALLET_REMIND_PAYMENT else GroupAction.REMIND_PAYMENT,
         if (wallet) "${room.id}|${receipt.memberId}" else receipt.memberId, enabled = !busy && !queued && (wallet || online)))
 }
 
 internal fun GroupController.recordPaymentButtons(room: Room, actorId: String, receipt: Receipt, wallet: Boolean = false): List<GroupButton> {
     if (!PaymentReminderRules.eligible(room, actorId, receipt)) return emptyList()
-    return listOf(GroupButton(if (library.language == "ar") "تسجيل دفعة مستلمة" else "Record payment received",
+    return listOf(GroupButton(if (library.language.startsWith("ar")) "تسجيل دفعة مستلمة" else "Record payment received",
         if (wallet) GroupAction.WALLET_RECORD_PAYMENT else GroupAction.RECORD_PAYMENT,
         if (wallet) "${room.id}|${receipt.memberId}" else receipt.memberId, enabled = !busy && (wallet || online)))
 }

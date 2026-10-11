@@ -17,7 +17,7 @@ export default function PhoneInput({ label, value, onChange, required = false, u
   return <fieldset className="phone-number-field"><legend>{label}</legend><div className="phone-number-input" dir="ltr">
     <label className="phone-country" htmlFor={`${id}-country`}><span className="sr-only">{t('Country code')}</span>
       <select id={`${id}-country`} value={uaeOnly ? 'AE' : parts.region} onChange={event => update(event.target.value, parts.national)} autoComplete="country">
-        {choices.map(country => <option key={country.region} value={country.region}>{getLanguage() === 'ar' ? country.nameAr : country.name} (+{country.code})</option>)}
+        {choices.map(country => <option key={country.region} value={country.region}>{getLanguage().startsWith('ar') ? country.nameAr : country.name} (+{country.code})</option>)}
       </select>
     </label><label className="phone-national" htmlFor={`${id}-number`}><span className="sr-only">{t('Mobile number')}</span>
       <input id={`${id}-number`} type="tel" inputMode="tel" autoComplete="tel-national" value={parts.national} onChange={event => update(parts.region, event.target.value)} required={required} placeholder={uaeOnly || parts.region === 'AE' ? '50 123 4567' : t('Mobile number')} maxLength={30} />

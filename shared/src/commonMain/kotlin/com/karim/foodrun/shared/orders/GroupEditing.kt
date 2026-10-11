@@ -141,14 +141,14 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.PLACE -> command(CommandKind.PLACE, text = text(GroupFieldKey.REFERENCE))
         GroupAction.PAY_RESTAURANT -> command(CommandKind.PAY_RESTAURANT, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency))
         GroupAction.FULFILL -> command(CommandKind.FULFILL)
-        GroupAction.DECLARE_TRANSFER -> command(CommandKind.DECLARE_TRANSFER, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency), text = text(GroupFieldKey.REFERENCE))
+        GroupAction.DECLARE_TRANSFER -> command(CommandKind.DECLARE_TRANSFER, amount = transferAmount(me()))
         GroupAction.CONFIRM_TRANSFER -> command(CommandKind.CONFIRM_TRANSFER, transferId = value)
         GroupAction.REMIND_PAYMENT -> {
             require(PaymentReminderRules.eligible(r, me(), reply!!.receipts.single { it.memberId == value }))
             command(CommandKind.REMIND_PAYMENT, memberId = value)
         }
         GroupAction.REJECT_TRANSFER -> command(CommandKind.REJECT_TRANSFER, transferId = value, text = reason)
-        GroupAction.DECLARE_REFUND -> command(CommandKind.DECLARE_REFUND, memberId = value, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency), text = text(GroupFieldKey.REFERENCE))
+        GroupAction.DECLARE_REFUND -> command(CommandKind.DECLARE_REFUND, memberId = value, amount = transferAmount(value))
         GroupAction.CONFIRM_REFUND -> command(CommandKind.CONFIRM_REFUND, transferId = value)
         GroupAction.ADJUST_BILL -> { val amount = text(GroupFieldKey.BILL_ADJUSTMENT).trim(); command(CommandKind.ADJUST_BILL, amount = Money.parse(amount.removePrefix("-"), r.restaurant.currency) * if(amount.startsWith('-')) -1 else 1, text = reason) }
         GroupAction.APPROVE_ADJUSTMENT -> command(CommandKind.APPROVE_ADJUSTMENT, revision = r.billRevision)

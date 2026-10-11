@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 internal fun mealRoomName(now: Long, offsetSeconds: Int, language: String): String {
     val date = localFoodDateTime(now.toDouble(), offsetSeconds)
-    val arabic = language == "ar"
+    val arabic = language.startsWith("ar")
     val months = if (arabic) listOf("يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر")
         else listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     val meal = if (date.hour < 13) { if (arabic) "فطور" else "Breakfast" } else { if (arabic) "غداء" else "Lunch" }

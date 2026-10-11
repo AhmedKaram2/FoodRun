@@ -152,7 +152,10 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         require(c.amount == total) { "The group amount changed. Refresh before marking the full payment sent." }
         val recipient = accounts.paymentRoomProfile(c.userId)
         val method = methods(recipient, c.currency).singleOrNull { it.id == c.accountId } ?: error("Choose the recipient's current receiving method.")
-        val batch = WalletBatch(id(), uid, pending.first().holderName, c.userId, recipient.name, total, c.currency, pending.map { it.id }, method, c.text.trim(), createdAt = clock())
+        val note = c.text.trim().ifBlank {
+            "Wallet payment · ${Money.format(total, c.currency)} · " + pending.distinctBy { it.roomId to it.orderNumber }.joinToString("; ") { "${it.roomName} #${it.orderNumber}" }
+        }.take(160)
+        val batch = WalletBatch(id(), uid, pending.first().holderName, c.userId, recipient.name, total, c.currency, pending.map { it.id }, method, note, createdAt = clock())
         put(batch)
         updatePayments(pending.map { it.copy(status = WalletPaymentStatus.SENT, batchId = batch.id) })
         notifications.wallet(batch.recipientId, batch.id, "wallet_batch", "Grouped wallet payment: confirm receipt" to "دفعة محافظ مجمعة: أكد الاستلام",
@@ -194,9 +197,10 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
         fun snapshot(db: RoomDatabase, uid: String): WalletSnapshot {
             val credits = topUps(db).filter { it.customerId == uid || it.holderId == uid }
             val debits = payments(db).filter { it.customerId == uid || it.holderId == uid || it.recipientId == uid }
+            val debited = debits.groupBy { Triple(it.customerId,it.holderId,it.currency) }.mapValues { (_,values) -> values.sumOf { it.amount } }
             val balances = credits.filter { it.status == WalletStatus.CONFIRMED }.groupBy { Triple(it.customerId, it.holderId, it.currency) }.map { (key, group) ->
                 val credit = group.first()
-                val amount = group.sumOf { it.amount } - debits.filter { Triple(it.customerId, it.holderId, it.currency) == key }.sumOf { it.amount }
+                val amount = group.sumOf { it.amount } - (debited[key] ?: 0L)
                 check(amount >= 0) { "Wallet ledger is inconsistent." }
                 WalletBalance(key.first, credit.customerName, key.second, credit.holderName, key.third, amount)
             }

@@ -206,7 +206,7 @@ class GroupController(val platform: GroupPlatform) {
                 val first = pollChoices().first()
                 if (selectedRestaurant?.restaurant?.id != first.id) seedFees(first)
                 selectedRestaurant = RestaurantExport(exportId = first.id, restaurant = first)
-                if (text(GroupFieldKey.ROOM_NAME).isBlank()) draft[GroupFieldKey.ROOM_NAME] = if (library.language == "ar") "تصويت مطعمنا" else "Our restaurant poll"
+                if (text(GroupFieldKey.ROOM_NAME).isBlank()) draft[GroupFieldKey.ROOM_NAME] = if (library.language.startsWith("ar")) "تصويت مطعمنا" else "Our restaurant poll"
                 choosingPollRestaurants = false
                 page = GroupPage.SETUP
             }
@@ -218,8 +218,8 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.DISMISS_WALLET_ANNOUNCEMENT -> walletAnnouncement.dismiss()
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
-                require(value in listOf("en", "ar")) { "Choose Arabic or English." }
-                replaceLibrary(library.copy(language = value))
+                require(value in listOf("en", "ar", "ar-EG", "ar-AE", "ar-001")) { "Choose a supported language." }
+                replaceLibrary(library.copy(language = value, languagePreference = value))
             }
             GroupAction.GOOGLE_SIGN_IN -> {
                 if(library.selectedHub == null) replaceLibrary(library.copy(selectedHub = library.identityHub ?: HubPairing(FOOD_RUN_INTERNET_API)))
@@ -234,7 +234,8 @@ class GroupController(val platform: GroupPlatform) {
                 })
             }
             GroupAction.SIGN_IN -> identity(IdentityAction.SIGN_IN)
-            GroupAction.REGISTER -> identity(IdentityAction.REGISTER)
+            GroupAction.REGISTER -> identity(IdentityAction.REGISTER, profileOverride = FoodProfile(name = text(GroupFieldKey.NAME).trim(),
+                language = if(library.language.startsWith("ar")) "ar" else "en").also { it.validate() })
             GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE, returnPage = GroupPage.PROFILE)
             GroupAction.RESET_PASSWORD -> identity(IdentityAction.RESET_PASSWORD)
             GroupAction.SIGN_OUT -> if(supportActive) endSupport() else identity(IdentityAction.SIGN_OUT)
@@ -382,6 +383,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.USE_REMAINING_AMOUNT -> {
                 val receipt = requireNotNull(reply?.receipts?.firstOrNull { it.memberId == me() })
                 require(receipt.balance > 0 && room().payerId != me()) { "No payment is due." }
+                draft[GroupFieldKey.TRANSFER_AMOUNT_MODE] = "full"
                 draft[GroupFieldKey.AMOUNT] = Money.format(receipt.balance, receipt.currency).substringAfter(' ')
             }
             GroupAction.MORE_PREVIOUS_ORDERS -> previousOrderLimit += 10
@@ -654,7 +656,7 @@ class GroupController(val platform: GroupPlatform) {
             if (room.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING)) {
                 val requester = room.members.firstOrNull { it.id == offer.memberId }?.name.orEmpty()
                 alert("half:${room.id}:${room.orderNumber}:${offer.id}",
-                    if (library.language == "ar") "النصف الآخر متاح" else "Another half is available", "$requester · ${offer.line.description}")
+                    if (library.language.startsWith("ar")) "النصف الآخر متاح" else "Another half is available", "$requester · ${offer.line.description}")
             }
         }
         val changedOrder = previousRoom?.id != room.id || previousRoom.orderNumber != room.orderNumber
@@ -733,7 +735,7 @@ class GroupController(val platform: GroupPlatform) {
                 method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
         }
         return FoodProfile(name = name, phone = CountryDialCodes.combine(text(GroupFieldKey.PROFILE_COUNTRY).ifBlank { "AE" }, text(GroupFieldKey.PROFILE_PHONE)), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
-            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language,
+            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = if(library.language.startsWith("ar")) "ar" else "en",
             favoriteOrders = library.home?.profile?.favoriteOrders.orEmpty()).normalized().also { it.validate() }
     }
     internal fun saveProfileUpdate(profile: FoodProfile) = identity(IdentityAction.SAVE_PROFILE, profileOverride = profile, returnPage = page)
@@ -795,7 +797,7 @@ class GroupController(val platform: GroupPlatform) {
         home.deletedRoomIds.forEach { id -> roomWatches.remove(id)?.cancel() }
         if(session?.roomId in home.deletedRoomIds) { watching?.cancel(); watching = null; generation++; session = null; reply = null; page = GroupPage.HOME }
         val catalog = mergeManagedRestaurantCatalog(library.restaurants, library.managedRestaurantIds, home.restaurants, deletedRestaurantIds = home.deletedRestaurantIds)
-        val updated = library.copy(home = home, displayName = home.profile.name, language = home.profile.language,
+        val updated = library.copy(home = home, displayName = home.profile.name, language = library.languagePreference.ifBlank { home.profile.language },
             sessions = library.sessions.filterNot { old -> sessions.any { it.roomId == old.roomId } || old.roomId in home.deletedRoomIds } + sessions,
             snapshots = library.snapshots.filterKeys { it !in home.deletedRoomIds && it !in changedMemberIds },
             restaurants = catalog.restaurants,

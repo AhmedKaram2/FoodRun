@@ -34,7 +34,7 @@ export default function RestaurantPollPrompt({ room, me, data, language = 'en' }
     <h2 id="poll-dialog-title">{t('Choose a restaurant')}</h2>
     <p>{t('The restaurant poll is open. Choose where you would like to order from.')}</p>
     <div className="poll-dialog-options">{(room.restaurantOptions || []).map(restaurant => <button key={restaurant.id} className="secondary" disabled={saving || data.busy} onClick={() => vote(restaurant.id)}>
-      {language === 'ar' && restaurant.nameAr ? restaurant.nameAr : restaurant.name}
+      {language.startsWith('ar') && restaurant.nameAr ? restaurant.nameAr : restaurant.name}
     </button>)}</div>
     {error && <p role="alert" className="form-message">{data.error || error}</p>}
     <button className="link" disabled={saving} onClick={() => setDismissed(true)}>{t('Choose later')}</button>

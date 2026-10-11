@@ -12,7 +12,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
     var returnPage = GroupPage.PROFILE; private set
     private val uid get() = c.library.home?.profile?.userId.orEmpty()
     private val wallet get() = c.library.home?.wallet ?: WalletSnapshot()
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun currency() = if(c.page == GroupPage.WALLET_BATCH) batchCurrency else c.text(GroupFieldKey.WALLET_CURRENCY).ifBlank { "AED" }
     private fun action(title: String, value: String, enabled: Boolean = true) = GroupButton(title, GroupAction.WALLET_FUNDS_ACTION, value, enabled = enabled)
     private fun send(kind: CommandKind, transferId: String = "", flag: Boolean = false, userId: String = selectedUser, amount: Long = 0, text: String = "", returnPage: GroupPage = c.page) {
@@ -53,7 +53,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
                 batchRecipient = payment.recipientId; batchCurrency = payment.currency; recipient = null; c.draft.remove(GroupFieldKey.WALLET_NOTE)
                 c.page = GroupPage.WALLET_BATCH; send(CommandKind.WALLET_RECIPIENT, userId = batchRecipient)
             }
-            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, text = c.text(GroupFieldKey.WALLET_NOTE), returnPage = returnPage)
+            "send-batch" -> send(CommandKind.WALLET_DECLARE_BATCH, userId = batchRecipient, amount = group().sumOf { it.amount }, returnPage = returnPage)
             "batch-yes", "batch-no" -> send(CommandKind.WALLET_REVIEW_BATCH, transferId = id, flag = action == "batch-yes", returnPage = c.page)
             "copy" -> c.platform.copyToClipboard(recipient!!.accounts.single { it.id == id }.identifier)
             else -> error("Unknown wallet action.")
@@ -153,7 +153,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
             val methods = person.accounts.filter { it.currency == currency() }
             cards += GroupCard("wallet-recipient", person.person.name, tr("Send money using their receiving method, then mark sent. This button records payment; it does not transfer money from your bank.", "أرسل المبلغ باستخدام وسيلة الاستلام ثم أكد الإرسال. هذا الزر يسجل الدفع ولا يحول الأموال من البنك."))
             fields += GroupField(GroupFieldKey.WALLET_ACCOUNT, tr("Receiving method", "وسيلة الاستلام"), c.text(GroupFieldKey.WALLET_ACCOUNT), choices = methods.map { GroupChoice(it.id, "${it.bank} · ${it.identifier}") })
-            fields += GroupField(GroupFieldKey.WALLET_NOTE, tr("Payment note (optional)", "ملاحظة الدفع (اختياري)"), c.text(GroupFieldKey.WALLET_NOTE))
+            if(c.page == GroupPage.WALLET_TOP_UP) fields += GroupField(GroupFieldKey.WALLET_NOTE, tr("Payment note (optional)", "ملاحظة الدفع (اختياري)"), c.text(GroupFieldKey.WALLET_NOTE))
             methods.forEach { cards += GroupCard("wallet-method:${it.id}", "${it.holder} · ${it.bank}", it.identifier, buttons = listOf(action(tr("Copy", "نسخ"), "copy|${it.id}"))) }
             buttons += action(tr("Refresh receiving methods", "تحديث وسائل الاستلام"), "methods")
             if(methods.isEmpty()) cards += GroupCard("wallet-method-empty", tr("No receiving method in this currency", "لا توجد وسيلة استلام بهذه العملة"))

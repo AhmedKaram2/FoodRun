@@ -3,7 +3,7 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 internal class GroupWheelProtection(private val c: GroupController) {
-    private fun tr(en: String, ar: String) = if (c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     fun open() { require(c.room().paymentRoom == null && c.room().wheelProtections.isNotEmpty()); c.draft.remove(GroupFieldKey.WHEEL_PAYMENT_REFERENCE); c.page = GroupPage.WHEEL_PROTECTION }
     private fun request(value: String) = c.room().wheelProtections.single { it.id == value }
     private fun command(kind: CommandKind, value: String = "", text: String = "", flag: Boolean = false, amount: Long = 0) {

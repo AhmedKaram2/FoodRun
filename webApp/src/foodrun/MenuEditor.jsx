@@ -13,7 +13,7 @@ export function MenuMoneyInput({ value, onChange, label, currency = 'AED' }) {
   }} />;
 }
 export default function MenuEditor({ menu, onChange, language = 'en', currency = 'AED', onAddItem, busy = false }) {
-  const t = (en, ar) => language === 'ar' ? (translate(en, 'ar') === en ? ar : translate(en, 'ar')) : en;
+  const t = (en, ar) => language.startsWith('ar') ? (translate(en, language) === en ? ar : translate(en, language)) : en;
   const id = () => crypto.randomUUID();
   const [quick, setQuick] = useState({ name: '', nameAr: '', price: '', categoryId: menu.categories[0]?.id || '' });
   const quickPrice = (() => { try { return amount(quick.price, currency); } catch { return null; } })();
@@ -40,17 +40,17 @@ export default function MenuEditor({ menu, onChange, language = 'en', currency =
         <label>{t('Item name', 'اسم الصنف')}<input value={quick.name} maxLength="160" placeholder={t('Chicken sandwich', 'ساندويتش دجاج')} onChange={event => setQuick(old => ({ ...old, name: event.target.value }))} /></label>
         <label>{t('Arabic name (optional)', 'الاسم بالعربية (اختياري)')}<input dir="rtl" value={quick.nameAr} maxLength="160" onChange={event => setQuick(old => ({ ...old, nameAr: event.target.value }))} /></label>
         <label>{t(`Price · ${currency}`, `السعر · ${currency}`)}<input inputMode="decimal" value={quick.price} placeholder={minorInput(0, currency)} onChange={event => setQuick(old => ({ ...old, price: event.target.value }))} /></label>
-        {menu.categories.length > 0 && <label>{t('Category', 'القسم')}<select value={menu.categories.some(value => value.id === quick.categoryId) ? quick.categoryId : menu.categories[0].id} onChange={event => setQuick(old => ({ ...old, categoryId: event.target.value }))}>{menu.categories.map(category => <option value={category.id} key={category.id}>{language === 'ar' && category.nameAr ? category.nameAr : category.name}</option>)}</select></label>}
+        {menu.categories.length > 0 && <label>{t('Category', 'القسم')}<select value={menu.categories.some(value => value.id === quick.categoryId) ? quick.categoryId : menu.categories[0].id} onChange={event => setQuick(old => ({ ...old, categoryId: event.target.value }))}>{menu.categories.map(category => <option value={category.id} key={category.id}>{language.startsWith('ar') && category.nameAr ? category.nameAr : category.name}</option>)}</select></label>}
         <button type="button" className="primary" disabled={busy || !quick.name.trim() || quickPrice == null} onClick={addQuickItem}>{busy ? t('Saving…', 'جارٍ الحفظ…') : onAddItem ? t('Add & save item', 'إضافة الصنف وحفظه') : t('Add item to draft', 'إضافة الصنف للمسودة')}</button>
       </div>
       <small>{t('Add items one by one. You can open any item below later for sizes, descriptions, and extras.', 'أضف الأصناف واحداً تلو الآخر. يمكنك فتح أي صنف لاحقاً لإضافة الأحجام والوصف والإضافات.')}</small>
     </section>
     {menu.categories.map(category => <details className="menu-category-editor" key={category.id}>
-      <summary>{language === 'ar' && category.nameAr ? category.nameAr : category.name || t('New category', 'قسم جديد')} · {menu.items.filter(item => item.categoryId === category.id).length}</summary>
+      <summary>{language.startsWith('ar') && category.nameAr ? category.nameAr : category.name || t('New category', 'قسم جديد')} · {menu.items.filter(item => item.categoryId === category.id).length}</summary>
       {bilingualFields(category, fields => onChange({ ...menu, categories: menu.categories.map(value => value.id === category.id ? { ...value, ...fields } : value) }))}
       <button type="button" className="link danger" onClick={() => onChange({ ...menu, categories: menu.categories.filter(value => value.id !== category.id), items: menu.items.filter(item => item.categoryId !== category.id) })}>{t('Remove category and its items', 'حذف القسم وأصنافه')}</button>
       {menu.items.filter(item => item.categoryId === category.id).map(item => <details className="menu-item-editor" key={item.id}>
-        <summary>{language === 'ar' && item.nameAr ? item.nameAr : item.name || t('New item', 'صنف جديد')} · {money(item.basePriceMinor, currency)}</summary>
+        <summary>{language.startsWith('ar') && item.nameAr ? item.nameAr : item.name || t('New item', 'صنف جديد')} · {money(item.basePriceMinor, currency)}</summary>
         {bilingualFields(item, fields => editItem(item.id, fields))}
         <div className="form-grid two"><label>{t('Description', 'الوصف')}<textarea value={item.description || ''} maxLength="2000" onChange={e => editItem(item.id, { description: e.target.value })} /></label><label>{t('Arabic description', 'الوصف بالعربية')}<textarea dir="rtl" value={item.descriptionAr || ''} maxLength="2000" onChange={e => editItem(item.id, { descriptionAr: e.target.value })} /></label></div>
         <label>{t('Base price', 'السعر الأساسي')}<MenuMoneyInput currency={currency} label={t('Base price', 'السعر الأساسي')} value={item.basePriceMinor} onChange={basePriceMinor => editItem(item.id, { basePriceMinor })} /></label>
@@ -63,7 +63,7 @@ export default function MenuEditor({ menu, onChange, language = 'en', currency =
         </div>)}
         <button type="button" className="secondary" onClick={() => editItem(item.id, { variants: [...item.variants, { id: id(), name: '', nameAr: '', priceMinor: item.basePriceMinor }] })}>{t('Add size', 'إضافة حجم')}</button>
         <h3>{t('Extras offered with this item', 'الإضافات المتاحة لهذا الصنف')}</h3>
-        {menu.optionGroups.map(group => <label className="check" key={group.id}><input type="checkbox" checked={item.optionGroupIds.includes(group.id)} onChange={e => editItem(item.id, { optionGroupIds: e.target.checked ? [...item.optionGroupIds, group.id] : item.optionGroupIds.filter(value => value !== group.id) })} />{language === 'ar' && group.nameAr ? group.nameAr : group.name || t('New extras group', 'مجموعة إضافات جديدة')}</label>)}
+        {menu.optionGroups.map(group => <label className="check" key={group.id}><input type="checkbox" checked={item.optionGroupIds.includes(group.id)} onChange={e => editItem(item.id, { optionGroupIds: e.target.checked ? [...item.optionGroupIds, group.id] : item.optionGroupIds.filter(value => value !== group.id) })} />{language.startsWith('ar') && group.nameAr ? group.nameAr : group.name || t('New extras group', 'مجموعة إضافات جديدة')}</label>)}
         <button type="button" className="link danger" onClick={() => onChange({ ...menu, items: menu.items.filter(value => value.id !== item.id) })}>{t('Remove item', 'حذف الصنف')}</button>
       </details>)}
       <button type="button" className="secondary" onClick={() => onChange({ ...menu, items: [...menu.items, { id: id(), categoryId: category.id, name: '', nameAr: '', description: '', descriptionAr: '', basePriceMinor: 0, available: true, variants: [], optionGroupIds: [] }] })}>{t('Add item', 'إضافة صنف')}</button>
@@ -71,7 +71,7 @@ export default function MenuEditor({ menu, onChange, language = 'en', currency =
     <button type="button" className="secondary" onClick={() => onChange({ ...menu, categories: [...menu.categories, { id: id(), name: '', nameAr: '', sortOrder: menu.categories.length }] })}>{t('Add category', 'إضافة قسم')}</button>
     <h3>{t('Shared extras groups', 'مجموعات الإضافات المشتركة')}</h3>
     {menu.optionGroups.map(group => <details className="menu-item-editor" key={group.id}>
-      <summary>{language === 'ar' && group.nameAr ? group.nameAr : group.name || t('New extras group', 'مجموعة إضافات جديدة')}</summary>
+      <summary>{language.startsWith('ar') && group.nameAr ? group.nameAr : group.name || t('New extras group', 'مجموعة إضافات جديدة')}</summary>
       {bilingualFields(group, fields => editGroup(group.id, fields))}
       <div className="form-grid two"><label>{t('Minimum choices (0 = optional)', 'أقل عدد اختيارات (٠ = اختياري)')}<input type="number" min="0" max="30" value={group.minSelections} onChange={e => editGroup(group.id, { minSelections: e.target.valueAsNumber })} required /></label><label>{t('Maximum choices', 'أقصى عدد اختيارات')}<input type="number" min="0" max="30" value={group.maxSelections} onChange={e => editGroup(group.id, { maxSelections: e.target.valueAsNumber })} required /></label></div>
       {group.options.map(option => <div className="menu-variant" key={option.id}>

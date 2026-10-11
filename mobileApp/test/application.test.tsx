@@ -12,6 +12,9 @@ import { native, events } from "../src/native";
 import type { Snapshot, Field, Card } from "../src/types";
 import { roomCodeFromLink } from "../src/roomLink";
 import { NotificationCenter, ProfileScreen, LibraryScreen } from "../src/screens/AccountScreens";
+import AuthScreen from '../src/screens/AuthScreen';
+import NativeTabBar from '../src/components/NativeTabBar';
+import {Platform} from 'react-native';
 jest.mock("../src/native", () => ({
   native: {
     getSnapshot: jest.fn(),
@@ -179,7 +182,14 @@ test("Arabic snapshot renders Arabic navigation and returns to English", async (
   const view = render(<App />);
   await view.findByText("الرئيسية");
   expect(view.getByText("الغرف")).toBeTruthy();
-  fireEvent.press(view.getByText("EN"));
+  fireEvent.press(view.getByText("ع"));
+  await view.findByText(/العربية المصرية/);
+  expect(view.getByText("العربية الإماراتية")).toBeTruthy();
+  expect(view.getByText("العربية الفصحى")).toBeTruthy();
+  fireEvent.press(view.getByText("العربية الإماراتية"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("SET_LANGUAGE", "ar-AE");
+  fireEvent.press(view.getByText("ع"));
+  fireEvent.press(view.getByText("English"));
   expect(native.dispatch).toHaveBeenLastCalledWith("SET_LANGUAGE", "en");
 });
 test("home highlights keep working create, join, menus and profile actions", async () => {
@@ -546,4 +556,26 @@ test("shared countdown advances 1, 2, 3 and stays blocking until the result", ()
   act(() => jest.advanceTimersByTime(2000));expect(view.getByText("We have our person!")).toBeTruthy();
   expect(view.getByText("Continue")).toBeTruthy();
   view.unmount();jest.useRealTimers();
+});
+
+test('sign-in shows only credentials and registration adds only a name',()=>{
+ const value=snapshot({authenticated:false,mainFields:[field('EMAIL',{value:'user@example.test'}),field('PASSWORD',{value:'fixture-password',secret:true}),field('NAME',{value:'User'}),field('PROFILE_PHONE'),field('AANI',{toggle:true}),field('ACCOUNT_IDENTIFIER')],primaryAction:action('Continue with Google','GOOGLE_SIGN_IN','',true),inlineButtons:[action('Sign in','SIGN_IN'),action('Create account','REGISTER'),action('Reset password','RESET_PASSWORD')]});
+ const view=render(<AuthScreen snapshot={value}/>);
+ expect(view.getByTestId('EMAIL')).toBeTruthy();expect(view.getByTestId('PASSWORD')).toBeTruthy();
+ expect(view.queryByTestId('NAME')).toBeNull();expect(view.queryByTestId('PROFILE_PHONE')).toBeNull();expect(view.queryByTestId('ACCOUNT_IDENTIFIER')).toBeNull();
+ fireEvent.press(view.getByText('Sign in'));expect(native.dispatch).toHaveBeenLastCalledWith('SIGN_IN','');
+ fireEvent.press(view.getByText('New here? Create account'));expect(view.getByTestId('NAME')).toBeTruthy();
+ expect(view.queryByTestId('PROFILE_PHONE')).toBeNull();expect(view.queryByTestId('ACCOUNT_IDENTIFIER')).toBeNull();
+ fireEvent.press(view.getAllByText('Create account').at(-1)!);expect(native.dispatch).toHaveBeenLastCalledWith('REGISTER','');
+ fireEvent.press(view.getByText('Already have an account? Sign in'));expect(view.queryByTestId('NAME')).toBeNull();
+});
+
+test.each(['ios','android'] as const)('native %s tab styling keeps all destinations accessible',platform=>{
+ const previous=Platform.OS;Object.defineProperty(Platform,'OS',{value:platform,configurable:true});
+ try {
+  const select=jest.fn();const tabs=['HOME','ROOMS','WALLET','PROFILE','MORE'].map((id,index)=>({id,icon:'home',label:id,selected:index===0}));
+  const view=render(<NativeTabBar tabs={tabs} rtl={false} busy={false} onSelect={select}/>);
+  expect(view.getByTestId(`native-tabs:${platform}`)).toBeTruthy();expect(view.getByRole('tab',{name:'HOME'}).props.accessibilityState.selected).toBe(true);
+  for(const tab of tabs){fireEvent.press(view.getByTestId(`nav:${tab.id}`));expect(select).toHaveBeenLastCalledWith(tab.id);}
+ }finally{Object.defineProperty(Platform,'OS',{value:previous,configurable:true});}
 });

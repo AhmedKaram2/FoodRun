@@ -13,7 +13,7 @@ internal class GroupWalletHistory(private val c: GroupController) {
     private var history: WalletHistory? = null
     private var loading = false
     private var failure = ""
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     fun open(value: String) {
         val selected = orderJson.decodeFromString<WalletKey>(value)
         val wallet = c.library.home?.wallet ?: error("Open your wallet after signing in.")

@@ -391,9 +391,12 @@ class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -
                 require(r.transfers.none { it.memberId == target && it.status == TransferStatus.DECLARED }) { "Resolve the existing pending transfer first." }
                 val receipt = Billing.receipts(r).singleOrNull { it.memberId == target } ?: error("No receipt exists for this member.")
                 require(c.amount > 0 && c.amount <= if (refund) -receipt.balance else receipt.balance) { "Amount exceeds the remaining balance." }
-                require(c.text.isNotBlank() && c.text.length <= 160) { "Enter a transfer reference or cash note." }
+                require(c.text.length <= 160) { "Transfer reference is too long." }
                 val recipient = if (c.accountId.isBlank()) requireNotNull(r.account) else r.receivingAccounts.singleOrNull { it.id == c.accountId } ?: error("Choose a payment method shared in this room.")
-                val transfer = Transfer(id(), target, c.amount, c.text, recipient, refund, createdAt = now)
+                val reference = c.text.trim().ifBlank {
+                    "${if (refund) "Refund" else "Payment"} · Order #${r.orderNumber} · ${Money.format(c.amount, r.restaurant.currency)} · ${r.name}".take(160)
+                }
+                val transfer = Transfer(id(), target, c.amount, reference, recipient, refund, createdAt = now)
                 r.copy(transfers = r.transfers + transfer)
             }
             CommandKind.CONFIRM_TRANSFER, CommandKind.REJECT_TRANSFER, CommandKind.CONFIRM_REFUND -> {

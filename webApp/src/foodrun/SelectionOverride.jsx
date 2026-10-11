@@ -4,7 +4,7 @@ import { canAccessAdmin } from './adminAccess.js';
 import { command, request } from './client.js';
 
 export default function SelectionOverride({ room, data, language }) {
-  const ar = language === 'ar';
+  const ar = language.startsWith('ar');
   const tx = (en, arabic) => ar ? arabic : en;
   const allowed = canAccessAdmin(data.user) && room.phase === 'LOBBY' && !room.paymentRoom && !(room.wheelProtections || []).some(request => request.status === 'ACTIVE');
   const [open, setOpen] = useState(false);

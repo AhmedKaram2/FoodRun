@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { money } from './client.js';
 import { getLanguage, t } from './i18n.js';
-const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 export const walletTransactionTitle = kind => kind === 'TOP_UP' ? tx('Wallet top-up', 'شحن المحفظة') : kind === 'CASH_TRANSFER' ? tx('Holder cash transfer', 'تحويل نقدي من حامل الأموال') : tx('Wallet payment', 'دفعة من المحفظة');
 export function walletTransactionStatus(value) {
   const labels = {PENDING:['Awaiting top-up confirmation','بانتظار تأكيد الشحن'],CONFIRMED:['Wallet credited','تم شحن المحفظة'],REJECTED:['Not received','لم يتم الاستلام'],APPROVAL_PENDING:['Awaiting wallet approval','بانتظار الموافقة على دفعة المحفظة'],OWING:['Holder still needs to send cash','على حامل الأموال إرسال المبلغ'],SENT:['Cash sent; awaiting confirmation','أُرسل المبلغ؛ بانتظار التأكيد'],SETTLED:['Cash settled','تمت تسوية المبلغ'],RETURNED:['Payment declined; funds returned','رُفضت الدفعة وأُعيد الرصيد']};
@@ -28,8 +28,8 @@ export default function WalletHistoryDialog({ data, wallet, onClose }) {
   useEffect(() => { dialog.current?.showModal(); return () => { ++generation.current; controller.current?.abort(); }; }, []);
   useEffect(() => { load(); }, [wallet.customerId,wallet.holderId,wallet.currency,data.identityToken,data.home.wallet]);
   const balance = history?.balance || wallet;
-  const date = value => new Date(value).toLocaleString(getLanguage()==='ar'?'ar-AE':'en-GB');
-  return createPortal(<dialog ref={dialog} className="card wallet-history-dialog" dir={getLanguage()==='ar'?'rtl':'ltr'} aria-labelledby="wallet-history-title" onCancel={onClose} onClose={onClose}>
+  const date = value => new Date(value).toLocaleString(getLanguage().startsWith('ar')?'ar-AE':'en-GB');
+  return createPortal(<dialog ref={dialog} className="card wallet-history-dialog" dir={getLanguage().startsWith('ar')?'rtl':'ltr'} aria-labelledby="wallet-history-title" onCancel={onClose} onClose={onClose}>
     <div className="section-title compact"><h2 id="wallet-history-title">{tx('Wallet transactions','معاملات المحفظة')}</h2><button className="secondary" type="button" onClick={onClose}>{t('Close')}</button></div>
     <p>{balance.customerName} · {tx('Held by','لدى')} {balance.holderName}</p><div className="wallet-history-balance"><span>{tx('Available balance','الرصيد المتاح')}</span><strong>{money(balance.available,balance.currency)}</strong></div>
     <button className="link" disabled={loading} onClick={()=>load()}>{t('Refresh')}</button>

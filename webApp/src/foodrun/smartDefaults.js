@@ -2,8 +2,8 @@ import { getLanguage } from './i18n.js';
 import { minorInput } from './client.js';
 
 export function mealRoomName(now = new Date(), language = getLanguage()) {
-  const meal = now.getHours() < 13 ? (language === 'ar' ? 'فطور' : 'Breakfast') : (language === 'ar' ? 'غداء' : 'Lunch');
-  const date = new Intl.DateTimeFormat(language === 'ar' ? 'ar-AE' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric', numberingSystem: 'latn' }).format(now);
+  const meal = now.getHours() < 13 ? (language.startsWith('ar') ? 'فطور' : 'Breakfast') : (language.startsWith('ar') ? 'غداء' : 'Lunch');
+  const date = new Intl.DateTimeFormat(language.startsWith('ar') ? 'ar-AE' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric', numberingSystem: 'latn' }).format(now);
   return `${meal} · ${date}`;
 }
 

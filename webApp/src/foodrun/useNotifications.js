@@ -30,7 +30,7 @@ export function useNotifications({ hub, identityToken, user, home, language = 'e
       if (generation !== epoch.current) return;
       let installationId = localStorage.getItem('foodrun-push-installation');
       if (!installationId) { installationId = crypto.randomUUID(); localStorage.setItem('foodrun-push-installation', installationId); }
-      await call({ action: 'register', token, installationId, platform: 'web', language });
+      await call({ action: 'register', token, installationId, platform: 'web', language: language.startsWith('ar') ? 'ar' : 'en' });
       if (generation !== epoch.current) return;
       pushToken.current = token; setEnabled(true); localStorage.setItem('foodrun-push-enabled', 'true');
     } catch (failure) { if (generation === epoch.current) setError(failure.message); }

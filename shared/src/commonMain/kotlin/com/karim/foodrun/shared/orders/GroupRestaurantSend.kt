@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 /** Confirm exactly the order that was copied or shared; a changed revision needs a new copy. */
 internal class GroupRestaurantSend(private val c: GroupController) {
     private var target: Triple<String, Long, Long>? = null
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     fun open() {
         val room = c.room()
         if(c.me() in listOf(room.ownerId,room.payerId) && room.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW))

@@ -35,7 +35,7 @@ internal class GroupFriends(private val c: GroupController) {
             }
         })
     }
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun button(en: String, ar: String, value: String) = GroupButton(tr(en, ar), GroupAction.FRIENDS_ACTION, value)
     fun open(group: FriendGroup? = null, edit: Boolean = false) {
         accountId = c.library.home?.profile?.userId.orEmpty()

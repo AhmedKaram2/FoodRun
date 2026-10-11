@@ -3,11 +3,11 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 private fun Restaurant.branchLabel(language: String): String = listOf(
-    localizedName(language), if(language == "ar" && branchNameAr.isNotBlank()) branchNameAr else branchName,
+    localizedName(language), if(language.startsWith("ar") && branchNameAr.isNotBlank()) branchNameAr else branchName,
 ).filter { it.isNotBlank() }.joinToString(" · ")
 
 private fun localizedReceiptDescription(room: Room, line: ReceiptLine, language: String): String {
-    if(language != "ar" || line.itemId.isBlank()) return line.description
+    if(!language.startsWith("ar") || line.itemId.isBlank()) return line.description
     val item = room.restaurant.menu.items.firstOrNull { it.id == line.itemId } ?: return line.description
     val variant = item.variants.firstOrNull { it.id == line.variantId }
     val options = room.restaurant.menu.optionGroups.flatMap { it.options }.filter { it.id in line.optionIds }
@@ -24,7 +24,7 @@ internal fun restaurantReadyText(room: Room, receipts: List<Receipt>, language: 
 internal fun restaurantReadyLinesText(room: Room, receiptLines: List<ReceiptLine>, language: String = "en"): String {
     fun quantityText(quantity: Int): String {
         val raw = quantity.toString()
-        if(language != "ar") return raw
+        if(!language.startsWith("ar")) return raw
         val arabic = "٠١٢٣٤٥٦٧٨٩"
         return raw.map { if(it in '0'..'9') arabic[it - '0'] else it }.joinToString("")
     }
@@ -36,15 +36,15 @@ internal fun restaurantReadyLinesText(room: Room, receiptLines: List<ReceiptLine
     val lines = combined.filterValues { it > 0 }.map { (key, quantity) ->
         val (description, notes) = key
         val itemText = if(description.any(Char::isDigit)) {
-            "$description — ${if(language == "ar") "الكمية" else "Quantity"}: ${quantityText(quantity)}"
+            "$description — ${if(language.startsWith("ar")) "الكمية" else "Quantity"}: ${quantityText(quantity)}"
         } else "${quantityText(quantity)} $description"
         "$itemText${if(notes.isNotBlank()) " — $notes" else ""}"
     }
     val address = (if(room.deliveryMode) room.destination else room.restaurant.contact.address.orEmpty()).trim()
-        .ifBlank { if(language == "ar") "العنوان يحدد لاحقاً" else "Address to be confirmed" }
+        .ifBlank { if(language.startsWith("ar")) "العنوان يحدد لاحقاً" else "Address to be confirmed" }
     val total = receiptLines.sumOf { it.restaurantQuantity ?: it.quantity }
-    val addressLine = if(language == "ar") "العنوان: $address" else "Address: $address"
-    val totalLine = if(language == "ar") "إجمالي السندويشات: ${quantityText(total)}" else "Total sandwiches: ${quantityText(total)}"
+    val addressLine = if(language.startsWith("ar")) "العنوان: $address" else "Address: $address"
+    val totalLine = if(language.startsWith("ar")) "إجمالي السندويشات: ${quantityText(total)}" else "Total sandwiches: ${quantityText(total)}"
     return (listOf(addressLine, "") + lines + totalLine).joinToString("\n")
 }
 
@@ -54,11 +54,11 @@ internal class GroupPresentation(private val c: GroupController) {
     private val buttons = mutableListOf<GroupButton>()
     private var title = "Intrvioo"
     private var subtitle = "Good food. Great company."
-    private val language get() = c.library.language
-    private val copyLanguage get() = c.text(GroupFieldKey.ORDER_COPY_LANGUAGE).takeIf { it in listOf("en", "ar") } ?: language
-    private val ar get() = language == "ar"
-    private fun ui(value: String) = GroupUiText.translate(value, ar)
-    private fun tr(en: String, ar: String) = if(this.ar) GroupUiText.translate(en, true).takeIf { it != en } ?: ar else en
+    private val language get() = c.library.language.let { if(it == "ar") "ar-EG" else it }
+    private val copyLanguage get() = c.text(GroupFieldKey.ORDER_COPY_LANGUAGE).takeIf { it in listOf("en", "ar") } ?: if(language.startsWith("ar")) "ar" else "en"
+    private val ar get() = language.startsWith("ar")
+    private fun ui(value: String) = GroupUiText.translate(value, language)
+    private fun tr(en: String, ar: String) = if(this.ar) GroupUiText.translate(en, language).takeIf { it != en } ?: ar else en
     private fun field(key: GroupFieldKey, label: String, multiline: Boolean = false, toggle: Boolean = false) { fields += GroupField(key, ui(label), c.text(key), multiline, toggle, secret = key == GroupFieldKey.PASSWORD) }
     private fun choiceField(key: GroupFieldKey, label: String, choices: List<GroupChoice>) { fields += GroupField(key, ui(label), c.text(key), choices = choices) }
     private fun button(title: String, action: GroupAction, value: String = "", primary: Boolean = false, enabled: Boolean = true) { buttons += GroupButton(ui(title), action, value, primary, enabled = enabled) }
@@ -164,6 +164,7 @@ internal class GroupPresentation(private val c: GroupController) {
             reminderEmailPrompt = c.paymentReminders.prompt,
             walletHistoryPrompt = c.walletHistory.prompt,
             restaurantSendPrompt = c.restaurantSend.prompt?.let { it.copy(blocker = ui(it.blocker)) },
+            language = language,
             roomPhase = if(c.page == GroupPage.ROOM) room?.phase?.name.orEmpty() else "",
             roomStage = if(c.page == GroupPage.ROOM && room != null) stage(room.phase) else "",
             joinedCount = if(c.page == GroupPage.ROOM) room?.activeMembers?.size ?: 0 else 0,
@@ -177,7 +178,7 @@ internal class GroupPresentation(private val c: GroupController) {
         title = "FoodRun"; subtitle = tr("Gather your people. Share a meal.", "اجمع أصحابك وشاركوا وجبتكم.")
         if (c.library.home == null) {
             button(ui("Continue with Google"), GroupAction.GOOGLE_SIGN_IN, primary = true)
-            button(ui("Register / sign in"), GroupAction.OPEN_PROFILE)
+            button(ui("Sign in"), GroupAction.OPEN_PROFILE)
             button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar)
             button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
             card("sign-in", ui("Use your existing web account"), ui("Sign in or register with Google to open your rooms. Guest mode is unavailable."))
@@ -721,7 +722,7 @@ internal class GroupPresentation(private val c: GroupController) {
         c.reply?.room?.takeIf { it.settlementOpen }?.let { room ->
             if (room.transfers.any { it.status == TransferStatus.DECLARED && (room.payerId == c.me() || it.refund && it.memberId == c.me()) }) field(GroupFieldKey.REASON, "Reason for rejecting a transfer or refund")
             if (room.payerId == c.me() && c.reply!!.receipts.any { GroupSettlementPresentation.refundAvailable(room, it) }) {
-                field(GroupFieldKey.AMOUNT, "Refund amount"); field(GroupFieldKey.REFERENCE, tr("Refund reference / cash note", "مرجع الإرجاع أو ملاحظة النقد"))
+                fields += GroupSettlementPresentation(c).transferAmountFields()
             }
         }
         transferCards()

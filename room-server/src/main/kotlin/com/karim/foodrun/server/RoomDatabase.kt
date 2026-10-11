@@ -16,6 +16,9 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
     @Volatile private var failed = false
     val available: Boolean get() = !failed && durable?.available != false
     private var transactionDepth = 0
+    // Reuse decrypted data only inside one atomic request. No cached data crosses requests.
+    private val transactionRooms = mutableMapOf<String, Room?>()
+    private val transactionRecords = mutableMapOf<String, String?>()
     private val random = SecureRandom()
     private val key: SecretKeySpec
     private val sqlConnection: Connection
@@ -75,13 +78,33 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
             installTracking()
         }
     }
-    fun room(id: String): Room? = query("SELECT body FROM rooms WHERE id=?", id)?.let { orderJson.decodeFromString<Room>(decrypt(it)) }
+    fun room(id: String): Room? {
+        connection // Check writer ownership even when a value was already read in this request.
+        if(transactionDepth > 0 && transactionRooms.containsKey(id)) return transactionRooms[id]
+        val room = query("SELECT body FROM rooms WHERE id=?", id)?.let { orderJson.decodeFromString<Room>(decrypt(it)) }
+        if(transactionDepth > 0) transactionRooms[id] = room
+        return room
+    }
     fun roomByCode(code: String): Room? = query("SELECT body FROM rooms WHERE code=?", code)?.let { orderJson.decodeFromString<Room>(decrypt(it)) }
-    fun allRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
+    fun allRooms(): List<Room> = roomRows("SELECT id,body FROM rooms")
     fun activeRoomCount(): Int = connection.createStatement().use { s -> s.executeQuery("SELECT COUNT(*) FROM rooms WHERE phase NOT IN ('ARCHIVED','CANCELLED')").use { it.next(); it.getInt(1) } }
-    fun ongoingRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms WHERE phase NOT IN ('ARCHIVED','CANCELLED')").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
-    fun spinningRooms(): List<Room> = connection.createStatement().use { s -> s.executeQuery("SELECT body FROM rooms WHERE phase IN ('SPINNING','PREPARING_SPIN')").use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
-    fun save(room: Room) { transaction { enqueueCloud("room-${room.id}", orderJson.encodeToString(room)); connection.prepareStatement("INSERT INTO rooms(id,code,body,phase) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,phase=excluded.phase").use { it.setString(1, room.id); it.setString(2, room.code); it.setString(3, encrypt(orderJson.encodeToString(room))); it.setString(4, room.phase.name); it.executeUpdate() }  } }
+    fun ongoingRooms(): List<Room> = roomRows("SELECT id,body FROM rooms WHERE phase NOT IN ('ARCHIVED','CANCELLED')")
+    fun spinningRooms(): List<Room> = roomRows("SELECT id,body FROM rooms WHERE phase IN ('SPINNING','PREPARING_SPIN')")
+    private fun roomRows(sql: String): List<Room> = connection.createStatement().use { s -> s.executeQuery(sql).use { rs -> buildList {
+        while(rs.next()) {
+            val id = rs.getString(1)
+            val room = if(transactionDepth > 0 && transactionRooms.containsKey(id)) requireNotNull(transactionRooms[id])
+                else orderJson.decodeFromString<Room>(decrypt(rs.getString(2)))
+            if(transactionDepth > 0) transactionRooms[id] = room
+            add(room)
+        }
+    } } }
+    fun save(room: Room) { transaction {
+        val body = orderJson.encodeToString(room)
+        enqueueCloud("room-${room.id}", body)
+        connection.prepareStatement("INSERT INTO rooms(id,code,body,phase) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,phase=excluded.phase").use { it.setString(1, room.id); it.setString(2, room.code); it.setString(3, encrypt(body)); it.setString(4, room.phase.name); it.executeUpdate() }
+        transactionRooms[room.id] = room
+    } }
     fun session(hash: String): Pair<String, String>? = connection.prepareStatement("SELECT room_id,member_id FROM sessions WHERE hash=?").use { it.setString(1, hash); it.executeQuery().use { rs -> if (rs.next()) rs.getString(1) to rs.getString(2) else null } }
     fun addSession(hash: String, room: String, member: String) { transaction { connection.prepareStatement("INSERT INTO sessions VALUES(?,?,?)").use { it.setString(1, hash); it.setString(2, room); it.setString(3, member); it.executeUpdate() }  } }
     fun previous(id: String, digest: String): RoomReply? = connection.prepareStatement("SELECT digest,body FROM commands WHERE id=?").use { it.setString(1, id); it.executeQuery().use { rs -> if (!rs.next()) null else { require(rs.getString(1) == digest) { "Command ID reused with different content." }; orderJson.decodeFromString<RoomReply>(decrypt(rs.getString(2))) } } }
@@ -106,20 +129,48 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
             if (error is StorageUnavailable || cloudCommitted) failed = true
             runCatching { sqlConnection.rollback() }
             throw if (cloudCommitted) StorageUnavailable("Reload the durable store before retrying.", error) else error
-        } finally { transactionDepth--; sqlConnection.autoCommit = true }
+        } finally { transactionDepth--; transactionRooms.clear(); transactionRecords.clear(); sqlConnection.autoCommit = true }
     }
     private fun query(sql: String, value: String): String? = connection.prepareStatement(sql).use { it.setString(1, value); it.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null } }
     fun archive(room: Room) { transaction { enqueueCloud("order-${room.id}-${room.orderNumber}", orderJson.encodeToString(room)); connection.prepareStatement("INSERT OR REPLACE INTO orders VALUES(?,?,?)").use { it.setString(1, room.id); it.setLong(2, room.orderNumber); it.setString(3, encrypt(orderJson.encodeToString(room))); it.executeUpdate() }  } }
     fun history(roomId: String, offset: Int = 0, limit: Int = 6): List<Room> = connection.prepareStatement("SELECT body FROM orders WHERE room_id=? ORDER BY number DESC LIMIT ? OFFSET ?").use { it.setString(1, roomId); it.setInt(2, limit); it.setInt(3, offset); it.executeQuery().use { rs -> buildList { while (rs.next()) add(orderJson.decodeFromString<Room>(decrypt(rs.getString(1)))) } } }
     fun allHistory(): List<Room> = connection.createStatement().use { statement -> statement.executeQuery("SELECT body FROM orders ORDER BY room_id,number DESC").use { rows -> buildList { while(rows.next()) add(orderJson.decodeFromString<Room>(decrypt(rows.getString(1)))) } } }
-    fun record(key: String): String? = query("SELECT body FROM account_records WHERE key=?", key)?.let(::decrypt)
-    fun records(prefix: String): List<Pair<String, String>> = connection.prepareStatement("SELECT key,body FROM account_records WHERE substr(key,1,?)=?").use {
-        it.setInt(1, prefix.length); it.setString(2, prefix); it.executeQuery().use { rs -> buildList { while(rs.next()) add(rs.getString(1) to decrypt(rs.getString(2))) } }
+    fun record(key: String): String? {
+        connection
+        if(transactionDepth > 0 && transactionRecords.containsKey(key)) return transactionRecords[key]
+        val value = query("SELECT body FROM account_records WHERE key=?", key)?.let(::decrypt)
+        if(transactionDepth > 0) transactionRecords[key] = value
+        return value
+    }
+    fun records(prefix: String): List<Pair<String, String>> {
+        val upper = prefixEnd(prefix)
+        val sql = if(upper == null) "SELECT key,body FROM account_records WHERE key>=? ORDER BY rowid"
+            else "SELECT key,body FROM account_records WHERE key>=? AND key<? ORDER BY rowid"
+        return connection.prepareStatement(sql).use {
+            it.setString(1,prefix); if(upper != null) it.setString(2,upper)
+            it.executeQuery().use { rs -> buildList { while(rs.next()) {
+                val key=rs.getString(1)
+                val value = if(transactionDepth > 0 && transactionRecords.containsKey(key)) requireNotNull(transactionRecords[key]) else decrypt(rs.getString(2))
+                if(transactionDepth > 0) transactionRecords[key] = value
+                add(key to value)
+            } } }
+        }
+    }
+    /** Binary prefix bounds use the primary-key index and treat %, _ and Unicode literally. */
+    private fun prefixEnd(prefix: String): String? {
+        val points = prefix.codePoints().toArray()
+        for(index in points.lastIndex downTo 0) {
+            if(points[index] < Character.MAX_CODE_POINT) {
+                points[index] = if(points[index] == 0xD7FF) 0xE000 else points[index]+1
+                return String(points,0,index+1)
+            }
+        }
+        return null
     }
     fun putRecord(key: String, value: String) { transaction { connection.prepareStatement("INSERT INTO account_records VALUES(?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").use {
-        it.setString(1, key); it.setString(2, encrypt(value)); it.executeUpdate()
+        it.setString(1, key); it.setString(2, encrypt(value)); it.executeUpdate(); transactionRecords[key] = value
     }  } }
-    fun deleteRecord(key: String) { transaction { connection.prepareStatement("DELETE FROM account_records WHERE key=?").use { it.setString(1, key); it.executeUpdate() }  } }
+    fun deleteRecord(key: String) { transaction { connection.prepareStatement("DELETE FROM account_records WHERE key=?").use { it.setString(1, key); it.executeUpdate(); transactionRecords[key] = null }  } }
     fun enqueueCloud(key: String, value: String) { if (cloudDurable) return; transaction { connection.prepareStatement("INSERT INTO cloud_outbox VALUES(?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").use {
         it.setString(1, key); it.setString(2, encrypt(value)); it.executeUpdate()
     }  } }
@@ -137,6 +188,7 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
         enqueueCloud("order-$roomId-$number", "{\"deleted\":true}")
      } }
     fun deleteRoom(roomId: String) { transaction {
+        transactionRooms.remove(roomId)
         putRecord("admin:deleted-room:$roomId", "true")
         allHistory().filter { it.id == roomId }.forEach { deleteHistory(it.id, it.orderNumber) }
         for (table in listOf("sessions", "rooms")) {

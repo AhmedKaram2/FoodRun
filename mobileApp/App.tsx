@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { colors, font, tx } from "./src/theme";
+import { languageOptions, setUiLanguage } from "./src/language";
 import { dispatch, events, native, parseSnapshot, update } from "./src/native";
 import type { Snapshot, Section, Field } from "./src/types";
 import Brand from "./src/components/Brand";
@@ -45,6 +46,8 @@ import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./s
 import RoomTimeline from "./src/components/RoomTimeline";
 import RoomMembers from "./src/components/RoomMembers";
 import FriendsScreen from "./src/screens/FriendsScreen";
+import AuthScreen from "./src/screens/AuthScreen";
+import NativeTabBar from './src/components/NativeTabBar';
 import { roomCodeFromLink } from "./src/roomLink";
 import { isRoom, roomSections, roomActionTab, roomFieldTab } from "./src/roomTabs";
 
@@ -64,11 +67,13 @@ function Application() {
     [options, setOptions] = useState(false);
   const guided = useGuidedFlow(snapshot);
   const [selectionOpen,setSelectionOpen] = useState(false);
+  const [languageSheet,setLanguageSheet] = useState(false);
   useEffect(() => {
     let alive = true;
     const accept = (body: string) => {
       if (alive) {
         const incoming = parseSnapshot(body);
+        setUiLanguage(incoming.state.language || (incoming.state.rtl ? 'ar-EG' : 'en'));
         if(incoming.state.page === "ROOM") roomContext.current = incoming;
         setSnapshot(incoming);
         setFailure("");
@@ -222,14 +227,14 @@ function Application() {
           </Pressable>}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={tx(rtl, "Switch to Arabic", "التبديل إلى الإنجليزية")}
+            accessibilityLabel={tx(rtl, "Choose language", "اختر اللغة")}
             style={ui.language}
-            onPress={() => dispatch("SET_LANGUAGE", rtl ? "en" : "ar")}
+            onPress={() => setLanguageSheet(true)}
           >
             <Text
               style={{ fontFamily: font("semibold", rtl), color: colors.ink }}
             >
-              {rtl ? "EN" : "ع"}
+              {rtl ? "ع" : "EN"}
             </Text>
           </Pressable>
           <Pressable
@@ -303,6 +308,8 @@ function Application() {
           <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
         ) : state.page === "NOTIFICATIONS" ? (
           <NotificationCenter key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "PROFILE" && !snapshot.authenticated ? (
+          <AuthScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : state.page === "PROFILE" && snapshot.authenticated && snapshot.profile ? (
           <ProfileScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : state.page === "LIBRARY" ? (
@@ -580,67 +587,17 @@ function Application() {
           </>
         )}
       </KeyboardAvoidingView>
-      <View style={[ui.bottom, rtl && ui.reverse]}>
-        {[
-          [
-            "home",
-            tx(rtl, "Home", "الرئيسية"),
-            "OPEN_HOME",
-            "",
-            state.page === "HOME",
-          ],
-          [
-            "room",
-            tx(rtl, "Rooms", "الغرف"),
-            "OPEN_ROOMS",
-            "",
-            roomRoute,
-          ],
-          [
-            "wallet",
-            tx(rtl, "Wallet", "المحفظة"),
-            "OPEN_WALLET",
-            "",
-            walletRoute,
-          ],
-          ["profile", tx(rtl, "Profile", "حسابي"), "OPEN_PROFILE", "", profileDetails],
-          ["menu", tx(rtl, "More", "المزيد"), "MORE", "", menu || (state.page !== "HOME" && !roomRoute && !walletRoute && !profileDetails)],
-        ].map(([icon, label, kind, value, active]) => (
-          <TabButton selected={!!active}
-            key={String(kind)}
-            testID={`nav:${kind}`}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: !!active, disabled: busy }}
-            disabled={busy}
-            onPress={() =>
-              kind === "MORE"
-                ? setMenu(true)
-                : dispatch(String(kind), String(value))
-            }
-            style={ui.navItem}
-          >
-            <View style={[ui.navIcon, !!active && ui.activeNavIcon]}>
-            <Icon
-              name={String(icon)}
-              color={active ? colors.forest : colors.muted}
-            />
-            </View>
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
-              style={[
-                textStyle(rtl, "medium"),
-                ui.navLabel,
-                { color: active ? colors.ink : colors.muted },
-              ]}
-            >
-              {String(label)}
-            </Text>
-          </TabButton>
-        ))}
-      </View>
+      <NativeTabBar rtl={rtl} busy={busy} tabs={[
+        {id:'OPEN_HOME',icon:'home',label:tx(rtl,'Home','الرئيسية'),selected:state.page==='HOME'},
+        {id:'OPEN_ROOMS',icon:'room',label:tx(rtl,'Rooms','الغرف'),selected:roomRoute},
+        {id:'OPEN_WALLET',icon:'wallet',label:tx(rtl,'Wallet','المحفظة'),selected:walletRoute},
+        {id:'OPEN_PROFILE',icon:'profile',label:rtl?tx(rtl,'My account','حسابي'):'Profile',selected:profileDetails},
+        {id:'MORE',icon:'menu',label:tx(rtl,'More','المزيد'),selected:menu || (state.page!=='HOME' && !roomRoute && !walletRoute && !profileDetails)},
+      ]} onSelect={kind=>kind==='MORE'?setMenu(true):dispatch(kind)}/>
       <MoreSheet snapshot={snapshot} visible={menu} actions={menuActions} onClose={() => setMenu(false)}/>
+      <BottomSheet visible={languageSheet} title={tx(rtl,"Choose language","اختر اللغة")} rtl={rtl} onClose={() => setLanguageSheet(false)}>
+        {languageOptions.map(option => <Button key={option.value} rtl={rtl} busy={busy} action={action(`${(state.language || (rtl ? 'ar-EG' : 'en')) === option.value ? '✓ ' : ''}${option.label}`, 'SET_LANGUAGE', option.value)} onPress={() => { dispatch('SET_LANGUAGE',option.value); setLanguageSheet(false); }}/>) }
+      </BottomSheet>
       <BottomSheet visible={!!state.walletHistoryPrompt} title={state.walletHistoryPrompt?.title || tx(rtl,"Transactions","المعاملات")} rtl={rtl} onClose={() => dispatch("DISMISS_WALLET_HISTORY")}>
         {state.walletHistoryPrompt && <>
                 <Text style={textStyle(rtl)}>
@@ -805,24 +762,6 @@ const ui = StyleSheet.create({
   roomTabLabel: { fontSize: 14, lineHeight: 24 },
   empty: { padding: 28, alignItems: "center", gap: 14, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
   emptyText: { fontSize: 15, lineHeight: 26, textAlign: "center" },
-  bottom: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
-    paddingTop: 6,
-    paddingBottom: 4,
-  },
-  navItem: {
-    flex: 1,
-    minHeight: 64,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 1,
-  },
-  navIcon: { minWidth: 48, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16 },
-  activeNavIcon: { backgroundColor: colors.mint },
-  navLabel: { fontSize: 12, lineHeight: 22, textAlign: "center" },
   primary: {
     paddingHorizontal: 16,
     paddingVertical: 10,

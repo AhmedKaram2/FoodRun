@@ -45,13 +45,13 @@ val orderJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
 @Serializable data class MenuOption(val id: String, val name: String, val priceDeltaMinor: Long, val nameAr: String = "")
 @Serializable data class OptionGroup(val id: String, val name: String, val minSelections: Int = 0, val maxSelections: Int = 1, val options: List<MenuOption>, val nameAr: String = "")
 
-fun Restaurant.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
-fun MenuCategory.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
-fun MenuItem.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
-fun MenuItem.localizedDescription(language: String) = if (language == "ar" && descriptionAr.isNotBlank()) descriptionAr else description
-fun MenuVariant.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
-fun MenuOption.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
-fun OptionGroup.localizedName(language: String) = if (language == "ar" && nameAr.isNotBlank()) nameAr else name
+fun Restaurant.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
+fun MenuCategory.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
+fun MenuItem.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
+fun MenuItem.localizedDescription(language: String) = if (language.startsWith("ar") && descriptionAr.isNotBlank()) descriptionAr else description
+fun MenuVariant.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
+fun MenuOption.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
+fun OptionGroup.localizedName(language: String) = if (language.startsWith("ar") && nameAr.isNotBlank()) nameAr else name
 
 object MenuValidation {
     const val MAX_BYTES = 2 * 1024 * 1024

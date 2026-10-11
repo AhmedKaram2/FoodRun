@@ -82,6 +82,7 @@ export type Snapshot = {
     inviteLink: string;
     inviteSummary: string;
     rtl: boolean;
+    language?: string;
     accessBlocked: boolean;
     canOverrideSelection: boolean;
     reminderEmailPrompt?: {

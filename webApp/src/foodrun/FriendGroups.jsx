@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getLanguage, t } from './i18n.js';
 import PagedList from './PagedList.jsx';
 import GroupSheet from './GroupSheet.jsx';
-const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 const key = member => member.userId || member.email.toLowerCase();
 export default function FriendGroups({ data, onBack }) {
   const blank = () => ({ id:crypto.randomUUID(),name:'',favourite:true,members:[] });

@@ -1,5 +1,5 @@
 import { restaurantQuantity } from './halfItems.js';
-const name = (value, language) => language === 'ar' && value?.nameAr ? value.nameAr : value?.name || '';
+const name = (value, language) => language.startsWith('ar') && value?.nameAr ? value.nameAr : value?.name || '';
 
 export function groupedOrderLines(room, receipts, language = 'en') {
   const grouped = new Map();
@@ -16,20 +16,20 @@ export function groupedOrderLines(room, receipts, language = 'en') {
 }
 
 export function restaurantOrderText(room, receipts, language = 'ar') {
-  const quantityText = quantity => language === 'ar'
+  const quantityText = quantity => language.startsWith('ar')
     ? String(quantity).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)])
     : String(quantity);
   const lines = groupedOrderLines(room, receipts, language).map(line => {
     const quantity = quantityText(line.quantity);
     const itemText = /\p{Nd}/u.test(line.description)
-      ? `${line.description} — ${language === 'ar' ? 'الكمية' : 'Quantity'}: ${quantity}`
+      ? `${line.description} — ${language.startsWith('ar') ? 'الكمية' : 'Quantity'}: ${quantity}`
       : `${quantity} ${line.description}`;
     return `${itemText}${line.notes ? ` — ${line.notes}` : ''}`;
   });
   const address = (room.deliveryMode ? room.destination : room.restaurant.contact?.address)?.trim()
-    || (language === 'ar' ? 'العنوان يحدد لاحقاً' : 'Address to be confirmed');
+    || (language.startsWith('ar') ? 'العنوان يحدد لاحقاً' : 'Address to be confirmed');
   const total = receipts.flatMap(receipt => receipt.lines).reduce((sum, line) => sum + restaurantQuantity(line), 0);
-  const addressLabel = language === 'ar' ? 'العنوان' : 'Address';
-  const totalLabel = language === 'ar' ? 'إجمالي السندويشات' : 'Total sandwiches';
+  const addressLabel = language.startsWith('ar') ? 'العنوان' : 'Address';
+  const totalLabel = language.startsWith('ar') ? 'إجمالي السندويشات' : 'Total sandwiches';
   return [`${addressLabel}: ${address}`, '', ...lines, `${totalLabel}: ${quantityText(total)}`].join('\n');
 }

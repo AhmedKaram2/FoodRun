@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getLanguage } from './i18n.js';
+import { getLanguage, t } from './i18n.js';
 import ScrollLoad from './ScrollLoad.jsx';
-const tx = (en, ar) => getLanguage() === 'ar' ? ar : en;
+const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 export const matchesSearch = (value, query) => !query.trim() || JSON.stringify(value).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
 export default function PagedList({ items, children, pageSize = 8, resetKey = '', empty }) {
   const [limit, setLimit] = useState(pageSize);

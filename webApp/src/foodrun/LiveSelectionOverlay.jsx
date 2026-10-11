@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import GroupSheet from './GroupSheet.jsx';
-import { getLanguage } from './i18n.js';
-const tx = (en,ar) => getLanguage() === 'ar' ? ar : en;
+import { getLanguage, t } from './i18n.js';
+const tx = (en,ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 export default function LiveSelectionOverlay({ data, renderWheel }) {
   const [now,setNow] = useState(Date.now()), [dismissed,setDismissed] = useState('');
   const candidate = Object.values(data.rooms || {}).filter(reply => {

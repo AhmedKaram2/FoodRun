@@ -155,7 +155,8 @@ final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterD
             let identity = library["identityToken"] as? String, !identity.isEmpty,
             let pairing = library["identityHub"] as? [String: String], let url = pairing["url"],
             let installation = UserDefaults.standard.string(forKey: "foodrun-push-installation") else { return }
-        let body = try? JSONSerialization.data(withJSONObject: ["identityToken": identity, "action": "register", "token": token, "platform": "ios", "installationId": installation, "language": library["language"] as? String ?? "en"])
+        let language = (library["language"] as? String ?? "en").hasPrefix("ar") ? "ar" : "en"
+        let body = try? JSONSerialization.data(withJSONObject: ["identityToken": identity, "action": "register", "token": token, "platform": "ios", "installationId": installation, "language": language])
         guard let body, let text = String(data: body, encoding: .utf8) else { return }
         let id = UUID(), transport = PinnedHubSession(hub: HubPairing(url: url, fingerprint: pairing["fingerprint"] ?? ""))
         requests[id] = transport

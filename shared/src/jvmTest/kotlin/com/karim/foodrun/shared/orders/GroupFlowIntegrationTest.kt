@@ -387,7 +387,7 @@ class GroupFlowIntegrationTest {
         assertEquals("", host.text(GroupFieldKey.REFERENCE))
         host.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
         assertEquals("40.00", member.text(GroupFieldKey.AMOUNT))
-        member.update(GroupFieldKey.AMOUNT, "15"); member.update(GroupFieldKey.REFERENCE, "First part")
+        member.update(GroupFieldKey.TRANSFER_AMOUNT_MODE, "other"); member.update(GroupFieldKey.AMOUNT, "15")
         member.dispatch(GroupAction.DECLARE_TRANSFER); bus.drain(); bus.sync()
         assertEquals("", member.text(GroupFieldKey.REFERENCE))
         assertFalse(member.state.buttons.any { it.action == GroupAction.DECLARE_TRANSFER })
@@ -741,7 +741,7 @@ class GroupFlowIntegrationTest {
         host.update(GroupFieldKey.AMOUNT, "70"); host.dispatch(GroupAction.PAY_RESTAURANT); bus.drain(); bus.sync()
         assertEquals("5.00", host.text(GroupFieldKey.AMOUNT))
         host.dispatch(GroupAction.OPEN_RECEIPTS)
-        assertTrue(host.state.fields.any { it.key == GroupFieldKey.AMOUNT }); assertTrue(host.state.fields.any { it.key == GroupFieldKey.REFERENCE })
+        assertTrue(host.state.fields.any { it.key == GroupFieldKey.TRANSFER_AMOUNT_MODE }); assertFalse(host.state.fields.any { it.key == GroupFieldKey.AMOUNT || it.key == GroupFieldKey.REFERENCE })
         host.update(GroupFieldKey.AMOUNT, "5"); host.update(GroupFieldKey.REFERENCE, "Refund claim"); host.dispatch(GroupAction.DECLARE_REFUND, member.me()); bus.drain(); bus.sync()
         member.dispatch(GroupAction.OPEN_RECEIPTS)
         val refund = member.state.cards.single { it.buttons.any { button -> button.title == "Reject refund claim" } }

@@ -15,7 +15,7 @@ internal class GroupNotifications(private val c: GroupController) {
     private var registrationGeneration = 0
     var deviceEnabled = false; private set
     private var token = ""
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun request(fields: NotificationRequest, result: (NotificationReply) -> Unit = {}) {
         val hub = c.library.identityHub ?: return
         val identity = c.library.identityToken
@@ -66,7 +66,7 @@ internal class GroupNotifications(private val c: GroupController) {
                     val key = identity + token + c.library.language
                     if(registered == key && !prompt) return
                     request(NotificationRequest(identity, "register", token = token, platform = data.getValue("platform").jsonPrimitive.content,
-                        installationId = data.getValue("installationId").jsonPrimitive.content, language = c.library.language)) {
+                        installationId = data.getValue("installationId").jsonPrimitive.content, language = if(c.library.language.startsWith("ar")) "ar" else "en")) {
                         if(generation == registrationGeneration && c.library.home?.notificationPreferences?.pushEnabled != false) { registered = key; deviceEnabled = true }
                     }
                 } catch (_: Exception) { if(prompt) c.error = tr("Notifications could not be enabled. Try again.", "تعذر تفعيل الإشعارات. حاول مجدداً.") }

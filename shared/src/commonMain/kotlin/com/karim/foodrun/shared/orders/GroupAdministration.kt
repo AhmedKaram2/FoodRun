@@ -14,7 +14,7 @@ internal class GroupAdministration(private val c: GroupController) {
     private var userId = ""
     private var pendingAction = ""
     private var pendingTarget = ""
-    private fun tr(en: String, ar: String) = if(c.library.language == "ar") ar else en
+    private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
     private fun field(key: GroupFieldKey, en: String, ar: String, toggle: Boolean = false, secret: Boolean = false, choices: List<GroupChoice> = emptyList()) = GroupField(key, tr(en, ar), c.text(key), toggle = toggle, secret = secret, choices = choices)
     private fun button(en: String, ar: String, action: GroupAction, value: String = "", primary: Boolean = false, destructive: Boolean = false) = GroupButton(tr(en, ar), action, value, primary, destructive)
     fun clear() { allowed = false; checking = false; checkedIdentity = ""; dashboard = null; preview = null; editingRestaurant = false }

@@ -4,6 +4,35 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupSettlementPresentationTest {
+    @Test fun basicRegistrationSkipsStaleContactAndPaymentDraftsAndReturnsHome() {
+        val device=Device()
+        val c=GroupController(device).apply { library=library.copy(selectedHub=HubPairing("https://localhost:8443"));page=GroupPage.PROFILE }
+        c.update(GroupFieldKey.NAME,"New user");c.update(GroupFieldKey.EMAIL,"new@example.test");c.update(GroupFieldKey.PASSWORD,"fixture-password")
+        c.update(GroupFieldKey.PROFILE_PHONE,"invalid");c.update(GroupFieldKey.ACCOUNT_IDENTIFIER,"invalid")
+        device.response=RoomReply(identityToken="fixture-session",home=HomePayload(FoodProfile("user","New user")))
+        c.dispatch(GroupAction.REGISTER)
+        val request=orderJson.decodeFromString<RoomCommand>(device.requestBody).identity!!
+        assertEquals(IdentityAction.REGISTER,request.action)
+        assertEquals("New user",request.profile!!.name);assertEquals("",request.profile!!.phone);assertNull(request.profile!!.payment)
+        assertEquals(GroupPage.HOME,c.state.page);assertEquals("",c.text(GroupFieldKey.PASSWORD))
+    }
+    @Test fun fullRemainingIsDefaultAndOtherAmountNeedsOnlyAnAmount() {
+        val due = confirmed(room()).copy(phase = RoomPhase.FULFILLED, restaurantPaid = true,
+            transfers = listOf(transfer(400,TransferStatus.CONFIRMED)))
+        val c=controller(due,"member")
+        val full=GroupSettlementPresentation(c).settlement()
+        assertEquals("full",full.fields.single { it.key==GroupFieldKey.TRANSFER_AMOUNT_MODE }.value)
+        assertFalse(full.fields.any { it.key in listOf(GroupFieldKey.AMOUNT,GroupFieldKey.REFERENCE) })
+        c.draft[GroupFieldKey.AMOUNT]="999"
+        assertEquals(600,c.transferAmount("member"),"Full must use the current remaining receipt balance")
+        c.update(GroupFieldKey.TRANSFER_AMOUNT_MODE,"other"); c.update(GroupFieldKey.AMOUNT,"2.50")
+        val other=GroupSettlementPresentation(c).settlement()
+        assertTrue(other.fields.any { it.key==GroupFieldKey.AMOUNT })
+        assertFalse(other.fields.any { it.key==GroupFieldKey.REFERENCE })
+        assertEquals(250,c.transferAmount("member"))
+        c.update(GroupFieldKey.AMOUNT,"6.01");assertFails { c.transferAmount("member") }
+        c.update(GroupFieldKey.AMOUNT,"0");assertFails { c.transferAmount("member") }
+    }
     private val account = ReceivingAccount("account", "Karim", "Test Bank", "AE070331234567890123456")
     private val restaurant = Restaurant("kitchen", "Kitchen", contact = RestaurantContact("+971500000000"),
         menu = Menu(categories = listOf(MenuCategory("main", "Main")), items = listOf(MenuItem("meal", "main", "Meal", basePriceMinor = 1000))))
@@ -291,10 +320,10 @@ class GroupSettlementPresentationTest {
         val r = confirmed(room()).copy(phase = RoomPhase.PLACED, restaurantPaid = true)
         val partial = GroupSettlementPresentation(controller(r.copy(transfers = listOf(transfer(400, TransferStatus.CONFIRMED))), "member")).settlement()
         assertTrue(partial.buttons.any { it.action == GroupAction.DECLARE_TRANSFER })
-        assertTrue(partial.fields.single { it.key == GroupFieldKey.AMOUNT }.label.contains("AED 6.00"))
+        assertTrue(partial.fields.single { it.key == GroupFieldKey.TRANSFER_AMOUNT_MODE }.choices.first().label.contains("AED 6.00"))
         val rejected = GroupSettlementPresentation(controller(r.copy(transfers = listOf(transfer(status = TransferStatus.REJECTED))), "member")).settlement()
         assertTrue(rejected.buttons.any { it.action == GroupAction.DECLARE_TRANSFER })
-        assertTrue(rejected.fields.single { it.key == GroupFieldKey.AMOUNT }.label.contains("AED 10.00"))
+        assertTrue(rejected.fields.single { it.key == GroupFieldKey.TRANSFER_AMOUNT_MODE }.choices.first().label.contains("AED 10.00"))
     }
 
     @Test fun fullySettledAndNoFoodMembersDoNotGetPaymentForms() {

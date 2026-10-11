@@ -63,7 +63,7 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
     root.render(<RoomScreen {...props} roomId={room.id} />);
     return { ok: true };
   };
-  const auditNode = screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang === 'ar' ? 'ar' : 'en'} {...props} />
+  const auditNode = screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang.startsWith('ar') ? 'ar' : 'en'} {...props} />
     : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <ProfileScreen {...props} />
     : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />;
   root._auditComponent = {key:screen,node:auditNode}; root.render(auditNode);
@@ -73,6 +73,47 @@ export function measureAudit() {
   return { width: innerWidth, screenWidth: document.documentElement.scrollWidth,
     overflow: document.documentElement.scrollWidth > innerWidth + 1,
     text: host.innerText.slice(0, 500), inputs: [...host.querySelectorAll('input, select')].filter(x => x.getClientRects().length).map(x => ({ label: x.closest('label')?.textContent, fontSize: getComputedStyle(x).fontSize })) };
+}
+
+export async function runSimpleTransferAudit() {
+  const bank={id:'bank',holder:'Collector',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED',method:'BANK'};
+  const member={id:'friend',name:'Friend',approved:true,participating:true};
+  const receipt={memberId:'friend',name:'Friend',total:3000,paid:1250,balance:1750,food:3000,currency:'AED',lines:[{description:'Meal',quantity:1,amount:3000}]};
+  const options={memberId:'friend',room:{payerId:'me',restaurantPaid:true,account:bank,members:[{id:'me',name:'Collector',approved:true,participating:true},member]},receipts:[receipt],send:async(kind,fields)=>{commands.push({kind,fields});return {ok:true};}};
+  await mountAudit('room','FULFILLED',options);commands.length=0;
+  let actions=host.querySelector('.payment-actions');
+  assert(actions?.querySelector('input[type=radio]')?.checked,'Full remaining amount is not the default');
+  assert(!actions.querySelector('input[inputmode=decimal]'),'Default transfer still requires entering money');
+  assert(![...actions.querySelectorAll('label')].some(label=>label.textContent.includes(t('Payment note (optional)'))),'Notes step remains');
+  actions.querySelector('form').requestSubmit();await pause();
+  assert(commands.at(-1)?.kind==='DECLARE_TRANSFER'&&commands.at(-1).fields.amount===1750,'Full transfer used the original total instead of remaining');
+  assert(!commands.at(-1).fields.text,'Client still requires a transfer note');
+  await mountAudit('room','FULFILLED',options);commands.length=0;
+  actions=host.querySelector('.payment-actions');
+  [...actions.querySelectorAll('button')].find(button=>button.textContent===t('Another amount')).click();await pause();
+  let sheet=document.querySelector('[role=dialog]');
+  assert(sheet&&sheet.querySelectorAll('input').length===1,'Other amount must have just one input');
+  setValue(sheet.querySelector('input'),'20');await pause();sheet.querySelector('form').requestSubmit();await pause();
+  assert(commands.length===0&&sheet.querySelector('[role=alert]'),'Overpayment was sent');
+  setValue(sheet.querySelector('input'),'5.25');await pause();sheet.querySelector('form').requestSubmit();await pause();
+  assert(commands.at(-1)?.fields.amount===525&&!commands.at(-1).fields.text,'Partial transfer amount/note incorrect');
+  const refund={...receipt,balance:-250,paid:3250};
+  await mountAudit('room','FULFILLED',{...options,memberId:'me',receipts:[refund]});commands.length=0;
+  host.querySelector('.payment-actions form').requestSubmit();await pause();
+  assert(commands.at(-1)?.kind==='DECLARE_REFUND'&&commands.at(-1).fields.amount===250&&commands.at(-1).fields.memberId==='friend','Full refund did not target its recipient');
+  assert(!measureAudit().overflow,'Transfer controls overflow');
+  return {language:getLanguage(),width:innerWidth,passed:['full remaining default','single amount sheet','overpayment blocked','partial amount','automatic note','full refund'],overflow:false};
+}
+
+export async function runLanguageOptionsAudit() {
+  await mountAudit('home');
+  const selector=host.querySelector('.language-picker select');
+  assert(selector?.options.length===4,'Language selector must include all four options');
+  assert([...selector.options].map(option=>option.value).join(',')==='en,ar-EG,ar-AE,ar-001','Arabic variants missing');
+  assert(selector.value===getLanguage(),'Selected language was lost');
+  assert(document.documentElement.dir===(getLanguage().startsWith('ar')?'rtl':'ltr'),'Arabic direction was lost');
+  assert(!measureAudit().overflow,'Language selector overflows phone');
+  return {language:getLanguage(),width:innerWidth,passed:['four choices','selected preference','RTL','small-screen layout'],overflow:false};
 }
 export async function runWheelProtectionAudit() {
   commands.length = 0;
@@ -822,7 +863,7 @@ export async function runWalletAudit() {
   const click = async (scope, label) => { const value=[...scope.querySelectorAll('button')].find(node=>node.textContent.includes(label));assert(value&&!value.disabled,`Missing wallet button ${label}`);value.click();await pause(); };
   const wait = async predicate => { for(let i=0;i<30;i++){if(predicate()) return;await pause();}throw Error('Wallet UI did not load'); };
   const expect = (kind, fields) => {const command=commands.at(-1);assert(command?.kind===kind&&Object.entries(fields).every(([key,value])=>command.fields[key]===value),`Incorrect wallet command ${JSON.stringify(command)}`);};
-  const ar=getLanguage()==='ar';
+  const ar=getLanguage().startsWith('ar');
   await render(<WalletFunds data={fixture}/>);
   assert(host.textContent.includes('AED 100.00')&&host.textContent.includes('Holder'),'Balance does not identify cash holder');
   await click(host,ar?'شحن المحفظة':'Charge wallet');
@@ -884,7 +925,7 @@ export async function runWalletCustodyAudit() {
   const sent = {...payment,status:'SENT',batchId:'batch'};
   const receiving = {...fixture,home:{...fixture.home,wallet:{...wallet,payments:[sent],batches:[batch]}}};
   await render(<WalletCustody room={{...room,walletPayments:[sent]}} data={receiving}/>);
-  const confirm = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(getLanguage()==='ar'?'تأكيد استلام كامل المبلغ':'Confirm full amount received'));
+  const confirm = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(getLanguage().startsWith('ar')?'تأكيد استلام كامل المبلغ':'Confirm full amount received'));
   assert(confirm,'Recipient confirmation missing');confirm.click();await pause();
   assert(commands.at(-1)?.kind==='WALLET_REVIEW_BATCH'&&commands.at(-1)?.fields.transferId==='batch'&&commands.at(-1)?.fields.flag===true,'Incorrect grouped confirmation command');
   const refuse = [...host.querySelectorAll('button')].find(node=>node.textContent.includes(t('Not received')));refuse.click();await pause();
@@ -936,7 +977,7 @@ export async function runDesignAudit() {
 }
 
 export async function runScreenRedesignAudit() {
-  const ar = getLanguage()==='ar', passed=[];
+  const ar = getLanguage().startsWith('ar'), passed=[];
   const assertScreen = label => { assert(!measureAudit().overflow, `${label} overflows`); passed.push(label); };
   for (const screen of ['create','join','library','payment-create']) {
     await mountAudit(screen); assertScreen(screen);
@@ -1004,7 +1045,7 @@ export async function runWalletAnnouncementAudit() {
 export async function runFriendsTimerAudit() {
   await mountAudit('home');
   commands.length = 0;
-  const ar = getLanguage() === 'ar';
+  const ar = getLanguage().startsWith('ar');
   const find = (en, arabic) => { const node = [...host.querySelectorAll('button')].find(node => node.textContent.trim() === (ar ? arabic : en)); assert(node, 'Missing button '+en+': '+[...host.querySelectorAll('button')].map(value=>value.textContent).join('|')); return node; };
   const group = {id:'friends',name:'Office friends',favourite:true,members:[{email:'bob@example.test',userId:'bob',name:'Bob'}]};
   const fixture = {...data, home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},friendGroups:[group]}, walletQuery:async (kind, fields) => ({friendContact:{email:fields.text,userId:fields.text==='bob@example.test'?'bob':'',name:fields.text==='bob@example.test'?'Bob':''}}), setNotice:()=>{}};
@@ -1046,7 +1087,7 @@ export async function runFriendsTimerAudit() {
 
 export async function runGroupMembershipAudit() {
   await mountAudit('home'); commands.length = 0;
-  const ar = getLanguage() === 'ar';
+  const ar = getLanguage().startsWith('ar');
   const find = (en, arabic, scope = document) => { const node = [...scope.querySelectorAll('button')].find(value => value.textContent.trim() === (['Edit','Remove','Save','Cancel'].includes(en) ? t(en) : ar ? arabic : en)); assert(node, 'Missing '+en); return node; };
   const dialog = () => document.querySelector('[role=dialog]');
   const group = {id:'owned',name:'Office friends',favourite:true,revision:4,members:[{email:'bob@example.test',userId:'bob',name:'Bob'},{email:'charlie@example.test',userId:'charlie',name:'Charlie'}]};
@@ -1092,7 +1133,7 @@ export async function runWalletApprovalAudit() {
   const baseData = {...data,home:{...data.home,profile:{...data.home.profile,userId:'payer-user'},wallet:{balances:[],topUps:[],payments:[payment],batches:[]}}};
   commands.length=0;
   await mountAudit('room','FULFILLED',{room,receipts,baseData});
-  const approve = [...host.querySelectorAll('button')].find(node=>node.textContent=== (getLanguage()==='ar'?'الموافقة على دفعة المحفظة':'Approve wallet payment'));
+  const approve = [...host.querySelectorAll('button')].find(node=>node.textContent=== (getLanguage().startsWith('ar')?'الموافقة على دفعة المحفظة':'Approve wallet payment'));
   assert(approve,'Wallet request is not in normal payment approval list'); approve.click(); await pause();
   assert(commands.at(-1)?.kind==='CONFIRM_TRANSFER' && commands.at(-1).fields.transferId==='wallet-request','Approval used wrong ledger action');
   const sent = {...payment,holderId:'holder',holderName:'Ahmed',status:'SENT',batchId:'batch'};
@@ -1197,7 +1238,7 @@ export async function runGlobalNavigationAudit() {
     assert(host.querySelector('.app-navigation'),'Global navigation missing');
     for(const [label,arabic] of routes){
       await nav('home');
-      const target=[...host.querySelectorAll('button')].find(button=>[t(label),getLanguage()==='ar'?arabic:label].includes(button.textContent.trim()));
+      const target=[...host.querySelectorAll('button')].find(button=>[t(label),getLanguage().startsWith('ar')?arabic:label].includes(button.textContent.trim()));
       assert(target,`Missing route ${label}`);target.click();await pause();await pause();
       await nav('profile');assert(host.querySelector('.profile-grid'),`Profile unreachable from ${label}`);
       await nav('home');assert(host.querySelector('.home-banner'),`Home unreachable from ${label}`);
@@ -1300,7 +1341,7 @@ export async function runLiveSelectionOverlayAudit() {
   assert(document.querySelector('.selection-winner')?.textContent.includes('Bob'),'Server winner celebration is missing');
   assert(dialog.getBoundingClientRect().width<=innerWidth+1,'Live selection overflows');
   const proceed=[...dialog.querySelectorAll('button')].find(button=>button.classList.contains('primary'));proceed.click();await pause();
-  assert(!document.querySelector('[role=dialog]') && host.textContent.includes(getLanguage()==='ar'?'مجموعات الأصدقاء':'Friend groups'),'Live selection lost the previous page');
+  assert(!document.querySelector('[role=dialog]') && host.textContent.includes(getLanguage().startsWith('ar')?'مجموعات الأصدقاء':'Friend groups'),'Live selection lost the previous page');
   return {passed:true,language:getLanguage(),width:innerWidth,globalOverlay:true,sharedWinner:'Bob'};
 }
 
@@ -1358,7 +1399,7 @@ export async function runOwnerRestaurantActionsAudit() {
 
 export async function runRefusedSelectionAudit() {
   await mountAudit('room','LOBBY',{room:{payerId:null,pastSpins:[{id:'previous',winnerId:'bob'}],members:[{id:'me',name:'Alice',approved:true,participating:true,eligible:true},{id:'bob',name:'Bob',approved:true,participating:true,eligible:false}]},liveCommands:true});
-  const retry=[...host.querySelectorAll('button')].find(node=>node.textContent===(getLanguage()==='ar'?'إعادة تشغيل العجلة':'Retry wheel'));
+  const retry=[...host.querySelectorAll('button')].find(node=>node.textContent===t('Retry wheel'));
   assert(retry && !retry.disabled,'Owner retry wheel option missing');commands.length=0;retry.click();await pause();assert(commands.at(-1)?.kind==='PREPARE_SPIN','Retry did not start shared selection');
   const previousPrompt=window.prompt;window.prompt=()=>{throw Error('Refused member removal requested a note');};
   try {

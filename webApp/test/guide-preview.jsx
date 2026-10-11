@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../src/foodrun/foodrun.css';
 
-const params = new URLSearchParams(location.search), language = params.get('lang') === 'ar' ? 'ar' : 'en', screen = params.get('screen') || 'sign-in';
+const params = new URLSearchParams(location.search), language = params.get('lang') || 'en', screen = params.get('screen') || 'sign-in';
 localStorage.setItem('foodrun-language-v1', language);
-document.documentElement.lang = language; document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+document.documentElement.lang = language; document.documentElement.dir = language.startsWith('ar') ? 'rtl' : 'ltr';
 const { AuthScreen, CreateRoom, RoomScreen, Home } = await import('../src/foodrun/FoodRunApp.jsx');
 const { setLanguage } = await import('../src/foodrun/i18n.js');
 setLanguage(language);
@@ -13,10 +13,10 @@ localStorage.setItem('foodrun-copy-language-v1', language);
 const { CreatePaymentRoom } = await import('../src/foodrun/PaymentRoom.jsx');
 const { default: FeedbackBanner } = await import('../src/foodrun/FeedbackBanner.jsx');
 const { useFeedback } = await import('../src/foodrun/useFeedback.js');
-const names = language === 'ar' ? ['عمر','سارة','نور'] : ['Omar','Sara','Nour'];
+const names = language.startsWith('ar') ? ['عمر','سارة','نور'] : ['Omar','Sara','Nour'];
 const restaurant = {
   id: 'guide-kitchen', name: 'Neighborhood Kitchen', nameAr: 'مطبخ الحي', branchName: '', currency: 'AED', revision: 1,
-  contact: { phoneE164: '+971500000000', whatsappE164: null, address: language === 'ar' ? 'عنوان المطعم' : 'Restaurant address' },
+  contact: { phoneE164: '+971500000000', whatsappE164: null, address: language.startsWith('ar') ? 'عنوان المطعم' : 'Restaurant address' },
   pricing: { taxTreatment: 'included', taxRateBasisPoints: null, defaultDeliveryFeeMinor: 0, defaultServiceFeeMinor: 0, minimumOrderMinor: 0 },
   openOrdering: true, notes: '', emirate: 'Sharjah', emirateAr: 'الشارقة', area: 'Al Majaz', areaAr: 'المجاز', cuisine: '', mealTypes: ['lunch'],
   menu: { categories: [{ id: 'sandwiches', name: 'Sandwiches', nameAr: 'سندويشات', sortOrder: 0 }], optionGroups: [],
@@ -26,7 +26,7 @@ const restaurant = {
 localStorage.setItem('foodrun-restaurants-v1', JSON.stringify([restaurant]));
 const members = names.map((name, i) => ({ id: `member-${i}`, name, approved: true, eligible: true, ready: true, participating: true, removed: false, guest: false }));
 const account = { id: 'example-account', holder: names[1], bank: 'Example Bank', identifier: 'AE07 0331 2345 6789 0123 456', currency: 'AED', version: 1, method: 'BANK' };
-const room = { id: 'guide-room', code: '123456', ownerId: members[0].id, name: language === 'ar' ? 'غدا المجموعة' : 'Lunch with the group', restaurant,
+const room = { id: 'guide-room', code: '123456', ownerId: members[0].id, name: language.startsWith('ar') ? 'غدا المجموعة' : 'Lunch with the group', restaurant,
   expectedNames: [], deliveryMode: false, destination: '', deadline: 0, fees: { delivery: 0, service: 0, discount: 0, proportionalDelivery: false, automaticDelivery: false },
   phase: screen === 'selection' ? 'ACCEPTING' : screen === 'collector' ? 'REVIEW' : ['pay','settle'].includes(screen) ? 'FULFILLED' : 'COLLECTING',
   members, carts: members.map((member, i) => ({ memberId: member.id, revision: 1, submitted: true, confirmedQuote: 1,
@@ -37,7 +37,7 @@ const room = { id: 'guide-room', code: '123456', ownerId: members[0].id, name: l
   paymentRoom: null, selectionStyle: 'wheel',
 };
 const receipts = members.map((member, i) => ({ memberId: member.id, name: member.name, currency: 'AED', revision: 1,
-  lines: [{ description: language === 'ar' ? i === 2 ? 'شاورما فراخ' : 'سندويش فلافل' : i === 2 ? 'Chicken shawarma' : 'Falafel sandwich', itemId: i === 2 ? 'shawarma' : 'falafel', quantity: 1, amount: i === 2 ? 1800 : 1200, notes: '', variantId: null, optionIds: [] }],
+  lines: [{ description: language.startsWith('ar') ? i === 2 ? 'شاورما فراخ' : 'سندويش فلافل' : i === 2 ? 'Chicken shawarma' : 'Falafel sandwich', itemId: i === 2 ? 'shawarma' : 'falafel', quantity: 1, amount: i === 2 ? 1800 : 1200, notes: '', variantId: null, optionIds: [] }],
   food: i === 2 ? 1800 : 1200, delivery: 0, service: 0, tax: 0, discount: 0, total: i === 2 ? 1800 : 1200, paid: i === 1 ? 1200 : 0, balance: i === 1 ? 0 : i === 2 ? 1800 : 1200 }));
 const actor = ['selection','collector','settle'].includes(screen) ? members[1] : members[0];
 const reply = { ok: true, room, memberId: actor.id, receipts: actor.id === room.payerId ? receipts : receipts.filter(r => r.memberId === actor.id), history: [], historyNextOffset: -1, serverTime: Date.now(), progress: { canReview: screen === 'collector', reviewBlocker: '', canArchive: false, archiveBlocker: 'Waiting for payments' } };

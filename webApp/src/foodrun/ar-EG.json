@@ -1,4 +1,8 @@
 {
+  "Transfer amount": "مبلغ التحويل",
+  "Full remaining amount": "كل المبلغ الباقي",
+  "Another amount": "مبلغ تاني",
+  "Order details are added automatically.": "تفاصيل الطلب بتتضاف تلقائيًا.",
   "Enter your email first.": "اكتب إيميلك الأول.",
   "Password reset email requested.": "طلب إعادة تعيين كلمة السر اتبعت، راجع إيميلك.",
   "Done": "تم بنجاح",
@@ -776,5 +780,10 @@
   "Version 1.7.5 · Android 8+": "الإصدار 1.7.5 · أندرويد 8+",
   "Main navigation": "التنقل الرئيسي",
   "Name, email, room code or keyword": "الاسم أو البريد أو رمز الغرفة أو كلمة للبحث",
-  "Name, email or phone": "الاسم أو البريد أو الهاتف"
+  "Name, email or phone": "الاسم أو البريد أو الهاتف",
+  "Just your name, email and password.": "اسمك وإيميلك وكلمة السر بس.",
+  "Sign in to your FoodRun account.": "ادخل بحسابك في FoodRun.",
+  "or use email": "أو ادخل بالإيميل",
+  "New here? Create account": "أول مرة هنا؟ اعمل حساب",
+  "My account": "حسابي"
 }

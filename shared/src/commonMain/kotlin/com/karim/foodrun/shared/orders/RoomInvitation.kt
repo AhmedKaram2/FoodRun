@@ -3,7 +3,7 @@ package com.karim.foodrun.shared.orders
 import com.karim.foodrun.orders.*
 
 internal fun roomInvitation(room: Room, link: String, language: String): String {
-    val arabic = language == "ar"
+    val arabic = language.startsWith("ar")
     val restaurant = if (room.restaurantPollOpen) {
         (if (arabic) "تصويت المطاعم: " else "Restaurant poll: ") +
             room.restaurantOptions.joinToString(" · ") { it.localizedName(language) }

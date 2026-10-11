@@ -156,7 +156,7 @@ internal fun prepareNativeReorder(restaurant: Restaurant, source: List<FavoriteO
 }
 
 internal fun GroupController.reorderContent(): GroupFlowContent {
-    fun tr(en: String, ar: String) = if(library.language == "ar") ar else en
+    fun tr(en: String, ar: String) = if(library.language.startsWith("ar")) GroupUiText.translate(en, library.language).takeIf { it != en } ?: ar else en
     val valid = room().id == reorderRoom && room().orderNumber == reorderNumber && room().phase in reusablePhases
     if(!valid) return GroupFlowContent(cards = listOf(GroupCard("reorder-expired", tr("This order changed", "تغير هذا الطلب"), tr("Return to the room and choose the saved order again.", "ارجع للغرفة واختر الطلب المحفوظ مجدداً."))))
     val entries = prepareNativeReorder(room().restaurant, reorderSource)

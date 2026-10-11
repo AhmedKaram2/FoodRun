@@ -1,7 +1,7 @@
 import { t, tf } from './i18n.js';
 
 export function roomInvitation(room, link, language = 'en') {
-  const name = value => language === 'ar' && value.nameAr ? value.nameAr : value.name;
+  const name = value => language.startsWith('ar') && value.nameAr ? value.nameAr : value.name;
   const restaurant = room.restaurantPollOpen
     ? tf('Restaurant poll: {names}', { names: (room.restaurantOptions || []).map(name).join(' · ') }, language)
     : tf('Restaurant: {name}', { name: name(room.restaurant) }, language);

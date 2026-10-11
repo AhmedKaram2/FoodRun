@@ -111,7 +111,7 @@ class NativeFeatureTest {
         c.session = StoredSession(hub, room.id, "token", "me", room.name)
         c.reply = RoomReply(room = room, memberId = "me", receipts = Billing.receipts(room))
         c.page = GroupPage.PAYMENT; c.online = true
-        assertTrue(c.state.fields.any { it.key == GroupFieldKey.AMOUNT })
+        assertTrue(c.state.fields.any { it.key == GroupFieldKey.TRANSFER_AMOUNT_MODE }); assertFalse(c.state.fields.any { it.key == GroupFieldKey.AMOUNT || it.key == GroupFieldKey.REFERENCE })
         assertTrue(c.state.buttons.any { it.action == GroupAction.DECLARE_TRANSFER })
         assertTrue(c.state.cards.any { it.id == "account" })
         assertNull(device.sent)

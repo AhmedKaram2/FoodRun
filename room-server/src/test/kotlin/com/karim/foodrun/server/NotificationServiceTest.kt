@@ -118,4 +118,40 @@ class NotificationServiceTest {
         assertFails { f.service.notificationRequest(NotificationRequest(token,"register",token="fixture-push-token-123456789",platform="other",installationId="fixture-installation-123456"),true) }
         assertFails { f.service.notificationRequest(NotificationRequest(token,"register",token="fixture-push-token-123456789",platform="android",installationId="fixture-installation-123456"),false) }
     }
+    @Test fun bulkReadAndClearAreScopedPersistentAndDoNotChangePayments() = RoomFixture(Identity()).use { f ->
+        device(f,"fixture-owner")
+        val member=f.placed();f.pay()
+        f.send(member,CommandKind.DECLARE_TRANSFER) { it.copy(amount=100,text="Payment") }
+        val ownerToken=signIn(f,"fixture-owner");val memberToken=signIn(f,"Member")
+        val before=f.db.room(f.owner.room!!.id)
+        assertTrue(inbox(f,"fixture-owner").any { !it.read })
+        f.service.notificationRequest(NotificationRequest(memberToken,"clear"),true)
+        assertTrue(inbox(f,"fixture-owner").any { !it.read })
+        val read=f.service.notificationRequest(NotificationRequest(ownerToken,"read_all"),true).notifications
+        assertTrue(read.isNotEmpty());assertTrue(read.all { it.read })
+        assertTrue(f.service.notificationRequest(NotificationRequest(ownerToken,"clear"),true).notifications.isEmpty())
+        assertEquals(before,f.db.room(f.owner.room!!.id))
+        assertNull(f.service.nextPush())
+        f.restart()
+        assertTrue(inbox(f,"fixture-owner").isEmpty())
+        val notices=NotificationService(f.db) { f.now }
+        notices.wallet("fixture-owner","event","wallet_charge","Wallet" to "المحفظة","Update" to "تحديث")
+        f.service.notificationRequest(NotificationRequest(signIn(f,"fixture-owner"),"clear"),true)
+        notices.wallet("fixture-owner","event","wallet_charge","Wallet" to "المحفظة","Update" to "تحديث")
+        assertTrue(inbox(f,"fixture-owner").isEmpty())
+        notices.wallet("fixture-owner","new-event","wallet_charge","Wallet" to "المحفظة","New update" to "تحديث جديد")
+        assertEquals(1,inbox(f,"fixture-owner").size);assertFalse(inbox(f,"fixture-owner").single().read)
+    }
+    @Test fun tourCompletionIsSavedPerAccountAndSurvivesInboxClearing() = RoomFixture(Identity()).use { f ->
+        val owner=signIn(f,"fixture-owner");val member=signIn(f,"Member")
+        assertFalse(f.service.notificationRequest(NotificationRequest(owner),true).tourCompleted)
+        assertFails { f.service.notificationRequest(NotificationRequest("invalid","tour_complete"),true) }
+        assertTrue(f.service.notificationRequest(NotificationRequest(member,"tour_complete"),true).tourCompleted)
+        assertFalse(f.service.notificationRequest(NotificationRequest(owner),true).tourCompleted)
+        f.service.notificationRequest(NotificationRequest(owner,"tour_complete"),true)
+        f.service.notificationRequest(NotificationRequest(owner,"clear"),true)
+        f.restart()
+        assertTrue(f.service.notificationRequest(NotificationRequest(signIn(f,"fixture-owner")),true).tourCompleted)
+    }
+
 }

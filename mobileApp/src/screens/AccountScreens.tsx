@@ -271,6 +271,9 @@ export function NotificationCenter({ snapshot }: { snapshot: Snapshot }) {
         selected={tab}
         onChange={setTab}
       />
+      <View style={[styles.noticeActions,{paddingHorizontal:16,paddingVertical:8}]}>
+        {allActions(snapshot).filter(a=>['NOTIFICATIONS_READ_ALL','NOTIFICATIONS_CLEAR'].includes(a.action)).map(a=><Button key={a.action} action={a} busy={busy} rtl={rtl}/>)}
+      </View>
       <ScrollArea
         refreshControl={refresh(snapshot, "OPEN_NOTIFICATIONS")}
         contentContainerStyle={styles.content}
@@ -362,7 +365,7 @@ export function NotificationCenter({ snapshot }: { snapshot: Snapshot }) {
             <Text style={[textStyle(rtl, "semibold"), styles.sectionTitle]}>
               {tx(rtl, "Stay in the loop", "خليك على اطلاع")}
             </Text>
-            {allActions(snapshot).map((a) => (
+            {allActions(snapshot).filter(a=>!['NOTIFICATIONS_READ_ALL','NOTIFICATIONS_CLEAR'].includes(a.action)).map((a) => (
               <Button
                 key={a.action + a.value}
                 action={a}

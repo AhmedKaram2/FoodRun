@@ -5,13 +5,25 @@ import { notificationRequest } from './notifications.js';
 export function useNotifications({ hub, identityToken, user, home, language = 'en', supportMode = false }) {
   const pushAllowed = home?.notificationPreferences?.pushEnabled !== false;
   const [items, setItems] = useState([]), [error, setError] = useState(''), [available, setAvailable] = useState(false), [enabled, setEnabled] = useState(false);
+  const [tourCompleted,setTourCompleted]=useState(true);
+  const [busy,setBusy] = useState(false), managing = useRef(false), sequence = useRef(0), applied = useRef(0);
   const epoch = useRef(0), pushToken = useRef('');
   const call = useCallback(async fields => {
-    const generation = epoch.current;
+    const generation = epoch.current, requestSequence = ++sequence.current;
     const value = await notificationRequest(hub, identityToken, fields);
-    if (generation === epoch.current) { setItems(value.notifications || []); setAvailable(value.pushAvailable); setError(''); }
+    if (generation === epoch.current && requestSequence >= applied.current) { applied.current=requestSequence; let localTour=false;try{localTour=localStorage.getItem(`foodrun-tour-v1:${user?.uid}`)==='done';}catch{} setTourCompleted(!!value.tourCompleted||localTour); setItems(value.notifications || []); setAvailable(value.pushAvailable); setError(''); }
     return value;
-  }, [hub, identityToken]);
+  }, [hub, identityToken, user?.uid]);
+  const completeTour=useCallback(()=>{
+    setTourCompleted(true);try{localStorage.setItem(`foodrun-tour-v1:${user?.uid}`,'done');}catch{}
+    call({action:'tour_complete'}).catch(()=>{});
+  },[call,user?.uid]);
+  const manage = useCallback(async action => {
+    if(!identityToken || managing.current) return;
+    const generation=epoch.current;managing.current=true;setBusy(true);
+    try { await call({action}); } catch(failure) { if(generation===epoch.current)setError(failure.message); }
+    finally { if(generation===epoch.current) { managing.current=false;setBusy(false); } }
+  },[identityToken,call]);
   const refresh = useCallback(() => { if (identityToken) call({}).catch(() => {}); }, [identityToken, call]);
   const enable = useCallback(async (ask = true) => {
     const generation = epoch.current;
@@ -54,7 +66,7 @@ export function useNotifications({ hub, identityToken, user, home, language = 'e
     if (failures.length) setError(failures.join(' '));
   }, [call, supportMode]);
   useEffect(() => {
-    ++epoch.current; setItems([]); setError(''); setAvailable(false); setEnabled(false);
+    ++epoch.current; managing.current=false;setBusy(false);setTourCompleted(true);setItems([]); setError(''); setAvailable(false); setEnabled(false);
     if (!identityToken || !user?.uid) return;
     refresh();
     if (!supportMode && pushAllowed && (localStorage.getItem('foodrun-push-enabled') === 'true' || window.Notification?.permission==='granted')) enable(false);
@@ -67,5 +79,5 @@ export function useNotifications({ hub, identityToken, user, home, language = 'e
       ++epoch.current; clearInterval(interval); window.removeEventListener('focus', refresh); navigator.serviceWorker?.removeEventListener('message', message);
     };
   }, [hub, identityToken, user?.uid, refresh, enable, disable, supportMode, pushAllowed]);
-  return { items, error, available, configured: !supportMode && !!import.meta.env.VITE_FIREBASE_VAPID_KEY, enabled, enable, disable, refresh, read: id => call({ action: 'read', notificationId: id }).catch(failure => setError(failure.message)) };
+  return { items, error, tourCompleted, completeTour, busy, readAll:()=>manage('read_all'), clear:()=>manage('clear'), available, configured: !supportMode && !!import.meta.env.VITE_FIREBASE_VAPID_KEY, enabled, enable, disable, refresh, read: id => call({ action: 'read', notificationId: id }).catch(failure => setError(failure.message)) };
 }

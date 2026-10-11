@@ -21,7 +21,7 @@ export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
   const close = () => { if (!busy) dispatch("FRIENDS_ACTION", "open"); };
   return <View style={{flex:1}}>
     <View style={styles.heading}>
-      <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.title]}>{tx(rtl,"Friend groups","مجموعات الأصدقاء")}</Text>
+      <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.title]}>{tx(rtl,"Groups","المجموعات")}</Text>
       <Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Invite your favourite people to your next room.","ادعُ أصحابك إلى غرفتك القادمة.")}</Text>
       <Button action={action(tx(rtl,"New group","مجموعة جديدة"),"FRIENDS_ACTION","new",true)} rtl={rtl} busy={busy}/>
       <View style={[styles.tabs,rtl && {flexDirection:"row-reverse"}]}>

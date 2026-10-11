@@ -103,7 +103,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 if(c.library.home?.notificationPreferences?.pushEnabled != false && !c.notifications.deviceEnabled) button(tr("Enable notifications on this device", "تفعيل الإشعارات على هذا الجهاز"), GroupAction.ENABLE_ALERTS)
                 button(tr("Save notification preferences", "حفظ تفضيلات الإشعارات"),GroupAction.SAVE_NOTIFICATION_PREFERENCES,primary = true)
             }
-            GroupPage.FRIENDS -> { title = tr("Friend groups", "مجموعات الأصدقاء"); subtitle = tr("Choose a favourite group when creating an order to email invitations.", "اختر مجموعة مفضلة عند إنشاء طلب لإرسال الدعوات بالبريد."); append(c.friends.content()) }
+            GroupPage.FRIENDS -> { title = tr("Groups", "المجموعات"); subtitle = tr("Choose a favourite group when creating an order to email invitations.", "اختر مجموعة مفضلة عند إنشاء طلب لإرسال الدعوات بالبريد."); append(c.friends.content()) }
             GroupPage.HOME -> home()
             GroupPage.ROOMS -> {
                 home(); title = tr("Rooms", "الغرف"); subtitle = tr("Your rooms and invitations", "غرفك ودعواتك")
@@ -193,7 +193,7 @@ internal class GroupPresentation(private val c: GroupController) {
             }
         button(if(c.library.home == null) tr("Register / sign in", "تسجيل أو دخول") else tr("My profile", "ملفي الشخصي"), GroupAction.OPEN_PROFILE); button(tr("Notifications", "الإشعارات") + c.notifications.items.count { !it.read }.takeIf { it > 0 }?.let { " ($it)" }.orEmpty(), GroupAction.OPEN_NOTIFICATIONS)
         if(c.administration.allowed) button(tr("Administration", "الإدارة"), GroupAction.OPEN_ADMIN)
-        button(tr("Friend groups", "مجموعات الأصدقاء"), GroupAction.FRIENDS_ACTION, "open")
+        button(tr("Groups", "المجموعات"), GroupAction.FRIENDS_ACTION, "open")
         button(tr("Create payment room", "إنشاء غرفة دفع"), GroupAction.CREATE_PAYMENT_ROOM)
         button(tr("Quick Choice", "الاختيار السريع"), GroupAction.QUICK_SPIN); button(tr("Restaurant library", "المطاعم والقوائم"), GroupAction.OPEN_LIBRARY)
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
@@ -280,7 +280,7 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         if (!c.nextOrder) {
             field(GroupFieldKey.ROOM_NAME, tr("Room name", "اسم الغرفة"))
-            fields += GroupField(GroupFieldKey.FRIEND_GROUP_CHOICE, tr("Invite favourite friend group", "دعوة مجموعة أصدقاء مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_CHOICE), choices = listOf(GroupChoice("", tr("No group", "بدون مجموعة"))) + c.library.home?.roomFriendGroups().orEmpty().map { GroupChoice(it.selectionKey(), "${it.group.name} · ${it.ownerName}") })
+            fields += GroupField(GroupFieldKey.FRIEND_GROUP_CHOICE, tr("Invite favourite group", "دعوة مجموعة مفضلة"), c.text(GroupFieldKey.FRIEND_GROUP_CHOICE), choices = listOf(GroupChoice("", tr("No group", "بدون مجموعة"))) + c.library.home?.roomFriendGroups().orEmpty().map { GroupChoice(it.selectionKey(), "${it.group.name} · ${it.ownerName}") })
             field(GroupFieldKey.JOIN_TIMER, tr("Start the wheel after a join timer", "بدء العجلة بعد مهلة الانضمام"), toggle = true)
             if(c.flag(GroupFieldKey.JOIN_TIMER)) field(GroupFieldKey.JOIN_TIMER_MINUTES, tr("Join time in minutes · 1–1440", "مهلة الانضمام بالدقائق · 1–1440"))
             fields += GroupField(GroupFieldKey.SELECTION_STYLE, tr("Selection animation", "طريقة عرض الاختيار"), c.text(GroupFieldKey.SELECTION_STYLE).ifBlank { "names" }, choices = listOf(GroupChoice("wheel", tr("Wheel", "العجلة")), GroupChoice("names", tr("Running names", "الأسماء المتحركة"))))

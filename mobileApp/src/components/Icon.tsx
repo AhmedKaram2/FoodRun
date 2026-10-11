@@ -15,6 +15,7 @@ const paths: Record<string, string> = {
   search: "m21 21-5-5",
   add: "M12 5v14M5 12h14",
   menu: "M4 6h16M4 12h16M4 18h16",
+  download: "M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4",
   check: "m5 12 4 4L19 6",
   room: "M4 4h16v16H4ZM8 8h8M8 12h8M8 16h4",
   food: "M5 3v7M8 3v7M11 3v7M5 8a3 3 0 0 0 6 0M8 11v10M19 3c-3 3-4 7-4 10h4M19 3v18",
@@ -43,7 +44,8 @@ export default function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <Path d={paths[name] || paths.room} />
+      {name !== "more" && <Path d={paths[name] || paths.room} />}
+      {name === "more" && [5,12,19].map(x=><Circle key={x} cx={x} cy={12} r={1.7} fill={color} stroke="none"/>)}
       {name === "friends" && <Circle cx={12} cy={7} r={3} />}
       {name === "search" && <Circle cx={10} cy={10} r={7} />}
       {name === "wheel" && <Circle cx={12} cy={12} r={10} />}

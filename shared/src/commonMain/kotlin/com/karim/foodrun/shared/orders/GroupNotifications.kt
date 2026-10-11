@@ -5,10 +5,14 @@ import kotlinx.serialization.json.*
 
 internal class GroupNotifications(private val c: GroupController) {
     var items = emptyList<FoodNotification>(); private set
+    var tourCompleted = true; private set
     var selected: FoodNotification? = null; private set
     private var intendedAction = "open"
     private var pending: Pair<String, String>? = null
     private var fetching = false
+    private var managing = false
+    private var requestSequence = 0
+    private var appliedSequence = 0
     private var lastFetch = 0L
     private var registered = ""
     private var registering = false
@@ -16,9 +20,10 @@ internal class GroupNotifications(private val c: GroupController) {
     var deviceEnabled = false; private set
     private var token = ""
     private fun tr(en: String, ar: String) = if(c.library.language.startsWith("ar")) GroupUiText.translate(en, c.library.language).takeIf { it != en } ?: ar else en
-    private fun request(fields: NotificationRequest, result: (NotificationReply) -> Unit = {}) {
+    private fun request(fields: NotificationRequest, finished: () -> Unit = {}, result: (NotificationReply) -> Unit = {}) {
         val hub = c.library.identityHub ?: return
         val identity = c.library.identityToken
+        val sequence = ++requestSequence
         c.platform.notificationRequest(hub, orderJson.encodeToString(fields), object : GroupReplyCallback {
             override fun complete(body: String, error: String) {
                 if(c.library.identityToken != identity || c.library.identityHub != hub) return
@@ -27,7 +32,7 @@ internal class GroupNotifications(private val c: GroupController) {
                     require(error.isEmpty()) { error }
                     val reply = orderJson.decodeFromString<NotificationReply>(body)
                     require(reply.ok) { reply.error }
-                    items = reply.notifications
+                    if(sequence >= appliedSequence) { items = reply.notifications; appliedSequence = sequence; tourCompleted = reply.tourCompleted || c.platform.read("onboarding:v1:${c.library.home?.profile?.userId.orEmpty()}") == "done" }
                     result(reply)
                     pending?.let { (id, action) ->
                         val item = items.firstOrNull { it.id == id }
@@ -36,9 +41,24 @@ internal class GroupNotifications(private val c: GroupController) {
                 } catch (failure: Exception) {
                     if(c.page == GroupPage.NOTIFICATIONS) c.error = failure.message.orEmpty()
                 }
+                finished()
                 c.publish()
             }
         })
+    }
+    fun completeTour() {
+        val uid = c.library.home?.profile?.userId.orEmpty()
+        if(uid.isEmpty() || c.supportActive) return
+        c.platform.write("onboarding:v1:$uid", "done")
+        tourCompleted = true
+        request(NotificationRequest(c.library.identityToken, "tour_complete"))
+    }
+    fun manageInbox(action: String) {
+        require(action in listOf("read_all", "clear"))
+        require(c.library.identityToken.isNotEmpty())
+        if(managing) return
+        managing = true
+        request(NotificationRequest(c.library.identityToken, action), finished = { managing = false })
     }
     fun refresh() {
         if(c.library.identityToken.isEmpty() || fetching) return
@@ -80,7 +100,7 @@ internal class GroupNotifications(private val c: GroupController) {
         if(token.isNotEmpty()) request(NotificationRequest(c.library.identityToken, "unregister", token = token))
         c.platform.disablePush(); registered = ""; token = ""; deviceEnabled = false
     }
-    fun clear() { registrationGeneration++; deviceEnabled = false; registering = false; items = emptyList(); selected = null; pending = null; registered = ""; token = ""; fetching = false; lastFetch = 0 }
+    fun clear() { registrationGeneration++; deviceEnabled = false; registering = false; items = emptyList(); selected = null; pending = null; registered = ""; token = ""; fetching = false; managing = false; tourCompleted = true; lastFetch = 0 }
     fun openFromPush(id: String, action: String) {
         if(!id.matches(Regex("[a-f0-9]{40}"))) return
         pending = id to action; c.page = GroupPage.NOTIFICATIONS; refresh(); c.publish()
@@ -163,7 +183,9 @@ internal class GroupNotifications(private val c: GroupController) {
                 direct + confirm + pay + item.actions.map { GroupButton(it.title,GroupAction.OPEN_NOTIFICATION,"${item.id}:${it.id}") })
         }
             .ifEmpty { listOf(GroupCard("notifications-empty", tr("No notifications yet", "لا توجد إشعارات بعد"), tr("Order and payment updates will appear here.", "ستظهر تحديثات الطلبات والمدفوعات هنا."))) }
-        return GroupFlowContent(cards = cards, buttons = if(deviceEnabled) listOf(
+        return GroupFlowContent(cards = cards, buttons = listOf(
+            GroupButton(tr("Mark all as read", "تحديد الكل كمقروء"), GroupAction.NOTIFICATIONS_READ_ALL, enabled = items.any { !it.read } && !managing && !c.busy),
+            GroupButton(tr("Clear notifications", "مسح الإشعارات"), GroupAction.NOTIFICATIONS_CLEAR, enabled = items.isNotEmpty() && !managing && !c.busy)) + if(deviceEnabled) listOf(
             GroupButton(tr("Turn off device notifications", "إيقاف إشعارات الجهاز"), GroupAction.DISABLE_ALERTS))
             else listOf(GroupButton(tr("Enable notifications", "تفعيل الإشعارات"), GroupAction.ENABLE_ALERTS)))
     }

@@ -1,5 +1,7 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
+import FirstUseTour from '../src/foodrun/FirstUseTour.jsx';
+import tourSteps from '../src/foodrun/firstUseTour.json';
 import QuickChoice from '../src/foodrun/QuickChoice.jsx';
 import QuickChoiceOverlay from '../src/foodrun/QuickChoiceOverlay.jsx';
 import {NotificationCenter} from '../src/foodrun/NotificationCenter.jsx';
@@ -46,9 +48,26 @@ export async function runQuickChoiceAudit(language='en',style='names') {
 export async function runNotificationActionsAudit(language='en') {
   setLanguage(language);const host=document.createElement('div');document.body.replaceChildren(host);const root=createRoot(host),commands=[];
   const data={home:{profile:{userId:'owner'},wallet:{topUps:[{id:'top',holderId:'owner',customerId:'a',status:'PENDING',amount:1000,currency:'AED'}],payments:[],batches:[]}},user:{uid:'owner'},busy:false,send:async(kind,fields)=>{commands.push({kind,fields});return {ok:true};}};
-  const notifications={configured:false,items:[{id:'n',kind:'wallet_top_up',transferId:'top',title:'Wallet top-up',body:'Alice sent AED 10',actions:[],createdAt:Date.now()}],read:()=>{}};
+  const notifications={configured:false,items:[{id:'n',kind:'wallet_top_up',transferId:'top',title:'Wallet top-up',body:'Alice sent AED 10',actions:[],createdAt:Date.now()}],read:()=>{},readAll:async()=>commands.push({kind:'read_all'}),clear:async()=>commands.push({kind:'clear'})};
   root.render(<NotificationCenter data={data} notifications={notifications} onBack={()=>{}} onOpen={()=>{}}/>);await pause();
   const button=[...host.querySelectorAll('button')].find(node=>node.textContent===t('Confirm received'));assert(button,'Inbox approval missing');button.click();await pause();
   assert(commands[0]?.kind==='WALLET_REVIEW_TOP_UP' && commands[0].fields.transferId==='top' && commands[0].fields.flag===true,'Inbox sent wrong action');
-  assert(document.documentElement.scrollWidth<=innerWidth+1,'Inbox overflow');root.unmount();return {language,width:innerWidth,directApproval:true};
+  for(const [label,kind] of [['Mark all as read','read_all'],['Clear notifications','clear']]){const control=[...host.querySelectorAll('button')].find(node=>node.textContent===t(label));assert(control&&!control.disabled,`Missing ${label}`);control.click();await pause();assert(commands.at(-1).kind===kind,`Wrong ${label} action`);}
+  root.render(<NotificationCenter data={data} notifications={{...notifications,items:[]}} onBack={()=>{}} onOpen={()=>{}}/>);await pause();
+  assert([...host.querySelectorAll('button')].filter(node=>[t('Mark all as read'),t('Clear notifications')].includes(node.textContent)).every(node=>node.disabled),'Empty inbox actions remain enabled');
+  assert(document.documentElement.scrollWidth<=innerWidth+1,'Inbox overflow');root.unmount();return {language,width:innerWidth,directApproval:true,bulkActions:true};
+}
+
+export async function runTourAudit(language='en') {
+ setLanguage(language);document.documentElement.lang=language;document.documentElement.dir=language.startsWith('ar')?'rtl':'ltr';
+ const host=document.createElement('div');document.body.replaceChildren(host);const root=createRoot(host);let finished=0;
+ const click=label=>{const button=[...document.querySelectorAll('button')].find(node=>node.textContent===t(label));assert(button,`Missing ${label}`);button.click();};
+ root.render(<FirstUseTour visible onComplete={()=>finished++}/>);await pause();
+ assert(document.querySelector('h3').textContent===t(tourSteps[0].title),'First step missing');
+ click('Next');await pause();click('Back');await pause();assert(document.querySelector('h3').textContent===t(tourSteps[0].title),'Tour Back failed');
+ for(let i=0;i<5;i++){click('Next');await pause();}
+ assert(!document.documentElement.scrollWidth||document.documentElement.scrollWidth<=innerWidth+1,'Tour overflow');
+ click('Get started');await pause();assert(finished===1&&!document.querySelector('[role=dialog]'),'Tour finish failed');
+ root.render(<FirstUseTour key="skip" visible onComplete={()=>finished++}/>);await pause();click('Skip tour');await pause();assert(finished===2&&!document.querySelector('[role=dialog]'),'Tour skip failed');
+ root.unmount();return {language,width:innerWidth,tour:true,back:true,skip:true,finish:true};
 }

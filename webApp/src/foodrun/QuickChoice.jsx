@@ -57,7 +57,7 @@ export default function QuickChoice({ home, startQuickChoice, onBack }) {
       {sheet === 'groups' && <>
         <p>{tx('All group members will be included. You can exclude anyone afterward.','سيشارك جميع أعضاء المجموعة. يمكنك استبعاد أي شخص بعد ذلك.')}</p>
         <label>{t('Search groups')}<input type="search" value={search} placeholder={tx('Search by group name…','ابحث باسم المجموعة…')} onChange={event => setSearch(event.target.value)}/></label>
-        {!groups.length && <p>{tx('Create or join a friend group first, or add names yourself.','أنشئ مجموعة أصدقاء أو انضم إلى مجموعة، أو أضف الأسماء بنفسك.')}</p>}
+        {!groups.length && <p>{tx('Create or join a group first, or add names yourself.','أنشئ مجموعة أو انضم إلى مجموعة، أو أضف الأسماء بنفسك.')}</p>}
         {groups.filter(value => value.group.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(value => {
           const id = `${value.ownerId}:${value.group.id}`;
           return <button key={id} className="quick-group" onClick={() => { save({...state,people:groupParticipants(value),groupId:id});edit('people'); }}><span><b>{value.group.name}</b><small>{groupParticipants(value).length} · {tx('People','الأشخاص')}</small></span><span>{state.groupId === id ? '✓' : '+'}</span></button>;

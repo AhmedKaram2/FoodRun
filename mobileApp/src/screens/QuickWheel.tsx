@@ -58,7 +58,7 @@ export default function QuickWheel({ state, rtl }: { state: State; rtl: boolean 
         </> : state.destination === "GROUPS" ? <>
           <Text style={textStyle(rtl)}>{tx(rtl,"All group members will be included. You can exclude anyone afterward.","سيشارك جميع أعضاء المجموعة. يمكنك استبعاد أي شخص بعد ذلك.")}</Text>
           <TextInput style={[styles.input,textStyle(rtl)]} accessibilityLabel={tx(rtl,"Search groups","البحث في المجموعات")} placeholder={tx(rtl,"Search by group name…","ابحث باسم المجموعة…")} value={search} onChangeText={setSearch}/>
-          {!(state.groups || []).length && <Text style={textStyle(rtl)}>{tx(rtl,"Create or join a friend group first, or add names yourself.","أنشئ مجموعة أصدقاء أو انضم إلى مجموعة، أو أضف الأسماء بنفسك.")}</Text>}
+          {!(state.groups || []).length && <Text style={textStyle(rtl)}>{tx(rtl,"Create or join a group first, or add names yourself.","أنشئ مجموعة أو انضم إلى مجموعة، أو أضف الأسماء بنفسك.")}</Text>}
           {(state.groups || []).filter(group => group.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(group => <Pressable key={group.id} accessibilityRole="button" onPress={() => quickAction("group",group.id)} style={[styles.card,local.actions,rtl && local.reverse]}><View style={{flex:1}}><Text style={textStyle(rtl,"semibold")}>{group.name}</Text><Text style={textStyle(rtl)}>{group.count} · {tx(rtl,"People","الأشخاص")}</Text></View><Text>{group.id === state.groupId ? "✓" : "+"}</Text></Pressable>)}
         </> : state.destination === "HISTORY" ? <>
           {!state.history.length && <Text style={textStyle(rtl)}>{tx(rtl,"Your picks will appear here.","ستظهر اختياراتك هنا.")}</Text>}

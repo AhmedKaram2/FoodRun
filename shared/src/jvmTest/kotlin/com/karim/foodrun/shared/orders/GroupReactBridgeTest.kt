@@ -208,4 +208,41 @@ class GroupReactBridgeTest {
         phone.requests.single().second.complete(orderJson.encodeToString(RoomReply(code = "COMMAND_FOUND",home = HomePayload(FoodProfile("owner","Owner")))),"")
         assertEquals(saved,c.library.pending);assertEquals("other",c.library.home!!.profile.userId)
     }
+    @Test fun bulkInboxActionsKeepItemsUntilAcknowledgedAndDiscardStaleLists() {
+        val phone=Phone();val c=owner(phone);phone.deferNotifications=true
+        c.dispatch(GroupAction.OPEN_NOTIFICATIONS)
+        val item=FoodNotification("notice","",0,"wallet_charge","Wallet","Update",createdAt=1000)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply(notifications=listOf(item))),"")
+        c.dispatch(GroupAction.NOTIFICATIONS_READ_ALL)
+        assertEquals("read_all",phone.notificationRequests.last().first.action)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply(notifications=listOf(item.copy(read=true)))),"")
+        assertTrue(c.notifications.items.single().read)
+        c.dispatch(GroupAction.OPEN_NOTIFICATIONS);val stale=phone.notificationRequests.last().second
+        c.dispatch(GroupAction.NOTIFICATIONS_CLEAR)
+        assertEquals("clear",phone.notificationRequests.last().first.action)
+        phone.notificationRequests.last().second.complete("","Offline")
+        assertEquals(1,c.notifications.items.size)
+        c.dispatch(GroupAction.NOTIFICATIONS_CLEAR)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply()),"")
+        stale.complete(orderJson.encodeToString(NotificationReply(notifications=listOf(item))),"")
+        assertTrue(c.notifications.items.isEmpty())
+    }
+    @Test fun firstUseTourWaitsForAccountLoadAndCompletionIsRemembered() {
+        val phone=Phone();val c=owner(phone);phone.deferNotifications=true;val bridge=GroupReactBridge(c)
+        fun visible()=orderJson.parseToJsonElement(bridge.snapshotJson()).jsonObject.getValue("tourAvailable").jsonPrimitive.boolean
+        assertFalse(visible())
+        c.dispatch(GroupAction.OPEN_NOTIFICATIONS)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply()),"")
+        assertTrue(visible())
+        c.dispatch(GroupAction.COMPLETE_TOUR)
+        assertEquals("tour_complete",phone.notificationRequests.last().first.action)
+        assertFalse(visible())
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply()),"")
+        assertFalse(visible())
+        c.library=c.library.copy(home=HomePayload(FoodProfile("other","Other")))
+        c.dispatch(GroupAction.OPEN_NOTIFICATIONS)
+        phone.notificationRequests.last().second.complete(orderJson.encodeToString(NotificationReply()),"")
+        assertTrue(visible())
+    }
+
 }

@@ -121,8 +121,10 @@ test("header opens notifications with the live unread badge and More stays in th
 test("notification filters follow read acknowledgements and open the original notification", () => {
   const unread={...card("notification:new","New invitation"),badge:"New",detail:"Breakfast"};
   const read=card("notification:read","Confirmed payment");
-  const value=snapshot({topCards:[unread,read]});
+  const value=snapshot({topCards:[unread,read],inlineButtons:[action("Mark all as read","NOTIFICATIONS_READ_ALL"),action("Clear notifications","NOTIFICATIONS_CLEAR")]});
   const view=render(<NotificationCenter snapshot={value}/>);
+  fireEvent.press(view.getByText("Mark all as read"));expect(native.dispatch).toHaveBeenLastCalledWith("NOTIFICATIONS_READ_ALL","");
+  fireEvent.press(view.getByText("Clear notifications"));expect(native.dispatch).toHaveBeenLastCalledWith("NOTIFICATIONS_CLEAR","");
   fireEvent.press(view.getByRole("tab",{name:"Unread (1)"}));
   expect(view.queryByText("Confirmed payment")).toBeNull();
   fireEvent.press(view.getByLabelText("New invitation. Breakfast"));
@@ -480,6 +482,7 @@ test("joined group details stay visible in a sheet and leave requires confirmati
   const group = {...card("friend-joined:alice:lunch","Lunch friends"),buttons:[action("View group","FRIENDS_ACTION","view|alice|lunch")]};
   const value = snapshot({topCards:[group]}); value.state.page="FRIENDS";
   const view=render(<FriendsScreen snapshot={value}/>);
+  expect(view.getByRole("header",{name:"Groups"})).toBeTruthy();
   fireEvent.press(view.getByRole("tab",{name:"Joined groups"}));
   fireEvent.press(view.getByText("View group"));
   expect(native.dispatch).toHaveBeenLastCalledWith("FRIENDS_ACTION","view|alice|lunch");

@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
     val state: GroupState, val adminAvailable: Boolean, val supportActive: Boolean, val accountId: String, val authenticated: Boolean, val mainFields: List<GroupField>, val extraFields: List<GroupField>,
     val topCards: List<GroupCard>, val sections: List<GroupSection>, val primaryAction: GroupButton?,
     val inlineButtons: List<GroupButton>, val utilityButtons: List<GroupButton>, val quick: ReactQuickWheel, val profile: ReactProfile? = null,
-    val notificationUnread: Int = 0,
+    val notificationUnread: Int = 0, val tourAvailable: Boolean = false,
     val quickSelection: QuickChoiceSession? = null, val quickSelectionOffset: Long = 0,
 )
 @Serializable data class ReactProfile(val name: String, val photo: String)
@@ -40,6 +40,7 @@ class GroupReactBridge(val groups: GroupController) {
                     (membership.group.members.map { it.memberKey() } + "user:${membership.ownerId}").distinct().size) },quick.audience),
             groups.library.home?.profile?.let { ReactProfile(it.name,it.photo) },
             if(groups.library.identityToken.isNotEmpty()) groups.notifications.items.count { !it.read } else 0,
+            groups.library.identityToken.isNotEmpty() && !groups.supportActive && !groups.notifications.tourCompleted,
             groups.quickSelection.takeIf { groups.library.identityToken.isNotEmpty() },groups.quickSelectionOffset,
         ))
     }

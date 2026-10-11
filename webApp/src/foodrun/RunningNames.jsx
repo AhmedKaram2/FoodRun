@@ -23,10 +23,10 @@ export default function RunningNames({ spin, members, serverTime, active, genera
   const names = spin.memberIds.map(id => members.find(member => member.id === id)?.name || t('Someone'));
   const index = runningNameIndex(spin, now);
   const shown = reduced && !done ? t('Choosing…') : names[index];
-  return <div className={`running-names ${done ? 'finished' : ''}`} style={{'--runner-accent':done?'#53B598':['#ED775C','#9875CD','#53B598','#6EAAE2','#E8B634','#3C9CA8'][index%6]}} role="img" aria-label={done ? tf('{name} was selected', { name: names[index] }) : tf('Selecting one of {count} people', { count: names.length })}>
+  return <div className={`running-names ${done ? 'finished' : ''}`} style={{'--runner-accent':done?'#53B598':'#9875CD'}} role="img" aria-label={done ? tf('{name} was selected', { name: names[index] }) : tf('Selecting one of {count} people', { count: names.length })}>
     <div className="runner-orbs" aria-hidden="true"><i/><i/><i/></div>
     <span className="name-runner-dot" aria-hidden="true">{done ? '✓' : '✦'}</span>
-    <div className="name-runner-window" aria-hidden="true"><div className="name-runner-neighbor">{!reduced && !done ? names[(index + names.length - 1) % names.length] : ''}</div><div className="name-runner-selected" key={shown}>{shown}</div><div className="name-runner-neighbor">{!reduced && !done ? names[(index + 1) % names.length] : ''}</div></div>
+    <div className="name-runner-window" aria-hidden="true"><div className="name-runner-neighbor">{!reduced && !done ? names[(index + names.length - 1) % names.length] : ''}</div><div className="name-runner-selected">{shown}</div><div className="name-runner-neighbor">{!reduced && !done ? names[(index + 1) % names.length] : ''}</div></div>
     <p>{general ? purpose : done ? t('Selected to order') : t('Who will order?')}</p>
   </div>;
 }

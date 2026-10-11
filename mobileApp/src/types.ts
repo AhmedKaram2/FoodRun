@@ -63,6 +63,7 @@ export type QuickWheel = {
   groups?: { id: string; name: string; count: number }[];
 };
 export type Snapshot = {
+  tourAvailable?: boolean;
   quickSelection?: { id:string; ownerId:string; ownerName:string; purpose:string; style:string; people:{id:string;name:string}[]; spin:Wheel['round']; expiresAt:number } | null;
   quickSelectionOffset?: number;
   profile?: { name: string; photo: string } | null;

@@ -1,0 +1,8 @@
+[
+ {"id":"rooms","icon":"room","emoji":"🏠","title":"Create or join a room","body":"Start from Home. Choose a restaurant and invite your group, or join a room using its link or code."},
+ {"id":"selection","icon":"wheel","emoji":"🎯","title":"Choose together","body":"Everyone sees the same live selection and result. Quick Choice in More also picks names for games, tasks, or any reason."},
+ {"id":"wallet","icon":"wallet","emoji":"💳","title":"Keep payments clear","body":"The Wallet tab shows your balance, payments and approvals. Open a wallet to see its transactions, or settle payments from a room."},
+ {"id":"groups","icon":"friends","emoji":"👥","title":"Bring your group","body":"Find Groups in More. Add people, manage members, and invite a saved group when creating a room."},
+ {"id":"notifications","icon":"bell","emoji":"🔔","title":"Take the next action","body":"Open the bell for invitations and payment requests. Act from the notification center, mark all as read, or clear the inbox."},
+ {"id":"profile","icon":"profile","emoji":"✨","title":"Make it yours","body":"Open Profile for your name, payment details, language and notification preferences. You are ready to get started!"}
+]

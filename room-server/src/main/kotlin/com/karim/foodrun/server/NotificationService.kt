@@ -22,6 +22,15 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
                     if (!value.read) db.putRecord(key, orderJson.encodeToString(value.copy(read = true)))
                 }
             }
+            "tour_complete" -> db.putRecord("onboarding:$uid:v1", "done")
+            "read_all", "clear" -> {
+                db.records("notification:$uid:").forEach { (key, body) ->
+                    val item = orderJson.decodeFromString<FoodNotification>(body)
+                    val updated = item.copy(read = true, dismissed = item.dismissed || request.action == "clear")
+                    // Keep the event ID so a retry or room tick cannot recreate a cleared notification.
+                    if (updated != item) db.putRecord(key, orderJson.encodeToString(updated))
+                }
+            }
             "register" -> {
                 require(NotificationPreferencesStore.read(db,uid).pushEnabled) { "Push notifications are disabled in your profile preferences." }
                 require(pushAvailable) { "Push delivery is not configured on this hub. Your notification inbox is still available." }
@@ -45,12 +54,12 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
             else -> error("Unknown notification action.")
         }
         val items = db.records("notification:$uid:").map { orderJson.decodeFromString<FoodNotification>(it.second) }
-            .filter { accessible(uid, it) }.sortedByDescending { it.createdAt }.take(100)
+            .filter { !it.dismissed && accessible(uid, it) }.sortedByDescending { it.createdAt }.take(100)
         val walletIds = if(items.any { it.kind.startsWith("wallet_") && it.transferId.isEmpty() }) WalletService.snapshot(db,uid).let { wallet ->
             (wallet.topUps.map { it.id } + wallet.payments.map { it.id } + wallet.batches.map { it.id }).associateBy { RoomService.hash("wallet:0:$it:$uid").take(40) }
         } else emptyMap()
         return NotificationReply(notifications = items.map { item -> if(item.kind.startsWith("wallet_") && item.transferId.isEmpty())
-            item.copy(transferId=walletIds[item.id].orEmpty()) else item }, pushAvailable = pushAvailable)
+            item.copy(transferId=walletIds[item.id].orEmpty()) else item }, pushAvailable = pushAvailable, tourCompleted = db.record("onboarding:$uid:v1") == "done")
     }
 
     private fun devices() = db.records("push-device:").map { it.first to orderJson.decodeFromString<PushDevice>(it.second) }
@@ -77,7 +86,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         "You're invited to ${room.name}" to "دعوة للانضمام إلى ${room.name}",
         "${invitation.invitedBy} invited you. Room code: ${room.code}." to "دعاك ${invitation.invitedBy}. رمز الغرفة: ${room.code}.",listOf("join"),invitation.id)
     fun friendGroup(uid: String, group: FriendGroup, creator: String, eventId: String) = addUser(uid,null,eventId,"friend_group_added",
-        "Added to ${group.name}" to "تمت إضافتك إلى ${group.name}", "$creator added you to this friend group." to "أضافك $creator إلى مجموعة الأصدقاء.",listOf("groups"))
+        "Added to ${group.name}" to "تمت إضافتك إلى ${group.name}", "$creator added you to this group." to "أضافك $creator إلى هذه المجموعة.",listOf("groups"))
     fun friendRoomCreated(uid: String, room: Room, eventId: String) = addUser(uid,room,eventId,"friend_room_created",
         "${room.name} is ready" to "${room.name} جاهزة", "Your group room is ready. Room code: ${room.code}." to "غرفة مجموعتك جاهزة. رمز الغرفة: ${room.code}.",listOf("open"))
     fun reminder(room: Room, memberId: String, eventId: String, body: String) = add(room,memberId,eventId,"payment_reminder",
@@ -171,7 +180,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
             if(!NotificationPreferencesStore.read(db,job.userId).pushEnabled) { db.deleteRecord(key); continue }
             if (job.nextAt > clock()) continue
             val item = db.record("notification:${job.userId}:${job.notification.id}")?.let { orderJson.decodeFromString<FoodNotification>(it) }
-            if (item == null || item.read || job.notification.createdAt < clock() - 86_400_000 || !accessible(job.userId, job.notification)) { db.deleteRecord(key); continue }
+            if (item == null || item.read || item.dismissed || job.notification.createdAt < clock() - 86_400_000 || !accessible(job.userId, job.notification)) { db.deleteRecord(key); continue }
             val target = job.devices.firstOrNull { id -> db.record(id)?.let { orderJson.decodeFromString<PushDevice>(it).userId == job.userId } == true }
             if (target == null) { db.deleteRecord(key); continue }
             return PushDelivery(key, job, target, orderJson.decodeFromString(db.record(target)!!))

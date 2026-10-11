@@ -32,7 +32,7 @@ export function flowSteps(kind: FlowKind, rtl: boolean): FlowStep[] {
   switch (kind) {
     case "room": return [
       step("Choose the food", "نبدأ بالمطعم", "Pick a saved restaurant, add one, or let your friends vote.", "اختر مطعماً محفوظاً، أضف مطعماً، أو اترك الاختيار للأصدقاء.", ["RESTAURANT_POLL"], [], () => false, ["OPEN_SETUP_MENU"]),
-      step("Bring your people", "ادعُ أصحابك", "Name your room and invite a favourite group. The timer is optional.", "سمِّ الغرفة وادعُ مجموعة أصدقاء. مهلة الانضمام اختيارية.", ["ROOM_NAME", "FRIEND_GROUP_CHOICE", "JOIN_TIMER", "JOIN_TIMER_MINUTES"], ["NAME", "EXPECTED_NAMES", "SELECTION_STYLE"]),
+      step("Bring your people", "ادعُ أصحابك", "Name your room and invite a favourite group. The timer is optional.", "سمِّ الغرفة وادعُ مجموعة. مهلة الانضمام اختيارية.", ["ROOM_NAME", "FRIEND_GROUP_CHOICE", "JOIN_TIMER", "JOIN_TIMER_MINUTES"], ["NAME", "EXPECTED_NAMES", "SELECTION_STYLE"]),
       step("Delivery & fees", "التوصيل والرسوم", "Choose delivery or pickup. Extra charges are optional.", "اختر التوصيل أو الاستلام. الرسوم الإضافية اختيارية.", ["DELIVERY", "DESTINATION"], ["DELIVERY_FEE", "PROPORTIONAL", "SERVICE_FEE", "DISCOUNT"], c => c.id === "automatic-delivery"),
       review,
     ];

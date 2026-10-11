@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class FoodNotification(
     val id: String, val roomId: String, val orderNumber: Long, val kind: String,
     val title: String, val body: String, val actions: List<NotificationAction> = emptyList(),
-    val transferId: String = "", val createdAt: Long, val read: Boolean = false,
+    val transferId: String = "", val createdAt: Long, val read: Boolean = false, val dismissed: Boolean = false,
 )
 @Serializable data class NotificationAction(val id: String, val title: String)
 @Serializable data class NotificationRequest(
@@ -15,5 +15,5 @@ import kotlinx.serialization.Serializable
 )
 @Serializable data class NotificationReply(
     val ok: Boolean = true, val error: String = "", val notifications: List<FoodNotification> = emptyList(),
-    val pushAvailable: Boolean = false,
+    val pushAvailable: Boolean = false, val tourCompleted: Boolean = false,
 )

@@ -59,7 +59,7 @@ internal class GroupFriends(private val c: GroupController) {
             c.success(when(command.kind) {
                 CommandKind.LEAVE_FRIEND_GROUP -> tr("You left the group.", "غادرت المجموعة.")
                 CommandKind.DELETE_FRIEND_GROUP -> tr("Group deleted.", "تم حذف المجموعة.")
-                else -> tr("Friend group saved.", "تم حفظ مجموعة الأصدقاء.")
+                else -> tr("Group saved.", "تم حفظ المجموعة.")
             })
         }
     }

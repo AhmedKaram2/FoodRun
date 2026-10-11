@@ -265,6 +265,9 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.SIGN_OUT -> if(supportActive) endSupport() else identity(IdentityAction.SIGN_OUT)
             GroupAction.ENABLE_CLOUD -> identity(IdentityAction.ENABLE_CLOUD)
             GroupAction.OPEN_NOTIFICATIONS -> { page = GroupPage.NOTIFICATIONS; notifications.refresh() }
+            GroupAction.COMPLETE_TOUR -> notifications.completeTour()
+            GroupAction.NOTIFICATIONS_READ_ALL -> notifications.manageInbox("read_all")
+            GroupAction.NOTIFICATIONS_CLEAR -> notifications.manageInbox("clear")
             GroupAction.OPEN_NOTIFICATION -> notifications.open(value.substringBefore(':'), value.substringAfter(':', "open"))
             GroupAction.NOTIFICATION_ACTION -> notifications.perform(value)
             GroupAction.ENABLE_ALERTS -> notifications.register(true)

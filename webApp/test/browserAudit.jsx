@@ -1077,7 +1077,7 @@ export async function runFriendsTimerAudit() {
   assert(host.textContent.includes(ar ? 'تُرسل دعوة التسجيل' : 'Sign-up invitation'), 'Missing signup invitation state');
   button('Save').click(); await pause();
   assert(commands.at(-1)?.kind==='SAVE_FRIEND_GROUP' && commands.at(-1).fields.friendGroup.members[0].email==='new@example.test','Group save lost members');
-  const groupsMeasure = measureAudit(); assert(!groupsMeasure.overflow, 'Friend groups overflow');
+  const groupsMeasure = measureAudit(); assert(!groupsMeasure.overflow, 'Groups overflow');
   localStorage.setItem('foodrun-room-preferences:audit-only', JSON.stringify({restaurantId:loadRestaurants()[0].id}));
   await mountAudit('create','LOBBY',{data:fixture});
   const select = [...host.querySelectorAll('select')].find(node=>[...node.options].some(option=>option.value==='audit-only:friends'));
@@ -1252,7 +1252,7 @@ export async function runGlobalNavigationAudit() {
   const fixture={...data,authReady:true,connectionState:'connected',home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},rooms:[],wallet:{balances:[],topUps:[],payments:[],batches:[]}},clearJoinBlock:()=>{},connect:()=>{},setError:()=>{},clearOfflineReceipts:()=>{},dismissFeedback:()=>{}};
   const useFixture=()=>fixture;
   const nav=async page=>{host.querySelectorAll('.app-navigation button')[page==='home'?0:1].click();await pause();};
-  const routes=[['Restaurants & menus','المطاعم والقوائم'],['Friend groups','مجموعات الأصدقاء'],['Notifications','الإشعارات'],['Get the apps','احصل على التطبيقات']];
+  const routes=[['Restaurants & menus','المطاعم والقوائم'],['Groups','المجموعات'],['Notifications','الإشعارات'],['Get the apps','احصل على التطبيقات']];
   try {
     history.replaceState({},'','/');root.render(<FoodRunClient useData={useFixture}/>);await pause();
     assert(host.querySelector('.app-navigation'),'Global navigation missing');
@@ -1361,7 +1361,7 @@ export async function runLiveSelectionOverlayAudit() {
   assert(document.querySelector('.selection-winner')?.textContent.includes('Bob'),'Server winner celebration is missing');
   assert(dialog.getBoundingClientRect().width<=innerWidth+1,'Live selection overflows');
   const proceed=[...dialog.querySelectorAll('button')].find(button=>button.classList.contains('primary'));proceed.click();await pause();
-  assert(!document.querySelector('[role=dialog]') && host.textContent.includes(getLanguage().startsWith('ar')?'مجموعات الأصدقاء':'Friend groups'),'Live selection lost the previous page');
+  assert(!document.querySelector('[role=dialog]') && host.textContent.includes(getLanguage().startsWith('ar')?'المجموعات':'Groups'),'Live selection lost the previous page');
   return {passed:true,language:getLanguage(),width:innerWidth,globalOverlay:true,sharedWinner:'Bob'};
 }
 

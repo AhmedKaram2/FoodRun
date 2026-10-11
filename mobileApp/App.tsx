@@ -34,6 +34,8 @@ import {
 } from "./src/components/Controls";
 import LiveWheel from "./src/components/LiveWheel";
 import HomeBanner from "./src/components/HomeBanner";
+import AppUpdateSheet from "./src/components/AppUpdateSheet";
+import FirstUseTour from "./src/components/FirstUseTour";
 import LiveSelectionOverlay from "./src/components/LiveSelectionOverlay";
 import BottomSheet, { SelectionPriority } from "./src/components/BottomSheet";
 import RoomAttention from "./src/components/RoomAttention";
@@ -174,7 +176,7 @@ function Application() {
       "OPEN_PROFILE",
     ),
     action(
-      tx(rtl, "Friend groups", "مجموعات الأصدقاء"),
+      tx(rtl, "Groups", "المجموعات"),
       "FRIENDS_ACTION",
       "open",
     ),
@@ -592,8 +594,10 @@ function Application() {
         {id:'OPEN_ROOMS',icon:'room',label:tx(rtl,'Rooms','الغرف'),selected:roomRoute},
         {id:'OPEN_WALLET',icon:'wallet',label:tx(rtl,'Wallet','المحفظة'),selected:walletRoute},
         {id:'OPEN_PROFILE',icon:'profile',label:rtl?tx(rtl,'My account','حسابي'):'Profile',selected:profileDetails},
-        {id:'MORE',icon:'menu',label:tx(rtl,'More','المزيد'),selected:menu || (state.page!=='HOME' && !roomRoute && !walletRoute && !profileDetails)},
+        {id:'MORE',icon:Platform.OS==='ios'?'more':'menu',label:tx(rtl,'More','المزيد'),selected:menu || (state.page!=='HOME' && !roomRoute && !walletRoute && !profileDetails)},
       ]} onSelect={kind=>kind==='MORE'?setMenu(true):dispatch(kind)}/>
+      <AppUpdateSheet rtl={rtl} paused={!!snapshot.tourAvailable||selectionOpen||menu||languageSheet}/>
+      <FirstUseTour key={`tour:${snapshot.accountId}`} visible={!!snapshot.tourAvailable&&snapshot.authenticated&&state.page==='HOME'&&!busy&&!menu&&!languageSheet&&!selectionOpen} rtl={rtl} onComplete={()=>dispatch('COMPLETE_TOUR')}/>
       <MoreSheet snapshot={snapshot} visible={menu} actions={menuActions} onClose={() => setMenu(false)}/>
       <BottomSheet visible={languageSheet} title={tx(rtl,"Choose language","اختر اللغة")} rtl={rtl} onClose={() => setLanguageSheet(false)}>
         {languageOptions.map(option => <Button key={option.value} rtl={rtl} busy={busy} action={action(`${(state.language || (rtl ? 'ar-EG' : 'en')) === option.value ? '✓ ' : ''}${option.label}`, 'SET_LANGUAGE', option.value)} onPress={() => { dispatch('SET_LANGUAGE',option.value); setLanguageSheet(false); }}/>) }

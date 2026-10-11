@@ -20,8 +20,8 @@ android {
         applicationId = "com.karim.foodrun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "1.7.7"
+        versionCode = 26
+        versionName = "1.7.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

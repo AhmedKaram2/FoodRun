@@ -14,6 +14,8 @@ class FoodRunReactPackage : ReactPackage {
 }
 class FoodRunReactModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context), GroupObserver {
     private val app = context.applicationContext as FoodRunApplication
+    private val updates = FoodRunUpdates(context)
+    private fun updateRequest(promise: Promise, block: () -> org.json.JSONObject) { Thread { try { promise.resolve(block().toString()) } catch(_: Exception) { promise.reject("APP_UPDATE", "The update could not be completed. Try again.") } }.start() }
     private val main = Handler(Looper.getMainLooper())
     private var listeners = 0
     override fun getName() = "FoodRun"
@@ -22,6 +24,10 @@ class FoodRunReactModule(context: ReactApplicationContext) : ReactContextBaseJav
     private fun emit() { if(listeners > 0 && reactApplicationContext.hasActiveReactInstance()) reactApplicationContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("FoodRunState",app.viewBridge.snapshotJson()) }
     @ReactMethod fun addListener(event: String) { main.post { listeners++; emit() } }
     @ReactMethod fun removeListeners(count: Double) { main.post { listeners = maxOf(0,listeners-count.toInt()) } }
+    @ReactMethod fun checkAppUpdate(promise: Promise) = updateRequest(promise) { updates.check() }
+    @ReactMethod fun startAppUpdate(promise: Promise) = updateRequest(promise) { updates.start() }
+    @ReactMethod fun getAppUpdateStatus(promise: Promise) = updateRequest(promise) { updates.status() }
+    @ReactMethod fun installAppUpdate(promise: Promise) = updateRequest(promise) { updates.install() }
     @ReactMethod fun getSnapshot(promise: Promise) { main.post { try { promise.resolve(app.viewBridge.snapshotJson()) } catch(_: Exception) { promise.reject("STATE","Could not open the app. Please restart.") } } }
     @ReactMethod fun dispatch(action: String, value: String) { main.post { app.viewBridge.dispatch(action,value) } }
     @ReactMethod fun update(key: String, value: String) { main.post { app.viewBridge.update(key,value) } }

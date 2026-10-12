@@ -1,3 +1,14 @@
+/* Override native dialog width limits and keep the animation in the viewport center. */
+.selection-screen{max-width:none;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(min-content,1fr) auto minmax(min-content,1fr);justify-items:center;gap:16px;padding:max(76px,calc(env(safe-area-inset-top) + 60px)) 20px max(76px,calc(env(safe-area-inset-bottom) + 60px));animation:none}
+.selection-screen>.ios-sheet-handle{display:none}
+.selection-screen>.section-title{position:absolute;top:max(16px,env(safe-area-inset-top));inset-inline:0;margin:0 auto;padding-inline:16px}
+.selection-heading,.selection-result{width:min(560px,100%);text-align:center}
+.selection-heading{align-self:end;display:grid;gap:12px}
+.selection-heading h1,.selection-heading p{margin:0}
+.selection-animation{width:min(420px,100%,max(180px,calc(100dvh - 340px)));min-width:0}
+.selection-screen .selection-animation .live-wheel,.selection-screen .selection-animation .running-names{width:100%;margin:0}
+.selection-result{align-self:start}
+.selection-result .hero-actions{justify-content:center}
 .selection-countdown{display:grid;place-items:center;gap:.8rem;padding:1rem 0}.selection-countdown p{margin:0;text-align:center}
 .countdown-arena{position:relative;display:grid;place-items:center;width:240px;height:240px;isolation:isolate}
 .countdown-halo{position:absolute;inset:26px;border-radius:50%;background:color-mix(in srgb,var(--count-tone) 8%,white)}

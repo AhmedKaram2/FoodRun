@@ -1251,11 +1251,11 @@ export async function runGlobalNavigationAudit() {
   host=document.createElement('div');host.id='audit-root';document.body.append(host);root=createRoot(host);
   const fixture={...data,authReady:true,connectionState:'connected',home:{...data.home,profile:{...data.home.profile,userId:'audit-only'},rooms:[],wallet:{balances:[],topUps:[],payments:[],batches:[]}},clearJoinBlock:()=>{},connect:()=>{},setError:()=>{},clearOfflineReceipts:()=>{},dismissFeedback:()=>{}};
   const useFixture=()=>fixture;
-  const nav=async page=>{host.querySelectorAll('.app-navigation button')[page==='home'?0:1].click();await pause();};
+  const nav=async page=>{const control=host.querySelector(page==='home'?'.topbar .wordmark':'.topbar .profile-chip');assert(control,`Missing ${page} link in main top bar`);control.click();await pause();};
   const routes=[['Restaurants & menus','المطاعم والقوائم'],['Groups','المجموعات'],['Notifications','الإشعارات'],['Get the apps','احصل على التطبيقات']];
   try {
     history.replaceState({},'','/');root.render(<FoodRunClient useData={useFixture}/>);await pause();
-    assert(host.querySelector('.app-navigation'),'Global navigation missing');
+    assert(!host.querySelector('.app-navigation') && host.querySelectorAll('.topbar').length===1,'Duplicate top navigation is visible');
     for(const [label,arabic] of routes){
       await nav('home');
       const target=[...host.querySelectorAll('button')].find(button=>[t(label),getLanguage().startsWith('ar')?arabic:label].includes(button.textContent.trim()));
@@ -1264,7 +1264,7 @@ export async function runGlobalNavigationAudit() {
       await nav('home');assert(host.querySelector('.home-banner'),`Home unreachable from ${label}`);
     }
     await nav('profile');host.querySelector('#profile-details').open=true;
-    assert(host.querySelector('.app-navigation').getBoundingClientRect().top>=0,'Navigation scrolled offscreen');
+    assert(host.querySelector('.topbar').getBoundingClientRect().top>=0,'Main top bar is offscreen');
     assert(!measureAudit().overflow,'Global navigation overflows');
     assert(commands.length===0,'Navigation changed account or room data');
     return {passed:true,language:getLanguage(),width:innerWidth,overflow:false,routes:routes.map(([label])=>label)};

@@ -5,7 +5,8 @@ import GroupSheet from './GroupSheet.jsx';
 import FriendGroups from './FriendGroups.jsx';
 import QuickChoice from './QuickChoice.jsx';
 import QuickChoiceOverlay from './QuickChoiceOverlay.jsx';
-import AppNavigation from './AppNavigation.jsx';
+import { navigateApp } from './AppNavigation.jsx';
+import AndroidInstallPrompt from './AndroidInstallPrompt.jsx';
 import IosInstallSheet from './IosInstallSheet.jsx';
 import MobilePageLayout from './MobilePageLayout.jsx';
 import ScrollLoad from './ScrollLoad.jsx';
@@ -570,10 +571,18 @@ function ProfileScreen({ data, onBack, openRoom, onSaved }) {
   </Page>;
 }
 
-function Page({ title, subtitle, onBack, actions, children }) {
-  const home = useContext(HomeNavigation);
+function MainTopBar({ onHome, onProfile, profile, actions }) {
+  const navigation = useContext(HomeNavigation);
+  const currentProfile = profile || navigation?.profile;
+  return <header className="topbar">
+    <button type="button" className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={onHome || navigation?.onHome || (() => navigateApp('home'))}><BrandLogo /></button>
+    <div className="top-actions"><GuideLink /><LanguageToggle />{actions}{currentProfile && <button type="button" className="profile-chip" aria-label={t('Profile')} onClick={onProfile || (() => navigateApp('profile'))}><Avatar small profile={currentProfile} /><span>{currentProfile.name || t('Complete profile')}</span></button>}</div>
+  </header>;
+}
+
+function Page({ title, subtitle, onBack, actions, profile, onProfile, children }) {
   return <main className="app-shell">
-    <header className="topbar"><button className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={home || onBack}><BrandLogo /></button><div className="top-actions"><GuideLink /><LanguageToggle />{actions}</div></header>
+    <MainTopBar actions={actions} profile={profile} onProfile={onProfile} />
     <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage.startsWith('ar') ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("INTRVIOO / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
     {children}
   </main>;
@@ -583,7 +592,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
   const continuing = roomCards.find(({ reply }) => reply?.room && !['ARCHIVED', 'CANCELLED'].includes(reply.room.phase));
-  return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} actions={<><button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button><button className="profile-chip" onClick={() => setPage('profile')}><Avatar small profile={home.profile} />{home.profile.name || t("Complete profile")}</button></>}>
+  return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} profile={home.profile} onProfile={() => setPage('profile')} actions={<button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button>}>
     {home.wallet && <WalletAnnouncement key={home.profile.userId || data.user?.uid} userId={home.profile.userId || data.user?.uid} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <button className="secondary" onClick={() => setPage('friends')}>{tx('Groups', 'المجموعات')}</button>
@@ -1410,11 +1419,11 @@ function FoodRunClientContent({ useData = useFoodRun } = {}) {
   else if (page === 'create' || page === 'join') content = <CreateRoom data={data} mode={page} inviteCode={inviteCode} onBack={() => setPage('home')} openRoom={openRoom} />;
   else if (page === 'room') content = <RoomScreen data={data} roomId={roomId} onBack={closeRoom} onAddRestaurant={openRestaurants} />;
   else content = <Home data={data} setPage={setPage} openRoom={openRoom} openRestaurants={() => openRestaurants()} allowRoomCreation={siteConfig.roomCreationEnabled} />;
-  return <HomeNavigation.Provider value={closeRoom}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}<MobilePageLayout key={page} pageKey={page}>{content}</MobilePageLayout><FirstUseTour key={data.user.uid+'-tour'} visible={page==='home'&&!supportSession&&notifications.tourCompleted===false&&!(data.quickSelection&&Date.now()+(data.quickSelection.serverOffset||0)<data.quickSelection.expiresAt)&&!Object.values(data.rooms||{}).some(value=>value.room?.spin&&Date.now()<value.room.spin.startAt+value.room.spin.duration+6000&&data.online?.[value.room.id])} onComplete={notifications.completeTour}/><QuickChoiceOverlay key={data.user.uid+"-quick"} data={data} renderSelection={props => <LiveSelectionWheel {...props}/>} /><LiveSelectionOverlay key={data.user.uid} data={data} renderWheel={props => <LiveSelectionWheel key={props.spin.id} {...props}/>}/><footer className="mobile-app-nav"><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('profile')}>{t("Wallet")}</button><button onClick={() => setPage('friends')}>{tx('Groups','المجموعات')}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button><details className="mobile-nav-more"><summary>{tx('More','المزيد')}</summary><div>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></div></details></footer></></HomeNavigation.Provider>;
+  return <HomeNavigation.Provider value={{ onHome: closeRoom, profile: home.profile }}><>{alerts}{supportSession && <div className="banner" role="status"><b>{tx('Signed in as', 'تم تسجيل الدخول باسم')} {data.home?.profile.name || supportSession.home.profile.name}</b><span>{tx('Owner support session · expires after 30 minutes', 'جلسة دعم المالك · تنتهي بعد 30 دقيقة')}</span><button className="secondary" onClick={async () => { try { await data.walletQuery('IDENTITY', { identity: { action: 'SIGN_OUT' } }); } finally { setSupportSession(null); } setPage('home'); }}>{tx('Return to my account', 'العودة إلى حسابي')}</button></div>}{page === 'room' && notificationAction && <NotificationActionCard key={notificationAction.item.id + notificationAction.action} selected={notificationAction} data={data} onClose={() => setNotificationAction(null)} />}<MobilePageLayout key={page} pageKey={page}>{['notifications','friends','quick-choice'].includes(page) && <div className="app-shell app-header-shell"><MainTopBar /></div>}{content}</MobilePageLayout><FirstUseTour key={data.user.uid+'-tour'} visible={page==='home'&&!supportSession&&notifications.tourCompleted===false&&!(data.quickSelection&&Date.now()+(data.quickSelection.serverOffset||0)<data.quickSelection.expiresAt)&&!Object.values(data.rooms||{}).some(value=>value.room?.spin&&Date.now()<value.room.spin.startAt+value.room.spin.duration+6000&&data.online?.[value.room.id])} onComplete={notifications.completeTour}/><QuickChoiceOverlay key={data.user.uid+"-quick"} data={data} renderSelection={props => <LiveSelectionWheel {...props}/>} /><LiveSelectionOverlay key={data.user.uid} data={data} renderWheel={props => <LiveSelectionWheel key={props.spin.id} {...props}/>}/><footer className="mobile-app-nav"><span>Intrvioo</span><button onClick={closeRoom}>{t("Home")}</button><button onClick={() => setPage('profile')}>{t("Wallet")}</button><button onClick={() => setPage('friends')}>{tx('Groups','المجموعات')}</button><button onClick={() => setPage('notifications')}>{t('Notifications')} {notifications.items.filter(item => !item.read).length || ''}</button><details className="mobile-nav-more"><summary>{tx('More','المزيد')}</summary><div>{offlineAction}<button onClick={() => openRestaurants()}>{t("Restaurants & menus")}</button><button onClick={() => setPage('downloads')}>{t("Get the apps")}</button><button onClick={() => data.connect('')}>{t("Switch room server")}</button><button onClick={async () => { await notifications.disable(); await signOut(auth); }}>{t("Sign out")}</button></div></details></footer></></HomeNavigation.Provider>;
 }
 
 function FoodRunClient(props) {
-  return <><AppNavigation /><FoodRunClientContent {...props} /></>;
+  return <FoodRunClientContent {...props} />;
 }
 
 export default function FoodRunApp() {
@@ -1449,7 +1458,8 @@ export default function FoodRunApp() {
   }, [language]);
   return <GuideNavigation.Provider value={{ open: openGuide, isOpen: guideOpen }}><Suspense fallback={<div className="splash"><p>{tx('Loading…', 'جارٍ التحميل…')}</p></div>}>
     <div hidden={guideOpen}>{new URLSearchParams(window.location.search).has('nativeSignIn') ? <NativeGoogleSignIn /> : <FoodRunClient />}</div>
-    {guideOpen && <><AppNavigation /><HowToUse language={language} onBack={closeGuide} /></>}
+    {guideOpen && <HowToUse language={language} onBack={closeGuide} />}
+    <AndroidInstallPrompt downloadUrl={ANDROID_DOWNLOAD_URL} tx={tx} />
   </Suspense></GuideNavigation.Provider>;
 }
 

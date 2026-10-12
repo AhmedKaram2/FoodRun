@@ -19,8 +19,8 @@ export default function LiveSelectionOverlay({ data, renderWheel }) {
   useEffect(() => { setNow(Date.now()); const timer=setInterval(() => setNow(Date.now()),200); return () => clearInterval(timer); },[spin?.id]);
   if(!visible) return null;
   return <GroupSheet fullScreen title={room.name} busy={!ended} onClose={() => setDismissed(spin.id)} tx={tx}>
-    <h1 className="selection-title" aria-live="polite">{ended ? tx('We have our person!','تم اختيار مسؤول الطلب!') : tx('Who’s ordering today?','مين هيطلب لنا النهارده؟')}</h1>
-    {countdown ? <SelectionCountdown number={countdown} ready={tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')} subtitle={tx('The selection starts together.','هنبدأ الاختيار مع بعض.')}/> : renderWheel({style:room.selectionStyle,spin,members:room.members,serverTime:candidate.serverTime,active:!ended})}
-    {ended && <><p className="selection-winner" aria-live="polite">🎉 {room.members.find(member => member.id === spin.winnerId)?.name}</p><SelectionCelebration/><button className="primary" onClick={() => setDismissed(spin.id)}>{tx('Continue','متابعة')}</button></>}
+    <div className="selection-heading"><h1 className="selection-title" aria-live="polite">{ended ? tx('We have our person!','تم اختيار مسؤول الطلب!') : tx('Who’s ordering today?','مين هيطلب لنا النهارده؟')}</h1></div>
+    <div className="selection-animation">{countdown ? <SelectionCountdown number={countdown} ready={tx('Everyone’s here. Ready?','كلنا جاهزين للاختيار؟')} subtitle={tx('The selection starts together.','هنبدأ الاختيار مع بعض.')}/> : renderWheel({style:room.selectionStyle,spin,members:room.members,serverTime:candidate.serverTime,active:!ended})}</div>
+    <div className="selection-result">{ended && <><p className="selection-winner" aria-live="polite">🎉 {room.members.find(member => member.id === spin.winnerId)?.name}</p><SelectionCelebration/><button className="primary" onClick={() => setDismissed(spin.id)}>{tx('Continue','متابعة')}</button></>}</div>
   </GroupSheet>;
 }

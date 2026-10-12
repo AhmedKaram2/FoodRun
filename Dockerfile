@@ -3,6 +3,8 @@ WORKDIR /workspace/webApp
 COPY webApp/package.json webApp/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY webApp/ ./
+ARG VITE_FOODRUN_API_URL
+ARG VITE_FOODRUN_HUB_URL
 RUN npm run build
 
 FROM eclipse-temurin:17-jdk AS build

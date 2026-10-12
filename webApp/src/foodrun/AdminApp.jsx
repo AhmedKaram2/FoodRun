@@ -1,3 +1,4 @@
+import Icon from './Icon.jsx';
 import PagedList, { matchesSearch } from './PagedList.jsx';
 import MobilePageLayout from './MobilePageLayout.jsx';
 import { BrandLogo, BrandMark } from './Brand.jsx';
@@ -43,7 +44,7 @@ export default function AdminApp({ language, user, onBack, onSupport }) {
   const totals = Object.entries(dashboard.rooms.reduce((values, room) => ({ ...values, [room.currency]: (values[room.currency] || 0) + room.totalMinor }), {}));
   return <MobilePageLayout pageKey={tab}><main className="admin-shell">
     <header className="admin-topbar"><div><BrandLogo /><b>{t("Intrvioo Admin")}</b></div><div><LanguageToggle /><button className="secondary" onClick={() => refresh()}>{t("Refresh")}</button><button className="link" onClick={onBack}>{t("Home")}</button></div></header>
-    <nav className="admin-tabs">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button className={tab === value ? 'active' : ''} onClick={() => { setTab(value); setSearch(''); }} key={value}>{t(value[0].toUpperCase() + value.slice(1))}</button>)}</nav>
+    <nav className="admin-tabs" role="tablist">{['overview','users','rooms','orders','wallets','restaurants','requests','cleanup','settings'].map(value => <button role="tab" aria-selected={tab === value} className={tab === value ? 'active' : ''} onClick={() => { setTab(value); setSearch(''); }} key={value}><Icon name={{overview:"room",users:"profile",rooms:"room",orders:"receipt",wallets:"wallet",restaurants:"food",requests:"bell",cleanup:"shield",settings:"settings"}[value]} size={16}/><span>{t(value[0].toUpperCase() + value.slice(1))}</span></button>)}</nav>
     <label className="admin-search">{t("Search")} · {t(tab[0].toUpperCase() + tab.slice(1))}<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t("Name, email, room code or keyword")} /></label>
     {message && <div className="banner error">{message}</div>}
     <fieldset disabled={busy} className="admin-content room-fieldset">

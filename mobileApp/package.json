@@ -1,6 +1,6 @@
 {
   "name": "intrvioo-mobile",
-  "version": "1.7.11",
+  "version": "1.7.12",
   "private": true,
   "scripts": {
     "start": "react-native start",

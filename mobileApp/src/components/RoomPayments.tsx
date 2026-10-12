@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Card } from "../types";
 import { colors, tx } from "../theme";
 import { CardView, PagedCards, textStyle } from "./Controls";
+import ScreenTabs from "./ScreenTabs";
 import BottomSheet from "./BottomSheet";
 import ScrollArea from "./ScrollArea";
 
@@ -16,7 +17,7 @@ export default function RoomPayments({cards,busy,rtl}:{cards:Card[];busy:boolean
   if(!cards.length)return null;
   return <View style={{gap:12}}>
     {summary.map(card=><CardView key={card.id} card={card} busy={busy} rtl={rtl} compactActions/>)}
-    <View style={[styles.tabs,rtl && {flexDirection:"row-reverse"}]}>{[{id:"actions",title:tx(rtl,"Actions","الإجراءات")},{id:"receipts",title:tx(rtl,"Receipts","الإيصالات")},{id:"history",title:tx(rtl,"History","السجل")}].map(tab=><Pressable key={tab.id} accessibilityRole="tab" accessibilityLabel={tab.title} accessibilityState={{selected:selected===tab.id}} onPress={()=>setSelected(tab.id)} style={[styles.tab,selected===tab.id && styles.active]}><Text style={[textStyle(rtl,"medium"),styles.label,selected===tab.id && {color:colors.white}]}>{tab.title}</Text></Pressable>)}</View>
+    <ScreenTabs rtl={rtl} selected={selected} onChange={setSelected} style={{paddingHorizontal:0,paddingBottom:0}} items={[{id:"actions",title:tx(rtl,"Actions","الإجراءات"),icon:"wallet"},{id:"receipts",title:tx(rtl,"Receipts","الإيصالات"),icon:"receipt"},{id:"history",title:tx(rtl,"History","السجل"),icon:"history"}]}/>
     {!!account.length && <Pressable accessibilityRole="button" onPress={()=>setDetails(true)} style={styles.details}><Text style={[textStyle(rtl,"semibold"),styles.link]}>{tx(rtl,"Payment details","بيانات الدفع")}</Text></Pressable>}
     <PagedCards key={selected} cards={entries.filter(card=>group(card)===selected)} rtl={rtl} busy={busy}/>
     {!entries.some(card=>group(card)===selected) && <Text style={[textStyle(rtl),styles.empty]}>{tx(rtl,selected==="actions" ? "No pending payment actions." : "No entries yet.",selected==="actions" ? "لا توجد إجراءات دفع معلقة." : "لا توجد معاملات بعد.")}</Text>}

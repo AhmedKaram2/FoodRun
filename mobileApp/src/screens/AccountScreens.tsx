@@ -25,7 +25,8 @@ import {
 import BottomSheet from "../components/BottomSheet";
 import Icon from "../components/Icon";
 import Illustration, { screenIllustration } from "../components/Illustration";
-import { PageMotion, TabButton } from "../components/Motion";
+import ScreenTabs, { tabIcon } from "../components/ScreenTabs";
+import { PageMotion } from "../components/Motion";
 
 function Intro({
   snapshot,
@@ -83,38 +84,7 @@ function Tabs({
   onChange: (value: number) => void;
   icons?: string[];
 }) {
-  return (
-    <ScrollArea
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.tabScroll}
-      contentContainerStyle={[styles.tabs, icons && {width:"100%",gap:6}, rtl && styles.reverse]}
-    >
-      {items.map((title, i) => (
-        <TabButton
-          key={title}
-          accessibilityRole="tab"
-          accessibilityLabel={title}
-          accessibilityState={{ selected: i === selected }}
-          selected={i === selected}
-          onPress={() => onChange(i)}
-          style={[styles.tab, icons && {flex:1,paddingHorizontal:4,alignItems:"center",gap:2}, i === selected && styles.activeTab]}
-        >
-          {icons && <Icon name={icons[i]} size={16} color={i === selected ? colors.forest : colors.muted}/>}
-          <Text
-            style={[
-              textStyle(rtl, "semibold"),
-              styles.tabLabel,
-              icons && {fontSize:10,lineHeight:18},
-              { color: i === selected ? colors.forest : colors.muted },
-            ]}
-          >
-            {title}
-          </Text>
-        </TabButton>
-      ))}
-    </ScrollArea>
-  );
+  return <ScreenTabs rtl={rtl} selected={String(selected)} onChange={id=>onChange(Number(id))} items={items.map((title,i)=>({id:String(i),title,icon:icons?.[i] || tabIcon(title)}))}/>;
 }
 const refresh = (snapshot: Snapshot, kind = "REFRESH") => (
   <RefreshControl
@@ -271,6 +241,7 @@ export function NotificationCenter({ snapshot }: { snapshot: Snapshot }) {
             `غير المقروءة (${unread.length})`,
           ),
         ]}
+        icons={["bell","bell"]}
         selected={tab}
         onChange={setTab}
       />

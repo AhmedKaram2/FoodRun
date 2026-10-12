@@ -674,3 +674,15 @@ html[dir=rtl] .top-actions,html[dir=rtl] .hero-actions { flex-direction:row; }
  .account-page .page-tabs-slot>.mobile-section-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible}
  .account-page .page-tabs-slot>.mobile-section-tabs>button{min-width:0;min-height:44px;padding:6px;font-size:.68rem;white-space:normal;line-height:1.6}
 }
+
+/* The account tab treatment is shared by every mobile section navigator. */
+@media(max-width:640px){
+ .mobile-section-tabs,.page-tabs-slot .mobile-section-tabs.mobile-room-tabs,.wallet-tabs-slot .mobile-section-tabs{display:grid;grid-template-columns:repeat(var(--screen-tab-columns,4),minmax(0,1fr));gap:6px;overflow:visible;background:transparent;border:0;box-shadow:none;padding:6px 0;margin-block:6px}
+ .mobile-section-tabs>button,.page-tabs-slot .mobile-section-tabs>button,.wallet-tabs-slot .mobile-section-tabs>button{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;min-width:0;max-width:none;min-height:54px;padding:7px 4px;border:1px solid #dce5df;border-radius:17px;background:#fff;color:#5f6d66;font-size:.65rem;line-height:1.7;white-space:normal;box-shadow:none}
+ .mobile-section-tabs>button.active,.page-tabs-slot .mobile-section-tabs>button.active,.wallet-tabs-slot .mobile-section-tabs>button.active{background:#e7f3ed;border-color:#b9d7c9;color:#245c49}
+ .group-tabs{display:flex;gap:6px;flex:1}
+ .group-tabs>button{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:54px;padding:7px 8px;border:1px solid #dce5df;border-radius:17px;background:#fff;color:#5f6d66;font-size:.65rem;line-height:1.7;box-shadow:none}
+ .group-tabs>button[aria-pressed="true"]{background:#e7f3ed;border-color:#b9d7c9;color:#245c49}
+}
+
+@media(max-width:640px){.admin-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible}.admin-tabs>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:54px;padding:7px 4px;min-width:0;border:1px solid #dce5df;border-radius:17px;background:#fff;color:#5f6d66;font-size:.65rem;line-height:1.7}.admin-tabs>button.active{background:#e7f3ed;border-color:#b9d7c9;color:#245c49}}

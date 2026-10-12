@@ -43,7 +43,7 @@ import RoomAttention from "./src/components/RoomAttention";
 import SelectionScreen from "./src/components/SelectionScreen";
 import GuidedFlowScreen from "./src/components/GuidedFlowScreen";
 import { useGuidedFlow } from "./src/guidedFlows";
-import { MotionProvider, PageMotion, TabButton } from "./src/components/Motion";
+import { MotionProvider, PageMotion } from "./src/components/Motion";
 import QuickWheel from "./src/screens/QuickWheel";
 import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./src/screens/AccountScreens";
 import RoomTimeline from "./src/components/RoomTimeline";
@@ -55,6 +55,7 @@ import WalletScreen from "./src/screens/WalletScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import FriendsScreen from "./src/screens/FriendsScreen";
 import AuthScreen from "./src/screens/AuthScreen";
+import ScreenTabs, { tabIcon } from "./src/components/ScreenTabs";
 import NativeTabBar from './src/components/NativeTabBar';
 import { roomCodeFromLink } from "./src/roomLink";
 import { isRoom, roomSections, roomActionTab, roomFieldTab, roomDetailCard, roomDetailAction, roomPrimaryAction } from "./src/roomTabs";
@@ -375,84 +376,13 @@ function Application() {
             </View>}
             {(sections.length > 1 ||
               (profileDetails && snapshot.extraFields.length > 0)) && (
-              <View style={room && ui.roomTabs}>
-              {room ? <View style={[ui.roomTabRow, rtl && ui.reverse]}>
-                {sections.map((item, index) => (
-                  <TabButton selected={selected === index} key={index} testID={`room-tab:${index}`}
-                    accessibilityRole="tab" accessibilityLabel={item.title}
-                    accessibilityState={{ selected: selected === index }}
-                    onPress={() => changeTab(index)}
-                    style={[ui.roomTab, selected === index && ui.selectedRoomTab]}>
-                    <View style={{alignItems:"center"}}>
-                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-                      style={[textStyle(rtl, selected === index ? "semibold" : "medium"), ui.roomTabLabel,
-                        { color: selected === index ? colors.forest : colors.muted }]}>{item.title}</Text></View>
-                  </TabButton>
-                ))}
-              </View> : <ScrollArea
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={ui.tabs}
-                contentContainerStyle={[ui.tabRow, rtl && ui.reverse]}
-              >
-                {sections.map((item, index) => (
-                  <Pressable
-                    key={item.title + index}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: selected === index }}
-                    onPress={() => changeTab(index)}
-                    style={[ui.tab, selected === index && ui.activeTab]}
-                  >
-                    <Text
-                      style={[
-                        textStyle(rtl, "medium"),
-                        {
-                          fontSize: 13,
-                          color: selected === index ? colors.white : colors.ink,
-                        },
-                      ]}
-                    >
-                      {item.title || tx(rtl, "Details", "التفاصيل")}
-                    </Text>
-                  </Pressable>
-                ))}
-                {profileDetails && snapshot.extraFields.length > 0 && (
-                  <Pressable
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: options }}
-                    onPress={() => setOptions(!options)}
-                    style={[ui.tab, options && ui.activeTab]}
-                  >
-                    <Text
-                      style={[
-                        textStyle(rtl),
-                        { color: options ? colors.white : colors.ink },
-                      ]}
-                    >
-                      {tx(rtl, "Your details", "بياناتك")}
-                    </Text>
-                  </Pressable>
-                )}
-              </ScrollArea>}
-              </View>
+              <ScreenTabs rtl={rtl} selected={options && profileDetails ? "details" : String(selected)} onChange={id=>id === "details" ? setOptions(!options) : changeTab(Number(id))} items={[
+                ...sections.map((item,index)=>({id:String(index),title:item.title || tx(rtl,"Details","التفاصيل"),icon:room ? ["room","food","wallet","friends"][index] || "room" : tabIcon(item.title),testID:room ? `room-tab:${index}` : undefined})),
+                ...(profileDetails && snapshot.extraFields.length>0 ? [{id:"details",title:tx(rtl,"Your details","بياناتك"),icon:"profile"}] : []),
+              ]}/>
             )}
-            {adminTabs && (
-              <ScrollArea
-                horizontal
-                style={ui.tabs}
-                contentContainerStyle={ui.tabRow}
-                showsHorizontalScrollIndicator={false}
-              >
-                {adminTabs.buttons.map((button) => (
-                  <Button
-                    key={button.value}
-                    action={button}
-                    busy={busy}
-                    rtl={rtl}
-                  />
-                ))}
-              </ScrollArea>
-            )}
+            {adminTabs && <ScreenTabs rtl={rtl} selected={adminTabs.buttons.find(button=>button.primary)?.value || ""} onChange={id=>{const button=adminTabs.buttons.find(button=>button.value===id);if(button && button.enabled && !busy)dispatch(button.action,button.value);}} items={adminTabs.buttons.map(button=>({id:button.value,title:button.title,icon:tabIcon(button.title),disabled:busy || !button.enabled}))}/>}
+
             <View style={{flex:1}}>
             <ScrollArea
               ref={content}

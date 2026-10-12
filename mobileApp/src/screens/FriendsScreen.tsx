@@ -8,7 +8,7 @@ import { allActions, allCards, allFields } from "../guidedFlows";
 import { Button, FieldInput, PagedCards, action, textStyle } from "../components/Controls";
 import Illustration from "../components/Illustration";
 import BottomSheet from "../components/BottomSheet";
-import { TabButton } from "../components/Motion";
+import ScreenTabs from "../components/ScreenTabs";
 
 export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
   const { rtl, busy, feedback, error } = snapshot.state;
@@ -24,12 +24,7 @@ export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
     <View style={styles.heading}>
       <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",gap:10}}><View style={{flex:1}}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.title]}>{tx(rtl,"Groups","المجموعات")}</Text><Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Invite your favourite people to your next room.","ادعُ أصحابك إلى غرفتك القادمة.")}</Text></View><Illustration kind="friends" size={58}/></View>
       <Button action={action(tx(rtl,"New group","مجموعة جديدة"),"FRIENDS_ACTION","new",true)} rtl={rtl} busy={busy}/>
-      <View style={[styles.tabs,rtl && {flexDirection:"row-reverse"}]}>
-        {[tx(rtl,"Your groups","مجموعاتك"),tx(rtl,"Joined groups","المجموعات المنضم إليها")].map((title,index) =>
-          <TabButton key={title} selected={index === tab} accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:index === tab}} onPress={() => setTab(index)} style={[styles.tab,index === tab && styles.active]}>
-            <Text style={textStyle(rtl,"semibold")}>{title}</Text>
-          </TabButton>)}
-      </View>
+      <ScreenTabs rtl={rtl} selected={String(tab)} onChange={id=>setTab(Number(id))} style={{paddingHorizontal:0,paddingBottom:0}} items={[{id:"0",title:tx(rtl,"Your groups","مجموعاتك"),icon:"friends"},{id:"1",title:tx(rtl,"Joined groups","المجموعات المنضم إليها"),icon:"friends"}]}/>
       <TextInput accessibilityLabel={tx(rtl,"Search groups","البحث في المجموعات")} placeholder={tx(rtl,"Search by group name…","ابحث باسم المجموعة…")} value={query} onChangeText={setQuery} style={[styles.search,textStyle(rtl)]}/>
     </View>
     <ScrollArea contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={busy} onRefresh={() => dispatch("REFRESH")} tintColor={colors.forest}/> }>

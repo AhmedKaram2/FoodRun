@@ -4,6 +4,7 @@ import type { Card, Snapshot } from "../types";
 import { dispatch } from "../native";
 import { colors, tx } from "../theme";
 import { PagedCards, textStyle } from "../components/Controls";
+import ScreenTabs from "../components/ScreenTabs";
 import Illustration from "../components/Illustration";
 import ScrollArea from "../components/ScrollArea";
 
@@ -26,7 +27,7 @@ export default function WalletScreen({snapshot}:{snapshot:Snapshot}) {
     <View style={[styles.totals,rtl && {flexDirection:"row-reverse"}]}>{[false,true].map(receive=>{const summary=cards.find(card=>card.id.endsWith(`wallet-direction:${receive}`));return summary && <Pressable key={String(receive)} accessibilityRole="button" onPress={()=>setSelected(receive ? "receive":"pay")} style={styles.total}>
       <Text style={[textStyle(rtl),styles.label]}>{tx(rtl,receive ? "To receive":"To pay",receive ? "للاستلام":"للدفع")}</Text><Text style={[textStyle(rtl,"semibold"),styles.amount]}>{summary.badge}</Text>
     </Pressable>;})}</View>
-    <ScrollArea horizontal showsHorizontalScrollIndicator={false} style={{flexGrow:0}} contentContainerStyle={[styles.tabs,rtl && {flexDirection:"row-reverse"}]}>{tabs.map(tab=><Pressable key={tab.id} accessibilityRole="tab" accessibilityLabel={tab.title} accessibilityState={{selected:selected===tab.id}} onPress={()=>setSelected(tab.id)} style={[styles.tab,selected===tab.id && styles.active]}><Text style={[textStyle(rtl,"medium"),styles.tabText,selected===tab.id && {color:colors.white}]}>{tab.title}{tab.id==="waiting" && entries.filter(card=>group(card)==="waiting").length ? ` (${entries.filter(card=>group(card)==="waiting").length})` : ""}</Text></Pressable>)}</ScrollArea>
+    <ScreenTabs rtl={rtl} selected={selected} onChange={setSelected} style={{paddingTop:12}} items={tabs.map(tab=>({...tab,icon:tab.id==="history" ? "history" : tab.id==="waiting" ? "history" : "wallet",badge:tab.id==="waiting" ? entries.filter(card=>group(card)==="waiting").length : 0}))}/>
     <ScrollArea key={selected} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={busy} onRefresh={()=>dispatch("REFRESH")} tintColor={colors.forest}/>} contentContainerStyle={styles.content}>
       {selected==="waiting" && <Text style={[textStyle(rtl),styles.label]}>{tx(rtl,"Sent payments and approvals stay here until they are resolved.","تظهر هنا الدفعات المرسلة والموافقات حتى تتم تسويتها.")}</Text>}
       <PagedCards cards={visible} busy={busy} rtl={rtl}/>

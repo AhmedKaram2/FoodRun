@@ -35,7 +35,7 @@ enum class GroupFieldKey { TRANSFER_AMOUNT_MODE, CUSTOM_UNIT_PRICE, ITEM_UNIT_PR
 @Serializable data class GroupChoice(val value: String, val label: String)
 @Serializable data class GroupField(val key: GroupFieldKey, val label: String, val value: String, val multiline: Boolean = false, val toggle: Boolean = false, val secret: Boolean = false, val choices: List<GroupChoice> = emptyList())
 @Serializable data class GroupButton(val title: String, val action: GroupAction, val value: String = "", val primary: Boolean = false, val destructive: Boolean = false, val enabled: Boolean = true)
-@Serializable data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList(), val image: String = "", val selection: GroupButton? = null)
+@Serializable data class GroupCard(val id: String, val title: String, val detail: String = "", val badge: String = "", val buttons: List<GroupButton> = emptyList(), val image: String = "", val selection: GroupButton? = null, val paymentGroup: String = "")
 @Serializable data class GroupWheel(val names: List<String>, val round: SpinRound, val serverOffset: Long, val winner: String, val style: String = "wheel", val roomName: String = "", val roomId: String = "")
 @Serializable data class GroupReminderEmailPrompt(val name: String, val address: String, val error: String)
 @Serializable data class GroupState(
@@ -59,6 +59,8 @@ enum class GroupFieldKey { TRANSFER_AMOUNT_MODE, CUSTOM_UNIT_PRICE, ITEM_UNIT_PR
     val language: String = "",
     val roomPhase: String = "",
     val roomStage: String = "",
+    val orderingPerson: String = "",
+    val orderingPersonPending: Boolean = false,
     val joinedCount: Int = 0,
     val historyNextOffset: Int = -1,
 ) {

@@ -16,6 +16,7 @@ import { NotificationCenter, NotificationActionCard } from '../src/foodrun/Notif
 import { CreatePaymentRoom } from '../src/foodrun/PaymentRoom.jsx';
 import WalletFunds, { WalletPaymentOption } from '../src/foodrun/WalletFunds.jsx';
 import WalletCustody from '../src/foodrun/WalletCustody.jsx';
+import MobilePageLayout from '../src/foodrun/MobilePageLayout.jsx';
 
 let root, host;
 export const commands = [];
@@ -80,12 +81,12 @@ export async function mountAudit(screen = 'create', phase = 'LOBBY', options = {
       room.fees = fields.fees; room.restaurant = fields.restaurant || room.restaurant; room.quoteRevision++; room.revision++;
       roomData.rooms[room.id].progress = { ...roomData.rooms[room.id].progress, canReview: room.restaurant.pricing.taxTreatment !== 'unspecified', reviewBlocker: '' };
     }
-    root.render(<RoomScreen {...props} roomId={room.id} />);
+    root.render(<MobilePageLayout pageKey="room"><RoomScreen {...props} roomId={room.id} /></MobilePageLayout>);
     return { ok: true };
   };
   const auditNode = screen === 'payment-create' ? <CreatePaymentRoom {...props} openProfile={() => {}} /> : screen === 'library' ? <RestaurantLibraryScreen language={document.documentElement.lang.startsWith('ar') ? 'ar' : 'en'} {...props} />
-    : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <ProfileScreen {...props} />
-    : screen === 'room' ? <RoomScreen {...props} roomId={room.id} /> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />;
+    : screen === 'home' ? <Home {...props} /> : screen === 'profile' ? <MobilePageLayout pageKey="profile"><ProfileScreen {...props} /></MobilePageLayout>
+    : screen === 'room' ? <MobilePageLayout pageKey="room"><RoomScreen {...props} roomId={room.id} /></MobilePageLayout> : <CreateRoom {...props} mode={screen === 'join' ? 'join' : 'create'} />;
   root._auditComponent = {key:screen,node:auditNode}; root.render(auditNode);
   await pause(); return measureAudit();
 }
@@ -176,18 +177,18 @@ export async function runAutoArchivePaymentAudit() {
     { memberId: 'friend', name: 'friend', food: 1200, total: 1200, paid: 0, balance: 1200, currency: 'AED', totalText: 'AED 12.00', lines: [] }];
   await mountAudit('room', 'ARCHIVED', { room, receipts, progress: { canArchive: false } });
   assert(host.textContent.includes(t('Archived after 24 hours')), 'Automatic archive explanation missing');
-  assert(host.querySelector('.record-payment[open]'), 'Archived unpaid bill cannot be recorded');
+  assert(host.querySelector('.record-payment'), 'Archived unpaid bill cannot be recorded');
   assert(button('Send payment reminder'), 'Archived unpaid bill cannot be reminded');
   assert(button('Start next order').disabled, 'Unsettled archived bill can be replaced');
   assert(!button('Update final bill') && !button('Edit share'), 'Archived bill has editing controls');
-  host.querySelector('.record-payment form').requestSubmit(); await pause();
+  host.querySelector('.record-payment').open=true;host.querySelector('.record-payment form').requestSubmit(); await pause();
   assert(commands.at(-1)?.kind === 'RECORD_PAYMENT' && commands.at(-1).fields.amount === 1200, 'Archived payment records wrong amount');
   await mountAudit('room', 'ARCHIVED', { room, memberId: 'friend', receipts: [receipts[1]], progress: { canArchive: false } });
   const pay = button('Mark paid'); assert(pay && !pay.disabled, 'Member cannot pay archived balance');
   const form = pay.closest('form'); form.requestSubmit(); await pause();
   assert(commands.at(-1)?.kind === 'DECLARE_TRANSFER' && commands.at(-1).fields.amount === 1200, 'Archived member payment records wrong amount');
   await mountAudit('room', 'ARCHIVED', { room: { ...room, transfers: [{ id: 'claim', memberId: 'friend', amount: 1200, status: 'DECLARED', reference: 'Cash' }] }, receipts, progress: { canArchive: false } });
-  const confirm = button('Confirm received'); assert(confirm && !confirm.disabled, 'Archived claim cannot be confirmed');
+  const confirm = host.querySelector('.payment-actions .hero-actions .primary'); assert(confirm && !confirm.disabled, 'Archived claim cannot be confirmed');
   confirm.click(); await pause(); assert(commands.at(-1).kind === 'CONFIRM_TRANSFER', 'Archived claim sent wrong confirmation command');
   assert(!measureAudit().overflow, 'Archived settlement layout overflows');
   return { passed: ['archive explanation', 'record received', 'payment reminder retained', 'unsettled next order blocked', 'bill editing closed', 'member payment retained', 'pending receipt confirmation'], ...measureAudit() };
@@ -561,7 +562,7 @@ export async function runOrderFlowAudit() {
   assert(!measureAudit().overflow, 'Wallet overflows');
   const pending = { id: 'claim', memberId: 'other', amount: 1000, status: 'declared', reference: 'Audit payment', refund: false };
   await mountAudit('room', 'PLACED', { room: { ...room, transfers: [pending] }, receipts: [receipt('me',1000), receipt('other')] });
-  button('Confirm received').click(); await pause();
+  host.querySelector('.payment-actions .hero-actions .primary').click(); await pause();
   assert(commands.at(-1).kind === 'CONFIRM_TRANSFER' && commands.at(-1).fields.transferId === 'claim', 'Top confirmation action failed');
   assert(host.querySelector('.payment-breakdown') && !host.querySelector('.payment-breakdown').open, 'Details are not optional');
   assert(host.querySelector('.payment-priority').textContent.includes('123456789012'), 'Chosen person payment details hidden');
@@ -787,11 +788,11 @@ export async function runPaymentRoomAudit() {
   const receipts = [{ memberId:'me', name:'Payer', food:0,total:0,paid:0,balance:0,currency:'AED',lines:[] },
     { memberId:'friend', name:'Friend',food:3001,total:3001,paid:500,balance:2501,currency:'AED',lines:[{ description:'Meal',quantity:1,amount:3001 }] }];
   await mountAudit('room','FULFILLED',{ room, receipts });
-  assert(button('Edit share') && host.innerText.includes(t('Record payment received')), 'Payer cannot manage shares or payments');
+  assert(button('Edit share') && !!host.querySelector('.record-payment'), 'Payer cannot manage shares or payments');
   assert(!host.querySelector('.restaurant-order-card') && !host.querySelector('.room-invite-card'), 'Payment room exposes ordering flow');
   assert(!measureAudit().overflow, 'Payment wallet overflows');
   await mountAudit('room','FULFILLED',{ room, receipts:[receipts[1]], memberId:'friend' });
-  assert(!button('Edit share') && !host.innerText.includes(t('Record payment received')), 'Member received payer controls');
+  assert(!button('Edit share') && !!!host.querySelector('.record-payment'), 'Member received payer controls');
   assert(!button('Approve revised final bill'), 'Member must approve the bill again');
   return { passed:['direct creation','user selection','exact equal split','portrait receipt photo','payer share and payment controls','member-only wallet','no ordering steps'], ...measureAudit() };
 }
@@ -1429,4 +1430,23 @@ export async function runRefusedSelectionAudit() {
     assert(commands.at(-1)?.kind==='REMOVE' && commands.at(-1).fields.memberId==='bob' && !commands.at(-1).fields.text,'Refused removal sent a note or wrong member');
   } finally {window.prompt=previousPrompt;}
   return {passed:true,language:getLanguage(),width:innerWidth,retryWheel:true,removeRefusedWithoutNote:true};
+}
+
+export async function runPaymentApprovalAudit() {
+  const account={id:'bank',holder:'Collector',bank:'Test Bank',identifier:'AE070331234567890123456',currency:'AED'};
+  const receipt={memberId:'friend',name:'Friend',food:1000,total:1000,paid:0,balance:1000,currency:'AED',lines:[{description:'Meal',quantity:1,amount:1000}]};
+  const room={payerId:'me',restaurantPaid:true,account,members:[{id:'me',name:'Collector',approved:true,participating:true},{id:'friend',name:'Friend',approved:true,participating:true}]};
+  await mountAudit('room','FULFILLED',{room,receipts:[receipt]});commands.length=0;
+  const record=host.querySelector('.record-payment');assert(record && !record.open,'Manual receipt should be a small closed option');
+  assert(!host.querySelector('.payment-actions .hero-actions .primary'),'Unreported payment has an approval action');
+  record.open=true;record.querySelector('form').requestSubmit();await pause();
+  assert(commands.at(-1)?.kind==='RECORD_PAYMENT' && commands.at(-1).fields.memberId==='friend' && commands.at(-1).fields.amount===1000,'Manual receipt uses the wrong person or operation');
+  const claim={id:'reported',memberId:'friend',amount:400,status:'DECLARED',createdAt:Date.now(),reference:'Cash',recipient:account};
+  await mountAudit('room','FULFILLED',{room:{...room,transfers:[claim]},receipts:[receipt]});commands.length=0;
+  assert(!host.querySelector('.record-payment'),'Pending report also exposes manual receipt');
+  const approval=host.querySelector('.payment-actions .hero-actions .primary');assert(approval && approval.textContent.includes('Friend') && approval.textContent.includes('4.00'),'Approval does not identify the reported payment');
+  approval.click();await pause();assert(commands.at(-1)?.kind==='CONFIRM_TRANSFER' && commands.at(-1).fields.transferId==='reported','Approval creates a new manual receipt');
+  await mountAudit('room','FULFILLED',{memberId:'friend',room:{...room,transfers:[claim]},receipts:[receipt]});
+  assert(!host.querySelector('.record-payment') && !host.querySelector('.payment-actions .hero-actions .primary'),'Sender can approve their own report');
+  return {passed:true,width:innerWidth,language:getLanguage(),checks:['small manual receipt option','separate command and target','reported amount approval','no duplicate record action','collector only']};
 }

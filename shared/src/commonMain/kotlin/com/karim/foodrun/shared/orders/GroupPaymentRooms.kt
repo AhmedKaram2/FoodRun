@@ -88,7 +88,7 @@ internal class GroupPaymentRooms(private val c: GroupController) {
     fun form(): GroupFlowContent {
         if(c.page == GroupPage.RECORD_PAYMENT) return GroupFlowContent(
             fields = listOf(field(GroupFieldKey.PAYMENT_RECEIVED, "Amount received · ${currency()}", "المبلغ المستلم · ${currency()}"), field(GroupFieldKey.REFERENCE, "Reference / cash note", "مرجع التحويل أو ملاحظة النقد")),
-            cards = listOf(GroupCard("received-check", c.room().members.single { it.id == editing }.name, tr("Confirm only after checking the money reached you. This records a payment and does not transfer money.", "أكد بعد التحقق من وصول الأموال إليك. هذا يسجل الدفع ولا يحول الأموال."))),
+            cards = listOf(GroupCard("received-check", c.room().members.single { it.id == editing }.name, tr("Use this when you received money and the person has not reported a payment. Confirm the amount actually received.", "استخدم هذا الخيار عند استلام المبلغ دون أن يسجل الشخص أنه دفع. أكد المبلغ الذي استلمته فعلاً."))),
             buttons = listOf(GroupButton(tr("Confirm payment received", "تأكيد استلام الدفعة"), GroupAction.SAVE_RECORDED_PAYMENT, primary = true, enabled = c.online)))
         if(c.page == GroupPage.PAYMENT_SHARE) return GroupFlowContent(fields = listOf(
             field(GroupFieldKey.PAYMENT_DESCRIPTION, "Person's order", "طلب الشخص", true), field(GroupFieldKey.PAYMENT_SHARE, "Share · ${currency()}", "الحصة · ${currency()}")) +

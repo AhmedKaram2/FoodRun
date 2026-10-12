@@ -5,7 +5,7 @@ export const isRoom = (page: string) => page === "ROOM";
 
 // Group by stable card IDs so language changes and live updates keep the same tabs.
 export function roomCardTab(card: Card): number {
-  if (/^(menu:|cart:|half-item:|reuse-favorite:|reuse-past:|price:|early-order$|pricing-help$|estimate$)/.test(card.id)) return 1;
+  if (/^(menu:|menu-empty$|cart:|cart-submitted$|half-item:|reuse-favorite:|reuse-past:|price:|early-order$|pricing-help$|estimate$)/.test(card.id)) return 1;
   if (/^(wallet|transfer:|receipt:|quote:|account$|restaurant-balance$|my-payment-status$|settlement-)/.test(card.id)) return 2;
   if (/^(member:|invite:|pending-join$)/.test(card.id)) return 3;
   return 0;
@@ -29,4 +29,13 @@ export function roomActionTab(button: Action): number {
 export function roomFieldTab(field: Field): number {
   if (/^MENU_/.test(field.key)) return 1;
   return /^(TRANSFER_AMOUNT_MODE|AMOUNT|REFERENCE|PAYMENT_|ACCOUNT_|AANI)/.test(field.key) ? 2 : 0;
+}
+
+export const roomDetailCard=(card:Card)=>/^(last-chosen|selection-refused|declined-duty|viewing-order)$/.test(card.id);
+export const roomDetailAction=(button:Action)=>/^(SHARE_ROOM|OPEN_RECEIPTS|OPEN_HISTORY|SAVE_ROOM_RESTAURANT|EDIT_ROOM_RESTAURANT|OPEN_WHEEL_PROTECTION|OPEN_BLOCK_REQUEST|PARTICIPATE|CANCEL|SET_FEES|REOPEN)$/.test(button.action);
+export function roomPrimaryAction(snapshot:Snapshot):Action|null {
+  const primary=snapshot.primaryAction;
+  if(!primary || primary.action==="SUBMIT_CART")return null;
+  // Preserve the server's readiness and action; only clarify the visible label.
+  return primary.action==="PREPARE_SPIN" ? {...primary,title:tx(snapshot.state.rtl,"Start wheel","ابدأ العجلة")} : primary;
 }

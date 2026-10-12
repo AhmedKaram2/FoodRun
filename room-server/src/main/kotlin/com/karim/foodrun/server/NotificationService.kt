@@ -158,6 +158,16 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         if (ready(room) && (!ready(before) || before.payerId != room.payerId)) payer("all_submitted", "Everyone submitted their order" to "الجميع أرسل طلبه", listOf("copy", "share", "order"),
             body = "${room.name} · Review, copy or share the full order, then mark it sent." to "${room.name} · راجع الطلب الكامل وانسخه أو شاركه ثم أكد إرساله.")
     }
+    fun transfersAutoConfirmed(before: Room, room: Room) {
+        room.transfers.filter { transfer -> transfer.status == TransferStatus.CONFIRMED && before.transfers.any { it.id == transfer.id && PaymentConfirmation.deadline(it) != null } }.forEach { transfer ->
+            val event = "auto-confirm:${room.orderNumber}:${transfer.id}"
+            val body = "${Money.format(transfer.amount,room.restaurant.currency)} · ${room.name} · Automatically confirmed after 12 hours without recipient response." to
+                "${Money.format(transfer.amount,room.restaurant.currency)} · ${room.name} · تم التأكيد تلقائياً بعد ١٢ ساعة دون رد المستلم."
+            listOfNotNull(transfer.memberId,room.payerId).distinct().forEach { member ->
+                add(room,member,event,"payment_auto_confirmed","Payment marked paid" to "تم تسجيل الدفعة كمدفوعة",body,listOf("open"),transfer.id)
+            }
+        }
+    }
     fun selected(room: Room) {
         val spin = room.spin ?: return
         val winner = room.members.firstOrNull { it.id == spin.winnerId } ?: return

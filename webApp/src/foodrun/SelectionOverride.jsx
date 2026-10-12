@@ -65,7 +65,7 @@ export default function SelectionOverride({ room, data, language }) {
       onPointerUp={cancelPress} onPointerCancel={cancelPress} onLostPointerCapture={cancelPress}
       onContextMenu={event => { if (allowed) event.preventDefault(); }}
       onKeyDown={event => { if (allowed && [' ', 'Enter'].includes(event.key) && !event.repeat) { event.preventDefault(); beginPress(); } }}
-      onKeyUp={cancelPress} onBlur={cancelPress}>{room.name}</span>
+      onKeyUp={cancelPress} onBlur={cancelPress}><span className="room-name-label">{room.name}</span><span className="room-mobile-title">{tx('Room','الغرفة')} {room.code}</span></span>
     {open && createPortal(<dialog ref={dialog} className="card poll-dialog" onCancel={close} onClose={close} aria-labelledby="selection-override-title" dir={ar ? 'rtl' : 'ltr'}>
       <form className="stack" onSubmit={submit}>
         <h2 id="selection-override-title">{tx('Wheel selection', 'اختيار العجلة')}</h2>

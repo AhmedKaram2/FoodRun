@@ -104,7 +104,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
             buttons = listOf(action(tr("Charge wallet", "شحن المحفظة"), "charge")))
         mine.forEach { cards += GroupCard("${prefix}wallet-held:${it.holderId}:${it.currency}", "${tr("Held by", "لدى")} ${it.holderName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
         wallet.balances.filter { it.holderId == uid && it.customerId != uid }.forEach { cards += GroupCard("${prefix}wallet-holding:${it.customerId}:${it.currency}", "${tr("Money I hold for", "أموال لدي تخص")} ${it.customerName}", Money.format(it.available, it.currency), tr("View transactions", "عرض المعاملات"), selection = historySelection(it)) }
-        wallet.topUps.filter { c.page != GroupPage.WALLET || it.status == WalletStatus.PENDING }.forEach { topUp ->
+        wallet.topUps.forEach { topUp ->
             val buttons = if(topUp.holderId == uid && topUp.status == WalletStatus.PENDING) listOf(action(tr("Confirm received", "تأكيد الاستلام"), "top-up-yes|${topUp.id}"), action(tr("Not received", "لم أستلم"), "top-up-no|${topUp.id}")) else emptyList()
             cards += GroupCard("${prefix}wallet-top-up:${topUp.id}", "${topUp.customerName} → ${topUp.holderName}",
                 "${Money.format(topUp.amount, topUp.currency)}\n${topUp.account.bank} · ${topUp.account.identifier}\n${topUp.note}", when(topUp.status) {
@@ -123,11 +123,29 @@ internal class GroupWalletFunds(private val c: GroupController) {
                 "${Money.format(batch.amount, batch.currency)}\n${batch.paymentIds.size} ${tr("payments", "دفعات")}\n${batch.note}", tr("Confirm only after receiving the full amount", "أكد فقط بعد استلام كامل المبلغ"),
                 if(batch.recipientId == uid) listOf(action(tr("Confirm full amount received", "تأكيد استلام كامل المبلغ"), "batch-yes|${batch.id}"), action(tr("Not received", "لم أستلم"), "batch-no|${batch.id}")) else emptyList())
         }
-        wallet.payments.filter { (it.customerId == uid || it.recipientId == uid) && (c.page != GroupPage.WALLET || it.status != WalletPaymentStatus.SETTLED) }.forEach { payment ->
+        wallet.payments.filter { it.customerId == uid || it.recipientId == uid }.forEach { payment ->
             cards += GroupCard("${prefix}wallet-payment:${payment.id}", "${payment.customerName} · ${payment.roomName} #${payment.orderNumber}",
                 "${Money.format(payment.amount, payment.currency)} · ${payment.holderName} → ${payment.recipientName}", status(payment))
         }
-        return cards
+        return cards.map { card ->
+            val local = card.id.removePrefix(prefix)
+            val group = when {
+                local == "wallet-funds" || local.startsWith("wallet-held:") || local.startsWith("wallet-holding:") -> "balance"
+                local.startsWith("wallet-top-up:") -> if(wallet.topUps.firstOrNull { it.id == local.removePrefix("wallet-top-up:") }?.status == WalletStatus.PENDING) "waiting" else "history"
+                local.startsWith("wallet-group:") -> "pay"
+                local.startsWith("wallet-batch:") -> "waiting"
+                local.startsWith("wallet-payment:") -> wallet.payments.firstOrNull { it.id == local.removePrefix("wallet-payment:") }?.let { payment ->
+                    when {
+                        payment.status == WalletPaymentStatus.SETTLED -> "history"
+                        payment.status == WalletPaymentStatus.SENT || payment.holderId == payment.recipientId || c.library.snapshots[payment.roomId]?.room?.transfers?.any { it.id == "wallet-${payment.id}" && it.status == TransferStatus.DECLARED } == true -> "waiting"
+                        payment.recipientId == uid -> "receive"
+                        else -> "waiting"
+                    }
+                }.orEmpty()
+                else -> ""
+            }
+            card.copy(paymentGroup = group)
+        }
     }
     fun status(payment: WalletPayment) = when(payment.status) {
         WalletPaymentStatus.OWING -> if(payment.holderId == payment.recipientId || c.library.snapshots[payment.roomId]?.room?.transfers?.any { it.id == "wallet-${payment.id}" && it.status == TransferStatus.DECLARED } == true) tr("Awaiting wallet approval", "بانتظار الموافقة على المحفظة") else tr("Wallet paid; holder still needs to send cash", "تم الدفع بالمحفظة؛ على الشخص إرسال النقد")

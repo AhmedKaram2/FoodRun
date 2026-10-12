@@ -71,7 +71,7 @@ internal fun GroupController.paymentReminderButtons(room: Room, actorId: String,
 
 internal fun GroupController.recordPaymentButtons(room: Room, actorId: String, receipt: Receipt, wallet: Boolean = false): List<GroupButton> {
     if (!PaymentReminderRules.eligible(room, actorId, receipt)) return emptyList()
-    return listOf(GroupButton(if (library.language.startsWith("ar")) "تسجيل دفعة مستلمة" else "Record payment received",
+    return listOf(GroupButton(if (library.language.startsWith("ar")) "تسجيل مبلغ مستلم من ${receipt.name}" else "Record money received from ${receipt.name}",
         if (wallet) GroupAction.WALLET_RECORD_PAYMENT else GroupAction.RECORD_PAYMENT,
         if (wallet) "${room.id}|${receipt.memberId}" else receipt.memberId, enabled = !busy && (wallet || online)))
 }

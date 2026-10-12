@@ -105,6 +105,49 @@ class GroupSettlementPresentationTest {
 
     private fun GroupFlowContent.action(action: GroupAction) = (buttons + cards.flatMap { it.buttons }).single { it.action == action }
 
+    @Test fun orderingPersonRemainsVisibleAfterTheWheelAndFollowsDirectSelectionAndOverrides() {
+        val base=room()
+        val accepting=base.copy(phase=RoomPhase.ACCEPTING,payerId=null,spin=SpinRound("spin",listOf("payer","member"),"member",1000))
+        assertEquals("Hassan",controller(accepting).state.orderingPerson)
+        assertTrue(controller(accepting).state.orderingPersonPending)
+        for(phase in listOf(RoomPhase.COLLECTING,RoomPhase.REVIEW,RoomPhase.PLACED,RoomPhase.FULFILLED,RoomPhase.ARCHIVED)) {
+            val c=controller(base.copy(phase=phase,payerId="member"))
+            assertEquals("Hassan",c.state.orderingPerson)
+            assertFalse(c.state.orderingPersonPending)
+        }
+        assertEquals("Karim",controller(base.copy(payerId="payer")).state.orderingPerson)
+        assertEquals("",controller(base.copy(phase=RoomPhase.LOBBY)).state.orderingPerson)
+        assertEquals("",controller(base.copy(phase=RoomPhase.SPINNING)).state.orderingPerson)
+        val c=controller(base);c.page=GroupPage.HOME
+        assertEquals("",c.state.orderingPerson)
+    }
+    @Test fun ownerActionsNameTheOrderingPersonAndMemberActionsNameTheirTarget() {
+        val selected=room().copy(payerId="member")
+        val owner=controller(selected)
+        assertTrue(owner.state.cards.flatMap { it.buttons }.single { it.action==GroupAction.PLACE }.title.contains("for Hassan"))
+        val payer=controller(selected,"member")
+        assertFalse(payer.state.cards.flatMap { it.buttons }.single { it.action==GroupAction.PLACE }.title.contains("for Hassan"))
+        val lobby=controller(room().copy(phase=RoomPhase.LOBBY,payerId=null))
+        val member=lobby.state.cards.single { it.id=="member:member" }
+        assertEquals("Remove Hassan from room",member.buttons.single { it.action==GroupAction.REMOVE }.title)
+        assertEquals("Make Hassan organizer",member.buttons.single { it.action==GroupAction.HANDOVER }.title)
+    }
+    @Test fun selectedPersonSeesReportedApprovalAndManualReceiptAsDifferentActions() {
+        val due=room().copy(phase=RoomPhase.FULFILLED,restaurantPaid=true)
+        val unreported=controller(due).state.cards.flatMap { it.buttons }
+        val record=unreported.single { it.action==GroupAction.RECORD_PAYMENT }
+        assertEquals("Record money received from Hassan",record.title)
+        assertFalse(record.primary)
+        assertFalse(unreported.any { it.action==GroupAction.CONFIRM_TRANSFER })
+        val reported=controller(due.copy(transfers=listOf(transfer()))).state.cards.flatMap { it.buttons }
+        val approve=reported.single { it.action==GroupAction.CONFIRM_TRANSFER }
+        assertEquals("Approve reported payment · Hassan",approve.title)
+        assertEquals("transfer",approve.value);assertTrue(approve.primary)
+        assertFalse(reported.any { it.action==GroupAction.RECORD_PAYMENT })
+        val sender=controller(due.copy(transfers=listOf(transfer())),"member").state.cards.flatMap { it.buttons }
+        assertFalse(sender.any { it.action in listOf(GroupAction.CONFIRM_TRANSFER,GroupAction.RECORD_PAYMENT) })
+    }
+
     @Test fun walletCustodyShowsHolderLiabilityAndOffersRecipientConfirmationInTheRoom() {
         val payment = WalletPayment("wallet-payment", "customer", "Hassan", "holder", "Ahmed", "payer-user", "Karim", "room", "Lunch", 1, "member", 1000, "AED", WalletPaymentStatus.SENT, "batch", 0)
         val batch = WalletBatch("batch", "holder", "Ahmed", "payer-user", "Karim", 1000, "AED", listOf(payment.id), account, "Sent", createdAt = 0)

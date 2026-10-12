@@ -170,7 +170,8 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
                 ownReceipt.balance == 0L -> tr("Your share is settled. No further payment is needed for the current bill.", "تمت تسوية حصتك ولا توجد دفعات أخرى للفاتورة الحالية.")
                 else -> tr("Send up to ${money(ownReceipt.balance)} to ${r.account?.holder ?: name(r.payerId)} using your bank app or cash, then record the amount below. Intrvioo only records payments.", "أرسل حتى ${money(ownReceipt.balance)} إلى ${r.account?.holder ?: name(r.payerId)} عبر البنك أو نقداً ثم سجل المبلغ. إنترفيو يوثق الدفعات فقط.")
             }
-            cards += GroupCard("my-payment-status", if (ownPending != null) tr("Payment awaiting confirmation", "الدفعة بانتظار التأكيد") else tr("Your payment", "دفعتك"), detail)
+            cards += GroupCard("my-payment-status", if (ownPending != null) tr("Payment awaiting confirmation", "الدفعة بانتظار التأكيد") else tr("Your payment", "دفعتك"), detail +
+                (ownPending?.let(PaymentConfirmation::deadline)?.let { "\n" + tr("Marked paid automatically after 12 hours without a response.", "تُسجل كمدفوعة تلقائياً بعد ١٢ ساعة دون رد.") } ?: ""))
             if (r.restaurantPaid && ownPending == null && ownReceipt != null && ownReceipt.balance > 0) {
                 fields += transferAmountFields(ownReceipt.balance)
                 buttons += GroupButton(tr("I paid · notify recipient", "دفعت · إشعار المستلم"), GroupAction.DECLARE_TRANSFER, primary = true)

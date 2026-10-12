@@ -4,6 +4,20 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupWalletFundsTest {
+    @Test fun walletTrackingKeepsCompletedActivityAndSeparatesOutstandingCustodyFromIncomingMoney() {
+        val c=controller(Device());c.page=GroupPage.WALLET
+        val incoming=WalletPayment("incoming","alice","Alice","holder","Holder","me","Me","room","Lunch",1,"alice",1500,"AED",createdAt=10000)
+        val sent=incoming.copy(id="sent",customerId="me",recipientId="payer",status=WalletPaymentStatus.SENT)
+        val settled=sent.copy(id="settled",status=WalletPaymentStatus.SETTLED)
+        val credit=WalletTopUp("credit","me","Me","holder","Holder",2000,"AED",account,"",status=WalletStatus.CONFIRMED,createdAt=10000)
+        c.library=c.library.copy(home=home.copy(wallet=WalletSnapshot(payments=listOf(incoming,sent,settled),topUps=listOf(credit))))
+        val cards=c.walletFunds.cards("")
+        assertEquals("receive",cards.single { it.id=="wallet-payment:incoming" }.paymentGroup)
+        assertEquals("waiting",cards.single { it.id=="wallet-payment:sent" }.paymentGroup)
+        assertEquals("history",cards.single { it.id=="wallet-payment:settled" }.paymentGroup)
+        assertEquals("history",cards.single { it.id=="wallet-top-up:credit" }.paymentGroup)
+        assertFalse(cards.filter { it.paymentGroup=="history" }.flatMap { it.buttons }.any { it.value.contains("-yes|") })
+    }
     @Test fun roomShowsWalletObligationsAndSettlesOnlyItsOwnOrderIncludingPersonalShare() {
         val device=Device();val c=controller(device)
         val payment=WalletPayment("due","alice","Alice","me","Me","payer","Payer","room","Lunch",1,"alice",1500,"AED",createdAt=10000)

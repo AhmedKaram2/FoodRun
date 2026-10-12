@@ -47,11 +47,15 @@ import QuickWheel from "./src/screens/QuickWheel";
 import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./src/screens/AccountScreens";
 import RoomTimeline from "./src/components/RoomTimeline";
 import RoomMembers from "./src/components/RoomMembers";
+import RoomFood from "./src/components/RoomFood";
+import RoomOrderDock from "./src/components/RoomOrderDock";
+import RoomPayments from "./src/components/RoomPayments";
+import WalletScreen from "./src/screens/WalletScreen";
 import FriendsScreen from "./src/screens/FriendsScreen";
 import AuthScreen from "./src/screens/AuthScreen";
 import NativeTabBar from './src/components/NativeTabBar';
 import { roomCodeFromLink } from "./src/roomLink";
-import { isRoom, roomSections, roomActionTab, roomFieldTab } from "./src/roomTabs";
+import { isRoom, roomSections, roomActionTab, roomFieldTab, roomDetailCard, roomDetailAction, roomPrimaryAction } from "./src/roomTabs";
 
 function sectionsFor(snapshot: Snapshot): Section[] {
   const { state } = snapshot;
@@ -158,6 +162,10 @@ function Application() {
     .flatMap((value) => value.cards)
     .find((card) => card.id === "admin-tabs");
   const fields = snapshot.mainFields.filter(field => !room || roomFieldTab(field) === selected);
+  const roomPrimary=room ? roomPrimaryAction(snapshot) : null;
+  const detailFields=room ? [...snapshot.mainFields.filter(field=>roomFieldTab(field)===0),...snapshot.extraFields] : [];
+  const detailCards=room ? sections.flatMap(section=>section.cards).filter(roomDetailCard) : [];
+  const detailActions=room ? [...snapshot.inlineButtons.filter(roomDetailAction),...snapshot.utilityButtons] : [];
   const changeTab = (index: number) => {
     if(room) savedRoomTab.current={key:`${snapshot.accountId}:${state.roomCode}`,tab:index};
     setSelected(index);
@@ -206,6 +214,7 @@ function Application() {
   const inline = snapshot.inlineButtons.filter(
     (button) =>
       (!room || roomActionTab(button) === selected) &&
+      (!room || (!roomDetailAction(button) && button.action!=="SUBMIT_CART")) &&
       button.action !== "SET_LANGUAGE" &&
       (state.page !== "HOME" ||
         ["CREATE_PAYMENT_ROOM", "OPEN_CONNECTION_OPTIONS"].includes(
@@ -318,11 +327,13 @@ function Application() {
           <LibraryScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : state.page === "FRIENDS" ? (
           <FriendsScreen key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "WALLET" && snapshot.authenticated ? (
+          <WalletScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : (["ITEM", "ACCOUNT", "SELECTION_OVERRIDE", "PAYMENT_SHARE"].includes(state.page) || state.page === "MENU_ENTITY") ? (
           <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
           <>
-            {(state.page !== "HOME" || snapshot.authenticated) && <View style={[ui.heading, rtl && ui.reverse]}>
+            {(state.page !== "HOME" || snapshot.authenticated) && <View style={[ui.heading, room && ui.roomHeading, rtl && ui.reverse]}>
               {state.canGoBack && (
                 <Pressable
                   accessibilityRole="button"
@@ -336,36 +347,44 @@ function Application() {
                 </Pressable>
               )}
               <View style={{ flex: 1 }}>
-                <Text style={[textStyle(rtl, "bold"), ui.title]}>
-                  {wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
+                <Text numberOfLines={room ? 1 : undefined} style={[textStyle(rtl, "bold"), ui.title, room && ui.roomTitle]}>
+                  {room ? tx(rtl,"Room","الغرفة") : wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
                 </Text>
-                {!!state.subtitle && (
+                {!!state.subtitle && !room && (
                   <Text style={[textStyle(rtl), ui.subtitle]}>
                     {state.subtitle}
                   </Text>
                 )}
               </View>
+              {room && !!state.roomCode && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Invite","دعوة")} disabled={busy} onPress={()=>dispatch("SHARE_ROOM")} style={ui.roomInvite}>
+                <Text style={[textStyle(rtl,"medium"),{fontSize:11,color:colors.muted}]}>{state.roomCode}</Text>
+                <Text style={[textStyle(rtl,"semibold"),{fontSize:12,color:colors.forest}]}>{tx(rtl,"Invite","دعوة")}</Text>
+              </Pressable>}
+              {room && (detailFields.length>0 || detailActions.length>0 || detailCards.length>0) && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Room details & settings","تفاصيل الغرفة والإعدادات")} onPress={()=>setOptions(true)} style={ui.icon}><Icon name="settings" size={20} color={colors.forest}/></Pressable>}
               {busy && <ActivityIndicator color={colors.coral} />}
             </View>}
             {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={state.roomStage || ""} rtl={rtl}/>}
+            {room && !!state.orderingPerson && <View style={[ui.orderingPerson,rtl && ui.reverse]}>
+              <Icon name="profile" size={17} color={colors.forest}/>
+              <Text accessibilityLiveRegion="polite" style={[textStyle(rtl,"semibold"),{flex:1,fontSize:13,lineHeight:22,color:colors.forest}]}>{tx(rtl,state.orderingPersonPending ? `Chosen: ${state.orderingPerson}` : `Ordering person: ${state.orderingPerson}`,state.orderingPersonPending ? `تم اختيار: ${state.orderingPerson}` : `مسؤول الطلب: ${state.orderingPerson}`)}</Text>
+            </View>}
             {(sections.length > 1 ||
               (profileDetails && snapshot.extraFields.length > 0)) && (
               <View style={room && ui.roomTabs}>
-              {room ? <ScrollArea horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[ui.roomTabRow, rtl && ui.reverse]}>
+              {room ? <View style={[ui.roomTabRow, rtl && ui.reverse]}>
                 {sections.map((item, index) => (
                   <TabButton selected={selected === index} key={index} testID={`room-tab:${index}`}
                     accessibilityRole="tab" accessibilityLabel={item.title}
                     accessibilityState={{ selected: selected === index }}
                     onPress={() => changeTab(index)}
                     style={[ui.roomTab, selected === index && ui.selectedRoomTab]}>
-                    <View style={[{flexDirection:"row",alignItems:"center",gap:8},rtl && ui.reverse]}><Icon name={["room", "food", "wallet", "friends"][index]}
-                      size={20} color={selected === index ? colors.forest : colors.muted} />
+                    <View style={{alignItems:"center"}}>
                     <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
                       style={[textStyle(rtl, selected === index ? "semibold" : "medium"), ui.roomTabLabel,
                         { color: selected === index ? colors.forest : colors.muted }]}>{item.title}</Text></View>
                   </TabButton>
                 ))}
-              </ScrollArea> : <ScrollArea
+              </View> : <ScrollArea
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={ui.tabs}
@@ -434,7 +453,7 @@ function Application() {
               ref={content}
               key={`${state.page}:${state.roomCode}:${snapshot.accountId}`}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={[ui.content, room && {paddingBottom:180}]}
+              contentContainerStyle={[ui.content, room && {paddingTop:10,paddingBottom:180}]}
               refreshControl={
                 <RefreshControl
                   refreshing={busy}
@@ -445,7 +464,7 @@ function Application() {
             >
               <PageMotion motionKey={`${state.page}:${state.roomCode}:${selected}:${rtl}`}>
               {state.page === "HOME" && <HomeBanner rtl={rtl} busy={busy} authenticated={snapshot.authenticated} />}
-              {!!state.roomCode && (!room || selected === 0) && (
+              {!!state.roomCode && !room && (
                 <View style={[ui.roomCode, rtl && ui.reverse]}>
                   <View>
                     <Text style={[textStyle(rtl, "medium"), { fontSize: 12 }]}>
@@ -509,7 +528,7 @@ function Application() {
               {(!room ? snapshot.topCards : selected === 0 ? snapshot.topCards.filter(card => card.id.startsWith("half-item:")) : []).map((card) => (
                 <CardView key={card.id} card={card} busy={busy} rtl={rtl} />
               ))}
-              {fields.map((field) => (
+              {(!room ? fields : selected===0 || selected===1 ? [] : fields).map((field) => (
                 <FieldInput
                   key={`${snapshot.accountId}:${state.page}:${field.key}`}
                   field={field}
@@ -519,11 +538,11 @@ function Application() {
               ))}
               {inline.filter(button => button.action !== "LOAD_OLDER_HISTORY").map((button,index) => <Button key={button.action+button.value+index} action={button} busy={busy} rtl={rtl}/>)}
               {room && selected === 3 && section && <RoomMembers cards={section.cards.filter(card => card.id.startsWith("member:"))} busy={busy} rtl={rtl}/>}
-              {section && (
+              {room && selected===1 && section ? <RoomFood key={`${snapshot.accountId}:${state.roomCode}`} cards={section.cards} fields={fields} busy={busy} rtl={rtl}/> : room && selected===2 && section ? <RoomPayments cards={section.cards} busy={busy} rtl={rtl}/> : section && (
                 <PagedCards
                   key={state.page + section.title}
                   cards={section.cards.filter(
-                    (card) => card.id !== "admin-tabs" && !(room && selected === 3 && card.id.startsWith("member:")),
+                    (card) => card.id !== "admin-tabs" && !(room && (roomDetailCard(card) || selected === 3 && card.id.startsWith("member:"))),
                   )}
                   busy={busy}
                   rtl={rtl}
@@ -542,7 +561,7 @@ function Application() {
                   ][selected]}</Text>
                 </View>
               )}
-              {(snapshot.extraFields.length > 0 ||
+              {!room && (snapshot.extraFields.length > 0 ||
                 snapshot.utilityButtons.length > 0) && (!room || selected === 0) && (
                 <>
                   {!profileDetails && (
@@ -581,9 +600,11 @@ function Application() {
             </ScrollArea>
             {room && <RoomAttention snapshot={snapshot} selected={selected} onOpenTab={changeTab}/>}
             </View>
-            {!!snapshot.primaryAction && !(state.page === "HOME" && snapshot.authenticated) && (!room || roomActionTab(snapshot.primaryAction) === selected) && (
+            {room && <RoomOrderDock key={`${snapshot.accountId}:${state.roomCode}`} snapshot={snapshot}/>}
+            {!!(room ? roomPrimary : snapshot.primaryAction) && !(state.page === "HOME" && snapshot.authenticated) && (
               <View style={ui.primary}>
-                <Button action={snapshot.primaryAction} busy={busy} rtl={rtl} />
+                {roomPrimary?.action==="PREPARE_SPIN" && !roomPrimary.enabled && <Text style={[textStyle(rtl),{fontSize:12,lineHeight:20,color:colors.muted}]}>{sections.flatMap(section=>section.cards).find(card=>card.id==="spin-next-step")?.detail}</Text>}
+                <Button action={(room ? roomPrimary : snapshot.primaryAction)!} busy={busy} rtl={rtl} />
               </View>
             )}
           </>
@@ -599,6 +620,14 @@ function Application() {
       <AppUpdateSheet rtl={rtl} paused={!!snapshot.tourAvailable||selectionOpen||menu||languageSheet}/>
       <FirstUseTour key={`tour:${snapshot.accountId}`} visible={!!snapshot.tourAvailable&&snapshot.authenticated&&state.page==='HOME'&&!busy&&!menu&&!languageSheet&&!selectionOpen} rtl={rtl} onComplete={()=>dispatch('COMPLETE_TOUR')}/>
       <MoreSheet snapshot={snapshot} visible={menu} actions={menuActions} onClose={() => setMenu(false)}/>
+      {room && options && <BottomSheet visible title={tx(rtl,"Room details & settings","تفاصيل الغرفة والإعدادات")} rtl={rtl} onClose={()=>setOptions(false)}>
+        <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12}}>
+          <Text style={[textStyle(rtl,"semibold"),{fontSize:14}]}>{state.title}</Text>
+          {detailCards.map(card=><CardView key={card.id} card={card} busy={busy} rtl={rtl}/>)}
+          {detailFields.map(field=><FieldInput key={field.key} field={field} busy={busy} rtl={rtl}/>)}
+          {detailActions.map((button,index)=><Button key={button.action+index} action={button} busy={busy} rtl={rtl}/>)}
+        </ScrollArea>
+      </BottomSheet>}
       <BottomSheet visible={languageSheet} title={tx(rtl,"Choose language","اختر اللغة")} rtl={rtl} onClose={() => setLanguageSheet(false)}>
         {languageOptions.map(option => <Button key={option.value} rtl={rtl} busy={busy} action={action(`${(state.language || (rtl ? 'ar-EG' : 'en')) === option.value ? '✓ ' : ''}${option.label}`, 'SET_LANGUAGE', option.value)} onPress={() => { dispatch('SET_LANGUAGE',option.value); setLanguageSheet(false); }}/>) }
       </BottomSheet>
@@ -746,6 +775,10 @@ const ui = StyleSheet.create({
     gap: 8,
   },
   title: { fontSize: 24, lineHeight: 36 },
+  roomHeading: {paddingVertical:4,minHeight:48},
+  roomTitle: {fontSize:16,lineHeight:24},
+  roomInvite: {minHeight:44,minWidth:64,alignItems:"center",justifyContent:"center",paddingHorizontal:8},
+  orderingPerson: {marginHorizontal:16,marginBottom:6,paddingHorizontal:10,paddingVertical:5,borderRadius:10,backgroundColor:colors.mint,flexDirection:"row",alignItems:"center",gap:7},
   subtitle: { fontSize: 14, lineHeight: 24, color: colors.muted },
   content: { padding: 18, gap: 16, paddingBottom: 28 },
   tabs: { maxHeight: 58, flexGrow: 0 },
@@ -765,11 +798,11 @@ const ui = StyleSheet.create({
     borderColor: colors.line,
   },
   activeTab: { backgroundColor: colors.forest, borderColor: colors.forest },
-  roomTabs: { marginHorizontal: 16, marginBottom: 4, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
-  roomTabRow: { flexDirection: "row", padding: 5, gap: 6 },
-  roomTab: { minWidth: 110, minHeight: 48, borderRadius: 15, flexDirection:"row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 14 },
+  roomTabs: { marginHorizontal: 16, marginBottom: 4, backgroundColor: colors.white, borderRadius: 14, borderWidth: 1, borderColor: colors.line },
+  roomTabRow: { flexDirection: "row", padding: 3, gap: 2 },
+  roomTab: { flex:1,minWidth:0,minHeight:44,borderRadius:11,alignItems:"center",justifyContent:"center",paddingHorizontal:3 },
   selectedRoomTab: { backgroundColor: colors.mint },
-  roomTabLabel: { fontSize: 14, lineHeight: 24 },
+  roomTabLabel: { fontSize: 12, lineHeight: 20 },
   empty: { padding: 28, alignItems: "center", gap: 14, backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line },
   emptyText: { fontSize: 15, lineHeight: 26, textAlign: "center" },
   primary: {

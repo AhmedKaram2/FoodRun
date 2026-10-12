@@ -87,6 +87,20 @@ class NotificationServiceTest {
         f.service.notificationRequest(NotificationRequest(signIn(f,"fixture-owner"),"read",notificationId=item.id),true)
         assertTrue(inbox(f,"fixture-owner").single().read)
     }
+    @Test fun automaticPaymentConfirmationNotifiesBothPeopleOnceAndLabelsTheReason() = RoomFixture(Identity()).use { f ->
+        val member=f.placed();f.pay()
+        val claim=f.send(member,CommandKind.DECLARE_TRANSFER) { it.copy(amount=100) }.room!!.transfers.single()
+        f.now=claim.createdAt+PaymentConfirmation.WAIT_MS;f.service.tick()
+        for(user in listOf("fixture-owner","Member")) {
+            val notice=inbox(f,user).single { it.kind=="payment_auto_confirmed" }
+            assertEquals(claim.id,notice.transferId)
+            assertTrue(notice.body.contains("12 hours"))
+            assertEquals(listOf("open"),notice.actions.map { it.id })
+        }
+        f.restart();f.service.tick()
+        assertEquals(1,inbox(f,"Member").count { it.kind=="payment_auto_confirmed" })
+        assertEquals(1,inbox(f,"fixture-owner").count { it.kind=="payment_auto_confirmed" })
+    }
     @Test fun outboxPersistsRetriesAndTokenReassignmentCannotSendAnotherUsersNotification() = RoomFixture(Identity()).use { f ->
         device(f,"fixture-owner")
         f.join(); f.send(f.owner, CommandKind.SELECT_PAYER) { it.copy(memberId = f.owner.memberId) }

@@ -53,6 +53,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private var nextExpiryScanAt = 0L
     private var nextTimerScanAt = 0L
     private val timedRoomIds = mutableSetOf<String>()
+    private val transferDeadlines = mutableMapOf<String,Long>()
     private val reducer = RoomReducer(::uuid, random::nextInt)
     init {
         // Admit members left waiting by older hubs without changing a locked order's participants.
@@ -75,6 +76,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                 if (repaired != room) db.save(repaired.copy(updatedAt = clock()))
             }
             db.allRooms().filter { it.joinDeadlineAt > 0 && it.phase == RoomPhase.LOBBY }.forEach { timedRoomIds += it.id }
+            db.allRooms().forEach(::scheduleTransferConfirmation)
         }
     }
     private fun admit(member: Member, phase: RoomPhase): Member {
@@ -88,6 +90,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     @Synchronized fun touch(memberId: String) { if (memberId.isNotEmpty()) presence[memberId] = clock() }
     private fun signalRoom(roomId: String) {
+        db.room(roomId)?.let(::scheduleTransferConfirmation)
         roomEvents[roomId] = ++eventSequence
         homeEvents = eventSequence
     }
@@ -102,7 +105,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         require(c.kind != CommandKind.REQUEST_WHEEL_PROTECTION) { "Paid wheel options are no longer available." }
         require(c.commandId.matches(Regex("[A-Za-z0-9-]{16,80}"))) { "Invalid command ID." }
         expireDueRooms()
-        if (c.roomId.isNotEmpty()) db.transaction { db.room(c.roomId)?.let(::archiveExpired) }
+        if (c.roomId.isNotEmpty()) db.transaction { db.room(c.roomId)?.let { confirmExpiredTransfers(archiveExpired(it)) } }
         if (c.kind == CommandKind.IDENTITY) db.transaction { accounts.execute(c).also { reply -> if(reply.ok) support.record(c) } }.also { reply ->
             signalHome()
             reply.room?.let { signalRoom(it.id) }
@@ -227,11 +230,15 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
 
     @Synchronized fun snapshot(roomId: String, token: String, historyOffset: Int = 0): RoomReply {
         val actor = authenticate(roomId, token)
-        val room = db.transaction { finalizeSpin(archiveExpired(requireNotNull(db.room(roomId)))) }
+        val room = db.transaction { finalizeSpin(confirmExpiredTransfers(archiveExpired(requireNotNull(db.room(roomId))))) }
         presence[actor] = clock()
         return projection(withPresence(room), actor, historyOffset)
     }
     @Synchronized fun tick() {
+        val dueTransfers = transferDeadlines.filterValues { it <= clock() }.keys.toList()
+        if(dueTransfers.isNotEmpty()) db.transaction { dueTransfers.forEach { id ->
+            db.room(id)?.let(::confirmExpiredTransfers) ?: transferDeadlines.remove(id)
+        } }
         expireDueRooms()
         if(clock() >= nextTimerScanAt) {
             val timers = timedRoomIds.mapNotNull(db::room)
@@ -250,6 +257,19 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             } else finalizeSpin(room)
         } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
+    }
+    private fun scheduleTransferConfirmation(room: Room) {
+        val deadline = PaymentConfirmation.nextDeadline(room)
+        if(deadline == null) transferDeadlines.remove(room.id) else transferDeadlines[room.id] = deadline
+    }
+    private fun confirmExpiredTransfers(room: Room): Room {
+        val confirmed = PaymentConfirmation.confirm(room, clock())
+        if(confirmed == room) { scheduleTransferConfirmation(room); return room }
+        db.save(confirmed)
+        notifications.transfersAutoConfirmed(room, confirmed)
+        val updated = wallets.autoPayHeldByPayer(confirmed, "auto-confirm:${confirmed.id}:${confirmed.orderNumber}:${confirmed.revision}")
+        signalRoom(updated.id)
+        return updated
     }
     private fun expireDueRooms() {
         val now = clock()

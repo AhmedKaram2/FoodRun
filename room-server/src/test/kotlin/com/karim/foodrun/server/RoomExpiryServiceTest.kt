@@ -32,6 +32,7 @@ class RoomExpiryServiceTest {
     }
     @Test fun unpaidBalancesAndPendingClaimsSurviveAndRemainPayableAfterArchiving() = RoomFixture().use { f ->
         val member = f.placed(); f.pay()
+        f.now = f.owner.room!!.createdAt + RoomExpiry.LIFETIME_MS - 60 * 60 * 1000L
         val declared = f.send(member, CommandKind.DECLARE_TRANSFER) { it.copy(amount = 500, text = "Cash") }
         val before = f.state(member).receipts.single()
         expire(f)

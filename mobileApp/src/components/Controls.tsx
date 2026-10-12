@@ -38,6 +38,7 @@ export function Button({
   icon,
   caption,
   surface,
+  compact = false,
 }: {
   action: Action;
   busy?: boolean;
@@ -47,8 +48,10 @@ export function Button({
   icon?: string;
   caption?: string;
   surface?: string;
+  compact?: boolean;
 }) {
   const disabled = busy || !action.enabled;
+  const manualPayment = /^(RECORD_PAYMENT|WALLET_RECORD_PAYMENT)$/.test(action.action);
   const motion = usePressMotion();
   const press = () => {
     Keyboard.dismiss();
@@ -81,6 +84,8 @@ export function Button({
         disabled && styles.disabled,
         pressed && { opacity: 0.75 },
         tile && { alignItems: rtl ? "flex-end" : "flex-start", padding: 16, borderRadius: 22, minHeight: 132, gap: 8, backgroundColor: surface || colors.mint },
+        compact && {minHeight:44,paddingHorizontal:12,paddingVertical:8},
+        manualPayment && {backgroundColor:"transparent",borderColor:"transparent",paddingHorizontal:4,minHeight:44},
       ]}
     >
       {!!icon && <Icon name={icon} color={colors.forest} size={26}/>}
@@ -88,6 +93,8 @@ export function Button({
         style={[
           textStyle(rtl, "semibold"),
           styles.buttonText,
+          compact && {fontSize:13,lineHeight:22},
+          manualPayment && {fontSize:12,lineHeight:20,textDecorationLine:"underline"},
           motion.style,
           {
             color: action.primary
@@ -322,10 +329,12 @@ export function CardView({
   card,
   busy,
   rtl,
+  compactActions = false,
 }: {
   card: Card;
   busy: boolean;
   rtl: boolean;
+  compactActions?: boolean;
 }) {
   const person = /^(member:|person:|friend-result:)/.test(card.id);
   const icon = /(wallet|receipt|transfer|payment|account)/.test(card.id) ? "wallet"
@@ -374,13 +383,14 @@ export function CardView({
         </Text>
       )}
       {card.buttons.length > 0 && (
-        <View style={styles.actions}>
+        <View style={[styles.actions,compactActions && {flexDirection:rtl ? "row-reverse":"row",flexWrap:"wrap",gap:6}]}>
           {card.buttons.map((button, index) => (
             <Button
               key={button.action + button.value + index}
               action={button}
               busy={busy}
               rtl={rtl}
+              compact={compactActions}
             />
           ))}
         </View>

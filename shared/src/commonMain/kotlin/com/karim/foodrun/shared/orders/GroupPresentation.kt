@@ -62,7 +62,7 @@ internal class GroupPresentation(private val c: GroupController) {
     private fun field(key: GroupFieldKey, label: String, multiline: Boolean = false, toggle: Boolean = false) { fields += GroupField(key, ui(label), c.text(key), multiline, toggle, secret = key == GroupFieldKey.PASSWORD) }
     private fun choiceField(key: GroupFieldKey, label: String, choices: List<GroupChoice>) { fields += GroupField(key, ui(label), c.text(key), choices = choices) }
     private fun button(title: String, action: GroupAction, value: String = "", primary: Boolean = false, enabled: Boolean = true) { buttons += GroupButton(ui(title), action, value, primary, enabled = enabled) }
-    private fun card(id: String, title: String, detail: String = "", badge: String = "", actions: List<GroupButton> = emptyList()) { cards += GroupCard(id, title, detail, badge, actions.map { it.copy(title = ui(it.title)) }) }
+    private fun card(id: String, title: String, detail: String = "", badge: String = "", actions: List<GroupButton> = emptyList(), paymentGroup: String = "") { cards += GroupCard(id, title, detail, badge, actions.map { it.copy(title = ui(it.title)) }, paymentGroup = paymentGroup) }
     private fun append(content: GroupFlowContent) { fields += content.fields; cards += content.cards; buttons += content.buttons }
     fun render(): GroupState {
         c.accessBlock?.takeIf { c.page in listOf(GroupPage.ROOM, GroupPage.SETUP, GroupPage.CONNECT, GroupPage.BLOCK_REQUEST) }?.let { block ->
@@ -142,6 +142,17 @@ internal class GroupPresentation(private val c: GroupController) {
             }.maxByOrNull { it.room!!.spin!!.startAt }?.room
         val wheel = liveRoom?.spin?.let { GroupWheel(it.memberIds.map { id -> liveRoom.members.single { m -> m.id == id }.name }, it,
             c.serverOffset(), liveRoom.members.single { m -> m.id == it.winnerId }.name, liveRoom.selectionStyle, liveRoom.name, liveRoom.id) }
+        val orderingPerson = room?.takeIf { c.page == GroupPage.ROOM && it.paymentRoom == null && it.phase in listOf(RoomPhase.ACCEPTING,RoomPhase.COLLECTING,RoomPhase.REVIEW,RoomPhase.PLACED,RoomPhase.FULFILLED,RoomPhase.ARCHIVED) }?.let { current ->
+            val selectedId = if(current.phase == RoomPhase.ACCEPTING) current.spin?.winnerId else current.payerId
+            current.members.firstOrNull { it.id == selectedId }?.name.orEmpty()
+        }.orEmpty()
+        if(c.page == GroupPage.ROOM && room != null && room.ownerId == c.me() && room.payerId != c.me() && orderingPerson.isNotEmpty()) {
+            val delegated = setOf(GroupAction.REVIEW,GroupAction.PLACE,GroupAction.PAY_RESTAURANT,GroupAction.FULFILL,GroupAction.OPEN_ORDER_PRICES)
+            fun label(button: GroupButton) = if(button.action in delegated)
+                button.copy(title = tr("${button.title} · for $orderingPerson", "${button.title} · نيابة عن $orderingPerson")) else button
+            buttons.indices.forEach { index -> buttons[index] = label(buttons[index]) }
+            cards.indices.forEach { index -> cards[index] = cards[index].copy(buttons = cards[index].buttons.map(::label)) }
+        }
         if (c.library.pending != null && !c.busy) buttons.add(0, GroupButton(tr("Retry saved request", "إعادة إرسال الطلب المحفوظ"), GroupAction.RETRY, primary = true))
         if (c.library.pending == null && c.page in listOf(GroupPage.HOME, GroupPage.SETUP) && c.library.selectedHub?.url == FOOD_RUN_INTERNET_API &&
             Regex("connect|network|timed? out|timeout|unavailable|socket|offline|host|unreachable", RegexOption.IGNORE_CASE).containsMatchIn(c.error))
@@ -167,6 +178,8 @@ internal class GroupPresentation(private val c: GroupController) {
             language = language,
             roomPhase = if(c.page == GroupPage.ROOM) room?.phase?.name.orEmpty() else "",
             roomStage = if(c.page == GroupPage.ROOM && room != null) stage(room.phase) else "",
+            orderingPerson = orderingPerson,
+            orderingPersonPending = orderingPerson.isNotEmpty() && room?.phase == RoomPhase.ACCEPTING,
             joinedCount = if(c.page == GroupPage.ROOM) room?.activeMembers?.size ?: 0 else 0,
             historyNextOffset = if(c.page == GroupPage.HISTORY) c.reply?.historyNextOffset ?: -1 else -1,
             hasPendingEmailReminders = c.paymentReminders.hasPending,
@@ -446,13 +459,13 @@ internal class GroupPresentation(private val c: GroupController) {
             val actions = mutableListOf<GroupButton>()
             val joinApprover = owner || payer || r.phase in listOf(RoomPhase.SPINNING, RoomPhase.ACCEPTING) && r.spin?.winnerId == me.id
             if (!m.approved && joinApprover) {
-                actions += GroupButton(tr("Approve", "موافقة"), GroupAction.APPROVE_LATE_JOIN, m.id)
-                actions += GroupButton(tr("Decline", "رفض"), GroupAction.REMOVE, m.id, destructive = true)
+                actions += GroupButton(tr("Approve ${m.name}", "الموافقة على ${m.name}"), GroupAction.APPROVE_LATE_JOIN, m.id)
+                actions += GroupButton(tr("Decline ${m.name}", "رفض ${m.name}"), GroupAction.REMOVE, m.id, destructive = true)
             }
             val submitted = r.carts.any { it.memberId == m.id && it.submitted }
             val canRemove = owner && m.id != r.ownerId && (r.phase == RoomPhase.LOBBY || r.phase == RoomPhase.COLLECTING && m.id != r.payerId && !submitted)
-            if(canRemove && m.approved) actions += GroupButton(ui("Remove from room"), GroupAction.REMOVE, m.id, destructive = true)
-            if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY && m.approved && !m.guest) actions += GroupButton(ui("Make organizer"), GroupAction.HANDOVER, m.id)
+            if(canRemove && m.approved) actions += GroupButton(tr("Remove ${m.name} from room", "إزالة ${m.name} من الغرفة"), GroupAction.REMOVE, m.id, destructive = true)
+            if(owner && m.id != r.ownerId && r.phase == RoomPhase.LOBBY && m.approved && !m.guest) actions += GroupButton(tr("Make ${m.name} organizer", "تعيين ${m.name} منشئاً للغرفة"), GroupAction.HANDOVER, m.id)
             val status = when {
                 !m.approved -> tr("Waiting for approval", "في انتظار الموافقة")
                 m.id == r.payerId -> tr("Selected to order", "مسؤول الطلب")
@@ -494,8 +507,9 @@ internal class GroupPresentation(private val c: GroupController) {
                     val pendingWheelPayment = r.wheelProtections.any { it.status in listOf(WheelProtectionStatus.AWAITING_PAYMENT, WheelProtectionStatus.PAYMENT_DECLARED) }
                     fields += GroupField(GroupFieldKey.PAYER_MODE, ui("Choose the ordering person"), c.text(GroupFieldKey.PAYER_MODE).ifBlank { "wheel" }, choices = listOf(GroupChoice("wheel", ui("Use the wheel")), GroupChoice("direct", ui("Choose person directly"))))
                     if (c.text(GroupFieldKey.PAYER_MODE) == "direct") {
-                        fields += GroupField(GroupFieldKey.PAYER_CHOICE, ui("Ordering person"), c.text(GroupFieldKey.PAYER_CHOICE).takeIf { choice -> selectable.any { it.id == choice } } ?: selectable.firstOrNull()?.id.orEmpty(), choices = selectable.map { GroupChoice(it.id, it.name) })
-                        button("Choose person directly", GroupAction.SELECT_PAYER, primary = true, enabled = !r.restaurantPollOpen && selectable.isNotEmpty() && !paidReduction && !pendingWheelPayment)
+                        val selected = selectable.firstOrNull { it.id == c.text(GroupFieldKey.PAYER_CHOICE) } ?: selectable.firstOrNull()
+                        fields += GroupField(GroupFieldKey.PAYER_CHOICE, ui("Ordering person"), selected?.id.orEmpty(), choices = selectable.map { GroupChoice(it.id, it.name) })
+                        button(selected?.let { tr("Choose ${it.name} as ordering person", "اختيار ${it.name} مسؤولاً عن الطلب") } ?: ui("Choose person directly"), GroupAction.SELECT_PAYER, primary = true, enabled = !r.restaurantPollOpen && selectable.isNotEmpty() && !paidReduction && !pendingWheelPayment)
                         if (paidReduction) card("protected-wheel", tr("Use the wheel", "استخدم العجلة"), tr("Start the shared wheel to honor paid chance reductions.", "ابدأ العجلة المشتركة لتطبيق تخفيض فرص الاختيار المدفوع."))
                     } else {
                         val blocker = runCatching { RoomRules.spinReady(r) }.exceptionOrNull()?.message
@@ -794,7 +808,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 c.walletFunds.payButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 c.walletFunds.topUpButton(row.room, row.session.memberId, receipt)?.let { actions += it }
                 if (pending != null && if (pending.refund) pending.memberId == row.session.memberId else payer) {
-                    actions += GroupButton(if(batch!=null) "${ui("Confirm full amount received")} · ${Money.format(batch.amount,batch.currency)}" else if(pending.id.startsWith("wallet-")) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else ui("Confirm received"), GroupAction.WALLET_CONFIRM, target, primary = true)
+                    actions += GroupButton(if(batch!=null) "${ui("Confirm full amount received")} · ${Money.format(batch.amount,batch.currency)}" else if(pending.id.startsWith("wallet-")) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else if(pending.refund) ui("Confirm refund received") else tr("Approve reported payment · ${receipt.name}", "الموافقة على دفعة مسجلة · ${receipt.name}"), GroupAction.WALLET_CONFIRM, target, primary = true)
                     actions += GroupButton(ui("Not received"), GroupAction.WALLET_REJECT, target)
                 } else if (pending == null && row.room.restaurantPaid) {
                     if (payer && receipt.balance < 0) actions += GroupButton(ui("Mark refund sent"), GroupAction.WALLET_REFUND, target, primary = true)
@@ -806,7 +820,8 @@ internal class GroupPresentation(private val c: GroupController) {
                 card("${prefix}wallet:$value", person,
                     listOf("${row.room.name} · #${row.room.orderNumber} · ${row.room.restaurant.localizedName(language)}",
                         "${ui("Order")} ${receipt.totalText} · ${ui("Paid")} ${Money.format(receipt.paid, receipt.currency)}",
-                        account, status,batch?.note.orEmpty()).filter { it.isNotBlank() }.joinToString("\n"), Money.format(if(batch!=null) batch.amount else if(pending != null && c.page == GroupPage.WALLET) pending.amount else if(receive) kotlin.math.abs(receipt.balance) else receipt.amountStillToSend(row.room), receipt.currency), actions)
+                        account, status,batch?.note.orEmpty(),pending?.let(PaymentConfirmation::deadline)?.let { tr("Marked paid automatically after 12 hours without a response.","تُسجل كمدفوعة تلقائياً بعد ١٢ ساعة دون رد.") }.orEmpty()).filter { it.isNotBlank() }.joinToString("\n"), Money.format(if(batch!=null) batch.amount else if(pending != null && c.page == GroupPage.WALLET) pending.amount else if(receive) kotlin.math.abs(receipt.balance) else receipt.amountStillToSend(row.room), receipt.currency), actions,
+                    paymentGroup = if(pending != null) "waiting" else if(receive) "receive" else "pay")
 
             }
         }
@@ -883,11 +898,13 @@ internal class GroupPresentation(private val c: GroupController) {
             val actions = if(transfer.status == TransferStatus.DECLARED) when {
                 transfer.refund && transfer.memberId == c.me() -> listOf(GroupButton(ui("Confirm refund received"), GroupAction.CONFIRM_REFUND, transfer.id), GroupButton(ui("Reject refund claim"), GroupAction.REJECT_TRANSFER, transfer.id))
                 !transfer.refund && r.payerId == c.me() && batch != null -> listOf(GroupButton(ui("Confirm received") + " · " + Money.format(batch.amount, batch.currency), GroupAction.WALLET_FUNDS_ACTION, "batch-yes|${batch.id}"), GroupButton(ui("Not received"), GroupAction.WALLET_FUNDS_ACTION, "batch-no|${batch.id}"))
-                !transfer.refund && r.payerId == c.me() -> listOf(GroupButton(if(payment != null) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else tr("Approve · money received", "موافقة · استلمت المبلغ"), GroupAction.CONFIRM_TRANSFER, transfer.id), GroupButton(ui("Reject claim"), GroupAction.REJECT_TRANSFER, transfer.id))
+                !transfer.refund && r.payerId == c.me() -> listOf(GroupButton(if(payment != null) tr("Approve wallet payment", "الموافقة على دفعة المحفظة") else tr("Approve reported payment · ${r.members.single { it.id == transfer.memberId }.name}", "الموافقة على دفعة مسجلة · ${r.members.single { it.id == transfer.memberId }.name}"), GroupAction.CONFIRM_TRANSFER, transfer.id, primary = true), GroupButton(ui("Not received"), GroupAction.REJECT_TRANSFER, transfer.id))
                 else -> emptyList()
             } else emptyList()
             card("transfer:${transfer.id}", "${if(payment != null) tr("Wallet", "المحفظة") else if(transfer.refund) "Refund" else "Transfer"} · ${Money.format(transfer.amount, r.restaurant.currency)}",
-                "${r.members.single { it.id == transfer.memberId }.name} · ${transfer.reference}" + (batch?.let { "\n${it.holderName} · ${Money.format(it.amount, it.currency)} · ${tr("Full wallet transfer", "تحويل المحفظة بالكامل")}" } ?: ""), transfer.status.name.lowercase(), actions)
+                "${r.members.single { it.id == transfer.memberId }.name} · ${transfer.reference}" + (batch?.let { "\n${it.holderName} · ${Money.format(it.amount, it.currency)} · ${tr("Full wallet transfer", "تحويل المحفظة بالكامل")}" } ?: "") +
+                    (PaymentConfirmation.deadline(transfer)?.let { "\n" + tr("Marked paid automatically after 12 hours without a response.", "تُسجل كمدفوعة تلقائياً بعد ١٢ ساعة دون رد.") } ?: ""), transfer.status.name.lowercase(), actions,
+                paymentGroup = if(transfer.status == TransferStatus.DECLARED) "waiting" else "history")
         }
         if(r.payerId == c.me()) c.reply?.receipts?.filter { GroupSettlementPresentation.refundAvailable(r, it) }?.forEach { button("Record refund to ${it.name}", GroupAction.DECLARE_REFUND, it.memberId) }
     }

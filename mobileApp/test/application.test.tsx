@@ -14,6 +14,7 @@ import { roomCodeFromLink } from "../src/roomLink";
 import { NotificationCenter, ProfileScreen, LibraryScreen } from "../src/screens/AccountScreens";
 import AuthScreen from '../src/screens/AuthScreen';
 import NativeTabBar from '../src/components/NativeTabBar';
+import RoomPayments from '../src/components/RoomPayments';
 import {Platform} from 'react-native';
 jest.mock("../src/native", () => ({
   native: {
@@ -226,9 +227,12 @@ test("room tabs separate food, payments and members and survive live updates", a
   fireEvent.press(view.getByTestId("room-tab:1"));
   expect(view.getByText("Sandwich")).toBeTruthy();
   expect(view.getByText("Half available")).toBeTruthy();
+  fireEvent.press(view.getByTestId("room-order-shortcut"));
   fireEvent.press(view.getByText("Confirm my food"));
   expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART", "");
+  fireEvent.press(view.getByLabelText("Dismiss sheet"));
   fireEvent.press(view.getByTestId("room-tab:2"));
+  fireEvent.press(view.getByRole("tab",{name:"Receipts"}));
   expect(view.getByText("My bill")).toBeTruthy();
   expect(view.queryByText("Sandwich")).toBeNull();
   value.state.rtl = true;
@@ -251,6 +255,77 @@ test("room tabs keep useful empty states and reset for another room", async () =
   value.state.roomCode = "234567";
   act(() => (events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
   expect(view.getByLabelText("Overview").props.accessibilityState.selected).toBe(true);
+});
+test("chosen person stays visible while browsing food payments and members",async()=>{
+  const value=snapshot();value.state={...value.state,page:"ROOM",roomCode:"123456",roomPhase:"ACCEPTING",orderingPerson:"Alice",orderingPersonPending:true};
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);await view.findByText("Chosen: Alice");
+  value.state.roomPhase="COLLECTING";value.state.orderingPersonPending=false;
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  for(const tab of [0,1,2,3]) {fireEvent.press(view.getByTestId(`room-tab:${tab}`));expect(view.getByText("Ordering person: Alice")).toBeTruthy();}
+  value.state.orderingPerson="Bob";
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.queryByText("Ordering person: Alice")).toBeNull();expect(view.getByText("Ordering person: Bob")).toBeTruthy();
+  value.state.roomPhase="LOBBY";value.state.orderingPerson="";
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.queryByText("Ordering person: Bob")).toBeNull();
+});
+test("owner can start the wheel from every room tab and sees why it is blocked",async()=>{
+  const value=snapshot();value.state={...value.state,page:"ROOM",roomCode:"123456",roomPhase:"LOBBY",roomStage:"Join the room",title:"Team lunch",subtitle:"October 12 · Order 42"};
+  value.primaryAction=action("Spin together","PREPARE_SPIN","",true);
+  value.mainFields=[field("PAYER_MODE",{value:"wheel",choices:[{value:"wheel",label:"Use the wheel"},{value:"direct",label:"Choose person directly"}]})];
+  value.sections=[{title:"All",collapsed:false,cards:[card("last-chosen","Last chosen"),card("menu:food","Sandwich")]}];
+  value.inlineButtons=[action("Skip this order","PARTICIPATE","false")];
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);await view.findByText("Start wheel");
+  expect(view.queryByText(value.state.subtitle)).toBeNull();
+  expect(view.queryByText("Last chosen")).toBeNull();
+  expect(view.queryByTestId("PAYER_MODE")).toBeNull();
+  expect(view.getByLabelText("Join: Current")).toBeTruthy();
+  for(const tab of [0,1,2,3]){
+    fireEvent.press(view.getByTestId(`room-tab:${tab}`));
+    fireEvent.press(view.getByText("Start wheel"));
+    expect(native.dispatch).toHaveBeenLastCalledWith("PREPARE_SPIN","");
+  }
+  value.primaryAction.enabled=false;value.sections[0].cards.push({...card("spin-next-step","Before spinning"),detail:"Approve the waiting member first."});
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.getByText("Approve the waiting member first.")).toBeTruthy();
+  (native.dispatch as jest.Mock).mockClear();fireEvent.press(view.getByText("Start wheel"));expect(native.dispatch).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText("Room details & settings"));
+  expect(view.getByText("Last chosen")).toBeTruthy();
+  expect(view.getByTestId("PAYER_MODE")).toBeTruthy();
+  fireEvent.press(view.getByText("Skip this order"));expect(native.dispatch).toHaveBeenLastCalledWith("PARTICIPATE","false");
+});
+
+test("added food stays reachable before menu pagination and during search and live updates",async()=>{
+  const value=snapshot();value.state={...value.state,page:"ROOM",roomCode:"123456",roomPhase:"COLLECTING",roomStage:"Choose food"};
+  value.mainFields=[field("MENU_SEARCH",{label:"Find food"}),field("MENU_CATEGORY",{value:"all",choices:[{value:"all",label:"All categories"},{value:"category:sandwich",label:"Sandwiches"}]})];
+  const cartLine={...card("cart:line","2 × Added sandwich"),buttons:[action("+","INCREASE_CART_QUANTITY","line"),action("Edit","EDIT_CART_ITEM","line")]};
+  value.sections=[{title:"Food",collapsed:false,cards:[...Array.from({length:30},(_,i)=>({...card(`menu:${i}`,`Menu food ${i}`),buttons:[action("+ Add","QUICK_ADD_ITEM",String(i)),action("Quantity / notes","OPEN_ITEM",String(i))]})),cartLine,{...card("estimate","Your estimated total"),detail:"AED 20"}]}];
+  value.primaryAction=action("Submit my food order","SUBMIT_CART","",true);
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);await view.findByTestId("room-tab:1");fireEvent.press(view.getByTestId("room-tab:1"));
+  expect(view.queryByText("Menu food 29")).toBeNull();
+  expect(view.queryByText("2 × Added sandwich")).toBeNull();
+  fireEvent.press(view.getByTestId("action:QUICK_ADD_ITEM:0"));expect(native.dispatch).toHaveBeenLastCalledWith("QUICK_ADD_ITEM","0");
+  fireEvent.press(view.getByRole("radio",{name:"Sandwiches"}));expect(native.update).toHaveBeenLastCalledWith("MENU_CATEGORY","category:sandwich");
+  fireEvent.changeText(view.getByLabelText("Find food"),"not in menu");expect(native.update).toHaveBeenLastCalledWith("MENU_SEARCH","not in menu");
+  value.sections[0].cards=[card("menu-empty","No matching items"),cartLine];
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.getByText("No matching items")).toBeTruthy();
+  fireEvent.press(view.getByTestId("room-order-shortcut"));expect(view.getByText("2 × Added sandwich")).toBeTruthy();
+  fireEvent.press(view.getByText("+"));expect(native.dispatch).toHaveBeenLastCalledWith("INCREASE_CART_QUANTITY","line");
+  cartLine.title="3 × Added sandwich";
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.getByText("3 × Added sandwich")).toBeTruthy();
+  fireEvent.press(view.getByText("Submit my food order"));expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART","");
+  fireEvent.press(view.getByLabelText("Dismiss sheet"));
+  value.state.rtl=true;
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  fireEvent.press(view.getByLabelText("عرض طلبي"));expect(view.getByText("3 × Added sandwich")).toBeTruthy();
+  value.state.roomCode="654321";value.sections=[];value.primaryAction=undefined;
+  act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  expect(view.queryByText("3 × Added sandwich")).toBeNull();
 });
 test("wallet opens its transaction sheet and requests older pages without mutations", async () => {
   const value = snapshot();
@@ -285,14 +360,28 @@ test("wallet opens its transaction sheet and requests older pages without mutati
   fireEvent(view.getByTestId("scroll-load"),"layout",{nativeEvent:{layout:{x:0,y:550,width:390,height:20}}});
   await waitFor(() => expect(native.dispatch).toHaveBeenLastCalledWith("LOAD_WALLET_HISTORY", ""));
 });
-test("Wallet starts with required payments and exposes pay-on-behalf and approval actions",async()=>{
+test("Wallet separates payments approvals balances and history without changing their actions",async()=>{
  const value=snapshot();value.state.page="WALLET";
  value.sections=[{title:"Required payments",collapsed:false,cards:[{...card("wallet-group:alice","Pay Payer for Alice"),buttons:[action("Settle Alice payment","WALLET_FUNDS_ACTION","batch|alice")]},{...card("wallet-batch:incoming","Confirm received transfer"),buttons:[action("Approve received amount","WALLET_FUNDS_ACTION","batch-yes|incoming")]}]},{title:"Wallet balance",collapsed:false,cards:[card("wallet-balance","Available AED 50")]},{title:"Payment history",collapsed:false,cards:[]}];
  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));const view=render(<App/>);
  await view.findByText("Pay Payer for Alice");expect(view.queryByText("Available AED 50")).toBeNull();
  fireEvent.press(view.getByText("Settle Alice payment"));expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","batch|alice");
+ fireEvent.press(view.getByRole("tab",{name:"Waiting"}));
  fireEvent.press(view.getByText("Approve received amount"));expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","batch-yes|incoming");
- fireEvent.press(view.getByRole("tab",{name:"Wallet balance"}));expect(view.getByText("Available AED 50")).toBeTruthy();
+ fireEvent.press(view.getByRole("tab",{name:"Balance"}));expect(view.getByText("Available AED 50")).toBeTruthy();
+ fireEvent.press(view.getByRole("tab",{name:"History"}));expect(view.queryByText("Available AED 50")).toBeNull();
+});
+test("room payments move a resolved transfer to history while keeping receipts and account details reachable",()=>{
+ const account=card("account","Recipient bank details"),receipt=card("receipt:me","My receipt");
+ const pending={...card("transfer:sent","AED 5 sent"),paymentGroup:"waiting",buttons:[{...action("Confirm received","CONFIRM_TRANSFER","sent"),primary:true}]};
+ const view=render(<RoomPayments cards={[account,receipt,...Array.from({length:12},(_,i)=>card(`wallet:${i}`,`Other payment ${i}`)),pending]} busy={false} rtl={false}/>);
+ fireEvent.press(view.getByText("Confirm received"));expect(native.dispatch).toHaveBeenLastCalledWith("CONFIRM_TRANSFER","sent");
+ fireEvent.press(view.getByText("Payment details"));expect(view.getByText("Recipient bank details")).toBeTruthy();
+ fireEvent.press(view.getByLabelText("Close"));
+ view.rerender(<RoomPayments cards={[account,receipt,{...pending,title:"AED 5 paid",paymentGroup:"history",buttons:[]}]} busy={false} rtl={false}/>);
+ expect(view.queryByText("AED 5 paid")).toBeNull();
+ fireEvent.press(view.getByRole("tab",{name:"History"}));expect(view.getByText("AED 5 paid")).toBeTruthy();expect(view.queryByText("Confirm received")).toBeNull();
+ fireEvent.press(view.getByRole("tab",{name:"Receipts"}));expect(view.getByText("My receipt")).toBeTruthy();
 });
 test("country selector uses a native sheet and writes the selected code", () => {
   const view = render(
@@ -463,7 +552,7 @@ test("food options use a selection sheet and return to the same room tab",async(
   value.sections=[{title:"Food",collapsed:false,cards:[{...card("menu:food","Sandwich"),buttons:[action("Choose extras","OPEN_ITEM","food")]}]}];
   (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
   const view=render(<App/>);await view.findByTestId("room-tab:1");fireEvent.press(view.getByTestId("room-tab:1"));
-  fireEvent.press(view.getByText("Choose extras"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ITEM","food");
+  fireEvent.press(view.getByLabelText("Choose extras"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ITEM","food");
   value.state.page="ITEM";value.state.title="Sandwich options";
   value.sections=[{title:"Size",collapsed:false,cards:[{...card("variant:small","Small"),badge:"Selected",buttons:[action("Choose size","SELECT_VARIANT","small")]},{...card("variant:large","Large"),buttons:[action("Choose size","SELECT_VARIANT","large")]}]}];
   value.inlineButtons=[action("Extra cheese","TOGGLE_OPTION","cheese")];value.primaryAction=action("Add to my order","ADD_CART_ITEM","",true);

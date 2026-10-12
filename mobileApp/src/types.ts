@@ -23,6 +23,7 @@ export type Card = {
   buttons: Action[];
   image: string;
   selection?: Action | null;
+  paymentGroup?: string;
 };
 export type Section = { title: string; cards: Card[]; collapsed: boolean };
 export type Wheel = {
@@ -85,6 +86,8 @@ export type Snapshot = {
     progressStep: number;
     roomPhase?: string;
     roomStage?: string;
+    orderingPerson?: string;
+    orderingPersonPending?: boolean;
     joinedCount?: number;
     historyNextOffset?: number;
     inviteLink: string;

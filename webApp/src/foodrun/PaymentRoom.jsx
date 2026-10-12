@@ -4,7 +4,7 @@ import { settlementOpen } from './roomLifecycle.js';
 import { Page } from './FoodRunApp.jsx';
 import { amount, money, minorInput, CURRENCIES } from './client.js';
 import { paymentRoomPayload, receiptPhotoData, splitEqually } from './paymentRoom.js';
-import { t, tf } from './i18n.js';
+import { t, tf, getLanguage } from './i18n.js';
 import { profilePaymentAccounts } from './paymentDetails.js';
 import PaymentMethodsEditor from './PaymentMethodsEditor.jsx';
 import { mealRoomName } from './smartDefaults.js';
@@ -139,9 +139,10 @@ export function RecordPayment({ room, receipt, data }) {
   const [value, setValue] = useState(minorInput(receipt.balance, room.restaurant.currency)), [reference, setReference] = useState(''), [error, setError] = useState('');
   useEffect(() => setValue(minorInput(receipt.balance, room.restaurant.currency)), [receipt.balance, room.restaurant.currency]);
   if (!room.restaurantPaid || !settlementOpen(room) || receipt.memberId === room.payerId || receipt.balance <= 0 || room.transfers.some(transfer => transfer.memberId === receipt.memberId && String(transfer.status).toLowerCase() === 'declared')) return null;
-  return <details open className="record-payment"><summary>{t('Record payment received')}</summary><form className="record-payment-form" onSubmit={async e => { e.preventDefault(); if (data.busy) return; try { const received = amount(value, room.restaurant.currency); if (received <= 0 || received > receipt.balance) throw Error(t('Amount exceeds the remaining balance.')); const reply = await data.send('RECORD_PAYMENT', { memberId: receipt.memberId, amount: received, text: reference.trim() || 'Payment received' }, room.id); if (reply) { setReference(''); setError(''); } } catch (e) { setError(e.message); } }}>
+  return <details className="record-payment"><summary>{getLanguage().startsWith('ar') ? `تسجيل مبلغ مستلم من ${receipt.name}` : `Record money received from ${receipt.name}`}</summary><form className="record-payment-form" onSubmit={async e => { e.preventDefault(); if (data.busy) return; try { const received = amount(value, room.restaurant.currency); if (received <= 0 || received > receipt.balance) throw Error(t('Amount exceeds the remaining balance.')); const reply = await data.send('RECORD_PAYMENT', { memberId: receipt.memberId, amount: received, text: reference.trim() || 'Payment received' }, room.id); if (reply) { setReference(''); setError(''); } } catch (e) { setError(e.message); } }}>
+    <p className="field-help">{getLanguage().startsWith('ar') ? 'استخدم هذا الخيار عند استلام المبلغ دون أن يسجل الشخص أنه دفع.' : 'Use this when you received money and the person has not reported a payment.'}</p>
     <label>{t('Amount received')} · {room.restaurant.currency}<input required inputMode="decimal" disabled={data.busy} value={value} onChange={e => setValue(e.target.value)} /></label>
     <label>{t('Payment note (optional)')}<input maxLength={160} disabled={data.busy} placeholder={t('Bank transfer or cash')} value={reference} onChange={e => setReference(e.target.value)} /></label>
-    <button className="primary" disabled={data.busy}>{t('Confirm received')}</button>{error && <p className="form-message" role="alert">{error}</p>}
+    <button className="primary" disabled={data.busy}>{getLanguage().startsWith('ar') ? 'تسجيل المبلغ المستلم' : 'Save received payment'}</button>{error && <p className="form-message" role="alert">{error}</p>}
   </form></details>;
 }

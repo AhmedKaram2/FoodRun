@@ -6,6 +6,7 @@ import { colors, tx } from "../theme";
 import { dispatch } from "../native";
 import { allActions, allCards, allFields } from "../guidedFlows";
 import { Button, FieldInput, PagedCards, action, textStyle } from "../components/Controls";
+import Illustration from "../components/Illustration";
 import BottomSheet from "../components/BottomSheet";
 import { TabButton } from "../components/Motion";
 
@@ -21,8 +22,7 @@ export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
   const close = () => { if (!busy) dispatch("FRIENDS_ACTION", "open"); };
   return <View style={{flex:1}}>
     <View style={styles.heading}>
-      <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.title]}>{tx(rtl,"Groups","المجموعات")}</Text>
-      <Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Invite your favourite people to your next room.","ادعُ أصحابك إلى غرفتك القادمة.")}</Text>
+      <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",gap:10}}><View style={{flex:1}}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.title]}>{tx(rtl,"Groups","المجموعات")}</Text><Text style={[textStyle(rtl),styles.subtitle]}>{tx(rtl,"Invite your favourite people to your next room.","ادعُ أصحابك إلى غرفتك القادمة.")}</Text></View><Illustration kind="friends" size={58}/></View>
       <Button action={action(tx(rtl,"New group","مجموعة جديدة"),"FRIENDS_ACTION","new",true)} rtl={rtl} busy={busy}/>
       <View style={[styles.tabs,rtl && {flexDirection:"row-reverse"}]}>
         {[tx(rtl,"Your groups","مجموعاتك"),tx(rtl,"Joined groups","المجموعات المنضم إليها")].map((title,index) =>
@@ -34,7 +34,7 @@ export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
     </View>
     <ScrollArea contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={busy} onRefresh={() => dispatch("REFRESH")} tintColor={colors.forest}/> }>
       <PagedCards key={`${tab}:${query}`} cards={visible} busy={busy} rtl={rtl}/>
-      {!visible.length && <Text style={textStyle(rtl)}>{tx(rtl,"No groups to show.","لا توجد مجموعات لعرضها.")}</Text>}
+      {!visible.length && <View style={{alignItems:"center",gap:10,padding:18}}><Illustration kind="friends" size={76}/><Text style={textStyle(rtl)}>{tx(rtl,"No groups to show.","لا توجد مجموعات لعرضها.")}</Text></View>}
     </ScrollArea>
     <BottomSheet visible={!!detail} title={detail?.title || ""} rtl={rtl} onClose={close}>
       <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:14,paddingBottom:8}}>
@@ -53,7 +53,7 @@ export default function FriendsScreen({ snapshot }: { snapshot: Snapshot }) {
 }
 const styles = StyleSheet.create({
   person:{flexDirection:"row",alignItems:"center",gap:10,padding:12,borderRadius:16,backgroundColor:colors.white,borderWidth:1,borderColor:colors.line},avatar:{height:32,width:32,borderRadius:11,backgroundColor:colors.mint,alignItems:"center",justifyContent:"center"},
-  heading:{paddingHorizontal:20,paddingTop:12,gap:12},title:{fontSize:26,lineHeight:40},subtitle:{color:colors.muted,fontSize:14,lineHeight:24},
+  heading:{paddingHorizontal:20,paddingTop:12,gap:12},title:{fontSize:19,lineHeight:30},subtitle:{color:colors.muted,fontSize:12,lineHeight:20},
   tabs:{flexDirection:"row",gap:8},tab:{flex:1,padding:12,borderRadius:16,alignItems:"center",justifyContent:"center"},active:{backgroundColor:colors.mint},
   search:{backgroundColor:colors.white,borderWidth:1,borderColor:colors.line,borderRadius:16,padding:14,minHeight:48},content:{padding:20,gap:12,paddingBottom:32},
 });

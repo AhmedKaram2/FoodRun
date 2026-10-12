@@ -1,3 +1,4 @@
+import Illustration from "../components/Illustration";
 import React,{useState} from 'react';
 import {KeyboardAvoidingView,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import ScrollArea from '../components/ScrollArea';
@@ -19,7 +20,7 @@ export default function AuthScreen({snapshot}:{snapshot:Snapshot}) {
  return <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
   <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
    <View style={styles.card}>
-    <Text accessibilityRole="header" style={[textStyle(rtl,'bold'),styles.title]}>{tx(rtl,register?'Create account':'Welcome back',register?'إنشاء حساب':'مرحباً بعودتك')}</Text>
+    <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",gap:8}}><Text accessibilityRole="header" style={[textStyle(rtl,'bold'),styles.title,{flex:1}]}>{tx(rtl,register?'Create account':'Welcome back',register?'إنشاء حساب':'مرحباً بعودتك')}</Text><Illustration kind="profile" size={58}/></View>
     <Text style={textStyle(rtl)}>{tx(rtl,register?'Just your name, email and password.':'Sign in to your FoodRun account.',register?'اسمك وبريدك الإلكتروني وكلمة المرور فقط.':'سجّل الدخول إلى حساب FoodRun.')}</Text>
     {google&&<Button action={{...google,primary:true}} rtl={rtl} busy={busy}/>}
     <Text style={[textStyle(rtl),styles.or]}>{tx(rtl,'or use email','أو استخدم البريد الإلكتروني')}</Text>
@@ -33,4 +34,4 @@ export default function AuthScreen({snapshot}:{snapshot:Snapshot}) {
   </ScrollArea>
  </KeyboardAvoidingView>;
 }
-const styles=StyleSheet.create({content:{padding:18,flexGrow:1,justifyContent:'center'},card:{backgroundColor:colors.white,borderRadius:26,padding:20,gap:14},title:{fontSize:26,lineHeight:38},or:{textAlign:'center',color:colors.muted},switch:{minHeight:48,justifyContent:'center',alignItems:'center'}});
+const styles=StyleSheet.create({content:{padding:18,flexGrow:1,justifyContent:'center'},card:{backgroundColor:colors.white,borderRadius:26,padding:20,gap:14},title:{fontSize:21,lineHeight:32},or:{textAlign:'center',color:colors.muted},switch:{minHeight:48,justifyContent:'center',alignItems:'center'}});

@@ -1467,7 +1467,7 @@ export async function runCompactHeaderAudit() {
   const walletTabs=host.querySelector('.wallet-section-tabs');
   if(mobile){
     assert(heading.getBoundingClientRect().height<=60,'Profile heading still wastes vertical space');
-    assert(getComputedStyle(heading.querySelector('p:last-child')).display==='none','Repeated profile description remains visible');
+    assert(getComputedStyle(heading.querySelector('p:not(.eyebrow)')).display==='none','Repeated profile description remains visible');
     assert(Number.parseFloat(getComputedStyle(heading.querySelector('h1')).fontSize)<=20,'Profile title is too large');
     const parent=walletTabs.getBoundingClientRect();
     for(const button of walletTabs.querySelectorAll('button')){
@@ -1479,4 +1479,26 @@ export async function runCompactHeaderAudit() {
   assert(!host.querySelector('.topbar .status'),'Connection status still occupies the top bar');
   assert(!measureAudit().overflow,'Room header overflows');
   return {passed:true,width:innerWidth,language:getLanguage(),checks:['single-row mobile header','all language choices','compact profile title','description hidden on phone','all wallet tabs visible','room status removed','no overflow']};
+}
+
+export async function runAccountShortcutsAudit() {
+  await mountAudit('profile','LOBBY',{data:{...data,setError:()=>{}}});
+  const navigation=host.querySelector('.account-page .page-tabs-slot>.mobile-section-tabs');
+  if(innerWidth<=640){const box=navigation.getBoundingClientRect();for(const tab of navigation.querySelectorAll('button')){const r=tab.getBoundingClientRect();assert(r.width>0 && r.left>=box.left-1 && r.right<=box.right+1,'Account section requires horizontal scrolling');}}
+  const edit=host.querySelector('.account-edit');
+  assert(edit && edit.getClientRects().length,'Account edit shortcut missing');
+  edit.click();await pause();
+  const details=host.querySelector('#profile-details');
+  assert(details.open && details.getClientRects().length,'Edit does not reveal profile details');
+  const name=details.querySelector('input[maxlength="160"]');
+  const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+  setter.call(name,'Updated account');name.dispatchEvent(new Event('input',{bubbles:true}));await pause();
+  const receiving=[...host.querySelectorAll('.mobile-section-tabs button')].find(button=>button.textContent===t('Payment methods'));
+  if(receiving){receiving.click();await pause();edit.click();await pause();}
+  assert(name.value==='Updated account','Switching account sections loses the edit');
+  commands.length=0;details.querySelector('form').requestSubmit();await pause();
+  assert(commands.at(-1)?.kind==='IDENTITY' && commands.at(-1)?.fields.identity.action==='SAVE_PROFILE','Account save used a different action');
+  assert(commands.at(-1).fields.identity.profile.name==='Updated account','Edited name was not saved');
+  assert(!measureAudit().overflow,'Account shortcuts overflow');
+  return {passed:true,width:innerWidth,language:getLanguage(),checks:['direct edit shortcut','details visible','edits persist','canonical profile save','no overflow']};
 }

@@ -24,6 +24,7 @@ import {
 } from "../components/Controls";
 import BottomSheet from "../components/BottomSheet";
 import Icon from "../components/Icon";
+import Illustration, { screenIllustration } from "../components/Illustration";
 import { PageMotion, TabButton } from "../components/Motion";
 
 function Intro({
@@ -64,9 +65,7 @@ function Intro({
       {busy ? (
         <ActivityIndicator color={colors.forest} />
       ) : (
-        <View style={styles.heroIcon}>
-          <Icon name={icon} color={colors.forest} />
-        </View>
+        <Illustration kind={screenIllustration(icon.toUpperCase())} size={54}/>
       )}
     </View>
   );
@@ -76,18 +75,20 @@ function Tabs({
   items,
   selected,
   onChange,
+  icons,
 }: {
   rtl: boolean;
   items: string[];
   selected: number;
   onChange: (value: number) => void;
+  icons?: string[];
 }) {
   return (
     <ScrollArea
       horizontal
       showsHorizontalScrollIndicator={false}
       style={styles.tabScroll}
-      contentContainerStyle={[styles.tabs, rtl && styles.reverse]}
+      contentContainerStyle={[styles.tabs, icons && {width:"100%",gap:6}, rtl && styles.reverse]}
     >
       {items.map((title, i) => (
         <TabButton
@@ -97,12 +98,14 @@ function Tabs({
           accessibilityState={{ selected: i === selected }}
           selected={i === selected}
           onPress={() => onChange(i)}
-          style={[styles.tab, i === selected && styles.activeTab]}
+          style={[styles.tab, icons && {flex:1,paddingHorizontal:4,alignItems:"center",gap:2}, i === selected && styles.activeTab]}
         >
+          {icons && <Icon name={icons[i]} size={16} color={i === selected ? colors.forest : colors.muted}/>}
           <Text
             style={[
               textStyle(rtl, "semibold"),
               styles.tabLabel,
+              icons && {fontSize:10,lineHeight:18},
               { color: i === selected ? colors.forest : colors.muted },
             ]}
           >
@@ -406,7 +409,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
   ]);
   const summary = cards.filter((c) => c.id.startsWith("profile-dashboard:"));
   const orderCards = cards.filter((c) =>
-    orders === 0 ? c.id.startsWith("favorite") : c.id.startsWith("previous:"),
+    orders === 0 ? c.id.startsWith("favorite:") : c.id.startsWith("previous:"),
   );
   const save = actions.find((a) => a.action === "SAVE_PROFILE");
   const switchTab = (value: number) => {
@@ -418,11 +421,11 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
       <Intro
         snapshot={snapshot}
         icon="profile"
-        title={tx(rtl, "My profile", "ملفي الشخصي")}
+        title={tx(rtl, "My account", "حسابي")}
         subtitle={tx(
           rtl,
-          "Your details, favourite meals and wallet",
-          "بياناتك ووجباتك المفضلة ومحفظتك",
+          "Details, meals and payments",
+          "بياناتك ووجباتك ومدفوعاتك",
         )}
       />
       <Tabs
@@ -433,6 +436,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
           tx(rtl, "Orders", "الطلبات"),
           tx(rtl, "Settings", "الإعدادات"),
         ]}
+        icons={["profile","edit","heart","settings"]}
         selected={tab}
         onChange={switchTab}
       />
@@ -475,41 +479,29 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                   <Text style={[textStyle(rtl), styles.detail]}>
                     {tx(
                       rtl,
-                      "A little good food, a little good company.",
-                      "أكل حلو وصحبة أحلى.",
+                      "Your meals and payments, together.",
+                      "وجباتك ومدفوعاتك في مكان واحد.",
                     )}
                   </Text>
                 </View>
               </View>
-              <View style={styles.grid}>
-                <View style={styles.tile}>
-                  <Button
-                    tile
-                    icon="profile"
-                    surface={colors.coralWash}
-                    action={action(
-                      tx(rtl, "Edit details", "تعديل البيانات"),
-                      "PROFILE_DETAILS",
-                    )}
-                    rtl={rtl}
-                    onPress={() => switchTab(1)}
-                  />
-                </View>
-                <View style={styles.tile}>
-                  <Button
-                    tile
-                    icon="wallet"
-                    surface={colors.mint}
-                    action={action(
-                      tx(rtl, "My wallet", "محفظتي"),
-                      "OPEN_WALLET",
-                    )}
-                    rtl={rtl}
-                    busy={busy}
-                  />
-                </View>
+              <View style={[styles.grid, rtl && styles.reverse]}>
+                {[
+                  {title:tx(rtl,"Edit details","تعديل البيانات"),icon:"edit",tone:colors.coralWash,run:()=>{setDetails(0);switchTab(1);}},
+                  {title:tx(rtl,"Receiving payments","استلام الأموال"),icon:"wallet",tone:colors.mint,run:()=>{setDetails(1);switchTab(1);}},
+                  {title:tx(rtl,"Favourites","المفضلة"),icon:"heart",tone:colors.coralWash,run:()=>{setOrders(0);switchTab(2);}},
+                  {title:tx(rtl,"Previous orders","الطلبات السابقة"),icon:"history",tone:colors.honey,run:()=>{setOrders(1);switchTab(2);}},
+                ].map(item=><Pressable key={item.icon} accessibilityRole="button" accessibilityLabel={item.title} onPress={item.run} style={[styles.accountShortcut,rtl && styles.reverse]}>
+                  <View style={[styles.shortcutIcon,{backgroundColor:item.tone}]}><Icon name={item.icon} size={19} color={colors.forest}/></View>
+                  <Text style={[textStyle(rtl,"medium"),styles.shortcutLabel]}>{item.title}</Text>
+                </Pressable>)}
               </View>
-              <PagedCards cards={summary} rtl={rtl} busy={busy} />
+              <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Open wallet & payments","فتح المحفظة والمدفوعات")} disabled={busy} accessibilityState={{disabled:busy}} onPress={()=>dispatch("OPEN_WALLET")} style={[styles.walletShortcut,rtl && styles.reverse]}>
+                <Icon name="wallet" size={21} color={colors.forest}/><Text style={[textStyle(rtl,"semibold"),{flex:1,fontSize:14}]}>{tx(rtl,"Wallet & payments","المحفظة والمدفوعات")}</Text><Text accessibilityElementsHidden style={{fontSize:23,color:colors.forest}}>{rtl ? "‹":"›"}</Text>
+              </Pressable>
+              <View style={[styles.profileTotals,rtl && styles.reverse]}>{[false,true].map(receive=>{const total=summary.find(card=>card.id.endsWith(`wallet-direction:${receive}`));return total && <Pressable key={String(receive)} accessibilityRole="button" accessibilityLabel={`${total.title} · ${total.badge}`} disabled={busy} onPress={()=>dispatch("OPEN_WALLET")} style={styles.profileTotal}><Text style={[textStyle(rtl),styles.detail]}>{tx(rtl,receive ? "To receive":"To pay",receive ? "للاستلام":"للدفع")}</Text><Text style={[textStyle(rtl,"semibold"),{fontSize:16,color:colors.forest}]}>{total.badge}</Text></Pressable>;})}</View>
+              <PagedCards cards={summary.filter(card=>card.id.endsWith("wallet-funds"))} rtl={rtl} busy={busy} />
+
             </>
           )}
           {tab === 1 && (
@@ -524,6 +516,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                 onChange={setDetails}
               />
               <View style={styles.panel}>
+                <View style={[styles.noticeHeading,rtl && styles.reverse]}><Icon name={details ? "wallet":"profile"} color={colors.forest}/><Text style={[textStyle(rtl,"semibold"),styles.sectionTitle]}>{details ? tx(rtl,"How people pay you","كيف تستلم الأموال") : tx(rtl,"About you","بياناتك")}</Text></View>
                 {fields
                   .filter((f) =>
                     details === 0 ? identity.has(f.key) : !identity.has(f.key),
@@ -533,7 +526,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                   ))}
               </View>
               {cards
-                .filter((c) => c.id === "profile-privacy")
+                .filter((c) => details === 1 && c.id === "profile-privacy")
                 .map((c) => (
                   <CardView key={c.id} card={c} rtl={rtl} busy={busy} />
                 ))}
@@ -553,7 +546,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
               <PagedCards key={orders} cards={orderCards} busy={busy} rtl={rtl} pageSize={orders === 1 ? 100000 : 8} />
               {!orderCards.length && (
                 <View style={styles.empty}>
-                  <Icon name="food" size={32} color={colors.forest} />
+                  <Illustration kind="food" size={76}/>
                   <Text style={[textStyle(rtl), styles.detail]}>
                     {tx(
                       rtl,
@@ -586,6 +579,7 @@ export function ProfileScreen({ snapshot }: { snapshot: Snapshot }) {
                   .map((a) => (
                     <Button
                       key={a.action + a.value}
+                      icon={a.action === "OPEN_NOTIFICATION_PREFERENCES" ? "bell" : a.action === "SIGN_OUT" ? "logout" : "settings"}
                       action={
                         a.action === "SIGN_OUT"
                           ? { ...a, destructive: true }
@@ -898,7 +892,7 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: "center",
   },
-  title: { fontSize: 22, lineHeight: 34 },
+  title: { fontSize: 19, lineHeight: 30 },
   detail: { fontSize: 12, lineHeight: 22, color: colors.muted },
   back: {
     width: 36,
@@ -942,16 +936,21 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  accountShortcut:{width:"48%",flexGrow:1,flexDirection:"row",alignItems:"center",gap:8,minHeight:60,padding:10,borderRadius:16,backgroundColor:colors.white,borderWidth:1,borderColor:colors.line},
+  shortcutIcon:{width:32,height:32,borderRadius:11,alignItems:"center",justifyContent:"center"},
+  shortcutLabel:{flex:1,fontSize:11,lineHeight:20},
+  walletShortcut:{flexDirection:"row",alignItems:"center",gap:10,minHeight:48,paddingHorizontal:12,borderRadius:14,backgroundColor:colors.mint},
+  profileTotals:{flexDirection:"row",gap:10},profileTotal:{flex:1,minHeight:64,padding:10,borderRadius:14,backgroundColor:colors.white,borderWidth:1,borderColor:colors.line,gap:4},
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   tile: { width: "47.8%", flexGrow: 1 },
   sectionTitle: { fontSize: 15, lineHeight: 26 },
   profileHero: {
     backgroundColor: colors.mint,
-    padding: 20,
-    borderRadius: 26,
+    padding: 14,
+    borderRadius: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 12,
   },
   avatar: {
     height: 64,

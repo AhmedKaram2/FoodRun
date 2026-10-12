@@ -4,6 +4,7 @@ import type { Card, Snapshot } from "../types";
 import { dispatch } from "../native";
 import { colors, tx } from "../theme";
 import { PagedCards, textStyle } from "../components/Controls";
+import Illustration from "../components/Illustration";
 import ScrollArea from "../components/ScrollArea";
 
 function group(card:Card):string {
@@ -21,7 +22,7 @@ export default function WalletScreen({snapshot}:{snapshot:Snapshot}) {
   const tabs=[{id:"balance",title:tx(rtl,"Balance","الرصيد")},{id:"pay",title:tx(rtl,"To pay","للدفع")},{id:"waiting",title:tx(rtl,"Waiting","بانتظار التأكيد")},{id:"receive",title:tx(rtl,"To receive","للاستلام")},{id:"history",title:tx(rtl,"History","السجل")}];
   const visible=entries.filter(card=>group(card)===selected).sort((a,b)=>Number(b.buttons.some(button=>button.primary)) - Number(a.buttons.some(button=>button.primary)));
   return <View style={{flex:1}}>
-    <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.heading]}>{tx(rtl,"Wallet & payments","المحفظة والمدفوعات")}</Text>
+    <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",paddingHorizontal:18,gap:8}}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.heading,{flex:1,paddingHorizontal:0}]}>{tx(rtl,"Wallet & payments","المحفظة والمدفوعات")}</Text><Illustration kind="wallet" size={50}/></View>
     <View style={[styles.totals,rtl && {flexDirection:"row-reverse"}]}>{[false,true].map(receive=>{const summary=cards.find(card=>card.id.endsWith(`wallet-direction:${receive}`));return summary && <Pressable key={String(receive)} accessibilityRole="button" onPress={()=>setSelected(receive ? "receive":"pay")} style={styles.total}>
       <Text style={[textStyle(rtl),styles.label]}>{tx(rtl,receive ? "To receive":"To pay",receive ? "للاستلام":"للدفع")}</Text><Text style={[textStyle(rtl,"semibold"),styles.amount]}>{summary.badge}</Text>
     </Pressable>;})}</View>
@@ -29,7 +30,7 @@ export default function WalletScreen({snapshot}:{snapshot:Snapshot}) {
     <ScrollArea key={selected} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={busy} onRefresh={()=>dispatch("REFRESH")} tintColor={colors.forest}/>} contentContainerStyle={styles.content}>
       {selected==="waiting" && <Text style={[textStyle(rtl),styles.label]}>{tx(rtl,"Sent payments and approvals stay here until they are resolved.","تظهر هنا الدفعات المرسلة والموافقات حتى تتم تسويتها.")}</Text>}
       <PagedCards cards={visible} busy={busy} rtl={rtl}/>
-      {!visible.length && <Text style={[textStyle(rtl),styles.empty]}>{tx(rtl,"Nothing to track here right now.","لا توجد دفعات في هذا القسم حالياً.")}</Text>}
+      {!visible.length && <View style={{alignItems:"center",paddingVertical:16}}><Illustration kind="wallet" size={76}/><Text style={[textStyle(rtl),styles.empty]}>{tx(rtl,"Nothing to track here right now.","لا توجد دفعات في هذا القسم حالياً.")}</Text></View>}
     </ScrollArea>
   </View>;
 }

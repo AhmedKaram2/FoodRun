@@ -337,14 +337,22 @@ export function CardView({
   compactActions?: boolean;
 }) {
   const person = /^(member:|person:|friend-result:)/.test(card.id);
-  const icon = /(wallet|receipt|transfer|payment|account)/.test(card.id) ? "wallet"
-    : /^(menu:|cart:|half-item:|estimate)/.test(card.id) ? "food" : "room";
+  const icon = /favorite/.test(card.id) ? "heart"
+    : /history|previous:/.test(card.id) ? "history"
+    : /receipt|transfer/.test(card.id) ? "receipt"
+    : /privacy|cloud/.test(card.id) ? "shield"
+    : /friend|group|invitation/.test(card.id) ? "friends"
+    : /notification/.test(card.id) ? "bell"
+    : /wheel|spin|selection/.test(card.id) ? "wheel"
+    : /(wallet|payment|account)/.test(card.id) ? "wallet"
+    : /^(menu:|cart:|half-item:|estimate|restaurant:)/.test(card.id) ? "food" : "room";
+  const tone = /wallet|receipt/.test(icon) ? colors.mint : /heart|food/.test(icon) ? colors.coralWash : /friends|wheel/.test(icon) ? colors.honey : colors.sky;
   const contents = (
     <>
       <View
         style={[styles.cardHeading, rtl && { flexDirection: "row-reverse" }]}
       >
-        <View style={styles.avatar}>
+        <View style={[styles.avatar,{backgroundColor:tone}]}>
           {person ?
           <Text
             style={{
@@ -361,7 +369,7 @@ export function CardView({
           {card.title}
         </Text>
         {card.selection && (
-          <Icon name="wallet" size={18} color={colors.muted} />
+          <Icon name="chevron" size={18} color={colors.muted} />
         )}
       </View>
       {!!card.badge && (

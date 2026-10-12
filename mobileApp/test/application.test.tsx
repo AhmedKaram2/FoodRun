@@ -149,6 +149,25 @@ test("profile tabs keep edits through snapshots and save to the same native prof
   expect(native.dispatch).not.toHaveBeenCalledWith("REGISTER","");
 });
 
+test("account shortcuts reach receiving details and orders without losing edits", () => {
+  const value=snapshot({profile:{name:"User",photo:""},mainFields:[field("NAME",{value:"User"}),field("IBAN",{value:"AE123"})],primaryAction:action("Save profile","SAVE_PROFILE","",true),topCards:[card("favorite:meal","Favourite lunch"),card("previous:old","Previous lunch") ]});
+  const view=render(<ProfileScreen snapshot={value}/>);
+  fireEvent.press(view.getByLabelText("Receiving payments"));
+  expect(view.getByTestId("IBAN")).toBeTruthy();
+  expect(view.queryByTestId("NAME")).toBeNull();
+  fireEvent.press(view.getByRole("tab",{name:"Overview"}));
+  fireEvent.press(view.getByLabelText("Previous orders"));
+  expect(view.getByText("Previous lunch")).toBeTruthy();
+  expect(view.queryByText("Favourite lunch")).toBeNull();
+  fireEvent.press(view.getByRole("tab",{name:"Overview"}));
+  fireEvent.press(view.getByLabelText("Edit details"));
+  expect(view.getByTestId("NAME")).toBeTruthy();
+  expect(view.queryByTestId("IBAN")).toBeNull();
+  fireEvent.press(view.getByRole("tab",{name:"Overview"}));
+  fireEvent.press(view.getByLabelText("Open wallet & payments"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_WALLET","");
+});
+
 test("profile wallet cards still open transaction history", () => {
   const wallet={...card("profile-dashboard:wallet-funds","My balance"),selection:action("Transactions","OPEN_WALLET_HISTORY","balance:original")};
   const view=render(<ProfileScreen snapshot={snapshot({profile:{name:"User",photo:""},topCards:[wallet]})}/>);

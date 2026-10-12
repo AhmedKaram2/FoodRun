@@ -641,3 +641,36 @@ html[dir=rtl] .top-actions,html[dir=rtl] .hero-actions { flex-direction:row; }
  .home-page .home-banner-actions{gap:8px;flex-wrap:nowrap}.home-page .home-banner-actions button{flex:1;min-width:0;min-height:44px;padding:10px;font-size:.85rem}.home-page .home-banner-actions .primary svg{display:none}
  .home-page .home-shortcuts{gap:6px}.home-page .home-shortcut{padding:10px;min-height:54px}.home-page .home-shortcut small{display:none}
 }
+
+/* Compact account identity and shared decorative drawings. */
+.screen-illustration{display:block;object-fit:contain;flex-shrink:0;pointer-events:none;width:64px;height:54px}
+.ui-icon{display:inline-block;vertical-align:middle;flex-shrink:0}
+.page-heading{position:relative;padding-inline-end:82px}
+.page-heading>.screen-illustration{position:absolute;inset-inline-end:0;top:50%;transform:translateY(-50%)}
+.account-identity{display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--line);border-radius:18px;background:var(--pale)}
+.account-identity .avatar{width:52px;height:52px;font-size:20px;flex-shrink:0}
+.account-identity>div{flex:1;min-width:0;display:grid;gap:3px}
+.account-identity strong{font-size:1rem;overflow-wrap:anywhere}
+.account-identity small{font-size:.75rem;color:var(--muted)}
+.account-edit{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:#fff;color:var(--green);flex-shrink:0}
+.profile-details summary .ui-icon{margin-inline-end:8px;color:var(--green)}
+.mobile-section-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.small-empty .screen-illustration{margin-inline:auto}
+@media(max-width:640px){
+ .page-heading{padding-inline-end:54px}
+ .page-heading>.screen-illustration{width:48px;height:40px}
+ .account-identity{padding:10px 12px;margin-bottom:12px;gap:10px}
+ .account-identity .avatar{width:42px;height:42px}
+ .account-identity small{font-size:.68rem;line-height:1.6}
+ .mobile-section-tabs button{gap:4px}
+ .wallet-section-tabs button{flex-direction:column;gap:2px}
+}
+
+.illustrated-heading{gap:12px}
+.illustrated-heading>h1,.illustrated-heading>div{flex:1;min-width:0}
+@media(max-width:640px){.illustrated-heading{gap:8px}.illustrated-heading>.screen-illustration{width:44px;height:38px}.illustrated-heading h1{font-size:1.1rem;line-height:1.6}.illustrated-heading>.secondary{padding:8px;min-height:44px}}
+
+@media(max-width:640px){
+ .account-page .page-tabs-slot>.mobile-section-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible}
+ .account-page .page-tabs-slot>.mobile-section-tabs>button{min-width:0;min-height:44px;padding:6px;font-size:.68rem;white-space:normal;line-height:1.6}
+}

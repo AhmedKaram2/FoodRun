@@ -9,6 +9,7 @@ import { dispatch } from "../native";
 import { Button, CardView, FieldInput, PagedCards, action, textStyle } from "./Controls";
 import { PageMotion } from "./Motion";
 import BottomSheet from "./BottomSheet";
+import Illustration from "./Illustration";
 import Icon from "./Icon";
 import RestaurantPicker from "./RestaurantPicker";
 
@@ -65,7 +66,7 @@ export default function GuidedFlowScreen({snapshot, kind, step, setStep, run, on
   return <View style={styles.root}>
     <View style={[styles.heading, rtl && styles.reverse]}>
       <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Back","رجوع")} disabled={busy} onPress={onBack} style={styles.back}><View style={rtl && {transform:[{scaleX:-1}]}}><Icon name="back"/></View></Pressable>
-      <Text style={[textStyle(rtl,"bold"),styles.title]}>{title}</Text>
+      <Text style={[textStyle(rtl,"bold"),styles.title]}>{title}</Text><Illustration kind={kind === "payment" ? "wallet" : kind === "room" ? "room" : "food"} size={48}/>
       {busy && <ActivityIndicator color={colors.forest}/>}
     </View>
     <View style={styles.progress}>

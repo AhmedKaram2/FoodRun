@@ -15,6 +15,8 @@ import NotificationPreferences from './NotificationPreferences.jsx';
 import { friendGroupKey, roomFriendGroups } from './friendGroups.js';
 import RoomJoinTimer from './RoomJoinTimer.jsx';
 import HomeBanner from './HomeBanner.jsx';
+import Illustration from './Illustration.jsx';
+import Icon from './Icon.jsx';
 import WalletAnnouncement from './WalletAnnouncement.jsx';
 import { BrandLogo, BrandMark, TogetherArt } from './Brand.jsx';
 import RunningNames from './RunningNames.jsx';
@@ -87,8 +89,8 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.10/FoodRun-Android-1.7.10.apk';
-const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.10/FoodRun-iOS-RegisteredDevices-1.7.10.ipa';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.11/FoodRun-Android-1.7.11.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.11/FoodRun-iOS-RegisteredDevices-1.7.11.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -546,11 +548,12 @@ function ProfileScreen({ data, onBack, openRoom, onSaved }) {
     const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: profileWithFavorites(profile, favorites.filter(value => value.id !== id)) } });
     if (reply) data.setNotice(t("Favorite removed."));
   };
-  return <Page title={t("Your profile")} subtitle={t("Your wallet, orders, favorites, and payment details in one place.")} onBack={onBack}>
+  return <Page illustration="profile" className="account-page" title={tx("My account","حسابي")} subtitle={tx("Details, meals and payments","بياناتك ووجباتك ومدفوعاتك")} onBack={onBack}>
+    <section className="account-identity"><Avatar profile={profile}/><div><strong>{profile.name || t("Complete profile")}</strong><small>{tx("Your meals and payments, together.","وجباتك ومدفوعاتك في مكان واحد.")}</small></div><a className="account-edit" href="#profile-details" aria-label={tx("Edit details","تعديل البيانات")} onClick={()=>{document.getElementById("profile-details").open=true;}}><Icon name="edit"/></a></section>
     <nav className="profile-shortcuts" aria-label={t("Profile sections")}><a className="secondary" href="#profile-details" onClick={() => { document.getElementById('profile-details').open = true; }}>{t('Your details')}</a><a className="secondary" href="#profile-wallet">{t('Wallet')}</a><a className="secondary" href="#payment-history">{t('Payment history')}</a><a className="secondary" href="#favorite-orders">{tx('Favorites', 'المفضلة')}</a></nav>
     <div id="profile-wallet" data-mobile-section="wallet" data-mobile-label={t('Wallet')}><UserDashboard data={data} openRoom={openRoom} /></div>
     <NotificationPreferences data={data} />
-    <details data-mobile-section="details" data-mobile-label={t("Your details")} id="profile-details" className="profile-details" open={!profile.name || !profile.phone}><summary>{t('Your details')} · {tx('Edit profile', 'تعديل الملف الشخصي')}</summary><form className="profile-grid" onSubmit={save}>
+    <details data-mobile-section="details" data-mobile-label={t("Your details")} id="profile-details" className="profile-details" open={!profile.name || !profile.phone}><summary><Icon name="profile"/>{t('Your details')} · {tx('Edit profile', 'تعديل الملف الشخصي')}</summary><form className="profile-grid" onSubmit={save}>
       <section className="card profile-photo">
         <Avatar profile={{ name: form.name, photo: form.photo }} />
         <label className="upload">{t("Choose photo")}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); setMessage(''); } catch (error) { setMessage(error.message); } }} /></label>
@@ -564,9 +567,9 @@ function ProfileScreen({ data, onBack, openRoom, onSaved }) {
       </section>
       <div className="form-actions"><button className="primary" disabled={busy}>{busy ? t("Saving…") : t("Save profile")}</button></div>
     </form></details>
-    <details data-mobile-section="receiving" data-mobile-label={tx("Payment methods", "طرق الدفع")} className="profile-details" id="receiving-details"><summary>{tx('Receiving payment methods', 'وسائل استلام المدفوعات')}</summary><PaymentMethodsEditor data={data} id="profile-payment" /></details>
-    <section data-mobile-section="favorites" data-mobile-label={tx("Favorites", "المفضلة")} id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><span>☆</span><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
-    <section data-mobile-section="history" data-mobile-label={t("Order history")} id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><span>🥡</span><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <ScrollLoad loadKey={previousLimit} onLoad={() => setPreviousLimit(value => value+10)}>{tx("Scroll for older orders","مرّر لعرض طلبات أقدم")}</ScrollLoad>}</section>
+    <details data-mobile-section="receiving" data-mobile-label={tx("Payment methods", "طرق الدفع")} className="profile-details" id="receiving-details"><summary><Icon name="wallet"/>{tx('Receiving payment methods', 'وسائل استلام المدفوعات')}</summary><PaymentMethodsEditor data={data} id="profile-payment" /></details>
+    <section data-mobile-section="favorites" data-mobile-label={tx("Favorites", "المفضلة")} id="favorite-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("FAST REORDER")}</p><h2>{t("Favorite orders")}</h2></div><span>{favorites.length}</span></div>{favorites.length ? <div className="grid two">{favorites.map(favorite => <article className="card saved-order" key={favorite.id}><span className="status live">{t("★ Favorite")}</span><h3>{favorite.restaurantName}</h3><p>{orderSummary(favorite.lines)}</p><button className="link danger" onClick={() => removeFavorite(favorite.id)}>{t("Remove favorite")}</button></article>)}</div> : <div className="card empty small-empty"><Illustration kind="food"/><p>{t("Save a previous order below. It will appear inside matching restaurant rooms for one-tap add.")}</p></div>}</section>
+    <section data-mobile-section="history" data-mobile-label={t("Order history")} id="previous-orders" className="profile-orders"><div className="section-title"><div><p className="eyebrow">{t("ORDER HISTORY")}</p><h2>{t("Unique previous orders")}</h2><p>{t("Exact repeats are grouped; changed quantities, sizes, extras, or notes stay separate.")}</p></div><span>{previous.length}</span></div>{previous.length ? <div className="grid two">{previous.slice(0, previousLimit).map(choice => <article className="card saved-order" key={choice.key}><span className="status">{choice.repeatCount > 1 ? tf('Repeated {count} times', { count: choice.repeatCount }) : new Date(choice.order.completedAt).toLocaleDateString()}</span><h3>{choice.order.restaurantName}</h3><p>{orderSummary(choice.receipt.lines)}</p>{!favoriteKeys.has(choice.key) && <button className="secondary" disabled={busy || !choice.restaurantId} onClick={() => saveFavorite(choice)}>{t("☆ Save as favorite")}</button>}</article>)}</div> : <div className="card empty small-empty"><Illustration kind="food"/><p>{t("Completed orders appear here after a room starts its next order.")}</p></div>}{previous.length > previousLimit && <ScrollLoad loadKey={previousLimit} onLoad={() => setPreviousLimit(value => value+10)}>{tx("Scroll for older orders","مرّر لعرض طلبات أقدم")}</ScrollLoad>}</section>
   </Page>;
 }
 
@@ -579,10 +582,10 @@ function MainTopBar({ onHome, onProfile, profile, actions }) {
   </header><div className="page-tabs-slot" data-page-tabs-slot /></>;
 }
 
-function Page({ title, subtitle, onBack, actions, profile, onProfile, children, className = "" }) {
+function Page({ title, subtitle, onBack, actions, profile, onProfile, children, className = "", illustration = "room" }) {
   return <main className={`app-shell ${className}`}>
     <MainTopBar actions={actions} profile={profile} onProfile={onProfile} />
-    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage.startsWith('ar') ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("INTRVIOO / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>
+    <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{uiLanguage.startsWith('ar') ? 'رجوع ←' : t("← Back")}</button>}<p className="eyebrow">{t("INTRVIOO / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}<Illustration kind={illustration}/></div>
     {children}
   </main>;
 }
@@ -591,16 +594,16 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
   const continuing = roomCards.find(({ reply }) => reply?.room && !['ARCHIVED', 'CANCELLED'].includes(reply.room.phase));
-  return <Page className="home-page" title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} profile={home.profile} onProfile={() => setPage('profile')} actions={<button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button>}>
+  return <Page illustration="food" className="home-page" title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} profile={home.profile} onProfile={() => setPage('profile')} actions={<button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}><Icon name="bell"/></button>}>
     {home.wallet && <WalletAnnouncement key={home.profile.userId || data.user?.uid} userId={home.profile.userId || data.user?.uid} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <button className="secondary" onClick={() => setPage('friends')}>{tx('Groups', 'المجموعات')}</button>
     {continuing && <section className="card continue-order"><div><p className="eyebrow">{tx('PICK UP WHERE YOU LEFT OFF', 'أكمل من حيث توقفت')}</p><h3>{continuing.session.roomName}</h3><p>{t(phaseLabel[continuing.reply.room.phase])}</p></div><button className="primary" onClick={() => openRoom(continuing.session.roomId)}>{tx('Continue order', 'متابعة الطلب')}</button></section>}
     <HomeBanner rtl={uiLanguage.startsWith('ar')} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
     <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
-      <button className="home-shortcut" onClick={() => setPage('quick-choice')}><span aria-hidden="true">✦</span><span><b>{tx('Quick Choice','الاختيار السريع')}</b><small>{tx('Choose someone for any occasion','اختَر شخصاً لأي مناسبة')}</small></span><span aria-hidden="true">↗</span></button>
-      <button className="home-shortcut" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}><span aria-hidden="true">↔</span><span><b>{t("Payment room")}</b><small>{tx('Keep every share clear', 'حساب كل واحد واضح')}</small></span><span aria-hidden="true">↗</span></button>
-      <button className="home-shortcut" onClick={openRestaurants}><span aria-hidden="true">☷</span><span><b>{t("Add restaurant & menu")}</b><small>{tx('Your favorites, ready for next time', 'مطاعمك المفضلة جاهزة للطلب الجاي')}</small></span><span aria-hidden="true">↗</span></button>
+      <button className="home-shortcut" onClick={() => setPage('quick-choice')}><span aria-hidden="true"><Icon name="wheel"/></span><span><b>{tx('Quick Choice','الاختيار السريع')}</b><small>{tx('Choose someone for any occasion','اختَر شخصاً لأي مناسبة')}</small></span><span aria-hidden="true">↗</span></button>
+      <button className="home-shortcut" disabled={!allowRoomCreation} onClick={() => setPage('payment-create')}><span aria-hidden="true"><Icon name="wallet"/></span><span><b>{t("Payment room")}</b><small>{tx('Keep every share clear', 'حساب كل واحد واضح')}</small></span><span aria-hidden="true">↗</span></button>
+      <button className="home-shortcut" onClick={openRestaurants}><span aria-hidden="true"><Icon name="food"/></span><span><b>{t("Add restaurant & menu")}</b><small>{tx('Your favorites, ready for next time', 'مطاعمك المفضلة جاهزة للطلب الجاي')}</small></span><span aria-hidden="true">↗</span></button>
       {canAccessAdmin(data.user) && <button className="secondary" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}
     </nav>
     {!allowRoomCreation && <p className="form-message" role="status">{t("New room creation is temporarily disabled by the administrator.")}</p>}
@@ -611,7 +614,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
         const room = reply?.room, member = room?.members.find(m => m.id === session.memberId), winner = room?.members.find(m => m.id === (room.payerId || room.spin?.winnerId));
         const receipt = reply?.receipts.find(r => r.memberId === session.memberId);
         return <article className="card room-card" key={session.roomId} onClick={() => openRoom(session.roomId)}><div className="room-card-top"><span className={`status ${online[session.roomId] ? 'live' : ''}`}>{online[session.roomId] ? t("● Live") : t("Offline")}</span><span>#{room?.orderNumber || 1}</span></div><h3>{session.roomName}</h3><p>{room ? t(phaseLabel[room.phase]) : t("Connecting…")}</p>{winner && <div className="winner-row"><span className="avatar initials small">{initials(winner.name)}</span><span><b>{winner.name}</b><small>{room.payerId ? ' is ordering' : ' was selected'}</small></span></div>}{receipt && ['REVIEW','PLACED','FULFILLED'].includes(room.phase) && <div className="amount-row"><span>{t("Your total")}</span><b>{receipt.totalText}</b></div>}<button className="secondary">{room?.phase === 'LOBBY' && !member?.participating ? t("Join this order") : t("Open room")} →</button></article>;
-      }}</PagedList></div> : <div className="card empty"><span>🥢</span><h3>{t("No saved rooms yet")}</h3><p>{t("Create a room and invite your people, or join with a six-digit code.")}</p></div>}
+      }}</PagedList></div> : <div className="card empty"><Illustration kind="room"/><h3>{t("No saved rooms yet")}</h3><p>{t("Create a room and invite your people, or join with a six-digit code.")}</p></div>}
     </section>
     <UserDashboard data={data} openRoom={openRoom} compact openProfile={() => setPage('profile')} />
     <details className="app-download-options"><summary>{tx('Get the Intrvioo app', 'تحميل تطبيق إنترفيوو')}</summary><AppDownloads /></details>
@@ -1253,7 +1256,7 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   };
   const startNextOrder = () => data.send('NEXT_ORDER', { restaurant: room.restaurant, restaurants: room.restaurantOptions || [room.restaurant], expectedNames: [], flag: room.deliveryMode, destination: room.destination, deadline: 0, fees: room.fees }, room.id);
   if (!me.approved) return <Page title={room.name} onBack={onBack}><article className="card notice-card"><h2>{t('Waiting for approval')}</h2><p>{t('The room creator or selected person must approve your join request. You will enter automatically after approval.')}</p></article></Page>;
-  if (room.paymentRoom) return <Page title={room.name} subtitle={t('Payment room · split and settle an existing bill')} onBack={onBack}>
+  if (room.paymentRoom) return <Page illustration="wallet" title={room.name} subtitle={t('Payment room · split and settle an existing bill')} onBack={onBack}>
     {room.autoArchivedAt > 0 && <article className="card"><h2>{t('Archived after 24 hours')}</h2><p>{t('Unpaid balances and pending payments remain due. You can still pay, confirm receipt and send payment reminders.')}</p></article>}
     <fieldset disabled={data.busy} className="room-fieldset stack"><PaymentReceipt room={room} data={data} payer={payer} />
       {settling ? <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} /> : <article className="card stack"><h2>{t('Payment room completed')}</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}</article>}

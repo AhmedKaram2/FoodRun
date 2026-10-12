@@ -23,6 +23,7 @@ import { dispatch, events, native, parseSnapshot, update } from "./src/native";
 import type { Snapshot, Section, Field } from "./src/types";
 import Brand from "./src/components/Brand";
 import Icon from "./src/components/Icon";
+import Illustration, { screenIllustration } from "./src/components/Illustration";
 import {
   Button,
   CardView,
@@ -364,6 +365,7 @@ function Application() {
                 <Text style={[textStyle(rtl,"semibold"),{fontSize:12,color:colors.forest}]}>{tx(rtl,"Invite","دعوة")}</Text>
               </Pressable>}
               {room && (detailFields.length>0 || detailActions.length>0 || detailCards.length>0) && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Room details & settings","تفاصيل الغرفة والإعدادات")} onPress={()=>setOptions(true)} style={ui.icon}><Icon name="settings" size={20} color={colors.forest}/></Pressable>}
+              {!room && !busy && <Illustration kind={screenIllustration(state.page)} size={52}/>}
               {busy && <ActivityIndicator color={colors.coral} />}
             </View>}
             {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={state.roomStage || ""} rtl={rtl}/>}
@@ -777,12 +779,12 @@ const ui = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  title: { fontSize: 24, lineHeight: 36 },
+  title: { fontSize: 19, lineHeight: 30 },
   roomHeading: {paddingVertical:4,minHeight:48},
   roomTitle: {fontSize:16,lineHeight:24},
   roomInvite: {minHeight:44,minWidth:64,alignItems:"center",justifyContent:"center",paddingHorizontal:8},
   orderingPerson: {marginHorizontal:16,marginBottom:6,paddingHorizontal:10,paddingVertical:5,borderRadius:10,backgroundColor:colors.mint,flexDirection:"row",alignItems:"center",gap:7},
-  subtitle: { fontSize: 14, lineHeight: 24, color: colors.muted },
+  subtitle: { fontSize: 12, lineHeight: 20, color: colors.muted },
   content: { padding: 18, gap: 16, paddingBottom: 28 },
   tabs: { maxHeight: 58, flexGrow: 0 },
   tabRow: {

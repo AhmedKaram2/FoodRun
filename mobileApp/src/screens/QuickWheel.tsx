@@ -7,6 +7,7 @@ import { Button, action, textStyle, styles } from "../components/Controls";
 import { WheelDrawing } from "../components/LiveWheel";
 import { PageMotion, useMotionEnabled } from "../components/Motion";
 import BottomSheet from "../components/BottomSheet";
+import Illustration from "../components/Illustration";
 import Icon from "../components/Icon";
 
 export default function QuickWheel({ state, rtl }: { state: State; rtl: boolean }) {
@@ -23,7 +24,7 @@ export default function QuickWheel({ state, rtl }: { state: State; rtl: boolean 
   return <View style={{flex:1}}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={local.content}>
       <PageMotion motionKey="quick-choice" rtl={rtl}>
-        <Text accessibilityRole="header" style={[textStyle(rtl,"bold"),local.heading]}>{tx(rtl,"Quick Choice","الاختيار السريع")}</Text>
+        <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",gap:8}}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),local.heading,{flex:1}]}>{tx(rtl,"Quick Choice","الاختيار السريع")}</Text><Illustration kind="wheel" size={52}/></View>
         <Text style={[textStyle(rtl),local.detail]}>{tx(rtl,"Choose someone for anything. Everyone included has an equal chance.","اختَر شخصاً لأي سبب. لكل المشاركين فرصة متساوية.")}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Edit purpose and animation","تعديل السبب وطريقة العرض")} disabled={state.spinning} onPress={() => open("settings")} style={[local.purpose,rtl && local.reverse]}>
           <Icon name="wheel" color={colors.forest}/><View style={{flex:1}}><Text style={[textStyle(rtl),local.detail]}>{tx(rtl,"Choosing for","سبب الاختيار")}</Text><Text style={textStyle(rtl,"bold")}>{purpose}</Text></View><Icon name="edit" size={18}/>
@@ -80,4 +81,4 @@ export default function QuickWheel({ state, rtl }: { state: State; rtl: boolean 
     </BottomSheet>
   </View>;
 }
-const local = StyleSheet.create({content:{padding:16,gap:14},heading:{fontSize:27,lineHeight:42},detail:{fontSize:12,lineHeight:22,color:colors.muted},purpose:{padding:14,marginVertical:12,borderRadius:20,backgroundColor:colors.mint,flexDirection:"row",alignItems:"center",gap:12},reverse:{flexDirection:"row-reverse"},actions:{flexDirection:"row",alignItems:"center",gap:8,marginVertical:5},runner:{minHeight:225,justifyContent:"center",alignItems:"center",gap:8,backgroundColor:colors.honey,borderRadius:28,padding:16,marginBottom:12},star:{fontSize:34,color:colors.forest},name:{fontSize:29,lineHeight:48,textAlign:"center"},neighbor:{fontSize:16,color:colors.muted,opacity:.5},count:{fontSize:13,textAlign:"center",marginBottom:12},empty:{textAlign:"center",color:colors.muted,marginBottom:14},person:{flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderColor:colors.line},personToggle:{flex:1,flexDirection:"row",alignItems:"center",gap:12,paddingVertical:10},check:{width:30,height:30,textAlign:"center",lineHeight:30,borderRadius:10,backgroundColor:colors.line,color:colors.ink},checked:{backgroundColor:colors.forest,color:colors.white},remove:{padding:12}});
+const local = StyleSheet.create({content:{padding:16,gap:14},heading:{fontSize:19,lineHeight:30},detail:{fontSize:12,lineHeight:22,color:colors.muted},purpose:{padding:14,marginVertical:12,borderRadius:20,backgroundColor:colors.mint,flexDirection:"row",alignItems:"center",gap:12},reverse:{flexDirection:"row-reverse"},actions:{flexDirection:"row",alignItems:"center",gap:8,marginVertical:5},runner:{minHeight:225,justifyContent:"center",alignItems:"center",gap:8,backgroundColor:colors.honey,borderRadius:28,padding:16,marginBottom:12},star:{fontSize:34,color:colors.forest},name:{fontSize:29,lineHeight:48,textAlign:"center"},neighbor:{fontSize:16,color:colors.muted,opacity:.5},count:{fontSize:13,textAlign:"center",marginBottom:12},empty:{textAlign:"center",color:colors.muted,marginBottom:14},person:{flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderColor:colors.line},personToggle:{flex:1,flexDirection:"row",alignItems:"center",gap:12,paddingVertical:10},check:{width:30,height:30,textAlign:"center",lineHeight:30,borderRadius:10,backgroundColor:colors.line,color:colors.ink},checked:{backgroundColor:colors.forest,color:colors.white},remove:{padding:12}});

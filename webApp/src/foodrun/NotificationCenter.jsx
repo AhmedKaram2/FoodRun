@@ -1,3 +1,4 @@
+import Illustration from './Illustration.jsx';
 import PagedList from './PagedList.jsx';
 import React, { useState } from 'react';
 import { t, getLanguage, normalizeLanguage, languageOptions } from './i18n.js';
@@ -8,7 +9,7 @@ import {WalletNotificationActions} from './WalletFunds.jsx';
 const tx = (en, ar) => getLanguage().startsWith('ar') ? (t(en) === en ? ar : t(en)) : en;
 
 export function NotificationCenter({ notifications, onOpen, onBack, data, renderPayment }) {
-  return <main className="page-shell stack notification-center"><div className="section-title"><h1>{t('Notifications')}</h1><button className="secondary" onClick={onBack}>{t('Back')}</button></div>
+  return <main className="page-shell stack notification-center"><div className="section-title illustrated-heading"><Illustration kind="bell"/><h1>{t('Notifications')}</h1><button className="secondary" onClick={onBack}>{t('Back')}</button></div>
     <section data-mobile-section="settings" data-mobile-label={t("Notifications")} className="card stack"><p>{tx('Orders, payments, and the next action for your table.', 'الطلبات والمدفوعات والخطوة التالية لغرفتك.')}</p>
       <div className="hero-actions">{notifications.configured === false ? <p>{tx("Browser push setup is being completed. Your updates are available in this inbox.", "جارٍ استكمال إشعارات المتصفح. تحديثاتك متاحة في صندوق الإشعارات هنا.")}</p> : <button className="primary" onClick={() => notifications.enable()}>{notifications.enabled ? tx('Notifications enabled', 'الإشعارات مفعلة') : t('Enable notifications')}</button>}{notifications.enabled && <button className="secondary" onClick={notifications.disable}>{tx('Turn off device notifications', 'إيقاف إشعارات هذا الجهاز')}</button>}</div>
       {notifications.error && <p role="alert">{notifications.error}</p>}</section>

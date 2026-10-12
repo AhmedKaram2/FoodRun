@@ -1,3 +1,4 @@
+import Illustration from './Illustration.jsx';
 import { useRef, useState } from 'react';
 import { getLanguage, t } from './i18n.js';
 import GroupSheet from './GroupSheet.jsx';
@@ -29,7 +30,7 @@ export default function QuickChoice({ home, startQuickChoice, onBack }) {
   };
   const title = sheet === 'groups' ? tx('Choose group','اختيار مجموعة') : sheet === 'settings' ? tx('Purpose & animation','السبب وطريقة العرض') : tx('Participants','المشاركون');
   return <main className="app-shell quick-choice">
-    <div className="section-title"><div><p className="eyebrow">{tx('FOR ANY OCCASION','لأي مناسبة')}</p><h1>{tx('Quick Choice','الاختيار السريع')}</h1></div><button className="secondary" onClick={onBack}>{t('Home')}</button></div>
+    <div className="section-title illustrated-heading"><Illustration kind="wheel"/><div><p className="eyebrow">{tx('FOR ANY OCCASION','لأي مناسبة')}</p><h1>{tx('Quick Choice','الاختيار السريع')}</h1></div><button className="secondary" onClick={onBack}>{t('Home')}</button></div>
     <p>{tx('Choose someone for anything. Everyone included has an equal chance.','اختَر شخصاً لأي سبب. لكل المشاركين فرصة متساوية.')}</p>
     <div className="quick-choice-layout">
       <section className="card quick-choice-stage stack">

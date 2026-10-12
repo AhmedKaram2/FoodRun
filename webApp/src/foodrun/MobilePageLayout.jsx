@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createPortal } from 'react-dom';
+import Icon from './Icon.jsx';
 import { getLanguage } from './i18n.js';
+const sectionIcon = id => /favorites/.test(id) ? 'heart' : /history/.test(id) ? 'history' : /details/.test(id) ? 'profile' : /notification/.test(id) ? 'bell' : /receiving|wallet|payment|funds/.test(id) ? 'wallet' : /member|group/.test(id) ? 'friends' : /food|menu|restaurant/.test(id) ? 'food' : 'room';
 export default function MobilePageLayout({ pageKey, children, alwaysTabs = false, initialSection = '' }) {
   const root = useRef(null), panels = useRef([]);
   const [tabs, setTabs] = useState([]), [selected, setSelected] = useState('');
@@ -41,6 +43,6 @@ export default function MobilePageLayout({ pageKey, children, alwaysTabs = false
   }, [pageKey]);
   useLayoutEffect(() => { panels.current.forEach(({node,id}) => { node.setAttribute('data-mobile-hidden',String(id !== selected)); }); },[selected,tabs]);
   const roomTabs = tabs.some(tab => tab.id === 'room-overview');
-  const navigation=tabs.length>1 && <nav className={`mobile-section-tabs${roomTabs ? ' mobile-room-tabs' : ''}${alwaysTabs ? ' wallet-section-tabs' : ''}`} role="tablist" aria-label={getLanguage().startsWith('ar') ? 'أقسام الصفحة' : 'Page sections'}>{tabs.map(tab => <button type="button" role="tab" key={tab.id} className={tab.id === selected ? 'active' : ''} aria-selected={tab.id === selected} aria-pressed={tab.id === selected} onClick={() => { setSelected(tab.id); const targets=panels.current.filter(value => value.id === tab.id); targets.forEach(({node}) => { if(node.tagName === 'DETAILS') node.open = true; }); if(!alwaysTabs && !matchMedia('(max-width:640px)').matches) targets[0]?.node.scrollIntoView({block:'start',behavior:'smooth'}); }}>{tab.title}</button>)}</nav>;
+  const navigation=tabs.length>1 && <nav className={`mobile-section-tabs${roomTabs ? ' mobile-room-tabs' : ''}${alwaysTabs ? ' wallet-section-tabs' : ''}`} role="tablist" aria-label={getLanguage().startsWith('ar') ? 'أقسام الصفحة' : 'Page sections'}>{tabs.map(tab => <button type="button" role="tab" key={tab.id} className={tab.id === selected ? 'active' : ''} aria-selected={tab.id === selected} aria-pressed={tab.id === selected} onClick={() => { setSelected(tab.id); const targets=panels.current.filter(value => value.id === tab.id); targets.forEach(({node}) => { if(node.tagName === 'DETAILS') node.open = true; }); if(!alwaysTabs && !matchMedia('(max-width:640px)').matches) targets[0]?.node.scrollIntoView({block:'start',behavior:'smooth'}); }}><Icon name={sectionIcon(tab.id)} size={16}/><span>{tab.title}</span></button>)}</nav>;
   return <div className="mobile-page-layout" ref={root}>{children}{tabHost && createPortal(navigation,tabHost)}</div>;
 }

@@ -87,8 +87,8 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.9/FoodRun-Android-1.7.9.apk';
-const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.9/FoodRun-iOS-RegisteredDevices-1.7.9.ipa';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.10/FoodRun-Android-1.7.10.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.10/FoodRun-iOS-RegisteredDevices-1.7.10.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -109,10 +109,11 @@ let updateLanguage = () => {};
 function tx(english, arabic) { return uiLanguage.startsWith('ar') ? (t(english, uiLanguage) === english ? arabic : t(english, uiLanguage)) : english; }
 function localizedName(value) { return uiLanguage.startsWith('ar') && value?.nameAr ? value.nameAr : value?.name || ''; }
 function localizedDescription(value) { return uiLanguage.startsWith('ar') && value?.descriptionAr ? value.descriptionAr : value?.description || ''; }
-function LanguageToggle() {
-  return <label className="language-picker" title={tx('Choose language', 'اختر اللغة')}>
+function LanguageToggle({compact=false}) {
+  return <label className={`language-picker${compact ? ' language-picker-compact':''}`} title={tx('Choose language', 'اختر اللغة')}>
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5h14M5 17.5h14" /></svg>
     <span className="sr-only">Language / اللغة</span>
+    {compact && <span className="language-code" aria-hidden="true">{uiLanguage.startsWith('ar') ? 'ع':'EN'}</span>}
     <select aria-label="Language / اللغة" value={uiLanguage} onChange={event => updateLanguage(event.target.value)} dir="ltr">
       {languageOptions.map(option => <option key={option.value} value={option.value} lang={option.value}>{option.label}</option>)}
     </select>
@@ -487,13 +488,13 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
     <div className="section-title"><h2>{tx('Wallet & payments','المحفظة والمدفوعات')}</h2></div>
     <div className="wallet-overview">
       <button data-mobile-target="funds"><small>{tx('Available balance','الرصيد المتاح')}</small><b>{totalsByCurrency(balances.map(value=>({...value,amount:value.available}))).map(([currency,total])=>money(total,currency)).join(' · ') || money(0,'AED')}</b></button>
-      <button data-mobile-target="wallet-pay"><small>{t('I need to pay')}</small><b>{totalsByCurrency(dashboard.payEntries).map(([currency,total])=>money(total,currency)).join(' · ') || money(0,'AED')}</b></button>
-      <button data-mobile-target="wallet-receive"><small>{t('I need to receive')}</small><b>{totalsByCurrency(dashboard.receiveEntries).map(([currency,total])=>money(total,currency)).join(' · ') || money(0,'AED')}</b></button>
+      <button data-mobile-target="wallet-pay"><small>{tx('To pay','للدفع')}</small><b>{totalsByCurrency(dashboard.payEntries).map(([currency,total])=>money(total,currency)).join(' · ') || money(0,'AED')}</b></button>
+      <button data-mobile-target="wallet-receive"><small>{tx('To receive','للاستلام')}</small><b>{totalsByCurrency(dashboard.receiveEntries).map(([currency,total])=>money(total,currency)).join(' · ') || money(0,'AED')}</b></button>
     </div>
     <div className="page-tabs-slot wallet-tabs-slot" data-page-tabs-slot />
     <div data-mobile-section="funds" data-mobile-label={tx('Balance','الرصيد')}><WalletFunds data={data} mode="balances" /></div>
     <section data-mobile-section="wallet-pay" data-mobile-label={tx('To pay','للدفع')} className="card wallet-direction pay"><h3>{t('I need to pay')}</h3><WalletFunds data={data} mode="actions" filter="pay"/>{!pay.length && <p className="muted">{tx('No direct payments due.','لا توجد دفعات مباشرة مستحقة.')}</p>}{rows(pay)}</section>
-    <section data-mobile-section="wallet-waiting" data-mobile-label={tx('Waiting','بانتظار التأكيد')} className="card wallet-direction"><h3>{t('Awaiting recipient confirmation')}</h3><WalletFunds data={data} mode="actions" filter="waiting"/>{!waiting.length && <p className="muted">{tx('No direct payments waiting for confirmation.','لا توجد دفعات مباشرة بانتظار التأكيد.')}</p>}{rows(waiting,true)}</section>
+    <section data-mobile-section="wallet-waiting" data-mobile-label={tx('Waiting','بانتظار التأكيد')} className="card wallet-direction"><h3>{tx('Waiting for confirmation','بانتظار التأكيد')}</h3><WalletFunds data={data} mode="actions" filter="waiting"/>{!waiting.length && <p className="muted">{tx('No direct payments waiting for confirmation.','لا توجد دفعات مباشرة بانتظار التأكيد.')}</p>}{rows(waiting,true)}</section>
     <section data-mobile-section="wallet-receive" data-mobile-label={tx('To receive','للاستلام')} className="card wallet-direction receive"><h3>{t('I need to receive')}</h3><WalletFunds data={data} mode="actions" filter="receive"/>{!receive.length && <p className="muted">{tx('No direct payments to receive.','لا توجد دفعات مباشرة للاستلام.')}</p>}{rows(receive)}</section>
     <section data-mobile-section="payment-history" data-mobile-label={tx('History','السجل')} id="payment-history" className="card payment-history"><h3>{t('Payment history')}</h3><WalletFunds data={data} mode="history"/>
       {!dashboard.paymentHistory.length && <p>{t('No payment history yet')}</p>}
@@ -574,7 +575,7 @@ function MainTopBar({ onHome, onProfile, profile, actions }) {
   const currentProfile = profile || navigation?.profile;
   return <><header className="topbar">
     <button type="button" className="wordmark" aria-label={tx("Intrvioo home", "الرئيسية في إنترفيوو")} onClick={onHome || navigation?.onHome || (() => navigateApp('home'))}><BrandLogo /></button>
-    <div className="top-actions"><GuideLink /><LanguageToggle />{actions}{currentProfile && <button type="button" className="profile-chip" aria-label={t('Profile')} onClick={onProfile || (() => navigateApp('profile'))}><Avatar small profile={currentProfile} /><span>{currentProfile.name || t('Complete profile')}</span></button>}</div>
+    <div className="top-actions"><GuideLink /><LanguageToggle compact />{actions}{currentProfile && <button type="button" className="profile-chip" aria-label={t('Profile')} onClick={onProfile || (() => navigateApp('profile'))}><Avatar small profile={currentProfile} /><span>{currentProfile.name || t('Complete profile')}</span></button>}</div>
   </header><div className="page-tabs-slot" data-page-tabs-slot /></>;
 }
 
@@ -590,10 +591,11 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
   const { home, rooms, sessions, online } = data;
   const roomCards = Object.values(sessions).map(session => ({ session, reply: rooms[session.roomId] })).sort((a, b) => (b.reply?.room?.createdAt || 0) - (a.reply?.room?.createdAt || 0));
   const continuing = roomCards.find(({ reply }) => reply?.room && !['ARCHIVED', 'CANCELLED'].includes(reply.room.phase));
-  return <Page title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} profile={home.profile} onProfile={() => setPage('profile')} actions={<button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button>}>
+  return <Page className="home-page" title={tf('Good food, {name}.', { name: home.profile.name?.split(' ')[0] || t('together') })} subtitle={t("Start a table or jump back into today’s order.")} profile={home.profile} onProfile={() => setPage('profile')} actions={<button className="icon-button" aria-label={t("Notifications")} onClick={() => setPage('notifications')}>◔</button>}>
     {home.wallet && <WalletAnnouncement key={home.profile.userId || data.user?.uid} userId={home.profile.userId || data.user?.uid} onOpen={() => { setPage('profile'); requestAnimationFrame(() => document.getElementById('profile-wallet')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); }} />}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={() => data.connect(data.hub)} inline />}
     <button className="secondary" onClick={() => setPage('friends')}>{tx('Groups', 'المجموعات')}</button>
+    {continuing && <section className="card continue-order"><div><p className="eyebrow">{tx('PICK UP WHERE YOU LEFT OFF', 'أكمل من حيث توقفت')}</p><h3>{continuing.session.roomName}</h3><p>{t(phaseLabel[continuing.reply.room.phase])}</p></div><button className="primary" onClick={() => openRoom(continuing.session.roomId)}>{tx('Continue order', 'متابعة الطلب')}</button></section>}
     <HomeBanner rtl={uiLanguage.startsWith('ar')} allowRoomCreation={allowRoomCreation} onCreate={() => setPage('create')} onJoin={() => setPage('join')} onRestaurants={openRestaurants} />
     <nav className="home-shortcuts" aria-label={tx('More ways to order', 'خيارات إضافية')}>
       <button className="home-shortcut" onClick={() => setPage('quick-choice')}><span aria-hidden="true">✦</span><span><b>{tx('Quick Choice','الاختيار السريع')}</b><small>{tx('Choose someone for any occasion','اختَر شخصاً لأي مناسبة')}</small></span><span aria-hidden="true">↗</span></button>
@@ -602,7 +604,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
       {canAccessAdmin(data.user) && <button className="secondary" onClick={() => setPage('admin')}>{tx('Admin panel', 'لوحة الإدارة')}</button>}
     </nav>
     {!allowRoomCreation && <p className="form-message" role="status">{t("New room creation is temporarily disabled by the administrator.")}</p>}
-    {continuing && <section className="card continue-order"><div><p className="eyebrow">{tx('PICK UP WHERE YOU LEFT OFF', 'أكمل من حيث توقفت')}</p><h3>{continuing.session.roomName}</h3><p>{t(phaseLabel[continuing.reply.room.phase])}</p></div><button className="primary" onClick={() => openRoom(continuing.session.roomId)}>{tx('Continue order', 'متابعة الطلب')}</button></section>}
+
     {home.invitations.length > 0 && <section data-mobile-section="invitations" data-mobile-label={t("Invitation")}><div className="section-title"><div><p className="eyebrow">{t("YOU’RE INVITED")}</p><h2>{t("Join the table")}</h2></div><span>{home.invitations.length}</span></div><div className="grid two"><PagedList items={home.invitations}>{invite => <article className="card invitation" key={invite.id}><span className="status live">{t("Invitation")}</span><h3>{invite.roomName}</h3><p>{invite.invitedBy}{t("invited you to order #")}{invite.orderNumber}.</p><button className="primary" onClick={async () => { const reply = await data.send('IDENTITY', { identity: { action: 'ACCEPT_INVITE', invitationId: invite.id } }); if (reply?.room) openRoom(reply.room.id); }}>{t("Join room")}</button></article>}</PagedList></div></section>}
     <section data-mobile-section="rooms" data-mobile-label={t("Live rooms")}><div className="section-title"><div><p className="eyebrow">{t("YOUR TABLES")}</p><h2>{t("Live rooms")}</h2></div><span>{roomCards.length}</span></div>
       {roomCards.length ? <div className="grid two"><PagedList items={roomCards}>{({ session, reply }) => {
@@ -1251,13 +1253,13 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
   };
   const startNextOrder = () => data.send('NEXT_ORDER', { restaurant: room.restaurant, restaurants: room.restaurantOptions || [room.restaurant], expectedNames: [], flag: room.deliveryMode, destination: room.destination, deadline: 0, fees: room.fees }, room.id);
   if (!me.approved) return <Page title={room.name} onBack={onBack}><article className="card notice-card"><h2>{t('Waiting for approval')}</h2><p>{t('The room creator or selected person must approve your join request. You will enter automatically after approval.')}</p></article></Page>;
-  if (room.paymentRoom) return <Page title={room.name} subtitle={t('Payment room · split and settle an existing bill')} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t('● Live') : t('Offline')}</span>}>
+  if (room.paymentRoom) return <Page title={room.name} subtitle={t('Payment room · split and settle an existing bill')} onBack={onBack}>
     {room.autoArchivedAt > 0 && <article className="card"><h2>{t('Archived after 24 hours')}</h2><p>{t('Unpaid balances and pending payments remain due. You can still pay, confirm receipt and send payment reminders.')}</p></article>}
     <fieldset disabled={data.busy} className="room-fieldset stack"><PaymentReceipt room={room} data={data} payer={payer} />
       {settling ? <SettlementPanel room={room} reply={reply} me={me} owner={owner} payer={payer} data={data} /> : <article className="card stack"><h2>{t('Payment room completed')}</h2>{reply.receipts.map(receipt => <ReceiptCard room={room} receipt={receipt} own={receipt.memberId === me.id} key={receipt.memberId} />)}</article>}
     </fieldset>
   </Page>;
-  return <Page className="room-page" title={<SelectionOverride key={`${data.user?.uid}:${data.hub}:${room.id}:${room.orderNumber}`} room={room} data={data} language={uiLanguage} />} subtitle={tf('Order #{number} · {phase} · code {code}', { number: room.orderNumber, phase: t(phaseLabel[room.phase]), code: room.code })} onBack={onBack} actions={<span className={`status ${data.online[room.id] ? 'live' : ''}`}>{data.online[room.id] ? t("● Live") : t("Offline")}</span>}>
+  return <Page className="room-page" title={<SelectionOverride key={`${data.user?.uid}:${data.hub}:${room.id}:${room.orderNumber}`} room={room} data={data} language={uiLanguage} />} subtitle={tf('Order #{number} · {phase} · code {code}', { number: room.orderNumber, phase: t(phaseLabel[room.phase]), code: room.code })} onBack={onBack}>
     {removalTarget && <GroupSheet title={tx(`Remove ${removalTarget.name}?`,`حذف ${removalTarget.name}؟`)} busy={data.busy} onClose={() => setRefusedRemoval('')} tx={tx}><p>{tx('They declined ordering duty. Removing them also removes their food from this order. No note is required.','اعتذر هذا الشخص عن تنفيذ الطلب. سيُحذف من الغرفة مع أصنافه في هذا الطلب، دون الحاجة إلى ملاحظة.')}</p>{data.error && <p role="alert">{data.error}</p>}<button className="primary" disabled={data.busy} onClick={async () => { const result=await data.send('REMOVE',{memberId:removalTarget.id},room.id); if(result) setRefusedRemoval(''); }}>{tx('Remove from room','حذف من الغرفة')}</button><button className="secondary" disabled={data.busy} onClick={() => setRefusedRemoval('')}>{t('Cancel')}</button></GroupSheet>}
     {room.autoArchivedAt > 0 && <article className="card"><h2>{t('Archived after 24 hours')}</h2><p>{t('Unpaid balances and pending payments remain due. You can still pay, confirm receipt and send payment reminders.')}</p></article>}
     <RoomJoinTimer room={room} serverTime={reply.serverTime} />

@@ -615,3 +615,29 @@ html[dir=rtl] .top-actions,html[dir=rtl] .hero-actions { flex-direction:row; }
 
 .record-payment>summary{font-size:.8rem;color:var(--muted);font-weight:500;text-decoration:underline;padding-block:10px}.record-payment[open]>summary{color:var(--green)}
 .record-payment-form>.field-help{grid-column:1/-1;margin:0}
+
+.language-code{display:none}
+@media(max-width:640px){
+ .app-shell>.topbar{height:60px;min-height:60px;padding-block:6px;flex-wrap:nowrap;justify-content:space-between;gap:4px}
+ .app-shell>.topbar .wordmark{min-height:44px;display:flex;align-items:center;flex:0 0 auto}
+ .app-shell>.topbar .brand-logo{font-size:1rem;gap:5px}.app-shell>.topbar .brand-logo>img{width:25px;height:30px}
+ .app-shell>.topbar .top-actions{width:auto;flex-wrap:nowrap;gap:4px;flex:0 0 auto}
+ .app-shell>.topbar .guide-link,.app-shell>.topbar .icon-button,.app-shell>.topbar .profile-chip{min-width:44px;min-height:44px;padding:4px;justify-content:center}
+ .app-shell>.topbar .profile-chip>span:not(.avatar){display:none}.app-shell>.topbar .avatar.small{width:32px;height:32px}
+ .topbar .language-picker-compact{width:44px;height:44px;min-width:44px;align-self:center;overflow:hidden}
+ .topbar .language-picker-compact>svg:first-child{width:14px;height:14px;left:6px}
+ .topbar .language-picker-compact .language-code{display:block;position:absolute;left:24px;font-size:10px;font-weight:700;pointer-events:none}
+ .topbar .language-picker-compact select{position:absolute;inset:0;opacity:0;width:44px;min-width:0;min-height:44px;padding:0!important}
+ .topbar .language-picker-compact .language-chevron{display:none}
+ .app-shell>.page-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-block:4px;margin-block:6px;max-width:none}
+ .app-shell>.page-heading h1{flex:1;min-width:0;font-size:1.1rem;line-height:1.4;margin:0}
+ .app-shell>.page-heading>p{display:none}.app-shell>.page-heading>.back{min-height:44px;margin:0;font-size:.8rem;padding-inline:4px}
+ .app-shell>.profile-shortcuts{display:none}.wallet-dashboard>.section-title{margin:4px 0 8px}.wallet-dashboard>.section-title h2{font-size:1.05rem;line-height:1.4}
+ .wallet-overview>button{padding:8px}.wallet-overview small{font-size:.68rem;line-height:1.4}
+ .wallet-tabs-slot .wallet-section-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;padding:4px}
+ .wallet-tabs-slot .wallet-section-tabs button{min-width:0;padding:6px 3px;font-size:.7rem;line-height:1.5;white-space:normal}
+ .home-page>.continue-order{padding:12px;margin-block:6px 10px;gap:10px}.home-page>.continue-order h3{font-size:1rem;margin:0}.home-page>.continue-order p{font-size:.8rem;margin:2px 0}.home-page>.continue-order .eyebrow{display:none}.home-page>.continue-order button{padding:10px;min-height:44px;font-size:.8rem}
+ .home-page>.home-banner{padding:12px;border-radius:18px;margin-block:8px}.home-page .home-banner-main{display:block}.home-page .home-banner-copy>h2,.home-page .home-banner-copy>.eyebrow,.home-page .home-banner-description,.home-page .home-banner-visual,.home-page .home-banner-bottom{display:none}
+ .home-page .home-banner-actions{gap:8px;flex-wrap:nowrap}.home-page .home-banner-actions button{flex:1;min-width:0;min-height:44px;padding:10px;font-size:.85rem}.home-page .home-banner-actions .primary svg{display:none}
+ .home-page .home-shortcuts{gap:6px}.home-page .home-shortcut{padding:10px;min-height:54px}.home-page .home-shortcut small{display:none}
+}

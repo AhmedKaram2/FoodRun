@@ -51,6 +51,7 @@ import RoomFood from "./src/components/RoomFood";
 import RoomOrderDock from "./src/components/RoomOrderDock";
 import RoomPayments from "./src/components/RoomPayments";
 import WalletScreen from "./src/screens/WalletScreen";
+import HomeScreen from "./src/screens/HomeScreen";
 import FriendsScreen from "./src/screens/FriendsScreen";
 import AuthScreen from "./src/screens/AuthScreen";
 import NativeTabBar from './src/components/NativeTabBar';
@@ -315,6 +316,8 @@ function Application() {
       >
         {state.page === "QUICK_SPIN" ? (
           <QuickWheel key={snapshot.accountId} state={snapshot.quick} rtl={rtl} />
+        ) : state.page === "HOME" && snapshot.authenticated ? (
+          <HomeScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : guided.kind && guided.screen ? (
           <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
         ) : state.page === "NOTIFICATIONS" ? (

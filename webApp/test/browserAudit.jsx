@@ -1450,3 +1450,33 @@ export async function runPaymentApprovalAudit() {
   assert(!host.querySelector('.record-payment') && !host.querySelector('.payment-actions .hero-actions .primary'),'Sender can approve their own report');
   return {passed:true,width:innerWidth,language:getLanguage(),checks:['small manual receipt option','separate command and target','reported amount approval','no duplicate record action','collector only']};
 }
+
+export async function runCompactHeaderAudit() {
+  const mobile=innerWidth<=640;
+  await mountAudit('home');
+  let header=host.querySelector('.topbar');
+  assert(!measureAudit().overflow,'Home header overflows');
+  assert(header.querySelector('.language-picker select').options.length===4,'Compact language control loses language choices');
+  assert(header.querySelector('.profile-chip .avatar')?.getClientRects().length,'Profile photo shortcut is hidden');
+  if(mobile){
+    assert(header.getBoundingClientRect().height<=64,'Mobile top bar still takes two rows');
+    assert(host.querySelector('.home-banner-actions .primary').getBoundingClientRect().bottom<innerHeight,'Create room remains below the fold');
+  }
+  await mountAudit('profile');
+  const heading=host.querySelector('.page-heading');
+  const walletTabs=host.querySelector('.wallet-section-tabs');
+  if(mobile){
+    assert(heading.getBoundingClientRect().height<=60,'Profile heading still wastes vertical space');
+    assert(getComputedStyle(heading.querySelector('p:last-child')).display==='none','Repeated profile description remains visible');
+    assert(Number.parseFloat(getComputedStyle(heading.querySelector('h1')).fontSize)<=20,'Profile title is too large');
+    const parent=walletTabs.getBoundingClientRect();
+    for(const button of walletTabs.querySelectorAll('button')){
+      const box=button.getBoundingClientRect();assert(box.left>=parent.left-1 && box.right<=parent.right+1,'Wallet tab requires horizontal scrolling');
+    }
+  }
+  assert(!measureAudit().overflow,'Profile layout overflows');
+  await mountAudit('room','LOBBY');
+  assert(!host.querySelector('.topbar .status'),'Connection status still occupies the top bar');
+  assert(!measureAudit().overflow,'Room header overflows');
+  return {passed:true,width:innerWidth,language:getLanguage(),checks:['single-row mobile header','all language choices','compact profile title','description hidden on phone','all wallet tabs visible','room status removed','no overflow']};
+}

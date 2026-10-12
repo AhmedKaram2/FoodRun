@@ -15,6 +15,7 @@ import { NotificationCenter, ProfileScreen, LibraryScreen } from "../src/screens
 import AuthScreen from '../src/screens/AuthScreen';
 import NativeTabBar from '../src/components/NativeTabBar';
 import RoomPayments from '../src/components/RoomPayments';
+import HomeScreen from '../src/screens/HomeScreen';
 import {Platform} from 'react-native';
 jest.mock("../src/native", () => ({
   native: {
@@ -165,7 +166,7 @@ test("restaurant card opens management sheet without changing rooms until explic
 });
 test("bottom navigation opens Home Rooms Wallet Profile and More", async () => {
   const view = render(<App />);
-  await view.findByText("Food is better");
+  await view.findByText("Ready to order?");
   fireEvent.press(view.getByLabelText("FoodRun Home"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_HOME", "");
   fireEvent.press(view.getByText("Rooms"));
@@ -195,23 +196,51 @@ test("Arabic snapshot renders Arabic navigation and returns to English", async (
   fireEvent.press(view.getByText("English"));
   expect(native.dispatch).toHaveBeenLastCalledWith("SET_LANGUAGE", "en");
 });
-test("home highlights keep working create, join, menus and profile actions", async () => {
-  const value = snapshot({profile:{name:"My name",photo:"https://example.test/photo.jpg"}});
+test("compact Home keeps create join menus and profile actions reachable", async () => {
+  const value = snapshot({profile:{name:"My name",photo:"https://example.test/photo.jpg"},primaryAction:action("Create a room","CREATE"),inlineButtons:[action("Join a room","JOIN"),action("Menus","OPEN_LIBRARY")]});
   (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
   const view = render(<App />);
-  await view.findByText("Food is better");
+  await view.findByText("Hi, My");
   fireEvent.press(view.getByText("Create a room"));
   expect(native.dispatch).toHaveBeenLastCalledWith("CREATE", "");
   fireEvent.press(view.getByText("Join a room"));
   expect(native.dispatch).toHaveBeenLastCalledWith("JOIN", "");
-  fireEvent.press(view.getByLabelText("Show highlight 2"));
-  expect(view.getByText("Different tastes.")).toBeTruthy();
+  expect(view.queryByTestId("home-carousel")).toBeNull();
   fireEvent.press(view.getByLabelText("Menus"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_LIBRARY", "");
   expect(view.getByText("Create a room")).toBeTruthy();
   expect(view.getByText("Join a room")).toBeTruthy();
   fireEvent.press(view.getByLabelText("My profile"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_PROFILE", "");
+});
+test("Home prioritizes the current order without duplicating it and keeps live invitations and wallet totals",()=>{
+ const create={...action("Create a room","CREATE"),enabled:false},join=action("Join a room","JOIN");
+ const current={...card("continue-order","Continue your order"),detail:"Lunch room",buttons:[action("Continue order","RESUME","lunch")]};
+ const same={...card("session:lunch","Lunch room"),detail:"Choose food",buttons:[action("Open room","RESUME","lunch")]};
+ const other={...card("session:dinner","Dinner room"),buttons:[action("Open room","RESUME","dinner")]};
+ const invite={...card("invitation:invite","Join Friends"),buttons:[action("Join invitation","ACCEPT_INVITE","invite")]};
+ const value=snapshot({profile:{name:"Ahmed Karam",photo:""},primaryAction:create,inlineButtons:[join,action("Menus","OPEN_LIBRARY"),action("Groups","FRIENDS_ACTION","open")],topCards:[current,same,other,invite,card("dashboard:wallet-direction:false","To pay"),{...card("dashboard:wallet-direction:true","To receive"),badge:"AED 20.00"},card("dashboard:wallet:old","Long payment details")]});
+ const view=render(<HomeScreen snapshot={value}/>);
+ expect(view.getAllByText("Lunch room")).toHaveLength(1);
+ fireEvent.press(view.getByLabelText("Continue order · Lunch room"));expect(native.dispatch).toHaveBeenLastCalledWith("RESUME","lunch");
+ native.dispatch.mockClear();fireEvent.press(view.getByText("Create a room"));expect(native.dispatch).not.toHaveBeenCalled();
+ fireEvent.press(view.getByText("Join a room"));expect(native.dispatch).toHaveBeenLastCalledWith("JOIN","");
+ fireEvent.press(view.getByText("Join invitation"));expect(native.dispatch).toHaveBeenLastCalledWith("ACCEPT_INVITE","invite");
+ fireEvent.press(view.getByLabelText("Open room · Dinner room"));expect(native.dispatch).toHaveBeenLastCalledWith("RESUME","dinner");
+ expect(view.getByText("AED 20.00")).toBeTruthy();expect(view.queryByText("Long payment details")).toBeNull();
+ fireEvent.press(view.getByLabelText("Open wallet & payments"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_WALLET","");
+ fireEvent.press(view.getByLabelText("View all rooms"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ROOMS","");
+ fireEvent.press(view.getByLabelText("Groups"));expect(native.dispatch).toHaveBeenLastCalledWith("FRIENDS_ACTION","open");
+ view.rerender(<HomeScreen snapshot={{...value,topCards:[other]}}/>);
+ expect(view.queryByTestId("home-current-order")).toBeNull();expect(view.queryByText("Join Friends")).toBeNull();expect(view.queryByText("AED 20.00")).toBeNull();
+ expect(view.getByText("Dinner room")).toBeTruthy();
+});
+test("Home keeps Arabic empty state and busy actions safe",()=>{
+ const value=snapshot({inlineButtons:[action("دخول غرفة","JOIN")]});value.state={...value.state,rtl:true,online:false,busy:true};
+ const view=render(<HomeScreen snapshot={value}/>);
+ expect(view.getByText(/غير متصل|إنترنت/)).toBeTruthy();
+ expect(view.getByText("أنشئ غرفة أو انضم لغرفة بالأعلى، وستظهر غرفك هنا.")).toBeTruthy();
+ fireEvent.press(view.getByText("دخول غرفة"));fireEvent.press(view.getByLabelText("فتح المحفظة والمدفوعات"));expect(native.dispatch).not.toHaveBeenCalled();
 });
 test("room tabs separate food, payments and members and survive live updates", async () => {
   const value = snapshot();

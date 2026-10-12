@@ -8,6 +8,7 @@ Pods
 .xcode.env.local
 **/.cxx
 .local
+.build
 **/build
 **/node_modules
 **/.env

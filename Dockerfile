@@ -3,6 +3,7 @@ WORKDIR /workspace/webApp
 COPY webApp/package.json webApp/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY webApp/ ./
+COPY Branding/Intrvioo/source/icons.json Branding/Intrvioo/source/illustrations.json /workspace/Branding/Intrvioo/source/
 ARG VITE_FOODRUN_API_URL
 ARG VITE_FOODRUN_HUB_URL
 RUN npm run build

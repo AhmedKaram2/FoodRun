@@ -857,15 +857,34 @@ test("shared countdown advances 1, 2, 3 and stays blocking until the result", ()
 });
 
 test('sign-in shows only credentials and registration adds only a name',()=>{
- const value=snapshot({authenticated:false,mainFields:[field('EMAIL',{value:'user@example.test'}),field('PASSWORD',{value:'fixture-password',secret:true}),field('NAME',{value:'User'}),field('PROFILE_PHONE'),field('AANI',{toggle:true}),field('ACCOUNT_IDENTIFIER')],primaryAction:action('Continue with Google','GOOGLE_SIGN_IN','',true),inlineButtons:[action('Sign in','SIGN_IN'),action('Create account','REGISTER'),action('Reset password','RESET_PASSWORD')]});
+ const value=snapshot({authenticated:false,mainFields:[field('EMAIL',{value:'user@example.test'}),field('PASSWORD',{value:'',secret:true}),field('NAME',{value:'User'}),field('PROFILE_PHONE'),field('AANI',{toggle:true}),field('ACCOUNT_IDENTIFIER')],primaryAction:action('Continue with Google','GOOGLE_SIGN_IN','',true),inlineButtons:[action('Sign in','SIGN_IN'),action('Create account','REGISTER'),action('Reset password','RESET_PASSWORD')]});
  const view=render(<AuthScreen snapshot={value}/>);
  expect(view.getByTestId('EMAIL')).toBeTruthy();expect(view.getByTestId('PASSWORD')).toBeTruthy();
  expect(view.queryByTestId('NAME')).toBeNull();expect(view.queryByTestId('PROFILE_PHONE')).toBeNull();expect(view.queryByTestId('ACCOUNT_IDENTIFIER')).toBeNull();
+ expect(view.getByTestId('action:SIGN_IN:').props.accessibilityState.disabled).toBe(true);
+ fireEvent.changeText(view.getByTestId('PASSWORD'),'fixture-password');
  fireEvent.press(view.getByText('Sign in'));expect(native.dispatch).toHaveBeenLastCalledWith('SIGN_IN','');
  fireEvent.press(view.getByText('New here? Create account'));expect(view.getByTestId('NAME')).toBeTruthy();
  expect(view.queryByTestId('PROFILE_PHONE')).toBeNull();expect(view.queryByTestId('ACCOUNT_IDENTIFIER')).toBeNull();
  fireEvent.press(view.getAllByText('Create account').at(-1)!);expect(native.dispatch).toHaveBeenLastCalledWith('REGISTER','');
  fireEvent.press(view.getByText('Already have an account? Sign in'));expect(view.queryByTestId('NAME')).toBeNull();
+});
+test('password sign-in remains enabled when secure snapshots hide the password',()=>{
+ const value=snapshot({authenticated:false,mainFields:[field('EMAIL',{value:'user@example.test'}),field('PASSWORD',{secret:true})],inlineButtons:[action('Sign in','SIGN_IN')]});
+ const view=render(<AuthScreen snapshot={value}/>);
+ fireEvent.changeText(view.getByTestId('PASSWORD'),'fixture-password');
+ view.rerender(<AuthScreen snapshot={{...value,mainFields:value.mainFields.map(f=>({...f,value:f.key==='PASSWORD' ? '' : f.value}))}}/>);
+ expect(view.getByTestId('action:SIGN_IN:').props.accessibilityState.disabled).toBe(false);
+ fireEvent.press(view.getByText('Sign in'));expect(native.dispatch).toHaveBeenLastCalledWith('SIGN_IN','');
+ fireEvent.changeText(view.getByTestId('PASSWORD'),'');
+ expect(view.getByTestId('action:SIGN_IN:').props.accessibilityState.disabled).toBe(true);
+});
+test('a profile name in the login email field gets clear guidance',()=>{
+ const value=snapshot({authenticated:false,mainFields:[field('EMAIL',{value:'user-name'}),field('PASSWORD',{secret:true})],inlineButtons:[action('Sign in','SIGN_IN')]});
+ const view=render(<AuthScreen snapshot={value}/>);fireEvent.changeText(view.getByTestId('PASSWORD'),'fixture-password');
+ fireEvent.press(view.getByText('Sign in'));
+ expect(view.getByText('Use the email you registered with. Your profile name is not your login email.')).toBeTruthy();
+ expect(native.dispatch).not.toHaveBeenCalledWith('SIGN_IN','');
 });
 
 test.each(['ios','android'] as const)('native %s tab styling keeps all destinations accessible',platform=>{

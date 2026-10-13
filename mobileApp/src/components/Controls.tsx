@@ -136,10 +136,12 @@ export function FieldInput({
   field,
   busy,
   rtl,
+  onEdited,
 }: {
   field: Field;
   busy: boolean;
   rtl: boolean;
+  onEdited?: (value: string) => void;
 }) {
   const [select, setSelect] = useState(false),
     [query, setQuery] = useState(""),
@@ -157,6 +159,7 @@ export function FieldInput({
   const change = (next: string) => {
     if (field.secret) setSecret(next);
     update(field.key, next);
+    onEdited?.(next);
   };
   const isPhoto = ["PHOTO", "ADMIN_PHOTO", "RECEIPT_PHOTO"].includes(field.key);
   const selected = field.choices.find(

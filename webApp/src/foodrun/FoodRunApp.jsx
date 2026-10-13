@@ -396,10 +396,11 @@ function AuthScreen({ ready, allowRegistration = true }) {
       <p className="muted">{t("Use the same account you already use in FoodRun.")}</p>
       <button className="google" disabled={!ready || busy} onClick={() => signInWithPopup(auth, googleProvider).catch(e => setMessage(e.message))}>{t("Continue with Google")}</button>
       <div className="or"><span />{t("or")}<span /></div>
+      <p className="field-help">{tx('Sign in with the email used during registration. Your profile name is shown to other members.','سجّل الدخول ببريد التسجيل. يظهر اسم ملفك للأعضاء الآخرين.')}</p>
       <form onSubmit={submit} className="stack">
         {register && <label>{t("Name")}<input value={name} onChange={e => setName(e.target.value)} required /></label>}
-        <label>{t("Email")}<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-        <label>{t("Password")}<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+        <label>{t("Email")}<input type="email" autoComplete={register ? "email" : "username"} autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+        <label>{t("Password")}<input type="password" autoComplete={register ? "new-password" : "current-password"} minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
         <button className="primary" disabled={!ready || busy}>{busy ? t("One moment…") : register ? t("Create account") : t("Sign in")}</button>
       </form>
       {!register && <button className="link" onClick={reset}>{t("Forgot password?")}</button>}

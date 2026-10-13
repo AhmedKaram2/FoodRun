@@ -58,6 +58,9 @@ test('wallet excludes draft, cancelled and completed orders and handles refunds'
   const data = phase => ({ sessions: { room: { roomId: 'room', memberId: 'me' } }, rooms: { room: { room: { id: 'room', phase, payerId: 'payer', members: [{ id: 'payer', name: 'Payer' }] }, receipts: [receipt] } } });
   for (const phase of ['LOBBY', 'COLLECTING', 'REVIEW', 'CANCELLED', 'ARCHIVED']) assert.equal(userDashboard(data(phase)).toPay, 0);
   assert.equal(userDashboard(data('PLACED')).toPay, 1200);
+  // Arrival closes food ordering while balances continue on Home, Profile and Wallet.
+  assert.equal(userDashboard(data('FULFILLED')).toPay, 1200);
+  assert.equal(userDashboard(data('FULFILLED')).entries[0].amount, 1200);
   const refund = data('FULFILLED'); refund.rooms.room.receipts = [{ ...receipt, balance: -300 }];
   assert.equal(userDashboard(refund).toReceive, 300);
 });

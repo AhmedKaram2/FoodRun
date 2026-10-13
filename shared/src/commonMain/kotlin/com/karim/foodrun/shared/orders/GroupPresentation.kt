@@ -117,7 +117,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 button(tr("Refresh", "تحديث"), GroupAction.REFRESH)
             }
             GroupPage.PEOPLE -> people()
-            GroupPage.CUSTOM_ITEM -> { title = if(c.editingCartLineId == null) "What would you like?" else "Change your item"; subtitle = tr("Add an optional price, or let the creator or selected person fill it in later.", "أدخل السعر إن كنت تعرفه، أو اتركه لمنشئ الغرفة أو الشخص المختار لاحقاً."); field(GroupFieldKey.CUSTOM_NAME, tr("Food item", "الصنف")); field(GroupFieldKey.CUSTOM_UNIT_PRICE, tr("Unit price · optional", "سعر الوحدة · اختياري") + " · ${c.room().restaurant.currency}"); field(GroupFieldKey.QUANTITY, tr("Quantity", "الكمية")); field(GroupFieldKey.NOTE, tr("Notes / extras", "ملاحظات وإضافات")); button(if(c.editingCartLineId == null) "Add to my order" else "Update my order", GroupAction.ADD_CUSTOM_ITEM, primary = true) }
+            GroupPage.CUSTOM_ITEM -> { title = if(c.editingCartLineId == null) "What would you like?" else "Change your item"; subtitle = tr("Add an optional price, or let the creator or selected person fill it in later.", "أدخل السعر إن كنت تعرفه، أو اتركه لمنشئ الغرفة أو الشخص المختار لاحقاً."); field(GroupFieldKey.CUSTOM_NAME, tr("Food item", "الصنف")); field(GroupFieldKey.CUSTOM_UNIT_PRICE, tr("Unit price · optional", "سعر الوحدة · اختياري") + " · ${c.room().restaurant.currency}"); field(GroupFieldKey.QUANTITY, tr("Quantity", "الكمية")); field(GroupFieldKey.NOTE, tr("Notes for the restaurant (optional)", "ملاحظات للمطعم (اختياري)"), multiline = true); button(if(c.editingCartLineId == null) "Add to my order" else "Update my order", GroupAction.ADD_CUSTOM_ITEM, primary = true) }
             GroupPage.PRICE_ITEM -> { title = "Price this item"; subtitle = "Enter the price for one item; quantity is applied automatically."; field(GroupFieldKey.ITEM_UNIT_PRICE, "${ui("Unit price")} · ${c.room().restaurant.currency}"); button("Save price", GroupAction.SAVE_ITEM_PRICE, primary = true) }
             GroupPage.PRICES -> { title = ui("Item prices"); itemPricingCards(c.room()) }
             GroupPage.QUICK_SPIN -> Unit
@@ -200,7 +200,7 @@ internal class GroupPresentation(private val c: GroupController) {
         c.walletAnnouncement.card()?.let { cards += it }
         button(tr("Create a room", "إنشاء غرفة"), GroupAction.CREATE, primary = true); button(tr("Join a room", "الانضمام إلى غرفة"), GroupAction.JOIN)
         c.library.sessions.sortedByDescending { c.library.snapshots[it.roomId]?.room?.createdAt ?: 0L }
-            .firstOrNull { c.library.snapshots[it.roomId]?.room?.phase?.ongoing == true }?.let { session ->
+            .firstOrNull { c.library.snapshots[it.roomId]?.room?.phase?.let { phase -> phase.ongoing && phase != RoomPhase.FULFILLED } == true }?.let { session ->
                 card("continue-order", tr("Continue your order", "أكمل طلبك"), session.roomName,
                     actions = listOf(GroupButton(tr("Continue order", "متابعة الطلب"), GroupAction.RESUME, session.roomId, primary = true)))
             }
@@ -477,7 +477,20 @@ internal class GroupPresentation(private val c: GroupController) {
             }
             val role = if(m.id == r.ownerId) tr("Organizer", "منشئ الغرفة") else if(m.id == c.me()) tr("You", "أنت") else ""
             val connection = if(c.serverNow() - m.lastSeen < 15000) tr("Connected", "متصل") else tr("Away", "غير متصل")
-            card("member:${m.id}", m.name, listOf(role, connection).filter { it.isNotBlank() }.joinToString(" · "), status, actions)
+            val cart = r.carts.firstOrNull { it.memberId == m.id }
+            val order = cart?.let { Billing.lines(r.restaurant, it) }.orEmpty()
+            val editable = r.phase in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING, RoomPhase.ACCEPTING, RoomPhase.COLLECTING) && !r.restaurantPollOpen
+            if(editable && m.id != me.id && m.approved && order.isNotEmpty() && !me.guest && me.participating)
+                actions.add(0, GroupButton(tr("Add this order to mine", "إضافة هذا الطلب إلى طلبي"), GroupAction.REUSE_ORDER, "member|${m.id}", primary = true))
+            val orderStatus = when(r.phase) {
+                RoomPhase.PLACED -> tr("Order sent · waiting for arrival", "تم إرسال الطلب · بانتظار الوصول")
+                RoomPhase.FULFILLED, RoomPhase.ARCHIVED -> tr("Order closed", "تم إغلاق الطلب")
+                RoomPhase.CANCELLED -> tr("Order cancelled", "الطلب ملغى")
+                else -> status
+            }
+            val food = order.joinToString("\n") { "${it.quantity} × ${localizedReceiptDescription(r, it, language)}" + if(it.notes.isNotBlank()) " · ${it.notes}" else "" }
+            val detail = listOf(role, connection, orderStatus, tr("Their order", "طلبه"), food.ifBlank { if(submitted) tr("No food this time", "بدون طعام هذه المرة") else tr("No items added yet", "لم يُضف أصنافاً بعد") }).filter { it.isNotBlank() }.joinToString("\n")
+            card("member:${m.id}", m.name, detail, orderStatus, actions)
         }
         if(owner) r.expectedNames.filter { name -> r.orderingMembers.none { it.name.equals(name.trim(), true) } }.forEach { card("invite:$it", it, "Expected · not participating today", actions = if(r.phase == RoomPhase.LOBBY) listOf(GroupButton(ui("Remove invitation"), GroupAction.REMOVE, "invite:$it")) else emptyList()) }
         if(owner && r.activeMembers.any { it.id != c.me() && !it.guest }) button("Request a user block", GroupAction.OPEN_BLOCK_REQUEST)
@@ -565,6 +578,7 @@ internal class GroupPresentation(private val c: GroupController) {
                 button("Order details", GroupAction.OPEN_RECEIPTS)
             }
             RoomPhase.PLACED, RoomPhase.FULFILLED -> {
+                if(r.paymentRoom == null && r.phase == RoomPhase.FULFILLED) card("order-closed", tr("Food arrived · order closed", "وصل الطعام · تم إغلاق الطلب"), tr("Food ordering is complete. Any unpaid balances or refunds remain here and in Home, Profile and Wallet until settled.", "اكتمل طلب الطعام. تظل الدفعات والمبالغ المرتجعة المتبقية هنا وفي الرئيسية والملف والمحفظة حتى تسويتها."))
                 if(payer) {
                     card("order-summary", r.restaurant.localizedName(language), restaurantReadyText(r, c.reply!!.receipts, language), Money.format(c.reply!!.receipts.sumOf { it.total }, r.restaurant.currency))
                     button(tr("Edit receiving details", "تعديل بيانات الاستلام"), GroupAction.OPEN_ACCOUNT)
@@ -588,6 +602,7 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         val contact = r.restaurant.contact.phoneE164 ?: r.restaurant.contact.whatsappE164 ?: ""
         card("contact", r.restaurant.localizedName(language), "$contact\n${r.restaurant.contact.address ?: ""}\n${r.destination}", actions = (if(owner || payer) listOf(
+            *if(payer && r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)) arrayOf(GroupButton(tr("Share order & close edits", "مشاركة الطلب وإغلاق التعديل"), GroupAction.SHARE_ORDER_WHATSAPP, "lock", primary = true, enabled = c.reply?.progress?.canReview ?: runCatching { RoomRules.requirePlaceable(r) }.isSuccess)) else emptyArray(),
             GroupButton(tr("Share order via WhatsApp", "مشاركة الطلب عبر واتساب"), GroupAction.SHARE_ORDER_WHATSAPP, primary = r.phase in listOf(RoomPhase.COLLECTING, RoomPhase.REVIEW)),
             GroupButton(tr("Copy restaurant-ready list", "نسخ قائمة الطلب للمطعم"), GroupAction.SHARE_RESTAURANT_ORDER),
         ) + restaurantStageActions else emptyList()) + listOf(
@@ -643,7 +658,7 @@ internal class GroupPresentation(private val c: GroupController) {
             val quantity = c.myCart().lines.filter { it.itemId == i.id }.sumOf { it.quantity }
             val actions = if(!i.available) emptyList() else if(simple) listOf(
                 GroupButton(tr("+ Add", "+ إضافة"), GroupAction.QUICK_ADD_ITEM, i.id),
-                GroupButton(tr("Quantity / notes", "الكمية والملاحظات"), GroupAction.OPEN_ITEM, i.id),
+                GroupButton(tr("Add notes / customize", "إضافة ملاحظات وتخصيص الصنف"), GroupAction.OPEN_ITEM, i.id),
             ) else listOf(GroupButton(tr("Choose size / extras", "اختيار الحجم والإضافات"), GroupAction.OPEN_ITEM, i.id))
             val categoryName = r.restaurant.menu.categories.firstOrNull { it.id == i.categoryId }?.localizedName(language).orEmpty()
             val variant = i.variants.firstOrNull()
@@ -709,7 +724,7 @@ internal class GroupPresentation(private val c: GroupController) {
         }
         val preview = runCatching { Billing.lines(r.restaurant, MemberCart(c.me(), lines = listOf(CartLine("preview", i.id, c.text(GroupFieldKey.QUANTITY).toInt(), c.variant, c.options)))).single() }.getOrNull()
         preview?.let { card("item-price", tr("Food subtotal", "إجمالي الطعام"), "${it.quantity} × ${Money.format(it.amount / it.quantity, r.restaurant.currency)}", Money.format(it.amount, r.restaurant.currency)) }
-        field(GroupFieldKey.QUANTITY, tr("Quantity", "الكمية")); field(GroupFieldKey.NOTE, tr("Preparation notes", "ملاحظات التحضير"))
+        field(GroupFieldKey.QUANTITY, tr("Quantity", "الكمية")); field(GroupFieldKey.NOTE, tr("Notes for the restaurant (optional)", "ملاحظات للمطعم (اختياري)"), multiline = true)
         button(if(c.editingCartLineId == null) "Add to my order" else "Update my order", GroupAction.ADD_CART_ITEM, primary = true)
     }
     private fun accounts() {
@@ -886,8 +901,11 @@ internal class GroupPresentation(private val c: GroupController) {
         val parts = CountryDialCodes.split(raw)
         fields += GroupField(GroupFieldKey.ACCOUNT_IDENTIFIER, ui("UAE mobile registered with Aani"), if (parts.first == "AE") parts.second else raw)
     }
-    private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = "Send to") {
-        account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(GroupButton(tr("Copy payment details", "نسخ بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS)) else emptyList()) }
+    private fun accountCard(account: ReceivingAccount? = c.reply?.room?.account, id: String = "account", label: String = tr("Pay to", "ادفع إلى")) {
+        account?.let { a -> card(id, "$label ${a.holder}", "${ui(if(a.method == PaymentMethod.AANI) "Aani · UAE mobile number" else "Bank transfer · IBAN")}\n${a.bank}\n${a.identifier}\n${a.currency}", actions = if(id == "account") listOf(
+            GroupButton(if(a.method == PaymentMethod.AANI) tr("Copy Aani number", "نسخ رقم آني") else tr("Copy IBAN", "نسخ الآيبان"), GroupAction.COPY_PAYMENT_DETAILS),
+            GroupButton(tr("Copy all payment details", "نسخ كل بيانات الدفع"), GroupAction.COPY_PAYMENT_DETAILS, "all"),
+        ) else emptyList()) }
     }
     private fun transferCards() {
         val r = c.reply?.room ?: return
@@ -916,7 +934,7 @@ internal class GroupPresentation(private val c: GroupController) {
         else { field(GroupFieldKey.DELIVERY_FEE, tr("Delivery fee", "رسوم التوصيل")); field(GroupFieldKey.PROPORTIONAL, tr("Split delivery in proportion to food", "تقسيم التوصيل بنسبة قيمة الطعام"), toggle = true) }
         field(GroupFieldKey.SERVICE_FEE, tr("Service fee", "رسوم الخدمة")); field(GroupFieldKey.DISCOUNT, tr("Shared discount", "الخصم المشترك"))
     }
-    private fun stage(phase: RoomPhase): String = when(phase) { RoomPhase.LOBBY -> tr("Gathering", "تجمع الأعضاء"); RoomPhase.PREPARING_SPIN -> tr("Getting ready", "جارٍ الاستعداد"); RoomPhase.SPINNING -> ui("Spinning"); RoomPhase.ACCEPTING -> ui("Accepting duty"); RoomPhase.COLLECTING -> ui("Choose food"); RoomPhase.REVIEW -> ui("Ready for the restaurant"); RoomPhase.PLACED -> tr("Order placed", "تم إرسال الطلب"); RoomPhase.FULFILLED -> tr("Food arrived", "وصل الطعام"); RoomPhase.ARCHIVED -> tr("Complete", "مكتمل"); RoomPhase.CANCELLED -> tr("Cancelled", "ملغى") }
+    private fun stage(phase: RoomPhase): String = when(phase) { RoomPhase.LOBBY -> tr("Gathering", "تجمع الأعضاء"); RoomPhase.PREPARING_SPIN -> tr("Getting ready", "جارٍ الاستعداد"); RoomPhase.SPINNING -> ui("Spinning"); RoomPhase.ACCEPTING -> ui("Accepting duty"); RoomPhase.COLLECTING -> ui("Choose food"); RoomPhase.REVIEW -> ui("Ready for the restaurant"); RoomPhase.PLACED -> tr("Order placed", "تم إرسال الطلب"); RoomPhase.FULFILLED -> tr("Food arrived · order closed", "وصل الطعام · تم إغلاق الطلب"); RoomPhase.ARCHIVED -> tr("Complete", "مكتمل"); RoomPhase.CANCELLED -> tr("Cancelled", "ملغى") }
     private fun timeLabel(millis: Long): String = PickupDateFormatterForGroups.format(millis)
 }
 

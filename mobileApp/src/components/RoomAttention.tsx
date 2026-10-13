@@ -26,13 +26,14 @@ export default function RoomAttention({ snapshot, selected, onOpenTab }: {snapsh
   const globalPayment=[snapshot.primaryAction,...snapshot.inlineButtons,...snapshot.utilityButtons].some(button=>button && needsPaymentAction(button));
   const paymentCount=paymentCards.length || (globalPayment ? 1 : 0);
   const hasFood=cards.some(card=>card.id.startsWith("menu:") && card.buttons.some(button=>button.enabled));
+  const orderConfirmed=cards.some(card=>card.id==="cart-submitted");
   useEffect(()=>{if(!halves.length)setHalvesOpen(false);},[halves.length]);
   if(snapshot.state.page!=="ROOM")return null;
   return <>
     <View pointerEvents="box-none" style={[styles.dock,rtl && {alignItems:"flex-start"}]}>
       {!!halves.length && <Shortcut rtl={rtl} icon="food" urgent label={tx(rtl,"Half available","نصف متاح")} count={halves.length} onPress={()=>setHalvesOpen(true)}/>}
       {!!paymentCount && selected!==2 && <Shortcut rtl={rtl} icon="wallet" urgent label={tx(rtl,"Payment actions","دفعات تنتظرك")} count={paymentCount} onPress={()=>onOpenTab(2)}/>}
-      {hasFood && selected!==1 && <Shortcut rtl={rtl} icon="food" label={tx(rtl,"Choose food","اختر طعامك")} onPress={()=>onOpenTab(1)}/>}
+      {hasFood && selected!==1 && <Shortcut rtl={rtl} icon="food" label={orderConfirmed ? tx(rtl,"Modify order","تعديل الطلب") : tx(rtl,"Choose food","اختر طعامك")} onPress={()=>onOpenTab(1)}/>}
     </View>
     <BottomSheet visible={halvesOpen} title={tx(rtl,"Take another half","اختر النصف الآخر")} rtl={rtl} onClose={()=>setHalvesOpen(false)}>
       <Text style={textStyle(rtl)}>{tx(rtl,"Choose an available half. Your share updates for everyone when accepted.","اختر نصفاً متاحاً. تُحدَّث حصتكم لدى الجميع بعد القبول.")}</Text>

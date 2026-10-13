@@ -48,11 +48,15 @@ import QuickWheel from "./src/screens/QuickWheel";
 import { MoreSheet, NotificationCenter, ProfileScreen, LibraryScreen } from "./src/screens/AccountScreens";
 import RoomTimeline from "./src/components/RoomTimeline";
 import RoomMembers from "./src/components/RoomMembers";
+import NotificationPermissionNotice from "./src/components/NotificationPermissionNotice";
+import WalletTopUpScreen from "./src/screens/WalletTopUpScreen";
 import RoomFood from "./src/components/RoomFood";
 import RoomOrderDock from "./src/components/RoomOrderDock";
+import RoomSettings from "./src/components/RoomSettings";
 import RoomPayments from "./src/components/RoomPayments";
 import WalletScreen from "./src/screens/WalletScreen";
 import HomeScreen from "./src/screens/HomeScreen";
+import AdminScreen from "./src/screens/AdminScreen";
 import FriendsScreen from "./src/screens/FriendsScreen";
 import AuthScreen from "./src/screens/AuthScreen";
 import ScreenTabs, { tabIcon } from "./src/components/ScreenTabs";
@@ -69,6 +73,7 @@ function Application() {
   const content = useRef<ScrollView>(null);
   const roomContext = useRef<Snapshot | null>(null);
   const savedRoomTab = useRef<{key:string;tab:number} | null>(null);
+  const walletTopUpBack=useRef<(()=>boolean)|null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [failure, setFailure] = useState(""),
     [menu, setMenu] = useState(false),
@@ -118,6 +123,7 @@ function Application() {
         dispatch("DISMISS_WALLET_HISTORY");
         return true;
       }
+      if (snapshot?.state.page === "WALLET_TOP_UP" && walletTopUpBack.current?.()) return true;
       if (guided.back()) return true;
       if (snapshot?.state.canGoBack) {
         dispatch("BACK");
@@ -167,6 +173,9 @@ function Application() {
   const fields = snapshot.mainFields.filter(field => !room || roomFieldTab(field) === selected);
   const roomPrimary=room ? roomPrimaryAction(snapshot) : null;
   const detailFields=room ? [...snapshot.mainFields.filter(field=>roomFieldTab(field)===0),...snapshot.extraFields] : [];
+  const shareAndLock=room ? sections.flatMap(section=>section.cards).flatMap(card=>card.buttons).find(button=>button.action==="SHARE_ORDER_WHATSAPP" && button.value==="lock") : undefined;
+  const reopenOrder=room && state.roomPhase === "REVIEW" ? [snapshot.primaryAction,...snapshot.inlineButtons,...snapshot.utilityButtons,...sections.flatMap(section=>section.cards).flatMap(card=>card.buttons)].find(button=>button?.action==="REOPEN") : undefined;
+  const canModifyOrder=room && ["LOBBY","PREPARING_SPIN","SPINNING","ACCEPTING","COLLECTING","REVIEW"].includes(state.roomPhase || "") && sections.some(section=>section.cards.some(card=>card.id.startsWith("menu:")));
   const detailCards=room ? sections.flatMap(section=>section.cards).filter(roomDetailCard) : [];
   const detailActions=room ? [...snapshot.inlineButtons.filter(roomDetailAction),...snapshot.utilityButtons] : [];
   const changeTab = (index: number) => {
@@ -203,7 +212,7 @@ function Application() {
       "OPEN_NOTIFICATION_PREFERENCES",
     ),
     ...(snapshot.adminAvailable
-      ? [action(tx(rtl, "Administration", "الإدارة"), "OPEN_ADMIN")]
+      ? [action(tx(rtl, "Admin panel", "لوحة الإدارة"), "OPEN_ADMIN")]
       : []),
     ...(snapshot.authenticated && !snapshot.supportActive
       ? [
@@ -312,6 +321,7 @@ function Application() {
           </Text>
         </View>
       )}
+      {snapshot.authenticated && !snapshot.supportActive && <NotificationPermissionNotice rtl={rtl} accountId={snapshot.accountId} busy={busy} pushEnabled={snapshot.notificationPushEnabled}/>}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -320,6 +330,8 @@ function Application() {
           <QuickWheel key={snapshot.accountId} state={snapshot.quick} rtl={rtl} />
         ) : state.page === "HOME" && snapshot.authenticated ? (
           <HomeScreen key={snapshot.accountId} snapshot={snapshot}/>
+        ) : state.page === "WALLET_TOP_UP" ? (
+          <WalletTopUpScreen key={snapshot.accountId} snapshot={snapshot} onBackReady={handler=>{walletTopUpBack.current=handler;}}/>
         ) : guided.kind && guided.screen ? (
           <GuidedFlowScreen key={`${snapshot.accountId}:${guided.kind}`} snapshot={guided.screen} kind={guided.kind} step={guided.step} setStep={guided.setStep} run={guided.run} onBack={guided.back} picker={guided.picker}/>
         ) : state.page === "NOTIFICATIONS" ? (
@@ -334,6 +346,8 @@ function Application() {
           <FriendsScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : state.page === "WALLET" && snapshot.authenticated ? (
           <WalletScreen key={snapshot.accountId} snapshot={snapshot}/>
+        ) : ["ADMIN", "ADMIN_USER", "ADMIN_CONFIRM"].includes(state.page) ? (
+          <AdminScreen key={snapshot.accountId} snapshot={snapshot}/>
         ) : (["ITEM", "ACCOUNT", "SELECTION_OVERRIDE", "PAYMENT_SHARE"].includes(state.page) || state.page === "MENU_ENTITY") ? (
           <SelectionScreen snapshot={snapshot} roomTitle={roomContext.current?.accountId === snapshot.accountId ? roomContext.current.state.title : undefined}/>
         ) : (
@@ -351,28 +365,35 @@ function Application() {
                   </View>
                 </Pressable>
               )}
-              <View style={{ flex: 1 }}>
+              <Pressable testID={room ? "room-name" : undefined} accessibilityRole={room ? "header" : undefined} accessibilityLabel={room ? state.title : undefined} style={{ flex: 1, minWidth: 0 }} delayLongPress={800} onLongPress={()=>{if(room && state.canOverrideSelection && !busy)dispatch("OPEN_SELECTION_OVERRIDE");}}>
                 <Text numberOfLines={room ? 1 : undefined} style={[textStyle(rtl, "bold"), ui.title, room && ui.roomTitle]}>
-                  {room ? tx(rtl,"Room","الغرفة") : wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
+                  {room ? state.title : wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
                 </Text>
                 {!!state.subtitle && !room && (
                   <Text style={[textStyle(rtl), ui.subtitle]}>
                     {state.subtitle}
                   </Text>
                 )}
-              </View>
-              {room && !!state.roomCode && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Invite","دعوة")} disabled={busy} onPress={()=>dispatch("SHARE_ROOM")} style={ui.roomInvite}>
+              </Pressable>
+              {room && !!state.roomCode && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Share room","مشاركة الغرفة")} disabled={busy} onPress={()=>dispatch("SHARE_ROOM")} style={ui.roomInvite}>
                 <Text style={[textStyle(rtl,"medium"),{fontSize:11,color:colors.muted}]}>{state.roomCode}</Text>
-                <Text style={[textStyle(rtl,"semibold"),{fontSize:12,color:colors.forest}]}>{tx(rtl,"Invite","دعوة")}</Text>
+                <Text style={[textStyle(rtl,"semibold"),{fontSize:12,color:colors.forest}]}>{tx(rtl,"Share room","مشاركة الغرفة")}</Text>
               </Pressable>}
-              {room && (detailFields.length>0 || detailActions.length>0 || detailCards.length>0) && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Room details & settings","تفاصيل الغرفة والإعدادات")} onPress={()=>setOptions(true)} style={ui.icon}><Icon name="settings" size={20} color={colors.forest}/></Pressable>}
+              {room && <Pressable accessibilityRole="button" accessibilityLabel={tx(rtl,"Room settings","إعدادات الغرفة")} onPress={()=>setOptions(true)} style={ui.roomSettings}>
+                <Icon name="settings" size={18} color={colors.forest}/>
+                <Text style={[textStyle(rtl,"semibold"),{fontSize:11,lineHeight:18,color:colors.forest}]}>{tx(rtl,"Room settings","إعدادات الغرفة")}</Text>
+              </Pressable>}
               {!room && !busy && <Illustration kind={screenIllustration(state.page)} size={52}/>}
               {busy && <ActivityIndicator color={colors.coral} />}
             </View>}
-            {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={state.roomStage || ""} rtl={rtl}/>}
+            {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={sections.some(section=>section.cards.some(card=>card.id==="my-order-complete")) ? tx(rtl,"Your order is complete · waiting for arrival","اكتمل طلبك · بانتظار وصول الطعام") : state.roomStage || ""} rtl={rtl}/>}
             {room && !!state.orderingPerson && <View style={[ui.orderingPerson,rtl && ui.reverse]}>
               <Icon name="profile" size={17} color={colors.forest}/>
               <Text accessibilityLiveRegion="polite" style={[textStyle(rtl,"semibold"),{flex:1,fontSize:13,lineHeight:22,color:colors.forest}]}>{tx(rtl,state.orderingPersonPending ? `Chosen: ${state.orderingPerson}` : `Ordering person: ${state.orderingPerson}`,state.orderingPersonPending ? `تم اختيار: ${state.orderingPerson}` : `مسؤول الطلب: ${state.orderingPerson}`)}</Text>
+            </View>}
+            {room && !!state.orderingPerson && (canModifyOrder || reopenOrder || shareAndLock) && <View style={{marginHorizontal:18,marginBottom:8,gap:8}}>
+              {(canModifyOrder || reopenOrder) && <Pressable accessibilityRole="button" onPress={()=>{if(reopenOrder && !busy) dispatch(reopenOrder.action,"modify");changeTab(1);}} style={{minHeight:44,justifyContent:"center",paddingHorizontal:12,borderRadius:12,backgroundColor:colors.mint}}><Text style={[textStyle(rtl,"semibold"),{color:colors.forest}]}>{tx(rtl,"Modify order","تعديل الطلب")}</Text></Pressable>}
+              {!!shareAndLock && <Button rtl={rtl} busy={busy} action={shareAndLock}/>}
             </View>}
             {(sections.length > 1 ||
               (profileDetails && snapshot.extraFields.length > 0)) && (
@@ -413,7 +434,7 @@ function Application() {
                     rtl={rtl}
                     busy={busy}
                     action={action(
-                      tx(rtl, "Invite", "دعوة"),
+                      tx(rtl, "Share room", "مشاركة الغرفة"),
                       "SHARE_ROOM",
                     )}
                   />
@@ -555,13 +576,8 @@ function Application() {
       <AppUpdateSheet rtl={rtl} paused={!!snapshot.tourAvailable||selectionOpen||menu||languageSheet}/>
       <FirstUseTour key={`tour:${snapshot.accountId}`} visible={!!snapshot.tourAvailable&&snapshot.authenticated&&state.page==='HOME'&&!busy&&!menu&&!languageSheet&&!selectionOpen} rtl={rtl} onComplete={()=>dispatch('COMPLETE_TOUR')}/>
       <MoreSheet snapshot={snapshot} visible={menu} actions={menuActions} onClose={() => setMenu(false)}/>
-      {room && options && <BottomSheet visible title={tx(rtl,"Room details & settings","تفاصيل الغرفة والإعدادات")} rtl={rtl} onClose={()=>setOptions(false)}>
-        <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12}}>
-          <Text style={[textStyle(rtl,"semibold"),{fontSize:14}]}>{state.title}</Text>
-          {detailCards.map(card=><CardView key={card.id} card={card} busy={busy} rtl={rtl}/>)}
-          {detailFields.map(field=><FieldInput key={field.key} field={field} busy={busy} rtl={rtl}/>)}
-          {detailActions.map((button,index)=><Button key={button.action+index} action={button} busy={busy} rtl={rtl}/>)}
-        </ScrollArea>
+      {room && options && <BottomSheet visible title={tx(rtl,"Room settings","إعدادات الغرفة")} rtl={rtl} onClose={()=>setOptions(false)}>
+        <RoomSettings snapshot={snapshot} cards={detailCards} fields={detailFields} actions={detailActions} onExit={()=>{setOptions(false);dispatch("OPEN_ROOMS");}}/>
       </BottomSheet>}
       <BottomSheet visible={languageSheet} title={tx(rtl,"Choose language","اختر اللغة")} rtl={rtl} onClose={() => setLanguageSheet(false)}>
         {languageOptions.map(option => <Button key={option.value} rtl={rtl} busy={busy} action={action(`${(state.language || (rtl ? 'ar-EG' : 'en')) === option.value ? '✓ ' : ''}${option.label}`, 'SET_LANGUAGE', option.value)} onPress={() => { dispatch('SET_LANGUAGE',option.value); setLanguageSheet(false); }}/>) }
@@ -643,11 +659,11 @@ function Application() {
 
         </>}
       </BottomSheet>
-      <BottomSheet visible={!!state.restaurantSendPrompt} title={tx(rtl,"Have you sent the order?","هل أرسلت الطلب للمطعم؟")} rtl={rtl} onClose={() => { if(!busy) dispatch("DISMISS_RESTAURANT_SEND"); }}>
-        <Text style={textStyle(rtl)}>{tx(rtl,"Confirm after sending the list to the restaurant. This locks food changes for everyone.","أكد بعد إرسال القائمة للمطعم. بعد التأكيد لن يتمكن الأعضاء من تعديل الطعام.")}</Text>
+      <BottomSheet visible={!!state.restaurantSendPrompt} title={state.restaurantSendPrompt?.shareAfterConfirm ? tx(rtl,"Share order & close edits","مشاركة الطلب وإغلاق التعديل") : tx(rtl,"Have you sent the order?","هل أرسلت الطلب للمطعم؟")} rtl={rtl} onClose={() => { if(!busy) dispatch("DISMISS_RESTAURANT_SEND"); }}>
+        <Text style={textStyle(rtl)}>{state.restaurantSendPrompt?.shareAfterConfirm ? tx(rtl,"Confirm to close food edits for everyone and open WhatsApp with the final order. Then send it to the restaurant.","أكد لإغلاق تعديل الطعام للجميع وفتح واتساب بالقائمة النهائية، ثم أرسلها للمطعم.") : tx(rtl,"Confirm after sending the list to the restaurant. This locks food changes for everyone.","أكد بعد إرسال القائمة للمطعم. بعد التأكيد لن يتمكن الأعضاء من تعديل الطعام.")}</Text>
         {!!state.restaurantSendPrompt?.blocker && <Text accessibilityRole="alert" style={[textStyle(rtl),{color:colors.danger}]}>{state.restaurantSendPrompt.blocker}</Text>}
         {!!state.error && <Text accessibilityRole="alert" style={[textStyle(rtl),{color:colors.danger}]}>{state.error}</Text>}
-        <Button rtl={rtl} busy={busy} action={{...action(tx(rtl,"Order sent · lock food edits","تم الإرسال · إغلاق تعديل الطعام"),"CONFIRM_RESTAURANT_SEND","",true),enabled:state.restaurantSendPrompt?.canConfirm === true}}/>
+        <Button rtl={rtl} busy={busy} action={{...action((state.restaurantSendPrompt?.shareAfterConfirm ? tx(rtl,"Share order & close edits","مشاركة الطلب وإغلاق التعديل") : tx(rtl,"Order sent · lock food edits","تم الإرسال · إغلاق تعديل الطعام")),"CONFIRM_RESTAURANT_SEND","",true),enabled:state.restaurantSendPrompt?.canConfirm === true}}/>
         <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Copy latest list","نسخ القائمة الحالية"),"SHARE_RESTAURANT_ORDER")}/>
         <Button rtl={rtl} busy={busy} action={action(tx(rtl,"Not sent yet","لم أرسل الطلب بعد"),"DISMISS_RESTAURANT_SEND")}/>
       </BottomSheet>
@@ -713,6 +729,7 @@ const ui = StyleSheet.create({
   roomHeading: {paddingVertical:4,minHeight:48},
   roomTitle: {fontSize:16,lineHeight:24},
   roomInvite: {minHeight:44,minWidth:64,alignItems:"center",justifyContent:"center",paddingHorizontal:8},
+  roomSettings: {minHeight:44,alignItems:"center",justifyContent:"center",paddingHorizontal:8,borderRadius:12,backgroundColor:colors.mint},
   orderingPerson: {marginHorizontal:16,marginBottom:6,paddingHorizontal:10,paddingVertical:5,borderRadius:10,backgroundColor:colors.mint,flexDirection:"row",alignItems:"center",gap:7},
   subtitle: { fontSize: 12, lineHeight: 20, color: colors.muted },
   content: { padding: 18, gap: 16, paddingBottom: 28 },

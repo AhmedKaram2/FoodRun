@@ -11,7 +11,8 @@ internal object ArabicMenuNames {
     )
     private val items = mapOf(
         "Beans With Corn Oil Dish" to "طبق فول بزيت الذرة",
-        "Beans With Oil (Spicy And Olive)" to "فول بالزيت الحار أو زيت الزيتون",
+        "Beans With Hot Oil Dish" to "فول زيت حار",
+        "Beans With Olive Oil Dish" to "فول زيت زيتون",
         "Beans With Ghee Dish" to "طبق فول بالسمن",
         "Beans With Sauce Dish" to "طبق فول بالصلصة",
         "Beans With Alexandrian Sauce Dish" to "طبق فول إسكندراني",
@@ -47,7 +48,9 @@ internal object ArabicMenuNames {
         "Mixed" to "مشكل",
         "Saroukh" to "صاروخ",
         "Beans With Corn Oil" to "فول بزيت الذرة",
-        "Beans With Oil (Hot - Olive)" to "فول بالزيت الحار أو زيت الزيتون",
+        "Beans With Hot Oil" to "فول زيت حار",
+        "Beans With Olive Oil" to "فول زيت زيتون",
+        "Romy Cheese With Cucumber And Tomato" to "جبنة رومي خيار وطماطم",
         "Alexandrian Fava Bean" to "فول إسكندراني",
         "Beans With Sausage" to "فول بالسجق",
         "Beans With Sauce" to "فول بالصلصة",

@@ -9,6 +9,26 @@ import io.ktor.http.*
 import io.ktor.server.testing.*
 
 class AdminServiceTest {
+    @Test fun sultanSavedCatalogIsUpdatedOnceWithoutReplacingOperatorPrices() {
+        val directory = Files.createTempDirectory("foodrun-sultan-menu").toFile()
+        RoomDatabase(directory).use { db ->
+            val current = BuiltInRestaurants.sultan.restaurant
+            val old = current.copy(menu = current.menu.copy(items = current.menu.items
+                .filterNot { it.id in listOf("builtin-sultan-item-0-28", "builtin-sultan-item-1-37", "builtin-sultan-item-1-38") }
+                .map { if(it.id == "builtin-sultan-item-1-10") it.copy(name = "Beans With Oil (Hot - Olive)", basePriceMinor = 700) else it }))
+            db.putRecord(AdminService.RESTAURANTS, orderJson.encodeToString(listOf(old)))
+            val admin = AdminService(db, RoomService(db))
+            val updated = admin.catalog().single()
+            assertEquals(700, updated.menu.items.single { it.id == "builtin-sultan-item-1-37" }.basePriceMinor)
+            assertEquals(600, updated.menu.items.single { it.id == "builtin-sultan-item-1-38" }.basePriceMinor)
+            val edited = updated.copy(menu = updated.menu.copy(items = updated.menu.items.map {
+                if(it.id == "builtin-sultan-item-1-10") it.copy(name = "Operator hot oil label") else it
+            }))
+            admin.mutateRestaurant(AdminRestaurantMutation(restaurant = edited))
+            assertEquals(edited, AdminService(db, RoomService(db)).catalog().single())
+        }
+        directory.deleteRecursively()
+    }
     private class AdminIdentityProvider : IdentityProvider {
         var identity = CloudIdentity("admin", "valid-token", email = AdminService.ADMIN_EMAIL, emailVerified = true)
         override fun exchange(idToken: String): CloudIdentity { require(idToken == "valid-token"); return identity }

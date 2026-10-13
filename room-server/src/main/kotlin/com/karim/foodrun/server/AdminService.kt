@@ -48,7 +48,18 @@ class AdminService(
     }
     fun catalog(): List<Restaurant> = synchronized(rooms) { catalogUnlocked() }
     fun catalogPayload(): RestaurantCatalogPayload = synchronized(rooms) { RestaurantCatalogPayload(catalogUnlocked(), deletedRestaurantIds(db)) }
-    private fun catalogUnlocked(): List<Restaurant> = db.record(RESTAURANTS)?.let { orderJson.decodeFromString(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
+    private fun catalogUnlocked(): List<Restaurant> {
+        val saved = db.record(RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) }
+        val current = saved ?: BuiltInRestaurants.all.map { it.restaurant }
+        val migration = "catalog:sultan-oil-split-v1"
+        if(db.record(migration) != null) return current
+        val updated = current.map(SultanMenuUpdate::apply)
+        db.transaction {
+            if(saved != null) db.putRecord(RESTAURANTS, orderJson.encodeToString(updated))
+            db.putRecord(migration, "done")
+        }
+        return updated
+    }
     fun contributeRestaurant(change: CatalogRestaurantMutation): RestaurantCatalogPayload = synchronized(rooms) {
         val actorId = rooms.catalogContributor(change.identityToken, change.roomId, change.roomToken)
         val saved = change.restaurant.also(MenuValidation::validate)

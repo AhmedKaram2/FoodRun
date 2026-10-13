@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
     val inlineButtons: List<GroupButton>, val utilityButtons: List<GroupButton>, val quick: ReactQuickWheel, val profile: ReactProfile? = null,
     val notificationUnread: Int = 0, val tourAvailable: Boolean = false,
     val quickSelection: QuickChoiceSession? = null, val quickSelectionOffset: Long = 0,
+    val notificationPushEnabled: Boolean = true,
 )
 @Serializable data class ReactProfile(val name: String, val photo: String)
 @Serializable data class ReactWheelPerson(val id: String, val name: String, val active: Boolean, val removable: Boolean = true)
@@ -31,7 +32,7 @@ class GroupReactBridge(val groups: GroupController) {
         val quick = quickChoice
         val quickGroups = groups.library.home?.quickChoiceGroups().orEmpty()
         return viewJson.encodeToString(ReactGroupScreen(
-            state.copy(fields = state.fields.map(::field)),groups.administration.allowed,groups.supportActive,groups.library.home?.profile?.userId.orEmpty(), groups.library.identityToken.isNotEmpty(),
+            state.copy(fields = state.fields.map(::field)),groups.administration.verifiedAccess,groups.supportActive,groups.library.home?.profile?.userId.orEmpty(), groups.library.identityToken.isNotEmpty(),
             state.mainFields.map(::field),state.extraFields.map(::field),state.topCards,state.sections,state.primaryAction,state.inlineButtons,state.utilityButtons,
             ReactQuickWheel(quick.people.map { ReactWheelPerson(it.id,it.name,it.active) },
                 emptyList(),"",groups.quickChoiceBusy,quick.canSpin && !groups.quickChoiceBusy,
@@ -42,6 +43,7 @@ class GroupReactBridge(val groups: GroupController) {
             if(groups.library.identityToken.isNotEmpty()) groups.notifications.items.count { !it.read } else 0,
             groups.library.identityToken.isNotEmpty() && !groups.supportActive && !groups.notifications.tourCompleted,
             groups.quickSelection.takeIf { groups.library.identityToken.isNotEmpty() },groups.quickSelectionOffset,
+            groups.library.home?.notificationPreferences?.pushEnabled != false,
         ))
     }
     fun dispatch(action: String, value: String) {

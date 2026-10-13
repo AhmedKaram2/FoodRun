@@ -6,7 +6,7 @@ export const isRoom = (page: string) => page === "ROOM";
 // Group by stable card IDs so language changes and live updates keep the same tabs.
 export function roomCardTab(card: Card): number {
   if (/^(menu:|menu-empty$|cart:|cart-submitted$|half-item:|reuse-favorite:|reuse-past:|price:|early-order$|pricing-help$|estimate$)/.test(card.id)) return 1;
-  if (/^(wallet|transfer:|receipt:|quote:|account$|restaurant-balance$|my-payment-status$|settlement-)/.test(card.id)) return 2;
+  if (/^(wallet|transfer:|receipt:|quote:|account$|restaurant-balance$|my-payment-status$|my-order-complete$|settlement-)/.test(card.id)) return 2;
   if (/^(member:|invite:|pending-join$)/.test(card.id)) return 3;
   return 0;
 }
@@ -37,5 +37,5 @@ export function roomPrimaryAction(snapshot:Snapshot):Action|null {
   const primary=snapshot.primaryAction;
   if(!primary || primary.action==="SUBMIT_CART")return null;
   // Preserve the server's readiness and action; only clarify the visible label.
-  return primary.action==="PREPARE_SPIN" ? {...primary,title:tx(snapshot.state.rtl,"Start wheel","ابدأ العجلة")} : primary;
+  return primary.action==="PREPARE_SPIN" ? {...primary,title:tx(snapshot.state.rtl,"Start choosing the ordering person","بدء اختيار مسؤول الطلب")} : primary;
 }

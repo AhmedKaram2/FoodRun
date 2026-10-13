@@ -3,6 +3,23 @@ package com.karim.foodrun.orders
 import kotlin.test.*
 
 class BuiltInRestaurantsTest {
+    @Test fun sultanOilEntriesAreSeparateAndNewCheeseCostsOneDirhamMore() {
+        val restaurant = BuiltInRestaurants.sultan.restaurant
+        val items = restaurant.menu.items
+        assertEquals("فول زيت حار", items.single { it.id == "builtin-sultan-item-1-10" }.nameAr)
+        assertEquals(500, items.single { it.id == "builtin-sultan-item-1-37" }.basePriceMinor)
+        assertEquals(listOf(900L, 1100L), items.single { it.id == "builtin-sultan-item-0-28" }.variants.map { it.priceMinor })
+        assertEquals(items.single { it.id == "builtin-sultan-item-1-24" }.basePriceMinor + 100,
+            items.single { it.nameAr == "جبنة رومي خيار وطماطم" }.basePriceMinor)
+        assertFalse(items.any { it.name.contains("Hot - Olive") || it.name.contains("Spicy And Olive") })
+        val old = restaurant.copy(menu = restaurant.menu.copy(items = items.filterNot { it.id in listOf("builtin-sultan-item-0-28", "builtin-sultan-item-1-37", "builtin-sultan-item-1-38") }.map {
+            if(it.id == "builtin-sultan-item-1-10") it.copy(basePriceMinor = 700) else it
+        }))
+        val migrated = SultanMenuUpdate.apply(old)
+        assertEquals(700, migrated.menu.items.single { it.id == "builtin-sultan-item-1-37" }.basePriceMinor)
+        assertEquals(migrated, SultanMenuUpdate.apply(migrated))
+        MenuValidation.validate(migrated)
+    }
     @Test fun photographedMenusAreValidAndKeepTheRequestedPriceRules() {
         BuiltInRestaurants.all.forEach { MenuValidation.validate(it.restaurant) }
         assertEquals(43, BuiltInRestaurants.all.size)

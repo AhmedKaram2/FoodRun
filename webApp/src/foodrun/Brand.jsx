@@ -4,8 +4,8 @@ export function BrandMark() {
 }
 
 export function BrandLogo({ className = '' }) {
-  return <span className={`brand-logo ${className}`} dir="ltr" aria-label="Intrvioo">
-    <BrandMark /><span>Intrvi<span className="brand-logo-accent">oo</span></span>
+  return <span className={`brand-logo ${className}`} dir="ltr" aria-label="FoodRun">
+    <BrandMark /><span>FoodRun<span className="brand-logo-accent">●</span></span>
   </span>;
 }
 

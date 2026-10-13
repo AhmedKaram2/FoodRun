@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { halfItemCartLines, halfItemsOpen, portionQuantity } from '../src/foodrun/halfItems.js';
+import { halfItemCartLines, halfItemsOpen, portionQuantity, removeHalfItem } from '../src/foodrun/halfItems.js';
 import { groupedOrderLines, restaurantOrderText } from '../src/foodrun/restaurantOrderText.js';
 import { addMenuLine } from '../src/foodrun/cartEditing.js';
 
@@ -46,4 +46,38 @@ test('offers close at totals, order placement and the deadline', () => {
 test('adding another of the same item keeps an existing half offer intact', () => {
   const result = addMenuLine([{ ...line, halfOffered: true }], { ...line, id: 'new' });
   assert.equal(result.length, 2); assert.equal(result[0].quantity, 1);
+});
+
+test('requester deletion cancels pending or accepted halves before removing at the new cart revision', async () => {
+  for (const acceptedById of [null, 'two']) {
+    const currentRoom = { ...room, id: 'room', halfItemOffers: room.halfItemOffers.map(offer => ({ ...offer, acceptedById })) };
+    const cart = { memberId: 'one', revision: 4, lines: [line] };
+    const extra = { ...line, id: 'new-live-item' };
+    const commands = [];
+    const send = async (kind, fields, roomId) => {
+      commands.push({ kind, fields, roomId });
+      return kind === 'CANCEL_HALF_ITEM' ? { ok: true, room: { carts: [{ ...cart, revision: 7, lines: [line, extra] }] } } : { ok: true };
+    };
+    assert.equal((await removeHalfItem(currentRoom, cart, line, send)).ok, true);
+    assert.deepEqual(commands.map(command => command.kind), ['CANCEL_HALF_ITEM', 'CART']);
+    assert.equal(commands[0].fields.text, 'offer');
+    assert.equal(commands[1].fields.expectedRevision, 7);
+    assert.deepEqual(commands[1].fields.cart.lines, [extra]);
+    assert.equal(commands[1].roomId, 'room');
+  }
+});
+
+test('recipient deletion releases only their half and failed cancellation never edits the cart', async () => {
+  const commands = [];
+  const send = async kind => { commands.push(kind); return { ok: true }; };
+  const cart = { memberId: 'two', lines: [] };
+  const received = halfItemCartLines(room, cart)[0];
+  await removeHalfItem(room, cart, received, send);
+  assert.deepEqual(commands, ['CANCEL_HALF_ITEM']);
+  commands.length = 0;
+  await removeHalfItem(room, { memberId: 'one', lines: [line] }, line, async kind => { commands.push(kind); return null; });
+  assert.deepEqual(commands, ['CANCEL_HALF_ITEM']);
+  commands.length = 0;
+  await removeHalfItem({ ...room, phase: 'PLACED' }, cart, received, send);
+  assert.deepEqual(commands, []);
 });

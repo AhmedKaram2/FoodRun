@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UserNotifications
 import React
 import FoodRunShared
 
@@ -31,6 +32,23 @@ final class FoodRunReactModule: RCTEventEmitter, GroupObserver, UIImagePickerCon
     func changed(state: GroupState) { emit() }
     private func emit() { if listening { sendEvent(withName:"FoodRunState",body:runtime.viewBridge.snapshotJson()) } }
     @objc func getSnapshot(_ resolve: RCTPromiseResolveBlock,rejecter reject: RCTPromiseRejectBlock) { resolve(runtime.viewBridge.snapshotJson()) }
+    @objc func getNotificationPermission(_ resolve: @escaping RCTPromiseResolveBlock,rejecter reject: RCTPromiseRejectBlock) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let status: String
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral: status = "enabled"
+            case .notDetermined: status = "notDetermined"
+            default: status = "disabled"
+            }
+            resolve(status)
+        }
+    }
+    @objc func openNotificationSettings(_ resolve: @escaping RCTPromiseResolveBlock,rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { reject("NOTIFICATIONS", "Could not open notification settings.", nil); return }
+        UIApplication.shared.open(url) { opened in
+            if opened { resolve(nil) } else { reject("NOTIFICATIONS", "Could not open notification settings.", nil) }
+        }
+    }
     @objc func dispatch(_ action: String,value: String) { runtime.viewBridge.dispatch(action:action,value:value) }
     @objc func update(_ key: String,value: String) { runtime.viewBridge.update(key:key,value:value) }
     @objc func tick() { runtime.viewBridge.tick() }

@@ -13,7 +13,7 @@ export default function HowToUse({ language, onBack }) {
   useEffect(() => { if (screen) dialog.current?.showModal(); else dialog.current?.close(); }, [screen]);
   useEffect(() => {
     const previous = document.title;
-    document.title = `${t('How to use Intrvioo',language)} | FoodRun`;
+    document.title = `${t('How to use FoodRun',language)} | FoodRun`;
     return () => { document.title = previous; };
   }, [language]);
   useEffect(() => { setScreen(null); }, [language]);
@@ -25,7 +25,7 @@ export default function HowToUse({ language, onBack }) {
     document.getElementById(id)?.scrollIntoView({ block: 'start' });
   };
   const imagePath = section => `/guide/${language.startsWith('ar') ? 'ar' : 'en'}/${section.screen}.webp`;
-  return <Page title={t('How to use Intrvioo',language)} onBack={onBack}>
+  return <Page title={t('How to use FoodRun',language)} onBack={onBack}>
     <div className="guide-page" dir={language.startsWith('ar') ? 'rtl' : 'ltr'}>
       <section className="guide-hero">
         <div className="guide-hero-main">

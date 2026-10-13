@@ -114,6 +114,10 @@ internal class GroupSettlementPresentation(private val c: GroupController) {
         val pending = r.transfers.filter { it.status == TransferStatus.DECLARED }
         val ownPending = pending.firstOrNull { it.memberId == me }
         val ownReceipt = receipts.firstOrNull { it.memberId == me }
+        if(r.paymentRoom == null && r.phase == RoomPhase.PLACED && ownReceipt != null && ownReceipt.lines.isNotEmpty() && (ownReceipt.balance == 0L || ownPending?.takeIf { !it.refund }?.amount?.let { it >= ownReceipt.balance } == true)) {
+            cards += GroupCard("my-order-complete", tr("Your order is complete · waiting for arrival", "اكتمل طلبك · بانتظار وصول الطعام"),
+                if(ownPending != null) tr("Your payment is recorded and awaiting recipient confirmation. You can wait for the food; do not pay again.", "سُجلت دفعتك وبانتظار تأكيد المستلم. انتظر وصول الطعام ولا تدفع مرة أخرى.") else tr("Your share is settled. We will show you when the food arrives.", "تمت تسوية حصتك. سنخبرك عند وصول الطعام."))
+        }
         cards += walletCards()
         cards += c.walletFunds.roomCards(r)
         cards += GroupCard("placed", if (r.restaurantPaid) tr("Restaurant payment confirmed", "تم تأكيد دفع المطعم") else tr("Restaurant payment pending", "بانتظار دفع المطعم"), r.restaurantReference)

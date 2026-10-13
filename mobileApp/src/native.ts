@@ -2,6 +2,8 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 import type { Snapshot } from "./types";
 export const native = NativeModules.FoodRun as {
   getSnapshot(): Promise<string>;
+  getNotificationPermission?(): Promise<string>;
+  openNotificationSettings?(): Promise<void>;
   checkAppUpdate?(): Promise<string>;
   startAppUpdate?(): Promise<string>;
   getAppUpdateStatus?(): Promise<string>;

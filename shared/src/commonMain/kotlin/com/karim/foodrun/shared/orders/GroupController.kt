@@ -243,6 +243,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
                 require(value in listOf("en", "ar", "ar-EG", "ar-AE", "ar-001")) { "Choose a supported language." }
+                draft.remove(GroupFieldKey.ORDER_COPY_LANGUAGE)
                 replaceLibrary(library.copy(language = value, languagePreference = value))
             }
             GroupAction.GOOGLE_SIGN_IN -> {
@@ -398,15 +399,21 @@ class GroupController(val platform: GroupPlatform) {
                 restaurantSend.open()
             }
             GroupAction.SHARE_ORDER_WHATSAPP -> {
-                val number = restaurantWhatsAppNumber(room().restaurant)
-                platform.openLink("https://wa.me/$number?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
-                restaurantSend.open()
+                if(value == "lock") restaurantSend.open(shareAfterConfirm = true)
+                else {
+                    val number = restaurantWhatsAppNumber(room().restaurant)
+                    platform.openLink("https://wa.me/$number?text=${queryEncode(GroupPresentation(this).restaurantOrderText())}")
+                    restaurantSend.open()
+                }
             }
             GroupAction.COPY_RESTAURANT_PHONE -> platform.copyToClipboard(room().restaurant.contact.phoneE164 ?: room().restaurant.contact.whatsappE164 ?: error("Restaurant phone is unavailable."))
             GroupAction.WALLET_PAY, GroupAction.WALLET_REFUND, GroupAction.WALLET_CONFIRM, GroupAction.WALLET_REJECT, GroupAction.WALLET_COPY, GroupAction.WALLET_REMIND_PAYMENT -> walletAction(action, value)
             GroupAction.SHARE_ROOM -> { val s = requireNotNull(session); platform.share(roomInvitation(room(), roomInviteLink(s.hub, room().code), library.language), "") }
             GroupAction.SHARE_RECEIPT -> platform.share(GroupPresentation(this).receiptText(value), "receipt.txt")
-            GroupAction.COPY_PAYMENT_DETAILS -> platform.copyToClipboard(requireNotNull(room().account) { "Payment details are not shared yet." }.identifier)
+            GroupAction.COPY_PAYMENT_DETAILS -> {
+                val account = requireNotNull(room().account) { "Payment details are not shared yet." }
+                platform.copyToClipboard(if(value == "all") listOf(account.holder, account.bank, account.identifier, account.currency).joinToString("\n") else account.identifier)
+            }
             GroupAction.USE_REMAINING_AMOUNT -> {
                 val receipt = requireNotNull(reply?.receipts?.firstOrNull { it.memberId == me() })
                 require(receipt.balance > 0 && room().payerId != me()) { "No payment is due." }
@@ -428,7 +435,7 @@ class GroupController(val platform: GroupPlatform) {
         require(result.identityToken.isNotBlank() && result.home != null)
         supportOwner = library; supportDraft = draft.toMap(); supportExpiresAt = platform.now() + 30 * 60_000
         stopHomeWatching(); watching?.cancel(); watching = null; generation++
-        session = null; reply = null; draft.clear(); walletFunds.clear(); notifications.clear(); administration.clear(); paymentReminders.clear(); feedbacks.clear(); selectionOverride.clear()
+        session = null; reply = null; draft.clear(); walletFunds.clear(); notifications.clear(); administration.clear(); paymentReminders.clear(); feedbacks.clear(); selectionOverride.clear(); restaurantSend.clear()
         library = library.copy(identityToken = result.identityToken,identityHub = hub,selectedHub = hub,home = null,sessions = emptyList(),snapshots = emptyMap(),accounts = emptyList(),seenAlerts = emptyList(),pending = null,pendingHub = null)
         acceptHome(requireNotNull(result.home),hub,result.serverTime); page = GroupPage.HOME; busy = false; startHomeWatching(); publish()
     }
@@ -436,7 +443,7 @@ class GroupController(val platform: GroupPlatform) {
         val owner = supportOwner ?: return
         val token = library.identityToken; val hub = library.identityHub
         stopHomeWatching(); watching?.cancel(); watching = null; generation++
-        session = null; reply = null; walletFunds.clear(); notifications.clear(); administration.clear(); paymentReminders.clear(); feedbacks.clear(); selectionOverride.clear()
+        session = null; reply = null; walletFunds.clear(); notifications.clear(); administration.clear(); paymentReminders.clear(); feedbacks.clear(); selectionOverride.clear(); restaurantSend.clear()
         supportOwner = null; library = owner; draft.clear(); draft.putAll(supportDraft); supportDraft = emptyMap(); supportExpiresAt = 0
         page = GroupPage.HOME; busy = false; error = ""; startHomeWatching(); publish()
         if(hub != null) platform.request(hub,encodeCommand(RoomCommand(commandId = platform.uuid(),kind = CommandKind.IDENTITY,identityToken = token,identity = IdentityRequest(IdentityAction.SIGN_OUT))),object : GroupReplyCallback { override fun complete(body: String,error: String) = Unit })
@@ -647,6 +654,7 @@ class GroupController(val platform: GroupPlatform) {
                     friends.accept(next, outgoing)
                     if(next.room != null) accept(next, sentAt)
                     replaceLibrary(library.copy(pending = null, pendingHub = null))
+                    if(c.kind == CommandKind.PLACE) restaurantSend.afterPlace()
                     if (c.kind == CommandKind.REMIND_PAYMENT) paymentReminders.accept(outgoing, next.code)
                     if (c.kind == CommandKind.ADD_MENU_ITEMS) {
                         val saved = library.home?.restaurants?.firstOrNull { it.id == c.restaurant?.id }
@@ -791,7 +799,7 @@ class GroupController(val platform: GroupPlatform) {
                     val result = decodeReply(body); require(result.ok) { result.error }
                     if(action == IdentityAction.SIGN_OUT) {
                         platform.accountSignedOut()
-                        notifications.clear(); walletFunds.clear(); administration.clear(); selectionOverride.clear(); paymentReminders.clear(); feedbacks.clear(); platform.disablePush()
+                        notifications.clear(); walletFunds.clear(); administration.clear(); selectionOverride.clear(); restaurantSend.clear(); paymentReminders.clear(); feedbacks.clear(); platform.disablePush()
                         stopHomeWatching(); watching?.cancel(); watching = null; generation++
                         session = null; reply = null
                         replaceLibrary(library.copy(identityToken = "", identityHub = null, home = null, sessions = emptyList(), snapshots = emptyMap(), accounts = emptyList(), displayName = ""))
@@ -936,7 +944,7 @@ class GroupController(val platform: GroupPlatform) {
     }
     internal fun pairingLink(hub: HubPairing): String = if (hub.fingerprint.isEmpty()) hub.url else
         "foodrun://pair?host=${hub.url.substringAfter("https://").substringBefore(':')}&port=${hub.url.substringAfterLast(':')}&fingerprint=${hub.fingerprint}"
-    private fun queryEncode(value: String): String = value.encodeToByteArray().joinToString("") { byte ->
+    internal fun queryEncode(value: String): String = value.encodeToByteArray().joinToString("") { byte ->
             val number = byte.toInt() and 0xff
             val character = number.toChar()
             if (character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9' || character in "-._~") character.toString()

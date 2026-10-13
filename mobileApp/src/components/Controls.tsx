@@ -125,6 +125,7 @@ export const action = (
   enabled: true,
 });
 function searchPlaceholder(key: string, rtl: boolean): string | undefined {
+  if (key === "NOTE") return tx(rtl,"e.g. no onions, extra sauce","مثلاً: بدون بصل، صوص إضافي");
   if (key === "RESTAURANT_SEARCH") return tx(rtl,"Name, branch or area · e.g. Ajman","اسم أو منطقة، مثل ممائيش أو عجمان");
   if (["FRIEND_EMAIL", "WALLET_SEARCH"].includes(key)) return tx(rtl,"Name or email · at least 2 characters","الاسم أو البريد الإلكتروني · حرفان على الأقل");
   if (key === "ADMIN_SEARCH") return tx(rtl,"Name, email, room code or keyword","الاسم أو البريد أو رمز الغرفة أو كلمة للبحث");

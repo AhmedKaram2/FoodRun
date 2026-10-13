@@ -110,6 +110,16 @@ internal fun GroupController.removeFavoriteOrder(id: String) {
 internal fun GroupController.reuseOrder(value: String) {
     val currentRoom = room()
     val source = when {
+        value.startsWith("member|") -> {
+            val memberId = value.substringAfter('|')
+            require(currentRoom.activeMembers.any { it.id == memberId }) { "This member is no longer in the room." }
+            require(!currentRoom.restaurantPollOpen) { "Finish the restaurant poll before adding food." }
+            val cart = requireNotNull(currentRoom.carts.firstOrNull { it.memberId == memberId }) { "This member has not added food yet." }
+            require(cart.lines.isNotEmpty()) { "This member has no food in this order." }
+            cart.lines.map { line -> FavoriteOrderLine(itemId = line.itemId, quantity = line.quantity,
+                variantId = line.variantId, optionIds = line.optionIds, notes = line.notes,
+                description = line.description.takeIf { line.itemId.isBlank() }.orEmpty(), label = line.description) }
+        }
         value.startsWith("favorite|") -> {
             val favorite = library.home?.profile?.favoriteOrders?.singleOrNull { it.id == value.substringAfter('|') }
                 ?: error("Favorite order was not found.")

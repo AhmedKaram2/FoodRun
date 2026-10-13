@@ -29,7 +29,7 @@ export default function AndroidInstallPrompt({ downloadUrl, tx }) {
 
   if (!visible) return null;
   return <aside className="android-install-prompt" aria-labelledby={title} aria-live="polite">
-    <div><strong id={title}>{tx('Get the Intrvioo app', 'تحميل تطبيق إنترفيوو')}</strong><p>{tx('Keep your rooms close on Android.', 'تابع غرفك بسهولة على أندرويد.')}</p></div>
+    <div><strong id={title}>{tx('Get the FoodRun app', 'تحميل تطبيق FoodRun')}</strong><p>{tx('Keep your rooms close on Android.', 'تابع غرفك بسهولة على أندرويد.')}</p></div>
     <a className="primary" href={downloadUrl} onClick={() => setVisible(false)}>{tx('Download APK', 'تنزيل تطبيق أندرويد')}</a>
     <button type="button" className="icon-button" aria-label={tx('Close', 'إغلاق')} onClick={() => setVisible(false)}>×</button>
   </aside>;

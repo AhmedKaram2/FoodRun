@@ -102,7 +102,9 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
             put(value)
             if(value.holderId != value.recipientId) {
                 notifications.wallet(value.holderId, value.id, "wallet_payment_due",
-                    "Wallet payment to send" to "دفعة محفظة للإرسال", "${value.customerName} → ${value.recipientName} · ${Money.format(value.amount, value.currency)}" to "${value.customerName} ← ${value.recipientName} · ${Money.format(value.amount, value.currency)}")
+                    "Wallet payment required" to "مطلوب دفع أموال المحفظة",
+                    "Pay ${Money.format(value.amount, value.currency)} to ${value.recipientName} for ${value.customerName}'s order in ${value.roomName}. Open Wallet to send the payment." to
+                        "ادفع ${Money.format(value.amount, value.currency)} إلى ${value.recipientName} عن طلب ${value.customerName} في ${value.roomName}. افتح المحفظة لإرسال الدفعة.")
                 notifications.wallet(value.recipientId, value.id, "wallet_payment_assigned",
                     "Collect from the wallet holder" to "استلم من حامل أموال المحفظة",
                     "${value.holderName} owes ${Money.format(value.amount, value.currency)} on behalf of ${value.customerName}" to "${value.holderName} عليه ${Money.format(value.amount, value.currency)} نيابة عن ${value.customerName}")

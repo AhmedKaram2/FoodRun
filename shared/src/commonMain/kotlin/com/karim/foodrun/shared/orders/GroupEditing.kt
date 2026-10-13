@@ -136,7 +136,7 @@ internal fun GroupController.dispatchRoom(action: GroupAction, value: String) {
         GroupAction.SUBMIT_CART -> command(CommandKind.SUBMIT_CART, revision = myCart().revision)
         GroupAction.REVIEW -> command(CommandKind.REVIEW)
         GroupAction.CONFIRM_QUOTE -> command(CommandKind.CONFIRM_QUOTE, revision = r.quoteRevision)
-        GroupAction.REOPEN -> command(CommandKind.REOPEN, text = reason)
+        GroupAction.REOPEN -> command(CommandKind.REOPEN, text = if(value == "modify") reason.ifBlank { "Order modification requested." } else reason)
         GroupAction.SET_FEES -> command(CommandKind.SET_FEES, fees = fees(r.restaurant.currency), text = reason)
         GroupAction.PLACE -> command(CommandKind.PLACE, text = text(GroupFieldKey.REFERENCE))
         GroupAction.PAY_RESTAURANT -> command(CommandKind.PAY_RESTAURANT, amount = Money.parse(text(GroupFieldKey.AMOUNT), r.restaurant.currency))

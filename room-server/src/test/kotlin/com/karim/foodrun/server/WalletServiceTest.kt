@@ -4,6 +4,24 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class WalletServiceTest {
+    @Test fun walletHolderGetsOneActionableInboxAndPushNoticeWhenACustomerPaysByWallet() = Setup().use { s ->
+        s.credit()
+        s.f.service.notificationRequest(NotificationRequest(s.holder.identityToken, "register",
+            token = "fixture-wallet-holder-push-123456789", platform = "android", installationId = "fixture-wallet-holder-install", language = "en"), true)
+        val room = s.bill(listOf(s.a to 1500L)).room!!
+        val command = s.payCommand(s.a, room.id)
+        s.f.execute(command); s.f.execute(command)
+        val notices = s.f.service.notificationRequest(NotificationRequest(s.holder.identityToken), true).notifications.filter { it.kind == "wallet_payment_due" }
+        assertEquals(1, notices.size)
+        assertTrue(notices.single().body.contains("Pay AED 15.00 to Recipient"))
+        assertTrue(notices.single().body.contains("Alice"))
+        assertTrue(notices.single().actions.any { it.id == "wallet" })
+        val push = assertNotNull(s.f.service.nextPush())
+        assertEquals(s.holder.home!!.profile.userId, push.job.userId)
+        assertEquals(notices.single().id, push.job.notification.id)
+        s.f.service.finishPush(push, PushResult.SENT)
+        assertNull(s.f.service.nextPush())
+    }
     @Test fun failureDuringGroupedReviewRollsBackItsCashAndOwnShareChanges() = Setup().use { s ->
         s.credit();val room=s.bill(listOf(s.a to 1500L,s.holder to 2000L)).room!!;s.pay(s.a,room.id);s.approveClaims(room.id)
         val batch=s.f.execute(s.roomCommand(s.holder,room.id,CommandKind.WALLET_DECLARE_BATCH).copy(flag=true,userId="Recipient",accountId=s.account.id,amount=3500)).home!!.wallet!!.batches.single()

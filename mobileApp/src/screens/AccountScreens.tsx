@@ -107,6 +107,7 @@ export function MoreSheet({
 }) {
   const { rtl, busy } = snapshot.state;
   const descriptions: Record<string, [string, string, string, string]> = {
+    OPEN_ADMIN: ["settings", "Manage users, rooms and FoodRun settings", "إدارة المستخدمين والغرف وإعدادات FoodRun", colors.mint],
     OPEN_PROFILE: [
       "profile",
       "Your details & favourites",

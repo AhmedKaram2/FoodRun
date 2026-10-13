@@ -69,6 +69,7 @@ export type Snapshot = {
   quickSelectionOffset?: number;
   profile?: { name: string; photo: string } | null;
   notificationUnread?: number;
+  notificationPushEnabled?: boolean;
   adminAvailable?: boolean;
   supportActive: boolean;
   accountId: string;
@@ -101,7 +102,7 @@ export type Snapshot = {
       address: string;
       error: string;
     } | null;
-    restaurantSendPrompt?: { blocker:string; canConfirm:boolean } | null;
+    restaurantSendPrompt?: { blocker:string; canConfirm:boolean; shareAfterConfirm?:boolean } | null;
     walletHistoryPrompt?: {
       title: string;
       subtitle: string;

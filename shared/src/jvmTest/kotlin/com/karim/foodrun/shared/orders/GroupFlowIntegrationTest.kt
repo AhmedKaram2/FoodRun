@@ -777,7 +777,7 @@ class GroupFlowIntegrationTest {
         c.dispatch(GroupAction.DECREASE_CART_QUANTITY, line.id); bus.drain(); bus.sync()
         assertTrue(c.myCart().lines.isEmpty())
         c.dispatch(GroupAction.SET_LANGUAGE, "ar")
-        assertEquals("الكمية والملاحظات", c.state.cards.single { it.id == "menu:burger" }.buttons.last().title)
+        assertEquals("إضافة ملاحظات وتخصيص الصنف", c.state.cards.single { it.id == "menu:burger" }.buttons.last().title)
     }
 
     @Test fun configuredItemsCannotBypassSizeOrExtrasWithQuickAdd(): Unit = Bus().use { bus ->
@@ -1014,6 +1014,57 @@ class GroupFlowIntegrationTest {
         assertTrue(member.room().restaurantPaid)
         assertEquals(member.me(),member.room().payerId)
         assertEquals("Alice",host.room().account!!.holder)
+    }
+    @Test fun memberOrdersCanBePreviewedAndReusedOnlyWhileOrderingIsOpen() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Alice", host, bus); collecting(host, member, bus)
+        member.dispatch(GroupAction.OPEN_ITEM, "burger"); member.update(GroupFieldKey.NOTE, "No onions")
+        member.dispatch(GroupAction.ADD_CART_ITEM); bus.drain(); bus.sync()
+        val card = host.state.cards.single { it.id == "member:${member.me()}" }
+        assertTrue(card.detail.contains("Burger")); assertTrue(card.detail.contains("No onions"))
+        assertTrue(card.buttons.any { it.action == GroupAction.REUSE_ORDER && it.value == "member|${member.me()}" })
+        host.dispatch(GroupAction.REUSE_ORDER, "member|${member.me()}")
+        assertEquals(GroupPage.REORDER, host.page)
+        host.dispatch(GroupAction.CONFIRM_REORDER); bus.drain(); bus.sync()
+        assertEquals("No onions", host.myCart().lines.single().notes)
+        assertNotEquals(member.myCart().lines.single().id, host.myCart().lines.single().id)
+        host.command(CommandKind.CANCEL, text = "Cancel test order"); bus.drain(); bus.sync()
+        assertFalse(host.state.cards.single { it.id == "member:${member.me()}" }.buttons.any { it.action == GroupAction.REUSE_ORDER })
+        host.dispatch(GroupAction.REUSE_ORDER, "member|${member.me()}")
+        assertTrue(host.state.error.isNotBlank())
+    }
+    @Test fun directRestaurantSharingLocksTheAuthoritativeOrderBeforeOpeningWhatsApp() = Bus().use { bus ->
+        val (host, phone) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Alice", host, bus); review(host, member, bus)
+        host.dispatch(GroupAction.SHARE_ORDER_WHATSAPP, "lock")
+        assertTrue(assertNotNull(host.state.restaurantSendPrompt).shareAfterConfirm)
+        assertEquals("", phone.shared)
+        host.dispatch(GroupAction.CONFIRM_RESTAURANT_SEND)
+        assertEquals("", phone.shared)
+        bus.drain(); bus.sync()
+        assertEquals(RoomPhase.PLACED, member.room().phase)
+        assertTrue(phone.shared.startsWith("https://wa.me/"))
+        assertTrue(phone.shared.contains("text="))
+        member.dispatch(GroupAction.OPEN_ITEM, "water"); member.dispatch(GroupAction.ADD_CART_ITEM); bus.drain()
+        assertEquals(1, member.myCart().lines.size)
+        assertTrue(member.state.error.isNotBlank())
+    }
+    @Test fun paidMembersWaitForArrivalAndUnpaidBalancesRemainOnEveryDashboardAfterArrival() = Bus().use { bus ->
+        val (host, _) = bus.phone(); val (member, _) = bus.phone()
+        create(host, bus); join(member, "Alice", host, bus); placeAndPay(host, member, bus)
+        member.update(GroupFieldKey.AMOUNT, "40"); member.dispatch(GroupAction.DECLARE_TRANSFER); bus.drain(); bus.sync()
+        assertTrue(member.state.cards.any { it.id == "my-order-complete" })
+        assertTrue(member.state.cards.single { it.id == "my-payment-status" }.detail.contains("confirm"))
+        host.command(CommandKind.REJECT_TRANSFER, transferId = host.room().transfers.single().id, text = "Payment not received"); bus.drain(); bus.sync()
+        host.dispatch(GroupAction.FULFILL); bus.drain(); bus.sync()
+        assertTrue(member.state.cards.any { it.id == "order-closed" })
+        assertTrue(member.room().settlementOpen)
+        assertEquals(4000, member.reply!!.receipts.single().balance)
+        member.library = member.library.copy(home = HomePayload(FoodProfile("alice", "Alice")))
+        listOf(GroupAction.OPEN_HOME, GroupAction.OPEN_PROFILE, GroupAction.OPEN_WALLET).forEach { action ->
+            member.dispatch(action); bus.drain(); bus.sync()
+            assertTrue(member.state.cards.any { it.id.contains("wallet-direction:false") && it.badge.contains("40.00") }, "Missing unpaid balance on ${member.state.page}")
+        }
     }
     @Test fun sharingRequiresConfirmationAndChangedOrdersCannotBeConfirmedFromAnOldCopy() = Bus().use { bus ->
         val (host, _) = bus.phone(); val (member, _) = bus.phone()

@@ -29,7 +29,7 @@ export default function HomeBanner({ rtl = false, allowRoomCreation = true, onCr
       action: copy('Create a room', 'إنشاء غرفة'), onAction: onCreate, disabled: !allowRoomCreation },
   ];
   const slide = slides[index];
-  return <section className={`home-banner home-banner-${slide.tone}`} aria-label={copy('Intrvioo highlights', 'مميزات إنترفيوو')} aria-roledescription={copy('carousel', 'عارض شرائح')}>
+  return <section className={`home-banner home-banner-${slide.tone}`} aria-label={copy('FoodRun highlights', 'مميزات FoodRun')} aria-roledescription={copy('carousel', 'عارض شرائح')}>
     <div className="home-banner-orbit" aria-hidden="true" />
     <div className="home-banner-main">
       <div className="home-banner-copy" aria-live="polite" aria-atomic="true">

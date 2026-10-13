@@ -20,3 +20,7 @@
 @media(max-width:380px) { .android-install-prompt { grid-template-columns:1fr; } .android-install-prompt .primary { justify-self:start; } }
 
 .first-use-tour{display:grid;gap:1rem;text-align:center;max-width:480px;margin:auto;width:100%;padding-bottom:.5rem}.tour-progress{display:flex;gap:5px}.tour-progress i{flex:1;height:4px;border-radius:2px;background:var(--line)}.tour-progress i.active{background:#245C49}.first-use-tour p{margin:0;line-height:1.8}.tour-art{display:grid;place-items:center;height:110px;background:#E7F3ED;border-radius:24px;font-size:58px;animation:tour-enter .25s ease-out both}.tour-copy h3{font-size:1.35rem;margin:0 0 .6rem}.tour-actions{display:flex;justify-content:center;gap:12px}.tour-actions button{min-width:120px}@keyframes tour-enter{from{opacity:.6;transform:translateY(6px) scale(.96)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.tour-art{animation:none}}
+
+.item-notes { padding: 12px; border-radius: 12px; background: #edf5ef; gap: 8px; }
+.item-notes textarea { min-height: 84px; resize: vertical; }
+.item-notes-action { min-height: 44px; font-weight: 600; }

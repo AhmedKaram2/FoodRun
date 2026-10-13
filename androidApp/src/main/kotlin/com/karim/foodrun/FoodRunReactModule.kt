@@ -29,6 +29,17 @@ class FoodRunReactModule(context: ReactApplicationContext) : ReactContextBaseJav
     @ReactMethod fun getAppUpdateStatus(promise: Promise) = updateRequest(promise) { updates.status() }
     @ReactMethod fun installAppUpdate(promise: Promise) = updateRequest(promise) { updates.install() }
     @ReactMethod fun getSnapshot(promise: Promise) { main.post { try { promise.resolve(app.viewBridge.snapshotJson()) } catch(_: Exception) { promise.reject("STATE","Could not open the app. Please restart.") } } }
+    @ReactMethod fun getNotificationPermission(promise: Promise) {
+        promise.resolve(if(androidx.core.app.NotificationManagerCompat.from(reactApplicationContext).areNotificationsEnabled()) "enabled" else "disabled")
+    }
+    @ReactMethod fun openNotificationSettings(promise: Promise) { main.post {
+        try {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, reactApplicationContext.packageName)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            reactApplicationContext.startActivity(intent); promise.resolve(null)
+        } catch(_: Exception) { promise.reject("NOTIFICATIONS", "Could not open notification settings.") }
+    } }
     @ReactMethod fun dispatch(action: String, value: String) { main.post { app.viewBridge.dispatch(action,value) } }
     @ReactMethod fun update(key: String, value: String) { main.post { app.viewBridge.update(key,value) } }
     @ReactMethod fun tick() { main.post { app.viewBridge.tick() } }

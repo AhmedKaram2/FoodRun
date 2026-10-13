@@ -15,7 +15,7 @@ export default function SelectionScreen({snapshot,roomTitle}:{snapshot:Snapshot;
   const choices=snapshot.inlineButtons.filter(button=>button.action==="TOGGLE_OPTION");
   const actions=[...snapshot.inlineButtons,...snapshot.utilityButtons].filter(button=>button.action!=="TOGGLE_OPTION");
   return <View style={styles.context}>
-    <View style={styles.contextCard}><Illustration kind={snapshot.state.page==="ITEM"?"food":"wallet"} size={60}/><Text style={[textStyle(rtl,"bold"),styles.roomTitle]}>{roomTitle || snapshot.state.title}</Text></View>
+    <View style={styles.contextCard}><Illustration kind={snapshot.state.page==="ITEM"?"food":snapshot.state.page==="SELECTION_OVERRIDE"?"wheel":"wallet"} size={60}/><Text style={[textStyle(rtl,"bold"),styles.roomTitle]}>{roomTitle || snapshot.state.title}</Text></View>
     <BottomSheet visible title={snapshot.state.title} rtl={rtl} onClose={()=>dispatch("BACK")}>
       {!!snapshot.state.subtitle && <Text style={[textStyle(rtl),styles.subtitle]}>{snapshot.state.subtitle}</Text>}
       <ScrollArea keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>

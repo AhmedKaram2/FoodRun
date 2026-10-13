@@ -15,7 +15,15 @@ import { NotificationCenter, ProfileScreen, LibraryScreen } from "../src/screens
 import AuthScreen from '../src/screens/AuthScreen';
 import NativeTabBar from '../src/components/NativeTabBar';
 import RoomPayments from '../src/components/RoomPayments';
+import RoomAttention from '../src/components/RoomAttention';
+import RoomOrderDock from '../src/components/RoomOrderDock';
+import RoomSettings from '../src/components/RoomSettings';
+import RoomMembers from '../src/components/RoomMembers';
+import RoomFood from '../src/components/RoomFood';
+import WalletTopUpScreen from '../src/screens/WalletTopUpScreen';
+import {setUiLanguage} from '../src/language';
 import HomeScreen from '../src/screens/HomeScreen';
+import AdminScreen from '../src/screens/AdminScreen';
 import {Platform} from 'react-native';
 jest.mock("../src/native", () => ({
   native: {
@@ -105,6 +113,7 @@ function measureScroll(view:ReturnType<typeof render>,markerTop:()=>number) {
 }
 beforeEach(() => {
   jest.clearAllMocks();
+  setUiLanguage('ar-EG');
   (native.getSnapshot as jest.Mock).mockResolvedValue(
     JSON.stringify(snapshot()),
   );
@@ -118,6 +127,45 @@ test("header opens notifications with the live unread badge and More stays in th
   expect(view.queryByLabelText("More options")).toBeNull();
   fireEvent.press(view.getByTestId("nav:MORE"));
   expect(view.getByText("Explore FoodRun")).toBeTruthy();
+});
+
+test("verified administrators reach the full mobile panel and each tab keeps its native action", () => {
+  const value=snapshot({adminAvailable:true});value.state.page="ADMIN";
+  const ids=["overview","users","rooms","history","wallets","restaurants","blocks","cleanup","settings"];
+  const tabs={...card("admin-tabs","Admin panel"),buttons:ids.map(id=>({...action(id,"ADMIN_TAB",id),primary:id==="users",enabled:id!=="users"}))};
+  value.topCards=[tabs,{...card("admin-user:other","Other user"),buttons:[action("Edit user details","ADMIN_USER","other"),action("Sign in as this user","ADMIN_SUPPORT_START","other")]}];
+  value.mainFields=[field("ADMIN_SEARCH",{label:"Search this tab"})];
+  const view=render(<AdminScreen snapshot={value}/>);
+  expect(view.getByRole("tab",{name:"users"}).props.accessibilityState.selected).toBe(true);
+  for(const id of ids.filter(id=>id!=="users")){
+    fireEvent.press(view.getByTestId(`admin-tab:${id}`));expect(native.dispatch).toHaveBeenLastCalledWith("ADMIN_TAB",id);
+  }
+  fireEvent.changeText(view.getByTestId("ADMIN_SEARCH"),"room code");expect(native.update).toHaveBeenLastCalledWith("ADMIN_SEARCH","room code");
+  fireEvent.press(view.getByText("Edit user details"));expect(native.dispatch).toHaveBeenLastCalledWith("ADMIN_USER","other");
+  fireEvent.press(view.getByText("Sign in as this user"));expect(native.dispatch).toHaveBeenLastCalledWith("ADMIN_SUPPORT_START","other");
+  value.state.busy=true;view.rerender(<AdminScreen snapshot={value}/>);
+  (native.dispatch as jest.Mock).mockClear();fireEvent.press(view.getByTestId("admin-tab:rooms"));expect(native.dispatch).not.toHaveBeenCalled();
+  value.adminAvailable=false;value.state.busy=false;view.rerender(<AdminScreen snapshot={value}/>);
+  expect(view.queryByTestId("admin-tab:users")).toBeNull();expect(view.getByText("This account cannot access administration.")).toBeTruthy();
+});
+
+test("admin Home shortcut is hidden for other accounts and support sessions", () => {
+  const value=snapshot({adminAvailable:true});
+  const view=render(<HomeScreen snapshot={value}/>);
+  fireEvent.press(view.getByText("Admin panel"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ADMIN","");
+  value.supportActive=true;view.rerender(<HomeScreen snapshot={value}/>);expect(view.queryByText("Admin panel")).toBeNull();
+  value.supportActive=false;value.adminAvailable=false;view.rerender(<HomeScreen snapshot={value}/>);expect(view.queryByText("Admin panel")).toBeNull();
+});
+
+test("room-name hold opens the existing wheel override only when authorized and idle", async () => {
+  const value=snapshot();value.state={...value.state,page:"ROOM",roomCode:"123456",title:"Team lunch",canOverrideSelection:false};
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);await view.findByTestId("room-name");
+  fireEvent(view.getByTestId("room-name"),"longPress");expect(native.dispatch).not.toHaveBeenCalled();
+  value.state.canOverrideSelection=true;act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  fireEvent(view.getByTestId("room-name"),"longPress");expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_SELECTION_OVERRIDE","");
+  value.state.busy=true;act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
+  (native.dispatch as jest.Mock).mockClear();fireEvent(view.getByTestId("room-name"),"longPress");expect(native.dispatch).not.toHaveBeenCalled();
 });
 
 test("notification filters follow read acknowledgements and open the original notification", () => {
@@ -318,6 +366,43 @@ test("chosen person stays visible while browsing food payments and members",asyn
   act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
   expect(view.queryByText("Ordering person: Bob")).toBeNull();
 });
+test("member sheet shows their food and uses the native reuse preview",()=>{
+  const member={...card("member:alice","Alice"),badge:"Food submitted",detail:"Food submitted\nTheir order\n2 × Falafel · No onions",buttons:[action("Add this order to mine","REUSE_ORDER","member|alice",true)]};
+  const view=render(<RoomMembers cards={[member]} busy={false} rtl={false}/>);
+  fireEvent.press(view.getByTestId("compact:member:alice"));
+  expect(view.getAllByText(member.detail).length).toBeGreaterThan(0);
+  fireEvent.press(view.getByText("Add this order to mine"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("REUSE_ORDER","member|alice");
+  view.rerender(<RoomMembers cards={[{...member,badge:"Order closed",buttons:[]}]} busy={false} rtl={false}/>);
+  expect(view.queryByText("Add this order to mine")).toBeNull();
+});
+test("every menu item has a visible notes action including sized items",()=>{
+  const cards=[{...card("menu:simple","Falafel"),buttons:[action("Add","QUICK_ADD_ITEM","simple"),action("Customize","OPEN_ITEM","simple")]},{...card("menu:sized","Beans"),buttons:[action("Choose size","OPEN_ITEM","sized")]}];
+  const view=render(<RoomFood cards={cards} fields={[]} busy={false} rtl={false}/>);
+  const notes=view.getAllByText("Add notes");expect(notes).toHaveLength(2);
+  fireEvent.press(notes[1]);expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ITEM","sized");
+});
+test("wallet top-up steps validate choices and send only from the final review",()=>{
+  const value=snapshot();value.state.page="WALLET_TOP_UP";
+  value.mainFields=[field("WALLET_SEARCH"),field("WALLET_CURRENCY",{value:"AED",choices:[{value:"AED",label:"AED"}]}),field("WALLET_AMOUNT",{value:"0"}),field("WALLET_ACCOUNT",{value:"bank",choices:[{value:"bank",label:"Test Bank"}]}),field("WALLET_NOTE")];
+  value.inlineButtons=[action("Search users","WALLET_FUNDS_ACTION","search"),action("I sent the top-up","WALLET_FUNDS_ACTION","top-up")];
+  const view=render(<WalletTopUpScreen snapshot={value}/>);
+  fireEvent.press(view.getByText("Continue"));expect(view.getByText("Choose a wallet holder before continuing.")).toBeTruthy();
+  value.topCards=[card("wallet-recipient","Alice"),{...card("wallet-method:bank","Alice · Test Bank"),detail:"AE07 0331 2345 6789 0123 456",buttons:[action("Copy","WALLET_FUNDS_ACTION","copy|bank")]}];
+  view.rerender(<WalletTopUpScreen snapshot={value}/>);fireEvent.press(view.getByText("Continue"));
+  expect(view.getByText("Step 2 of 4")).toBeTruthy();fireEvent.press(view.getByText("Continue"));
+  expect(view.getByText("Enter a positive amount with up to two decimal places.")).toBeTruthy();
+  value.mainFields=value.mainFields.map(f=>f.key==="WALLET_AMOUNT" ? {...f,value:"50"} : f);
+  view.rerender(<WalletTopUpScreen snapshot={value}/>);fireEvent.press(view.getByText("Continue"));
+  expect(view.getByText("Step 3 of 4")).toBeTruthy();fireEvent.press(view.getByText("Copy"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","copy|bank");
+  fireEvent.press(view.getByText("Continue"));expect(view.getByText("Step 4 of 4")).toBeTruthy();
+  expect(view.getByText("AED 50")).toBeTruthy();expect(native.dispatch).not.toHaveBeenCalledWith("WALLET_FUNDS_ACTION","top-up");
+  fireEvent.press(view.getByTestId("wallet-review-edit:1"));expect(view.getByTestId("WALLET_AMOUNT").props.value).toBe("50");
+  fireEvent.press(view.getByText("Continue"));fireEvent.press(view.getByText("Continue"));
+  fireEvent.press(view.getByText("I sent the top-up"));fireEvent.press(view.getByText("I sent the top-up"));
+  expect((native.dispatch as jest.Mock).mock.calls.filter(call=>call[1]==="top-up")).toHaveLength(1);
+});
 test("owner can start the wheel from every room tab and sees why it is blocked",async()=>{
   const value=snapshot();value.state={...value.state,page:"ROOM",roomCode:"123456",roomPhase:"LOBBY",roomStage:"Join the room",title:"Team lunch",subtitle:"October 12 · Order 42"};
   value.primaryAction=action("Spin together","PREPARE_SPIN","",true);
@@ -325,21 +410,21 @@ test("owner can start the wheel from every room tab and sees why it is blocked",
   value.sections=[{title:"All",collapsed:false,cards:[card("last-chosen","Last chosen"),card("menu:food","Sandwich")]}];
   value.inlineButtons=[action("Skip this order","PARTICIPATE","false")];
   (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
-  const view=render(<App/>);await view.findByText("Start wheel");
+  const view=render(<App/>);await view.findByText("Start choosing the ordering person");
   expect(view.queryByText(value.state.subtitle)).toBeNull();
   expect(view.queryByText("Last chosen")).toBeNull();
   expect(view.queryByTestId("PAYER_MODE")).toBeNull();
   expect(view.getByLabelText("Join: Current")).toBeTruthy();
   for(const tab of [0,1,2,3]){
     fireEvent.press(view.getByTestId(`room-tab:${tab}`));
-    fireEvent.press(view.getByText("Start wheel"));
+    fireEvent.press(view.getByText("Start choosing the ordering person"));
     expect(native.dispatch).toHaveBeenLastCalledWith("PREPARE_SPIN","");
   }
   value.primaryAction.enabled=false;value.sections[0].cards.push({...card("spin-next-step","Before spinning"),detail:"Approve the waiting member first."});
   act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
   expect(view.getByText("Approve the waiting member first.")).toBeTruthy();
-  (native.dispatch as jest.Mock).mockClear();fireEvent.press(view.getByText("Start wheel"));expect(native.dispatch).not.toHaveBeenCalled();
-  fireEvent.press(view.getByLabelText("Room details & settings"));
+  (native.dispatch as jest.Mock).mockClear();fireEvent.press(view.getByText("Start choosing the ordering person"));expect(native.dispatch).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText("Room settings"));
   expect(view.getByText("Last chosen")).toBeTruthy();
   expect(view.getByTestId("PAYER_MODE")).toBeTruthy();
   fireEvent.press(view.getByText("Skip this order"));expect(native.dispatch).toHaveBeenLastCalledWith("PARTICIPATE","false");
@@ -354,7 +439,8 @@ test("added food stays reachable before menu pagination and during search and li
   (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
   const view=render(<App/>);await view.findByTestId("room-tab:1");fireEvent.press(view.getByTestId("room-tab:1"));
   expect(view.queryByText("Menu food 29")).toBeNull();
-  expect(view.queryByText("2 × Added sandwich")).toBeNull();
+  expect(view.getByTestId("room-order-items").props.children).toBe("2 × Added sandwich");
+  fireEvent.press(view.getByText("Confirm order"));expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART","");
   fireEvent.press(view.getByTestId("action:QUICK_ADD_ITEM:0"));expect(native.dispatch).toHaveBeenLastCalledWith("QUICK_ADD_ITEM","0");
   fireEvent.press(view.getByRole("radio",{name:"Sandwiches"}));expect(native.update).toHaveBeenLastCalledWith("MENU_CATEGORY","category:sandwich");
   fireEvent.changeText(view.getByLabelText("Find food"),"not in menu");expect(native.update).toHaveBeenLastCalledWith("MENU_SEARCH","not in menu");
@@ -366,7 +452,7 @@ test("added food stays reachable before menu pagination and during search and li
   cartLine.title="3 × Added sandwich";
   act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
   expect(view.getByText("3 × Added sandwich")).toBeTruthy();
-  fireEvent.press(view.getByText("Submit my food order"));expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART","");
+  fireEvent.press(view.getByText("Confirm order"));expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART","");
   fireEvent.press(view.getByLabelText("Dismiss sheet"));
   value.state.rtl=true;
   act(()=>(events.addListener as jest.Mock).mock.calls[0][1](JSON.stringify(value)));
@@ -420,12 +506,13 @@ test("Wallet separates payments approvals balances and history without changing 
  fireEvent.press(view.getByRole("tab",{name:"History"}));expect(view.queryByText("Available AED 50")).toBeNull();
 });
 test("room payments move a resolved transfer to history while keeping receipts and account details reachable",()=>{
- const account=card("account","Recipient bank details"),receipt=card("receipt:me","My receipt");
+ const account={...card("account","Recipient bank details"),detail:"Chosen person · Test Bank · GB82WEST12345698765432",buttons:[action("Copy IBAN","COPY_PAYMENT_DETAILS"),action("Copy all payment details","COPY_PAYMENT_DETAILS","all")]},receipt=card("receipt:me","My receipt");
  const pending={...card("transfer:sent","AED 5 sent"),paymentGroup:"waiting",buttons:[{...action("Confirm received","CONFIRM_TRANSFER","sent"),primary:true}]};
  const view=render(<RoomPayments cards={[account,receipt,...Array.from({length:12},(_,i)=>card(`wallet:${i}`,`Other payment ${i}`)),pending]} busy={false} rtl={false}/>);
  fireEvent.press(view.getByText("Confirm received"));expect(native.dispatch).toHaveBeenLastCalledWith("CONFIRM_TRANSFER","sent");
- fireEvent.press(view.getByText("Payment details"));expect(view.getByText("Recipient bank details")).toBeTruthy();
- fireEvent.press(view.getByLabelText("Close"));
+ expect(view.getByText("Recipient bank details")).toBeTruthy();
+ fireEvent.press(view.getByText("Copy IBAN"));expect(native.dispatch).toHaveBeenLastCalledWith("COPY_PAYMENT_DETAILS","");
+ fireEvent.press(view.getByText("Copy all payment details"));expect(native.dispatch).toHaveBeenLastCalledWith("COPY_PAYMENT_DETAILS","all");
  view.rerender(<RoomPayments cards={[account,receipt,{...pending,title:"AED 5 paid",paymentGroup:"history",buttons:[]}]} busy={false} rtl={false}/>);
  expect(view.queryByText("AED 5 paid")).toBeNull();
  fireEvent.press(view.getByRole("tab",{name:"History"}));expect(view.getByText("AED 5 paid")).toBeTruthy();expect(view.queryByText("Confirm received")).toBeNull();
@@ -580,6 +667,68 @@ test("floating half offers disappear after a live acceptance and payments open t
   expect(view.queryByLabelText("Payment actions")).toBeNull();
   fireEvent.press(view.getByLabelText("Choose food"));
   expect(view.getByText("Sandwich")).toBeTruthy();
+});
+
+test("confirmed orders change the floating shortcut to modify and edits restore confirmation", () => {
+  const value=snapshot();value.state.page="ROOM";
+  const menu={...card("menu:item","Sandwich"),buttons:[action("Add","QUICK_ADD_ITEM","item")]};
+  value.topCards=[menu,card("cart:line","2 × Sandwich")];
+  value.inlineButtons=[action("Submit my food order","SUBMIT_CART","revision",true)];
+  const openTab=jest.fn();
+  const view=render(<RoomAttention snapshot={value} selected={0} onOpenTab={openTab}/>);
+  expect(view.getByLabelText("Choose food")).toBeTruthy();
+  value.topCards.push(card("cart-submitted","Your food order is saved"));value.inlineButtons=[];
+  view.rerender(<RoomAttention snapshot={value} selected={0} onOpenTab={openTab}/>);
+  expect(view.queryByLabelText("Choose food")).toBeNull();
+  fireEvent.press(view.getByLabelText("Modify order"));expect(openTab).toHaveBeenCalledWith(1);
+  view.rerender(<RoomAttention snapshot={value} selected={1} onOpenTab={openTab}/>);
+  expect(view.queryByLabelText("Modify order")).toBeNull();
+  const dock=render(<RoomOrderDock snapshot={value}/>);
+  expect(dock.queryByText("Confirm order")).toBeNull();
+  fireEvent.press(dock.getByLabelText("Modify order"));
+  expect(dock.getByRole("header",{name:"My order"})).toBeTruthy();
+  fireEvent.press(dock.getByLabelText("Dismiss sheet"));
+  value.topCards=value.topCards.filter(card=>card.id!=="cart-submitted");
+  value.inlineButtons=[action("Submit my food order","SUBMIT_CART","revision",true)];
+  dock.rerender(<RoomOrderDock snapshot={value}/>);
+  expect(dock.queryByLabelText("Modify order")).toBeNull();
+  fireEvent.press(dock.getByText("Confirm order"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("SUBMIT_CART","revision");
+  value.state.busy=true;dock.rerender(<RoomOrderDock snapshot={value}/>);
+  (native.dispatch as jest.Mock).mockClear();fireEvent.press(dock.getByText("Confirm order"));expect(native.dispatch).not.toHaveBeenCalled();
+});
+
+test("room settings explains permitted closure actions and cancellation requires confirmation", () => {
+  const value=snapshot();value.state.page="ROOM";
+  const cancel=action("Cancel today's order","CANCEL");
+  value.utilityButtons=[cancel];
+  const exit=jest.fn(), alert=jest.spyOn(Alert,"alert").mockImplementation(()=>{});
+  const view=render(<RoomSettings snapshot={value} cards={[]} fields={[]} actions={[cancel]} onExit={exit}/>);
+  expect(view.queryByText("Delete room in administration")).toBeNull();
+  expect(view.getByText("Cancel this order for everyone. The room stays available for a new order.")).toBeTruthy();
+  expect(view.queryByText("Complete and archive this order")).toBeNull();
+  expect(view.queryByText("Start a new order in this room")).toBeNull();
+  fireEvent.press(view.getByText("Cancel the current order"));
+  expect(native.dispatch).not.toHaveBeenCalled();
+  const choices=alert.mock.calls.at(-1)![2]!;
+  expect(choices[0].style).toBe("cancel");choices[1].onPress!();
+  expect(native.dispatch).toHaveBeenLastCalledWith("CANCEL","");
+  value.utilityButtons=[];value.primaryAction={...action("Complete this order","ARCHIVE"),enabled:false};
+  view.rerender(<RoomSettings snapshot={value} cards={[]} fields={[]} actions={[]} onExit={exit}/>);
+  expect(view.queryByText("Cancel the current order")).toBeNull();
+  (native.dispatch as jest.Mock).mockClear();fireEvent.press(view.getByText("Complete and archive this order"));expect(native.dispatch).not.toHaveBeenCalled();
+  value.primaryAction=action("Start a new order","NEXT_ORDER");
+  view.rerender(<RoomSettings snapshot={value} cards={[]} fields={[]} actions={[]} onExit={exit}/>);
+  fireEvent.press(view.getByText("Start a new order in this room"));expect(native.dispatch).toHaveBeenLastCalledWith("NEXT_ORDER","");
+  fireEvent.press(view.getByText("Exit room"));expect(exit).toHaveBeenCalledTimes(1);
+  value.adminAvailable=true;
+  view.rerender(<RoomSettings snapshot={value} cards={[]} fields={[]} actions={[]} onExit={exit}/>);
+  fireEvent.press(view.getByText("Delete room in administration"));
+  expect(native.dispatch).toHaveBeenNthCalledWith(2,"ADMIN_TAB","rooms");
+  expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ADMIN","");
+  value.state.rtl=true;view.rerender(<RoomSettings snapshot={value} cards={[]} fields={[]} actions={[]} onExit={exit}/>);
+  expect(view.getByText("بدء طلب جديد في الغرفة")).toBeTruthy();
+  alert.mockRestore();
 });
 test("large selection sheets search choices and dismiss without changing a value",()=>{
   const view=render(<FieldInput busy={false} rtl={false} field={field("GROUP",{value:"2",choices:Array.from({length:10},(_,i)=>({value:String(i),label:`Group ${i}`}))})}/>);

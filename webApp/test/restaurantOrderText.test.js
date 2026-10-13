@@ -10,6 +10,17 @@ const room = { restaurant: { name: 'Kitchen', nameAr: 'المطعم', menu: {
 const line = { itemId: 'meal', variantId: 'size', optionIds: ['extra'], description: 'Beans · Large · Salad', quantity: 1, amount: 300, notes: 'No salt / بدون ملح' };
 const receipts = [{ lines: [line, { ...line, quantity: 2, amount: 600 }, { ...line, notes: 'Extra lemon' }, { description: 'Custom food', quantity: 2, amount: 400, notes: 'Keep this note' }] }];
 
+test('every Arabic dialect translates the summary and restaurant item names', () => {
+  for(const language of ['ar-EG','ar-AE','ar-001']) {
+    setLanguage(language);
+    assert.notEqual(t('ORDER SUMMARY'), 'ORDER SUMMARY');
+    assert.notEqual(t('Total includes delivery, fees and discounts.'), 'Total includes delivery, fees and discounts.');
+    assert.equal(groupedOrderLines(room, receipts, language)[0].description, 'فول · كبير · سلطة');
+    assert.ok(restaurantOrderText(room, receipts, language).includes('فول · كبير · سلطة'));
+  }
+  setLanguage('en');
+});
+
 test('restaurant order text defaults to Arabic even when the website is English', () => {
   setLanguage('en');
   const text = restaurantOrderText(room, receipts);

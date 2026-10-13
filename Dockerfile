@@ -12,7 +12,7 @@ FROM eclipse-temurin:17-jdk AS build
 WORKDIR /workspace
 COPY . ./
 COPY --from=web /workspace/webApp/dist ./webApp/dist
-RUN ./gradlew --configure-on-demand :room-server:installDist --no-daemon
+RUN ./gradlew --settings-file settings-server.gradle.kts :room-server:installDist --no-daemon
 
 FROM eclipse-temurin:17-jre
 WORKDIR /opt/foodrun

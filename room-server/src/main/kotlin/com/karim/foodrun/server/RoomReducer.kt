@@ -2,10 +2,13 @@ package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.*
 
-class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int) {
+class RoomReducer(private val id: () -> String, private val randomIndex: (Int) -> Int,
+    private val selectionWeights: (Room) -> List<Int>) {
+    constructor(id: () -> String, randomIndex: (Int) -> Int) : this(id, randomIndex,
+        { PayerSelection.weights(WheelProtectionRules.candidates(it), it.lastChosenMemberId) })
     fun spin(room: Room, now: Long, overrideMemberId: String? = null): SpinRound {
         val candidates = WheelProtectionRules.candidates(room)
-        val weights = WheelProtectionRules.weights(room, candidates)
+        val weights = WheelProtectionRules.weights(room, candidates, selectionWeights(room))
         val winner = overrideMemberId?.takeIf { it in candidates && room.wheelProtections.none { request -> request.status == WheelProtectionStatus.ACTIVE } }
             ?: PayerSelection.choose(candidates, weights, randomIndex)
         return SpinRound(id(), candidates, winner, now + 3000, weights = weights)

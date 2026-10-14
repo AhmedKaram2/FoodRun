@@ -51,7 +51,7 @@ internal fun GroupController.currentRoomPreviousOrderChoices(includeEmpty: Boole
 }
 
 private fun RoomReply.currentPastOrder(): PastOrder? {
-    val value = room?.takeIf { it.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED) } ?: return null
+    val value = room?.takeIf { it.phase in listOf(RoomPhase.PLACED, RoomPhase.FULFILLED, RoomPhase.ARCHIVED) } ?: return null
     return PastOrder(value.orderNumber, value.restaurant.name, value.updatedAt, receipts, value.account, value.restaurant.id)
 }
 

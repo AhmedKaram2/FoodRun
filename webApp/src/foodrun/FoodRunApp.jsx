@@ -89,8 +89,8 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived · order closed', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.12/FoodRun-Android-1.7.12.apk';
-const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.12/FoodRun-iOS-RegisteredDevices-1.7.12.ipa';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.13/FoodRun-Android-1.7.13.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.13/FoodRun-iOS-RegisteredDevices-1.7.13.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -1306,7 +1306,8 @@ function RoomScreen({ data, roomId, onBack, onAddRestaurant = () => {} }) {
           <OrderSummary room={room} receipts={restaurantReceipts(reply,room,payer)} className="collected-orders" />
           <RestaurantOrderCard room={room} receipts={restaurantReceipts(reply,room,payer)} data={data} expectedArrival={reference} setExpectedArrival={setReference} canPlace={reply.progress?.canReview} blocker={reply.progress?.reviewBlocker} />
         </>}
-        {room.lastChosenMemberId && <article className="card last-chosen"><p className="eyebrow">{t('LAST CHOSEN')}</p><h2>{room.members.find(member => member.id === room.lastChosenMemberId)?.name || room.lastChosenName}</h2>{room.phase === 'LOBBY' && <p>{t('Next wheel: the last chosen person has weight 20; each other person has weight 80. Only eligible people join the wheel.')}</p>}</article>}
+        {room.lastChosenMemberId && <article className="card last-chosen"><p className="eyebrow">{t('LAST CHOSEN')}</p><h2>{room.members.find(member => member.id === room.lastChosenMemberId)?.name || room.lastChosenName}</h2></article>}
+        {room.phase === 'LOBBY' && <article className="card"><h3>{tx('Fair random selection', 'اختيار عشوائي عادل')}</h3><p>{tx('Random selection balances turns using the last 30 days across all rooms. Recently chosen people have a lower chance. Every eligible person keeps a chance.', 'يراعي الاختيار العشوائي الأدوار خلال آخر ٣٠ يوماً في جميع الغرف. تقل فرصة الأشخاص الذين تم اختيارهم مؤخراً، ويحتفظ كل شخص مؤهل بفرصة للاختيار.')}</p></article>}
         {payer && ['COLLECTING','REVIEW','PLACED','FULFILLED','ARCHIVED'].includes(room.phase)
           ? <details className="card order-edit-options"><summary>{tx('Restaurant contact', 'بيانات التواصل مع المطعم')}</summary><RestaurantContactCard restaurant={room.restaurant} data={data} /></details>
           : <RestaurantContactCard restaurant={room.restaurant} data={data} />}

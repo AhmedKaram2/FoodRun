@@ -19,7 +19,7 @@ services:
       - key: FOODRUN_FIRESTORE_CREDENTIALS
         sync: false
       - key: JAVA_OPTS
-        value: -Xmx256m -XX:MaxDirectMemorySize=64m
+        value: -Xms64m -Xmx192m -Xss512k -XX:MaxDirectMemorySize=32m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=48m -XX:ActiveProcessorCount=2 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dkotlinx.coroutines.io.parallelism=16 -Dio.netty.allocator.numDirectArenas=2 -Dio.netty.allocator.numHeapArenas=2 -Dio.netty.allocator.maxOrder=7
       - key: FOODRUN_DATA
         value: /var/lib/foodrun
       - key: FOODRUN_FIREBASE_PROJECT_ID

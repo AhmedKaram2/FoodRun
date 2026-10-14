@@ -15,8 +15,8 @@ class LastChosenTest {
         f.send(member, CommandKind.PARTICIPATE) { it.copy(flag = true) }
         f.send(member, CommandKind.READY) { it.copy(flag = true, eligible = true) }
         val spin = f.send(f.owner, CommandKind.PREPARE_SPIN).room!!.spin!!
-        assertEquals(20, spin.weights[spin.memberIds.indexOf(f.owner.memberId)])
-        assertEquals(80, spin.weights[spin.memberIds.indexOf(member.memberId)])
+        assertEquals(3, spin.weights[spin.memberIds.indexOf(f.owner.memberId)])
+        assertEquals(12, spin.weights[spin.memberIds.indexOf(member.memberId)])
     }
 
     @Test fun directChoiceAndOlderRoomHistoryAreRemembered() = RoomFixture().use { f ->

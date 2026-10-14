@@ -382,6 +382,13 @@ test("every menu item has a visible notes action including sized items",()=>{
   const notes=view.getAllByText("Add notes");expect(notes).toHaveLength(2);
   fireEvent.press(notes[1]);expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ITEM","sized");
 });
+test("latest order is visible in the food tab and opens a reuse preview",()=>{
+  const latest={...card("reuse-latest","My latest order"),detail:"2 × Falafel",buttons:[action("Add my latest order","REUSE_ORDER","past|old-room|7",true)]};
+  const value=snapshot({topCards:[latest]});value.state.page="ROOM";
+  const view=render(<RoomFood cards={value.topCards} fields={[]} busy={false} rtl={false}/>);
+  expect(view.getByText("My latest order")).toBeTruthy();fireEvent.press(view.getByText("Add my latest order"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("REUSE_ORDER","past|old-room|7");
+});
 test("wallet top-up steps validate choices and send only from the final review",()=>{
   const value=snapshot();value.state.page="WALLET_TOP_UP";
   value.mainFields=[field("WALLET_SEARCH"),field("WALLET_CURRENCY",{value:"AED",choices:[{value:"AED",label:"AED"}]}),field("WALLET_AMOUNT",{value:"0"}),field("WALLET_ACCOUNT",{value:"bank",choices:[{value:"bank",label:"Test Bank"}]}),field("WALLET_NOTE")];

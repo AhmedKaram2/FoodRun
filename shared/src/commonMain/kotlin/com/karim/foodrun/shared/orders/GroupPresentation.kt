@@ -440,7 +440,11 @@ internal class GroupPresentation(private val c: GroupController) {
         r.lastChosenMemberId?.let { previous ->
             card("last-chosen", tr("Last chosen", "آخر شخص تم اختياره"),
                 r.members.firstOrNull { it.id == previous }?.name ?: r.lastChosenName,
-                if (r.phase == RoomPhase.LOBBY) tr("Next wheel: weight 20 for the last person, 80 for everyone else.", "العجلة القادمة: وزن آخر شخص ٢٠ ووزن كل شخص آخر ٨٠.") else "")
+                if (r.phase == RoomPhase.LOBBY) tr("Random selection balances turns using the last 30 days across all rooms. Recently chosen people have a lower chance.", "يراعي الاختيار العشوائي الأدوار خلال آخر ٣٠ يوماً في جميع الغرف. تقل فرصة الأشخاص الذين تم اختيارهم مؤخراً.") else "")
+        }
+        if (r.phase == RoomPhase.LOBBY && r.lastChosenMemberId == null) {
+            card("selection-fairness", tr("Fair random selection", "اختيار عشوائي عادل"),
+                tr("Recent selections across all rooms lower your chance for 30 days. Every eligible person keeps a chance.", "تقل فرصتك لمدة ٣٠ يوماً بناءً على اختياراتك السابقة في جميع الغرف. يحتفظ كل شخص مؤهل بفرصة للاختيار."))
         }
         if(!me.approved) {
             card("pending-join", tr("Waiting for approval", "في انتظار الموافقة"), tr("The organizer or selected person must approve your join request.", "يجب أن يوافق المنظم أو الشخص المختار على طلب انضمامك."))
@@ -627,13 +631,19 @@ internal class GroupPresentation(private val c: GroupController) {
     private fun foodEditor(r: Room, primary: Boolean) {
         if(r.ownerId == c.me() || r.payerId == c.me()) button(tr("Item prices", "أسعار الأصناف"), GroupAction.OPEN_ORDER_PRICES)
         if(!primary) card("early-order", tr("Add your food before the spin", "أضف طلبك قبل الاختيار"), tr("Your saved items stay with this order. You can edit them before or after the payer is selected.", "يبقى طلبك محفوظاً ويمكنك تعديله قبل أو بعد اختيار من سيطلب."))
+        val previous = c.previousOrderChoices(r.restaurant)
+        val latest = previous.firstOrNull()
+        if(latest != null) card("reuse-latest", tr("My latest order", "آخر طلب لي"), receiptSummary(latest.receipt), timeLabel(latest.order.completedAt),
+            listOf(GroupButton(tr("Add my latest order", "إضافة آخر طلب لي"), GroupAction.REUSE_ORDER, latest.value, primary = true)))
+        else card("reuse-latest", tr("My latest order", "آخر طلب لي"), tr("Your previous order at this restaurant will appear here once downloaded.", "سيظهر آخر طلب لك من هذا المطعم هنا بعد تحميله."),
+            actions = listOf(GroupButton(tr("Refresh saved orders", "تحديث الطلبات المحفوظة"), GroupAction.REFRESH)))
         val favorites = c.library.home?.profile?.favoriteOrders.orEmpty().filter { it.restaurantId == r.restaurant.id }
         favorites.forEach { favorite ->
             card("reuse-favorite:${favorite.id}", "★ ${favorite.title}", favoriteSummary(favorite), tr("Favorite", "مفضل"),
                 listOf(GroupButton(tr("Add favorite order", "إضافة الطلب المفضل"), GroupAction.REUSE_ORDER, "favorite|${favorite.id}")))
         }
         val favoriteKeys = favorites.map { it.selectionKey() }.toSet()
-        c.previousOrderChoices(r.restaurant).filter { choice ->
+        previous.filter { choice -> choice.value != latest?.value &&
             choice.receipt.orderSelectionKey(choice.restaurantId.ifBlank { "name:${choice.order.restaurantName.lowercase()}" }) !in favoriteKeys
         }.take(4).forEach { choice ->
             card("reuse-past:${choice.value}", tr("Previous order", "طلب سابق"), receiptSummary(choice.receipt),

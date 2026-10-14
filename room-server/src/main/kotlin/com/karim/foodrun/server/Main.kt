@@ -173,6 +173,20 @@ fun Application.hubRoutes(
             delay(5000)
         }
     }
+    launch(Dispatchers.IO) {
+        val runtimeLog = org.slf4j.LoggerFactory.getLogger("foodrun.runtime")
+        val memory = java.lang.management.ManagementFactory.getMemoryMXBean()
+        val threads = java.lang.management.ManagementFactory.getThreadMXBean()
+        val buffers = java.lang.management.ManagementFactory.getPlatformMXBeans(java.lang.management.BufferPoolMXBean::class.java)
+        while (isActive) {
+            val heap = memory.heapMemoryUsage
+            val direct = buffers.filter { it.name == "direct" }.sumOf { it.memoryUsed }
+            runtimeLog.info("JVM memory MiB: heapUsed={} heapCommitted={} heapMax={} nonHeapUsed={} directUsed={} threads={}",
+                heap.used / 1048576, heap.committed / 1048576, heap.max / 1048576,
+                memory.nonHeapMemoryUsage.used / 1048576, direct / 1048576, threads.threadCount)
+            delay(60_000)
+        }
+    }
     routing {
         post("/notifications") {
             if (!allow(call.request.local.remoteHost)) { call.respond(HttpStatusCode.TooManyRequests); return@post }

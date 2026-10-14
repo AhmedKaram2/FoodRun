@@ -19,6 +19,8 @@ WORKDIR /opt/foodrun
 COPY --from=build /workspace/room-server/build/install/room-server/ ./
 ENV FOODRUN_TLS_MODE=proxy
 ENV FOODRUN_DATA=/var/lib/foodrun
+# Leave room for class metadata, thread stacks, TLS, SQLite and Netty in 512 MiB instances.
+ENV JAVA_OPTS="-Xms64m -Xmx192m -Xss512k -XX:MaxDirectMemorySize=32m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=48m -XX:ActiveProcessorCount=2 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dkotlinx.coroutines.io.parallelism=16 -Dio.netty.allocator.numDirectArenas=2 -Dio.netty.allocator.numHeapArenas=2 -Dio.netty.allocator.maxOrder=7"
 EXPOSE 10000
 VOLUME ["/var/lib/foodrun"]
 ENTRYPOINT ["./bin/room-server"]

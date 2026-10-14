@@ -1578,7 +1578,6 @@ internal object GroupUiText {
         "New to Intrvioo? Create account" to "أول مرة هنا؟ اعمل حساب",
         "Next" to "التالي",
         "Next step" to "الخطوة التالية",
-        "Next wheel: the last chosen person has weight 20; each other person has weight 80. Only eligible people join the wheel." to "في العجلة القادمة، وزن آخر شخص تم اختياره ٢٠ ووزن كل شخص آخر ٨٠. تشمل العجلة المؤهلين فقط.",
         "No archived orders yet." to "لا توجد طلبات مؤرشفة بعد.",
         "No block requests." to "مفيش طلبات حظر.",
         "No downloaded receipts yet." to "لا توجد إيصالات محفوظة بعد.",

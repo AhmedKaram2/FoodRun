@@ -886,6 +886,23 @@ class GroupFlowIntegrationTest {
         assertEquals(2, c.myCart().lines.single().quantity)
         assertEquals("burger", c.myCart().lines.single().itemId)
     }
+    @Test fun latestOrderIncludesArchivedRoomsAndAppearsBeforeTheMenu(): Unit = Bus().use { bus ->
+        val (c, _) = bus.phone(); create(c, bus)
+        val room = c.room()
+        val previous = room.copy(id = "previous-room", phase = RoomPhase.ARCHIVED, orderNumber = 7, updatedAt = bus.time - 1000)
+        val receipt = Receipt(c.me(), "Karim", listOf(ReceiptLine("Burger", 2, 7000, notes = "No onions", itemId = "burger")), 7000, 0, 0, 0, 0, 7000, 7000, 0, 1, "AED")
+        c.library = c.library.copy(sessions = c.library.sessions + c.session!!.copy(roomId = previous.id),
+            snapshots = c.library.snapshots + (previous.id to RoomReply(room = previous, receipts = listOf(receipt))))
+        val latest = c.state.cards.single { it.id == "reuse-latest" }
+        assertEquals("My latest order", latest.title)
+        assertTrue(latest.detail.contains("Burger"))
+        assertTrue(c.state.cards.indexOf(latest) < c.state.cards.indexOfFirst { it.id.startsWith("menu:") })
+        val button = latest.buttons.single()
+        c.dispatch(button.action, button.value); assertEquals(GroupPage.REORDER, c.page)
+        c.dispatch(GroupAction.CONFIRM_REORDER); bus.drain(); bus.sync()
+        assertEquals(2, c.myCart().lines.single().quantity)
+        assertEquals("No onions", c.myCart().lines.single().notes)
+    }
     @Test fun pairingSameHubAtNewAddressUpdatesSavedSessionsWithoutRejoining(): Unit = Bus().use { bus ->
         val (c, phone) = bus.phone(); create(c, bus)
         val token = c.session!!.token; val id = c.room().id; val fingerprint = c.session!!.hub.fingerprint

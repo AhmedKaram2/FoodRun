@@ -54,11 +54,13 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private var nextTimerScanAt = 0L
     private val timedRoomIds = mutableSetOf<String>()
     private val transferDeadlines = mutableMapOf<String,Long>()
-    private val reducer = RoomReducer(::uuid, random::nextInt)
+    private val selectionHistory = SelectionHistory(db, clock)
+    private val reducer = RoomReducer(::uuid, random::nextInt, selectionHistory::weights)
     init {
         // Admit members left waiting by older hubs without changing a locked order's participants.
         db.transaction {
             CatalogMigrations.apply(db)
+            selectionHistory.backfill()
             db.allRooms().filter { it.account == null && it.payerId != null }.forEach { room ->
                 val updated = accounts.withSavedPayment(room)
                 if (updated != room) db.save(updated.copy(revision = room.revision + 1, updatedAt = clock()))
@@ -207,6 +209,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
                         if (c.kind == CommandKind.NEXT_ORDER) db.archive(room)
                         requireLoadable(result)
                         db.save(result)
+                        if (result.spin?.id != room.spin?.id || c.kind == CommandKind.SELECT_PAYER) selectionHistory.remember(result)
                         if (c.kind in listOf(CommandKind.PAY_RESTAURANT, CommandKind.PRICE_ITEM, CommandKind.ADJUST_BILL, CommandKind.CONFIRM_TRANSFER, CommandKind.RECORD_PAYMENT))
                             result = wallets.autoPayHeldByPayer(result, c.commandId)
                         if (result.spin?.id != room.spin?.id || c.kind in listOf(CommandKind.SELECT_PAYER, CommandKind.CANCEL, CommandKind.NEXT_ORDER))
@@ -250,7 +253,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (room.phase == RoomPhase.PREPARING_SPIN) {
                 val candidates = WheelProtectionRules.candidates(room)
                 if (candidates.isNotEmpty()) {
-                    db.save(room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock(), db.record(selectionOverrideKey(room))), revision = room.revision + 1))
+                    val spinning = room.copy(phase = RoomPhase.SPINNING, spin = reducer.spin(room, clock(), db.record(selectionOverrideKey(room))), revision = room.revision + 1)
+                    db.save(spinning)
+                    selectionHistory.remember(spinning)
                     clearSelectionOverride(room)
                     signalRoom(room.id)
                 }
@@ -306,6 +311,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             audit = room.audit + AuditEntry(uuid(), room.ownerId, "TIMED_WHEEL", "Join timer ended; shared selection started.", now))
         if(room != original && room != db.room(room.id)) {
             db.save(room.copy(revision = room.revision + 1, updatedAt = now)); signalRoom(room.id)
+            if(ready) selectionHistory.remember(room)
             if(ready) clearSelectionOverride(room)
         }
     }

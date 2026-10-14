@@ -103,4 +103,85 @@ class FirestoreStoreTest {
     @Test fun missingMetadataRequiresExplicitBootstrap() {
         FirestoreStore(client(), namespace()).use { assertFailsWith<StorageUnavailable> { it.load() } }
     }
+
+    private fun cacheRows() = (0 until 384).map { StoredRow("account_records", listOf("restore-$it", "value-$it")) }
+
+    @Test fun compactRestoreCachePreservesUpdatesDeletionsAndCanonicalRowsAcrossTakeover() {
+        val namespace = namespace()
+        val rows = cacheRows()
+        FirestoreStore(client(), namespace, true).use { store -> store.load(); store.commit(rows.associateBy { it.id }) }
+        client().use { firestore ->
+            val metadata = firestore.collection("foodrunServers").document(namespace)
+            FirestoreStore(client(), namespace).use { store -> assertEquals(rows.toSet(), store.load()!!.toSet()) }
+            val ready = metadata.get().get()
+            assertEquals(ready.getLong("revision"), ready.getLong("restoreRevision"))
+            assertTrue(ready.getLong("restoreParts")!! <= 64, "Hundreds of rows should restore from at most 64 small documents")
+            val updated = rows.first().copy(cells = listOf(rows.first().cells.first(), "updated balance"))
+            val added = StoredRow("account_records", listOf("new-account", "new value"))
+            FirestoreStore(client(), namespace).use { store ->
+                assertEquals(rows.toSet(), store.load()!!.toSet())
+                store.commit(mapOf(updated.id to updated, rows[1].id to null, added.id to added))
+            }
+            val canonical = metadata.collection("foodrun_rows").document("${updated.id}-0").get().get()
+            assertEquals(updated, FirestoreStore.decode(canonical.getBlob("payload")!!.toBytes()))
+            assertFalse(metadata.collection("foodrun_rows").document("${rows[1].id}-0").get().get().exists())
+            FirestoreStore(client(), namespace).use { store ->
+                val expected = (rows.drop(2) + updated + added).associateBy { it.id }
+                assertEquals(expected, store.load()!!.associateBy { it.id })
+                store.commit(expected.mapValues { null })
+            }
+            FirestoreStore(client(), namespace).use { assertTrue(it.load()!!.isEmpty(), "Deleting the final rows must not leave an active empty cache manifest") }
+        }
+    }
+
+    @Test fun missingCachePartsFailClosedAndLegacyMetadataCanStillRestoreCanonicalRows() {
+        val namespace = namespace()
+        val rows = cacheRows()
+        FirestoreStore(client(), namespace, true).use { store -> store.load(); store.commit(rows.associateBy { it.id }) }
+        FirestoreStore(client(), namespace).use { it.load() }
+        client().use { firestore ->
+            val metadata = firestore.collection("foodrunServers").document(namespace)
+            metadata.collection("foodrun_restore").document("v1-${FirestoreRestoreCache.bucket(rows.first().id)}-0").delete().get()
+            FirestoreStore(client(), namespace).use { assertFailsWith<StorageUnavailable> { it.load() } }
+            val legacy = metadata.get().get().data!!.filterKeys { !it.startsWith("restore") }
+            metadata.set(legacy).get() // Older servers still maintain the original format-1 rows.
+            FirestoreStore(client(), namespace).use { assertEquals(rows.toSet(), it.load()!!.toSet()) }
+        }
+    }
+
+    @Test fun optionalCacheCannotConsumeTheBudgetNeededForACanonicalWrite() {
+        val namespace = namespace()
+        val rows = cacheRows()
+        FirestoreStore(client(), namespace, true).use { store -> store.load(); store.commit(rows.associateBy { it.id }) }
+        FirestoreStore(client(), namespace).use { it.load() }
+        val changed = rows.first().copy(cells = listOf(rows.first().cells.first(), "saved near budget limit"))
+        FirestoreStore(client(), namespace, false, 10, { "budget-day" }).use { store ->
+            store.load()
+            client().use { it.collection("foodrunServers").document(namespace).update("writes", 8L).get() }
+            store.commit(mapOf(changed.id to changed))
+        }
+        client().use { firestore ->
+            val metadata = firestore.collection("foodrunServers").document(namespace).get().get()
+            assertEquals(10L, metadata.getLong("writes"))
+            assertNull(metadata.get("restoreRevision"), "A stale cache must be invalidated when its optional writes cannot fit")
+        }
+        FirestoreStore(client(), namespace, false, 12_000, { "next-day" }).use { store ->
+            assertEquals(changed, store.load()!!.single { it.id == changed.id })
+        }
+    }
+
+    @Test fun compactRestoreSupportsMultiPartPayloadsAndAtomicShrinking() {
+        val namespace = namespace()
+        val payload = ByteArray(1_200_000).also(java.util.Random(14)::nextBytes)
+        val large = StoredRow("account_records", listOf("large-cache-row", java.util.Base64.getEncoder().encodeToString(payload)))
+        val rows = cacheRows().take(128) + large
+        FirestoreStore(client(), namespace, true).use { store -> store.load(); store.commit(rows.associateBy { it.id }) }
+        FirestoreStore(client(), namespace).use { assertEquals(rows.toSet(), it.load()!!.toSet()) }
+        val small = large.copy(cells = listOf("large-cache-row", "small"))
+        FirestoreStore(client(), namespace).use { store ->
+            assertEquals(large, store.load()!!.single { it.id == large.id })
+            store.commit(mapOf(small.id to small))
+        }
+        FirestoreStore(client(), namespace).use { assertEquals((rows.dropLast(1) + small).toSet(), it.load()!!.toSet()) }
+    }
 }

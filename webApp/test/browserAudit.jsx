@@ -1262,7 +1262,7 @@ export async function runGlobalNavigationAudit() {
       const target=[...host.querySelectorAll('button')].find(button=>[t(label),getLanguage().startsWith('ar')?arabic:label].includes(button.textContent.trim()));
       assert(target,`Missing route ${label}`);target.click();await pause();await pause();
       await nav('profile');assert(host.querySelector('.profile-grid'),`Profile unreachable from ${label}`);
-      await nav('home');assert(host.querySelector('.home-banner'),`Home unreachable from ${label}`);
+      await nav('home');assert(host.querySelector('.home-page'),`Home unreachable from ${label}`);
     }
     await nav('profile');host.querySelector('#profile-details').open=true;
     assert(host.querySelector('.topbar').getBoundingClientRect().top>=0,'Main top bar is offscreen');
@@ -1299,6 +1299,47 @@ export async function runInternetDefaultsAudit() {
   assert(host.querySelector('.mode-cards'),'Connection choices did not open after failure');
   assert(!measureAudit().overflow,'Connection choices overflow');
   return {passed:true,language:getLanguage(),width:innerWidth,defaultStyle:'names',fallbackAfterFailure:true};
+}
+
+export async function runHomeStartupAudit({ preview = false } = {}) {
+  const original = location.href;
+  commands.length = 0;
+  let reconnects = 0;
+  const fixture = { ...data, user: { uid: 'startup-audit', displayName: 'Returning User' }, authReady: true,
+    hub: 'https://foodrun-api-q6b9.onrender.com', home: null, connectionState: 'connecting', hasPending: false,
+    clearJoinBlock: () => {}, connect: address => { assert(address === fixture.hub, 'Retry changed the room server'); reconnects++; },
+    setError: () => {}, clearOfflineReceipts: () => {}, dismissFeedback: () => {} };
+  const useFixture = () => fixture;
+  const render = async () => { root.render(<FoodRunClient useData={useFixture}/>); await pause(); };
+  const checkLoadingHome = state => {
+    assert(host.querySelector('.home-page') && !host.querySelector('.splash'), `${state} hides Home behind a splash`);
+    assert(host.querySelector('.home-connection [role=status]')?.textContent, `${state} has no connection status`);
+    const accountActions = host.querySelectorAll('.home-feature-tile, .home-create-actions button, .profile-chip, .top-actions .icon-button');
+    assert(accountActions.length >= 10 && [...accountActions].every(node => node.disabled), `${state} enables an action before the account is ready`);
+    assert(!host.querySelector('.home-money-preview, .home-room-empty, .home-spending-tile'), `${state} shows unconfirmed balances or empty account data`);
+    assert(!measureAudit().overflow, `${state} Home overflows`);
+  };
+  try {
+    history.replaceState({}, '', '/'); await mountAudit('home');
+    for (const state of ['connecting', 'retrying', 'offline', 'failed']) {
+      fixture.connectionState = state; await render(); checkLoadingHome(state);
+    }
+    const retry = [...host.querySelectorAll('.home-connection button')].find(node => node.textContent === t('Try again'));
+    retry.click(); await pause(); assert(reconnects === 1 && commands.length === 0, 'Retry sent an account mutation');
+    fixture.home = { ...data.home, profile: { ...data.home.profile, name: 'Synced User' } };
+    fixture.connectionState = 'connected'; await render();
+    assert(host.querySelector('.home-page') && !host.querySelector('.home-connection'), 'Connected account did not replace the loading Home');
+    assert(!host.querySelector('.home-create-actions .primary').disabled, 'Home actions stayed disabled after connection');
+    assert(host.textContent.includes('Synced'), 'Connected profile did not replace the Firebase name');
+    fixture.user = null; fixture.home = null; await render();
+    assert(host.querySelector('.auth-shell') && !host.textContent.includes('Synced'), 'Signed-out browser shows the previous account');
+    assert(commands.length === 0, 'Startup automatically sent a room or payment mutation');
+    if (preview) {
+      fixture.user = { uid: 'startup-audit', displayName: 'Returning User' };
+      fixture.connectionState = 'connecting'; await render();
+    }
+    return { passed: true, language: getLanguage(), width: innerWidth, homeDuringConnection: true, unlocksOnConnection: true, signedOutProtected: true };
+  } finally { history.replaceState({}, '', original); }
 }
 
 export async function runRestaurantDraftAndPricesAudit() {

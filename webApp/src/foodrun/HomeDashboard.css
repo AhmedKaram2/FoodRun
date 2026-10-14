@@ -1,4 +1,7 @@
 .home-overview { display:grid; gap:16px; min-width:0; }
+.home-connection { margin-bottom:16px; }
+.home-connection p { margin:0 0 .8rem; overflow-wrap:anywhere; }
+.home-connection .hero-actions { flex-wrap:wrap; }
 .home-overview>section,.home-rooms,.home-spending { min-width:0; }
 .home-page>.page-heading>p:not(.eyebrow) { display:block; font-size:.85rem; line-height:1.7; margin:4px 0 0; }
 .home-overview h2,.home-rooms h2,.home-spending h2 { font-size:1rem; margin:0; }

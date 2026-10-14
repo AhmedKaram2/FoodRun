@@ -27,7 +27,8 @@ export function RoomsOverview({ data, openRoom, phaseName, all=false, onViewAll 
       : !entries.length && <div className="home-room-empty"><Illustration kind="room"/><p>{t('Create or join a room above. Your rooms will appear here.')}</p></div>}
   </section>;
 }
-export default function HomeDashboard({ data, setPage, openRoom, openRestaurants, phaseName, allowRoomCreation=true }) {
+export default function HomeDashboard({ data, setPage, openRoom, openRestaurants, phaseName, allowRoomCreation=true, loading=false }) {
+  const disabled = data.busy || loading;
   const continuing=savedRoomCards(data).find(({reply})=>reply?.room && !['FULFILLED','ARCHIVED','CANCELLED'].includes(reply.room.phase));
   const periods=['week','month'].map(period=>({period,rows:data.home.spending?.periods.filter(value=>value.period===period) || []}));
   const features=[
@@ -39,12 +40,12 @@ export default function HomeDashboard({ data, setPage, openRoom, openRestaurants
     {id:'restaurant-create',title:'Add restaurant',art:'room',tone:'honey',run:()=>setPage('restaurant-create')},
   ];
   return <div className="home-overview">
-    <div className="home-create-actions"><button className="primary" disabled={data.busy || !allowRoomCreation} onClick={()=>setPage('create')}>{t('Create a room')}</button><button className="secondary" disabled={data.busy} onClick={()=>setPage('join')}>{t('Join a room')}</button></div>
+    <div className="home-create-actions"><button className="primary" disabled={disabled || !allowRoomCreation} onClick={()=>setPage('create')}>{t('Create a room')}</button><button className="secondary" disabled={disabled} onClick={()=>setPage('join')}>{t('Join a room')}</button></div>
     {continuing && <section className="card continue-order"><Illustration kind="food"/><div><small>{t('Your current order')}</small><h3>{continuing.session.roomName}</h3><p>{phaseName(continuing.reply.room.phase)}</p></div><button className="secondary" disabled={data.busy} onClick={()=>openRoom(continuing.session.roomId)}>{t('Continue order')} →</button></section>}
-    <section aria-label={t('Quick actions')}><h2>{t('Quick actions')}</h2><div className="home-feature-grid">{features.map(feature=><button key={feature.id} data-home-feature={feature.id} className={`home-feature-tile ${feature.tone}`} disabled={data.busy || feature.disabled} onClick={feature.run}><Illustration kind={feature.art}/><strong>{t(feature.title)}</strong></button>)}</div></section>
-    <RoomsOverview data={data} openRoom={openRoom} phaseName={phaseName} onViewAll={()=>setPage('rooms')}/>
-    <section className="home-spending" aria-label={t('My spending')}><div className="section-title compact"><h2>{t('My spending')}</h2><button type="button" className="link" disabled={data.busy} aria-label={t('View spending')} onClick={()=>setPage('wallet-spending')}>{t('Details')} →</button></div>
-      {data.home.spending ? <div className="home-spending-grid">{periods.map(({period,rows})=><button key={period} className={`home-spending-tile ${period==='week' ? 'honey':'mint'}`} disabled={data.busy} onClick={()=>setPage('wallet-spending')}><span>{t(period==='week' ? 'This week':'This month')}</span>{rows.map(row=><strong key={row.currency}>{money(row.total,row.currency)}</strong>)}<small>{t('Net spending')}</small></button>)}</div>:<p className="muted">{t('Refresh to load spending statistics.')}</p>}
+    <section aria-label={t('Quick actions')}><h2>{t('Quick actions')}</h2><div className="home-feature-grid">{features.map(feature=><button key={feature.id} data-home-feature={feature.id} className={`home-feature-tile ${feature.tone}`} disabled={disabled || feature.disabled} onClick={feature.run}><Illustration kind={feature.art}/><strong>{t(feature.title)}</strong></button>)}</div></section>
+    {loading ? <section className="home-rooms" aria-busy="true"><h2>{t('Recent rooms')}</h2><p className="muted">{t('Connecting…')}</p></section> : <RoomsOverview data={data} openRoom={openRoom} phaseName={phaseName} onViewAll={()=>setPage('rooms')}/>}
+    <section className="home-spending" aria-busy={loading} aria-label={t('My spending')}><div className="section-title compact"><h2>{t('My spending')}</h2><button type="button" className="link" disabled={disabled} aria-label={t('View spending')} onClick={()=>setPage('wallet-spending')}>{t('Details')} →</button></div>
+      {data.home.spending ? <div className="home-spending-grid">{periods.map(({period,rows})=><button key={period} className={`home-spending-tile ${period==='week' ? 'honey':'mint'}`} disabled={disabled} onClick={()=>setPage('wallet-spending')}><span>{t(period==='week' ? 'This week':'This month')}</span>{rows.map(row=><strong key={row.currency}>{money(row.total,row.currency)}</strong>)}<small>{t('Net spending')}</small></button>)}</div>:<p className="muted">{t(loading ? 'Connecting…' : 'Refresh to load spending statistics.')}</p>}
     </section>
   </div>;
 }

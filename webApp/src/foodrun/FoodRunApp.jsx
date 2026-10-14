@@ -577,33 +577,34 @@ function ProfileScreen({ data, onBack, openRoom, onSaved }) {
   </Page>;
 }
 
-function MainTopBar({ onHome, onProfile, profile, actions }) {
+function MainTopBar({ onHome, onProfile, profile, profileDisabled = false, actions }) {
   const navigation = useContext(HomeNavigation);
   const currentProfile = profile || navigation?.profile;
   return <><header className="topbar">
     <button type="button" className="wordmark" aria-label={tx("FoodRun home", "الرئيسية في FoodRun")} onClick={onHome || navigation?.onHome || (() => navigateApp('home'))}><BrandLogo /></button>
-    <div className="top-actions"><GuideLink /><LanguageToggle compact />{actions}{currentProfile && <button type="button" className="profile-chip" aria-label={t('Profile')} onClick={onProfile || (() => navigateApp('profile'))}><Avatar small profile={currentProfile} /><span>{currentProfile.name || t('Complete profile')}</span></button>}</div>
+    <div className="top-actions"><GuideLink /><LanguageToggle compact />{actions}{currentProfile && <button type="button" className="profile-chip" disabled={profileDisabled} aria-label={t('Profile')} onClick={onProfile || (() => navigateApp('profile'))}><Avatar small profile={currentProfile} /><span>{currentProfile.name || t('Complete profile')}</span></button>}</div>
   </header><div className="page-tabs-slot" data-page-tabs-slot /></>;
 }
 
-function Page({ title, subtitle, onBack, actions, profile, onProfile, children, className = "", illustration = "room" }) {
+function Page({ title, subtitle, onBack, actions, profile, onProfile, profileDisabled = false, children, className = "", illustration = "room" }) {
   return <main className={`app-shell ${className}`}>
-    <MainTopBar actions={actions} profile={profile} onProfile={onProfile} />
+    <MainTopBar actions={actions} profile={profile} onProfile={onProfile} profileDisabled={profileDisabled} />
     <div className="page-heading">{onBack && <button className="back" onClick={onBack}>{t("← Back")}</button>}<p className="eyebrow">{t("FOODRUN / TOGETHER")}</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}<Illustration kind={illustration}/></div>
     {children}
   </main>;
 }
 
-function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restaurants'), allowRoomCreation = true }) {
+function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restaurants'), allowRoomCreation = true, loading = false, children }) {
   const firstName=data.home.profile.name?.trim().split(/\s+/)[0];
-  return <Page illustration="food" className="home-page" title={firstName ? tf('Hi, {name}',{name:firstName}):t('Ready to order?')} subtitle={t('Your next meal, one tap away.')} profile={data.home.profile} onProfile={()=>setPage('profile')} actions={<button className="icon-button" aria-label={t('Notifications')} onClick={()=>setPage('notifications')}><Icon name="bell"/></button>}>
+  return <Page illustration="food" className="home-page" title={firstName ? tf('Hi, {name}',{name:firstName}):t('Ready to order?')} subtitle={t('Your next meal, one tap away.')} profile={data.home.profile} profileDisabled={loading} onProfile={()=>setPage('profile')} actions={<button className="icon-button" disabled={loading} aria-label={t('Notifications')} onClick={()=>setPage('notifications')}><Icon name="bell"/></button>}>
+    {children}
     {data.home.wallet && <WalletAnnouncement key={data.home.profile.userId || data.user?.uid} userId={data.home.profile.userId || data.user?.uid} onOpen={()=>setPage('wallet')}/>}
     {data.roomBlocks?.['*'] && <BlockedNotice block={data.roomBlocks['*']} retry={()=>data.connect(data.hub)} inline/>}
-    <HomeDashboard data={data} setPage={setPage} openRoom={openRoom} openRestaurants={openRestaurants} allowRoomCreation={allowRoomCreation} phaseName={phase=>t(phaseLabel[phase])}/>
-    <UserDashboard data={data} openRoom={openRoom} compact openProfile={()=>setPage('wallet')}/>
+    <HomeDashboard data={data} loading={loading} setPage={setPage} openRoom={openRoom} openRestaurants={openRestaurants} allowRoomCreation={allowRoomCreation} phaseName={phase=>t(phaseLabel[phase])}/>
+    {!loading && <UserDashboard data={data} openRoom={openRoom} compact openProfile={()=>setPage('wallet')}/>}
     {!!data.home.invitations?.length && <section><div className="section-title compact"><h2>{t('Invitations')}</h2><span>{data.home.invitations.length}</span></div><div className="grid two"><PagedList items={data.home.invitations}>{invite=><article className="card invitation" key={invite.id}><h3>{invite.roomName}</h3><p>{tf('{name} invited you to order #{number}',{name:invite.invitedBy,number:invite.orderNumber})}</p><button className="primary" disabled={data.busy} onClick={async()=>{const reply=await data.send('IDENTITY',{identity:{action:'ACCEPT_INVITE',invitationId:invite.id}});if(reply?.room)openRoom(reply.room.id);}}>{t('Join room')}</button></article>}</PagedList></div></section>}
-    {!allowRoomCreation && <p role="status" className="form-message">{t('New room creation is temporarily disabled by the administrator.')}</p>}
-    {canAccessAdmin(data.user) && <button className="secondary" onClick={()=>setPage('admin')}>{tx('Admin panel','لوحة الإدارة')}</button>}
+    {!loading && !allowRoomCreation && <p role="status" className="form-message">{t('New room creation is temporarily disabled by the administrator.')}</p>}
+    {!loading && canAccessAdmin(data.user) && <button className="secondary" onClick={()=>setPage('admin')}>{tx('Admin panel','لوحة الإدارة')}</button>}
     <details className="app-download-options"><summary>{tx('Get the FoodRun app','تحميل تطبيق FoodRun')}</summary><AppDownloads/></details>
   </Page>;
 }
@@ -1435,10 +1436,27 @@ function FoodRunClientContent({ useData = useFoodRun } = {}) {
   if (data.user && page === 'offline') return <>{alerts}<OfflineReceipts receipts={data.offlineReceipts} language={uiLanguage} onBack={() => setPage('home')} onClear={data.clearOfflineReceipts} /></>;
   const offlineAction = data.user && <button className="secondary" onClick={() => setPage('offline')}>{tx('Downloaded receipts', 'الإيصالات المحفوظة')}</button>;
   if (data.user && connectionOptions && !data.home && !data.hasPending) return <><HubScreen current={data.hub} connect={address => { setConnectionOptions(false); data.connect(address); }} error={data.error || connectionMessage} /><div className="center-actions"><button className="secondary" onClick={() => { setConnectionOptions(false); data.connect(PUBLIC_API_URL); }}>{tx('Retry Internet connection', 'إعادة محاولة الاتصال بالإنترنت')}</button>{offlineAction}</div>{alerts}</>;
-  if (!data.authReady || (page !== 'admin' && data.user && data.hub && !data.home && data.connectionState !== 'failed')) return <><div className="splash"><BrandMark />{data.connectionState !== 'offline' && <div className="spinner" />}<p role="status">{connectionMessage || t("Setting the table…")}</p>{data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}{data.connectionState === 'retrying' && <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>}{data.hub === PUBLIC_API_URL && ['retrying','offline'].includes(data.connectionState) && !data.hasPending && <button className="secondary" onClick={() => setConnectionOptions(true)}>{tx('Other connection options', 'خيارات اتصال أخرى')}</button>}{offlineAction}</div>{alerts}</>;
+  if (!data.authReady) return <div className="splash"><BrandMark /><div className="spinner" /><p role="status">{t("Setting the table…")}</p></div>;
   if (!data.user) return <AuthScreen ready={data.authReady} allowRegistration={siteConfig.registrationsEnabled} />;
   if (page === 'admin') return canAccessAdmin(data.user) ? <AdminApp key={data.user.uid} language={uiLanguage} user={data.user} onSupport={reply => { window.history.replaceState({}, '', '/'); setSupportSession(reply); setPage('home'); }} onBack={() => { window.history.replaceState({}, '', '/'); setPage('home'); }} /> : <main className="center-shell"><section className="card"><p>{tx('This account cannot access administration.', 'هذا الحساب لا يملك صلاحية الإدارة.')}</p><button onClick={() => { window.history.replaceState({}, '', '/'); setPage('home'); }}>{t('Home')}</button></section></main>;
-  if (!data.hub || (!data.home && data.error)) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
+  if (!data.hub) return <><HubScreen current={data.hub} connect={data.connect} error={data.error} /><div className="center-actions">{offlineAction}</div>{alerts}</>;
+  if (!data.home) {
+    // Show Home as soon as Firebase restores the user; account data follows
+    // independently. Never present empty balances or allow account mutations.
+    const loadingData = { ...data, home: { profile: { userId: data.user.uid, name: data.user.displayName || '' } }, rooms: {}, sessions: {}, busy: true };
+    return <>{alerts}<Home data={loadingData} loading setPage={setPage} openRoom={openRoom} allowRoomCreation={siteConfig.roomCreationEnabled}>
+      <section className="card home-connection" aria-label={tx('Account connection', 'اتصال الحساب')}>
+        <p role="status">{connectionMessage || (data.connectionState === 'failed' ? tx('Could not connect to your account. Try again or sign in again.', 'تعذر الاتصال بحسابك. حاول مجددًا أو سجّل الدخول من جديد.') : t('Connecting to your rooms…'))}</p>
+        {data.hub === PUBLIC_API_URL && data.connectionState === 'connecting' && <p className="muted">{t('The first connection may take up to a minute.')}</p>}
+        <div className="hero-actions">
+          <button className="secondary" onClick={() => data.connect(data.hub)}>{t('Try again')}</button>
+          {['retrying','offline','failed'].includes(data.connectionState) && !data.hasPending && <button className="secondary" onClick={() => setConnectionOptions(true)}>{tx('Other connection options', 'خيارات اتصال أخرى')}</button>}
+          {offlineAction}
+          <button className="link" onClick={() => signOut(auth).catch(error => data.setError(error.message))}>{t('Sign out')}</button>
+        </div>
+      </section>
+    </Home></>;
+  }
   const home = data.home;
   let content;
   if (page === 'notifications') content = <NotificationCenter notifications={notifications} data={data} renderPayment={item => {

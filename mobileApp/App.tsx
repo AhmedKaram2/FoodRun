@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { colors, font, tx } from "./src/theme";
-import { languageOptions, setUiLanguage } from "./src/language";
+import { languageOptions, setUiLanguage, formatUi } from "./src/language";
 import { dispatch, events, native, parseSnapshot, update } from "./src/native";
 import type { Snapshot, Section, Field } from "./src/types";
 import Brand from "./src/components/Brand";
@@ -366,7 +366,7 @@ function Application() {
                 </Pressable>
               )}
               <Pressable testID={room ? "room-name" : undefined} accessibilityRole={room ? "header" : undefined} accessibilityLabel={room ? state.title : undefined} style={{ flex: 1, minWidth: 0 }} delayLongPress={800} onLongPress={()=>{if(room && state.canOverrideSelection && !busy)dispatch("OPEN_SELECTION_OVERRIDE");}}>
-                <Text numberOfLines={room ? 1 : undefined} style={[textStyle(rtl, "bold"), ui.title, room && ui.roomTitle]}>
+                <Text numberOfLines={room ? 2 : undefined} style={[textStyle(rtl, "bold"), ui.title, room && ui.roomTitle]}>
                   {room ? state.title : wallet ? tx(rtl, "Wallet", "المحفظة") : state.page === "HOME" && snapshot.profile ? tx(rtl, `Good food, ${snapshot.profile.name.split(" ")[0]}.`, `أهلاً، ${snapshot.profile.name.split(" ")[0]}.`) : state.title}
                 </Text>
                 {!!state.subtitle && !room && (
@@ -389,7 +389,7 @@ function Application() {
             {room && state.roomPhase && <RoomTimeline phase={state.roomPhase} stage={sections.some(section=>section.cards.some(card=>card.id==="my-order-complete")) ? tx(rtl,"Your order is complete · waiting for arrival","اكتمل طلبك · بانتظار وصول الطعام") : state.roomStage || ""} rtl={rtl}/>}
             {room && !!state.orderingPerson && <View style={[ui.orderingPerson,rtl && ui.reverse]}>
               <Icon name="profile" size={17} color={colors.forest}/>
-              <Text accessibilityLiveRegion="polite" style={[textStyle(rtl,"semibold"),{flex:1,fontSize:13,lineHeight:22,color:colors.forest}]}>{tx(rtl,state.orderingPersonPending ? `Chosen: ${state.orderingPerson}` : `Ordering person: ${state.orderingPerson}`,state.orderingPersonPending ? `تم اختيار: ${state.orderingPerson}` : `مسؤول الطلب: ${state.orderingPerson}`)}</Text>
+              <Text accessibilityLiveRegion="polite" style={[textStyle(rtl,"semibold"),{flex:1,fontSize:13,lineHeight:22,color:colors.forest}]}>{formatUi(state.orderingPersonPending ? "Chosen: {name}" : "Ordering person: {name}",{name:state.orderingPerson},state.orderingPersonPending ? "تم اختيار: {name}" : "مسؤول الطلب: {name}")}</Text>
             </View>}
             {room && !!state.orderingPerson && (canModifyOrder || reopenOrder || shareAndLock) && <View style={{marginHorizontal:18,marginBottom:8,gap:8}}>
               {(canModifyOrder || reopenOrder) && <Pressable accessibilityRole="button" onPress={()=>{if(reopenOrder && !busy) dispatch(reopenOrder.action,"modify");changeTab(1);}} style={{minHeight:44,justifyContent:"center",paddingHorizontal:12,borderRadius:12,backgroundColor:colors.mint}}><Text style={[textStyle(rtl,"semibold"),{color:colors.forest}]}>{tx(rtl,"Modify order","تعديل الطلب")}</Text></Pressable>}
@@ -726,7 +726,7 @@ const ui = StyleSheet.create({
     gap: 8,
   },
   title: { fontSize: 19, lineHeight: 30 },
-  roomHeading: {paddingVertical:4,minHeight:48},
+  roomHeading: {marginHorizontal:16,marginVertical:6,paddingHorizontal:10,paddingVertical:8,minHeight:56,borderRadius:18,borderWidth:1,borderColor:colors.line,backgroundColor:colors.white},
   roomTitle: {fontSize:16,lineHeight:24},
   roomInvite: {minHeight:44,minWidth:64,alignItems:"center",justifyContent:"center",paddingHorizontal:8},
   roomSettings: {minHeight:44,alignItems:"center",justifyContent:"center",paddingHorizontal:8,borderRadius:12,backgroundColor:colors.mint},

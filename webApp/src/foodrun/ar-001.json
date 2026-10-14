@@ -222,5 +222,11 @@
   "{name} is selected to order": "{name} مسؤول الطلب",
   "Join {room}": "ادخل غرفة {room}",
   "{name} invited you to order #{number}": "{name} دعاك للطلب رقم {number}",
-  "Quick actions": "إجراءات سريعة"
+  "Quick actions": "إجراءات سريعة",
+  "Your saved rooms and orders.": "غرفك وطلباتك المحفوظة.",
+  "Your order, items and notes.": "طلبك وأصنافك وملاحظاتك.",
+  "Your share and payment updates.": "حصتك وتحديثات الدفع.",
+  "Tap a member to see their order and status.": "اضغط على العضو لعرض طلبه وحالته.",
+  "Chosen: {name}": "تم اختيار: {name}",
+  "Ordering person: {name}": "مسؤول الطلب: {name}"
 }

@@ -6,6 +6,7 @@ import { colors, tx } from "../theme";
 import { CardView, FieldInput, textStyle } from "./Controls";
 import ScrollArea, { ScrollLoad } from "./ScrollArea";
 import Icon from "./Icon";
+import SectionHero from "./SectionHero";
 
 function MenuItem({card,busy,rtl}:{card:Card;busy:boolean;rtl:boolean}) {
   const choose=card.buttons.find(button=>button.action==="OPEN_ITEM"), add=card.buttons.find(button=>button.action==="QUICK_ADD_ITEM");
@@ -33,6 +34,7 @@ export default function RoomFood({cards,fields,busy,rtl}:{cards:Card[];fields:Fi
   // Cart lines have their own fixed shortcut and sheet; filtering the menu cannot hide them.
   const visible=cards.filter(card=>!isOrderCard(card));
   return <View style={{gap:10}}>
+    <SectionHero title={tx(rtl,"My food","طلبي")} detail={tx(rtl,"Your order, items and notes.","طلبك وأصنافك وملاحظاتك.")} kind="food" rtl={rtl}/>
     {!!search && <View style={[styles.search,rtl && styles.reverse]}>
       <Icon name="search" size={19} color={colors.muted}/>
       <TextInput accessibilityLabel={search.label} testID={search.key} value={search.value} editable={!busy} placeholder={tx(rtl,"Find food…","ابحث عن طعام…")} placeholderTextColor={colors.muted} onChangeText={value=>update(search.key,value)} style={[textStyle(rtl),styles.input]}/>

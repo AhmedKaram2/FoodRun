@@ -2,12 +2,13 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../src/foodrun/foodrun.css';
+import MobilePageLayout from '../src/foodrun/MobilePageLayout.jsx';
 
 const params = new URLSearchParams(location.search), language = params.get('lang') || 'en', screen = params.get('screen') || 'sign-in';
 localStorage.setItem('foodrun-language-v1', language);
 document.documentElement.lang = language; document.documentElement.dir = language.startsWith('ar') ? 'rtl' : 'ltr';
-const { AuthScreen, CreateRoom, RoomScreen, Home } = await import('../src/foodrun/FoodRunApp.jsx');
-const { setLanguage } = await import('../src/foodrun/i18n.js');
+const { AuthScreen, CreateRoom, RoomScreen, Home, RoomsScreen, UserDashboard, Page } = await import('../src/foodrun/FoodRunApp.jsx');
+const { setLanguage, t } = await import('../src/foodrun/i18n.js');
 setLanguage(language);
 localStorage.setItem('foodrun-copy-language-v1', language);
 const { CreatePaymentRoom } = await import('../src/foodrun/PaymentRoom.jsx');
@@ -55,11 +56,21 @@ function FeedbackPreview() {
     <p id="retained-error">{feedback.error}</p><button id="saved-request" disabled={!pending}>Retry saved request</button>
     {feedback.feedback && <FeedbackBanner key={feedback.feedback.id} feedback={feedback.feedback} onDismiss={feedback.dismissFeedback} retry={() => {}} />}</main>;
 }
+function HomePreview() {
+  const [page,setPage]=useState('home');
+  const navigate=value=>{window.guideHomePage=value;setPage(value);};
+  const content=page==='rooms' ? <RoomsScreen data={data} openRoom={id=>{window.guideOpenedRoom=id;}} onBack={()=>navigate('home')}/> : page==='wallet' || page==='wallet-spending' ? <Page title={t('Wallet & payments')} onBack={()=>navigate('home')}><UserDashboard data={data} openRoom={()=>{}} initialSection={page==='wallet-spending' ? 'spending':''}/></Page> : <Home data={data} setPage={navigate} openRoom={id=>{window.guideOpenedRoom=id;}} openRestaurants={()=>{window.guideHomePage='restaurants';}}/>;
+  return <MobilePageLayout key={page} pageKey={page} disableTabs>{content}</MobilePageLayout>;
+}
+if(screen==='home') {
+  data.home.spending={asOf:Date.now(),timeZone:'Asia/Dubai',periods:['week','month'].map((period,index)=>({period,startDate:'2026-10-01',endDate:'2026-10-31',currency:'AED',paid:index ? 33000:8500,refunds:index ? 1500:1000,total:index ? 31500:7500,meals:[{meal:'breakfast',total:index ? 6000:1500},{meal:'lunch',total:index ? 16000:4000},{meal:'dinner',total:index ? 8500:2000},{meal:'other',total:index ? 1000:0}]}))};
+  for(let i=1;i<=8;i++) {const id='recent-'+i,name=language.startsWith('ar') ? 'غرفة محفوظة '+i:'Saved room '+i;data.sessions[id]={...data.sessions[room.id],roomId:id,roomName:name};data.rooms[id]={...reply,room:{...room,id,name,createdAt:Date.now()-i*86400000}};data.online[id]=true;}
+}
 let content;
 if (screen === 'feedback') content = <FeedbackPreview />;
 else if (screen === 'sign-in') content = <AuthScreen ready={true} />;
 else if (screen === 'guide') { const { default: HowToUse } = await import('../src/foodrun/HowToUse.jsx'); content = <HowToUse language={language} onBack={() => { window.guideReturned = true; }} />; }
-else if (screen === 'home') content = <Home data={data} setPage={() => {}} openRoom={() => {}} />;
+else if (screen === 'home') content = <HomePreview />;
 else if (screen === 'join' || screen === 'create') content = <CreateRoom data={data} mode={screen} inviteCode={screen === 'join' ? '123456' : ''} onBack={() => {}} openRoom={() => {}} />;
 else if (screen === 'payment-room') content = <CreatePaymentRoom data={data} onBack={() => {}} openRoom={() => {}} openProfile={() => {}} />;
 else content = <RoomScreen data={data} roomId={room.id} onBack={() => {}} />;

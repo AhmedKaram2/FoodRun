@@ -5,11 +5,12 @@ import type { Card } from "../types";
 import { colors, tx } from "../theme";
 import { CardView, textStyle } from "./Controls";
 import BottomSheet from "./BottomSheet";
+import SectionHero from "./SectionHero";
 export default function RoomMembers({ cards, busy, rtl }: {cards:Card[];busy:boolean;rtl:boolean}) {
   const [selected,setSelected] = useState(""), [limit,setLimit] = useState(12), width = useWindowDimensions().width;
   const columns = width >= 600 ? 3 : 2, size = columns * 6;
   const member = cards.find(card => card.id === selected);
-  return <View style={{gap:12}}><View style={[styles.grid,rtl && {flexDirection:"row-reverse"}]}>
+  return <View style={{gap:12}}><SectionHero title={tx(rtl,"Members","الأعضاء")} detail={tx(rtl,"Tap a member to see their order and status.","اضغط على العضو لعرض طلبه وحالته.")} kind="friends" rtl={rtl} badge={String(cards.length)}/><View style={[styles.grid,rtl && {flexDirection:"row-reverse"}]}>
     {cards.slice(0,limit).map(card => <Pressable key={card.id} testID={`compact:${card.id}`} accessibilityRole="button" accessibilityLabel={card.title} onPress={() => setSelected(card.id)} style={[styles.member,{width:columns === 3 ? "31%" : "48%"}]}>
       <View style={styles.avatar}><Text style={[textStyle(rtl,"bold"),{fontSize:18}]}>{Array.from(card.title)[0]}</Text></View>
       <Text numberOfLines={2} style={[textStyle(rtl,"semibold"),styles.name]}>{card.title}</Text>

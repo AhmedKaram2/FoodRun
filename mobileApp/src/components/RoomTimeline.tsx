@@ -17,4 +17,4 @@ export default function RoomTimeline({phase,stage,rtl}:{phase:string;stage:strin
     </View>
   </View>;
 }
-const styles=StyleSheet.create({card:{marginHorizontal:18,marginBottom:8,gap:6},status:{flexDirection:"row",alignItems:"center",gap:6},dot:{width:6,height:6,borderRadius:3,backgroundColor:colors.forest},stage:{fontSize:12,lineHeight:20},steps:{flexDirection:"row",gap:4},step:{flex:1},marker:{height:4,borderRadius:2,backgroundColor:colors.line},done:{backgroundColor:colors.green},active:{backgroundColor:colors.forest}});
+const styles=StyleSheet.create({card:{marginHorizontal:16,marginBottom:8,padding:10,borderRadius:16,backgroundColor:colors.honey,gap:7},status:{flexDirection:"row",alignItems:"center",gap:6},dot:{width:6,height:6,borderRadius:3,backgroundColor:colors.forest},stage:{fontSize:12,lineHeight:20},steps:{flexDirection:"row",gap:4},step:{flex:1},marker:{height:4,borderRadius:2,backgroundColor:colors.line},done:{backgroundColor:colors.green},active:{backgroundColor:colors.forest}});

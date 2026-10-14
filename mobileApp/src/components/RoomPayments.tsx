@@ -4,6 +4,7 @@ import type { Card } from "../types";
 import { colors, tx } from "../theme";
 import { CardView, PagedCards, textStyle } from "./Controls";
 import ScreenTabs from "./ScreenTabs";
+import SectionHero from "./SectionHero";
 
 export default function RoomPayments({cards,busy,rtl}:{cards:Card[];busy:boolean;rtl:boolean}) {
   const [selected,setSelected]=useState("actions");
@@ -14,6 +15,7 @@ export default function RoomPayments({cards,busy,rtl}:{cards:Card[];busy:boolean
   const group=(card:Card)=>card.id.startsWith("receipt:") ? "receipts" : card.paymentGroup==="history" ? "history" : card.id.startsWith("transfer:") && !card.paymentGroup && !card.buttons.length ? "history" : "actions";
   if(!cards.length)return null;
   return <View style={{gap:12}}>
+    <SectionHero title={tx(rtl,"Payments","المدفوعات")} detail={tx(rtl,"Your share and payment updates.","حصتك وتحديثات الدفع.")} kind="wallet" rtl={rtl}/>
     {!!account.length && <View style={{gap:8}}><Text accessibilityRole="header" style={[textStyle(rtl,"semibold"),styles.link]}>{tx(rtl,"Payment details","بيانات الدفع")}</Text>{account.map(card=><CardView key={card.id} card={card} rtl={rtl} busy={busy} compactActions/>)}</View>}
     {summary.map(card=><CardView key={card.id} card={card} busy={busy} rtl={rtl} compactActions/>)}
     <ScreenTabs rtl={rtl} selected={selected} onChange={setSelected} style={{paddingHorizontal:0,paddingBottom:0}} items={[{id:"actions",title:tx(rtl,"Actions","الإجراءات"),icon:"wallet"},{id:"receipts",title:tx(rtl,"Receipts","الإيصالات"),icon:"receipt"},{id:"history",title:tx(rtl,"History","السجل"),icon:"history"}]}/>

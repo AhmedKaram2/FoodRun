@@ -288,7 +288,7 @@ test("Sudanese Home shows its greeting, wallet labels, shortcuts and language ac
   (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
   const view=render(<App/>);
   await view.findByText("أهلاً بيك، أمل");
-  expect(view.getByText("طلبك الجاي يبدأ بضغطة.")).toBeTruthy();
+  expect(view.getByText("طلبك الجاي ساهل شديد.")).toBeTruthy();
   expect(view.getByText("المحفظة والقروش")).toBeTruthy();
   expect(view.getByText("قوائم الأكل")).toBeTruthy();
   fireEvent.press(view.getByText("افتح غرفة"));
@@ -553,10 +553,10 @@ test("Wallet separates payments approvals balances and history without changing 
 });
 test("Wallet spending tab shows the localized totals without mixing payment actions",async()=>{
  const value=snapshot();value.state={...value.state,page:"WALLET",language:"ar-SD",rtl:true};
- value.topCards=[{...card("profile-dashboard:wallet-spending:week:AED","الأسبوع ده"),badge:"AED 70.00",detail:"الفطور · AED 20.00\nالغداء · AED 50.00"},{...card("profile-dashboard:wallet-spending:month:AED","الشهر ده"),badge:"AED 240.00"},card("wallet-balance","رصيدك")];
+ value.topCards=[{...card("profile-dashboard:wallet-spending:week:AED","الأسبوع دا"),badge:"AED 70.00",detail:"الفطور · AED 20.00\nالغداء · AED 50.00"},{...card("profile-dashboard:wallet-spending:month:AED","الشهر دا"),badge:"AED 240.00"},card("wallet-balance","رصيدك")];
  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));const view=render(<App/>);
  await view.findByText("رصيدك");fireEvent.press(view.getByRole("tab",{name:"المصاريف"}));
- expect(view.getByText("الأسبوع ده")).toBeTruthy();expect(view.getByText("الشهر ده")).toBeTruthy();
+ expect(view.getByText("الأسبوع دا")).toBeTruthy();expect(view.getByText("الشهر دا")).toBeTruthy();
  expect(view.getByText("AED 70.00")).toBeTruthy();expect(view.queryByText("رصيدك")).toBeNull();
 });
 test("room payments move a resolved transfer to history while keeping receipts and account details reachable",()=>{

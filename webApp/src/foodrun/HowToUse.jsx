@@ -35,7 +35,7 @@ export default function HowToUse({ language, onBack }) {
           </div>
           <TogetherArt />
         </div>
-        <div className="guide-path" aria-hidden="true">{(language.startsWith('ar') ? ['ادخل','اختاروا','اطلب','سوّي الحساب'] : ['Join','Select','Order','Settle']).map((label, i) => <span key={label}><b>{new Intl.NumberFormat(language.startsWith('ar') ? 'ar-EG' : 'en').format(i + 1)}</b>{label}</span>)}</div>
+    <div className="guide-path" aria-hidden="true">{(language === 'ar-SD' ? ['ادخل','اختاروا','اطلب','صفّي الحساب'] : language.startsWith('ar') ? ['ادخل','اختاروا','اطلب','سوّي الحساب'] : ['Join','Select','Order','Settle']).map((label, i) => <span key={label}><b>{new Intl.NumberFormat(language.startsWith('ar') ? 'ar-EG' : 'en').format(i + 1)}</b>{label}</span>)}</div>
       </section>
       <section className="guide-roles" aria-labelledby="guide-roles-title"><h2 id="guide-roles-title">{content.quickTitle}</h2><p>{content.quickDescription}</p>
         <div className="guide-role-grid">{content.roles.map((role, i) => <a href={`#guide-${role.target}`} onClick={event => navigateSection(event, `guide-${role.target}`)} key={role.target}><span className="guide-role-icon" aria-hidden="true">{['＋','⌂','✓'][i]}</span><strong>{role.title}</strong><p>{role.detail}</p><span className="guide-role-arrow" aria-hidden="true">↗</span></a>)}</div>

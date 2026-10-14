@@ -218,7 +218,7 @@ class AdminService(
                 val room = requireNotNull(db.room(change.roomId)) { "Room was not found." }
                 require(deletable(room)) { "Only cancelled or fully settled archived rooms can be deleted." }
                 require(change.expectedRevision == room.revision && change.confirmation == room.code) { "The room changed or its confirmation code does not match. Refresh and try again." }
-                db.transaction { db.deleteRoom(room.id); audit(actorId, "delete-room", room.id) }
+                db.transaction { rooms.preserveSpending(room.id); db.deleteRoom(room.id); audit(actorId, "delete-room", room.id) }
                 rooms.adminChanged(listOf(room.id))
             }
             else -> error("Unsupported room action.")
@@ -250,7 +250,7 @@ class AdminService(
         val preview = cleanupPreview(request)
         require(request.previewToken.isNotBlank() && request.previewToken == preview.previewToken) { "The cleanup selection changed. Preview it again before deleting." }
         db.transaction {
-            preview.targets.forEach { if(request.scope == "closedRooms") db.deleteRoom(it.id) else db.deleteHistory(it.id, it.orderNumber) }
+            preview.targets.forEach { rooms.preserveSpending(it.id,if(request.scope == "closedRooms") null else it.orderNumber); if(request.scope == "closedRooms") db.deleteRoom(it.id) else db.deleteHistory(it.id, it.orderNumber) }
             val filter = if(request.fromDate.isNotEmpty()) "last activity from ${request.fromDate} through ${request.toDate} (${request.timeZone})" else "older than ${request.olderThanDays} days"
             audit(actorId, "cleanup:${request.scope}", "${preview.count} records $filter")
         }

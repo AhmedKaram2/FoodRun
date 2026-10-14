@@ -7,6 +7,7 @@ import { Button, PagedCards, textStyle } from "../components/Controls";
 import Icon from "../components/Icon";
 import Illustration from "../components/Illustration";
 import ScrollArea from "../components/ScrollArea";
+import { formatUi } from "../language";
 
 export default function HomeScreen({snapshot}:{snapshot:Snapshot}) {
   const {rtl,busy,online}=snapshot.state;
@@ -36,7 +37,7 @@ export default function HomeScreen({snapshot}:{snapshot:Snapshot}) {
     </Pressable>;
   };
   return <ScrollArea testID="home-content" keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={busy} onRefresh={()=>dispatch("REFRESH")} tintColor={colors.forest}/>} contentContainerStyle={styles.content}>
-    <View style={[styles.heading,rtl && styles.reverse]}><View style={styles.grow}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.greeting]}>{firstName ? tx(rtl,`Hi, ${firstName}`,`أهلاً، ${firstName}`) : tx(rtl,"Ready to order?","جاهز لطلبك؟")}</Text><Text style={[textStyle(rtl),styles.small]}>{tx(rtl,"Your next meal, one tap away.","وجبتك القادمة تبدأ بضغطة.")}</Text></View><Illustration kind="food" size={58}/>{!online && <Text style={[textStyle(rtl,"medium"),styles.offline]}>{tx(rtl,"Offline","غير متصل")}</Text>}</View>
+    <View style={[styles.heading,rtl && styles.reverse]}><View style={styles.grow}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.greeting]}>{firstName ? (rtl ? formatUi("Hi, {name}", {name:firstName}, "أهلاً، {name}") : `Hi, ${firstName}`) : tx(rtl,"Ready to order?","جاهز لطلبك؟")}</Text><Text style={[textStyle(rtl),styles.small]}>{tx(rtl,"Your next meal, one tap away.","وجبتك القادمة تبدأ بضغطة.")}</Text></View><Illustration kind="food" size={58}/>{!online && <Text style={[textStyle(rtl,"medium"),styles.offline]}>{tx(rtl,"Offline","غير متصل")}</Text>}</View>
     {current && currentAction && <Pressable testID="home-current-order" accessibilityRole="button" accessibilityLabel={`${currentAction.title} · ${current.detail}`} accessibilityState={{disabled:busy || !currentAction.enabled}} disabled={busy || !currentAction.enabled} onPress={()=>open(currentAction)} style={({pressed})=>[styles.current,pressed && styles.pressed]}>
       <View style={[styles.currentHeading,rtl && styles.reverse]}><Icon name="food" color={colors.white} size={18}/><Text style={[textStyle(rtl,"medium"),styles.currentLabel]}>{tx(rtl,"Your current order","طلبك الحالي")}</Text></View>
       <Text numberOfLines={2} style={[textStyle(rtl,"bold"),styles.currentTitle]}>{current.detail}</Text>

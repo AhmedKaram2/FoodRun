@@ -153,6 +153,7 @@ interface GroupPlatform {
     fun write(key: String, value: String): Boolean
     fun now(): Long
     fun localOffsetSeconds(timeMillis: Long): Int = 0
+    fun spendingTimeZone(): String = "UTC"
     fun uuid(): String
     fun request(hub: HubPairing, body: String, callback: GroupReplyCallback)
     fun watch(hub: HubPairing, body: String, callback: GroupReplyCallback): GroupSubscription

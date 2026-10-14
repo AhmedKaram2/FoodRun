@@ -63,7 +63,7 @@ object InternationalPhone {
         payment?.validate()
         require(paymentAccounts.size <= 10 && paymentAccounts.map { it.id }.distinct().size == paymentAccounts.size && receivingAccounts.size <= 10) { "Save up to 10 distinct payment methods." }
         paymentAccounts.forEach(ReceivingAccount::validate)
-        require(language in listOf("en", "ar")) { "Choose Arabic or English." }
+        require(language in listOf("en", "ar", "ar-EG", "ar-AE", "ar-SD", "ar-001")) { "Choose a supported language." }
         require(favoriteOrders.size <= 30 && favoriteOrders.map { it.id }.distinct().size == favoriteOrders.size) { "Save up to 30 distinct favorite orders." }
         favoriteOrders.forEach(FavoriteOrder::validate)
     }
@@ -136,4 +136,7 @@ fun FavoriteOrder.selectionKey(): String = selectionKey(restaurantId, lines)
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val notificationPreferences: NotificationPreferences? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val spending: SpendingSummary? = null,
 )

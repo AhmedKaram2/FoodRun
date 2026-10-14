@@ -784,8 +784,25 @@ internal class GroupPresentation(private val c: GroupController) {
         if(choices.isEmpty()) card("empty", tr("No unique past orders downloaded yet", "لا توجد طلبات سابقة مختلفة بعد"), tr("Completed orders appear here when the next order starts.", "تظهر الطلبات المكتملة هنا عند بدء الطلب التالي."))
     }
 
+    private fun spendingCards(prefix: String) {
+        val summary=c.library.home?.spending
+        card("${prefix}wallet-spending-info", tr("My spending", "مصروفاتي"),
+            tr("Confirmed payments for your own food. Wallet top-ups and money covering others are excluded.", "الدفعات المؤكدة لطعامك فقط، دون شحن المحفظة أو المبالغ التي تدفعها عن الآخرين.") + "\n" +
+            tr("Week: Monday–Sunday. Meals follow the room name; unlabeled meals appear under Other.", "الأسبوع من الاثنين إلى الأحد. تُصنّف الوجبات حسب اسم الغرفة، وتظهر الوجبات غير المحددة ضمن أخرى.") + "\n" +
+            tr("Confirmed payments, by recorded payment date.", "الدفعات المؤكدة حسب تاريخ تسجيل الدفع.") + (summary?.let { " · ${it.timeZone}" } ?: ""))
+        if(summary == null) card("${prefix}wallet-spending-empty", tr("Refresh to load spending statistics.", "حدّث الصفحة لتحميل إحصاءات المصروفات."))
+        summary?.periods?.forEach { period ->
+            val labels=mapOf("breakfast" to tr("Breakfast", "الفطور"),"lunch" to tr("Lunch", "الغداء"),"dinner" to tr("Dinner", "العشاء"),"other" to tr("Other", "أخرى"))
+            val details=period.meals.joinToString("\n") { "${labels[it.meal] ?: labels["other"]} · ${Money.format(it.total,period.currency)}" }
+            card("${prefix}wallet-spending:${period.period}:${period.currency}", if(period.period == "week") tr("This week", "هذا الأسبوع") else tr("This month", "هذا الشهر"),
+                "${period.startDate} – ${period.endDate}\n" + tr("Net spending", "صافي المصروفات") + "\n" + details + "\n" +
+                tr("Paid", "المدفوع") + " · ${Money.format(period.paid,period.currency)}\n" + tr("Refunds", "المبالغ المرتجعة") + " · ${Money.format(period.refunds,period.currency)}", Money.format(period.total,period.currency))
+        }
+    }
+
     private fun dashboardCards(prefix: String) {
         cards += c.walletFunds.cards(prefix)
+        if(c.page == GroupPage.WALLET) spendingCards(prefix)
         data class SnapshotRow(val session: StoredSession, val reply: RoomReply, val room: Room, val receipt: Receipt?)
         val rows = c.library.sessions.mapNotNull { session ->
             val reply = c.library.snapshots[session.roomId] ?: return@mapNotNull null

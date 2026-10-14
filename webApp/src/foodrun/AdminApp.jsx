@@ -13,6 +13,7 @@ import MenuEditor, { MenuMoneyInput } from './MenuEditor';
 import { useState, useEffect, useRef } from 'react';
 import { money } from './client';
 import { PUBLIC_API_URL, normalizeRestaurant, blankRestaurant, changeRestaurantCurrency, clone, LanguageToggle } from './FoodRunApp';
+import { languageOptions, normalizeLanguage } from './i18n.js';
 
 async function adminRequest(path, user, body) {
   if (!canAccessAdmin(user)) throw Error(t('This account cannot access administration.'));
@@ -136,7 +137,7 @@ function AdminUserCard({ person, self, rooms, mutate, busy, onSupport }) {
         <div className="form-grid two">
           <label>{t('Profile name')}<input required maxLength={160} value={form.name} onChange={e => set('name', e.target.value)} /></label>
           <label>{t('Phone with country code')}<input required type="tel" placeholder="+20 10 1234 5678" value={form.phone} onChange={e => set('phone', e.target.value)} /></label>
-          <label>{t('Language')}<select value={form.language} onChange={e => set('language', e.target.value)}><option value="en">English</option><option value="ar">العربية</option></select></label>
+          <label>{t('Language')}<select value={normalizeLanguage(form.language)} onChange={e => set('language', e.target.value)}>{languageOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="check"><input type="checkbox" checked={form.discoverable} onChange={e => set('discoverable', e.target.checked)} />{t('Let people on this hub invite me')}</label>
         </div>
         <div className="admin-profile-photo">{form.photo && <img src={form.photo} alt={form.name} />}<label>{t('Choose photo')}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => { const file = e.target.files[0]; if (!file) return; try { set('photo', await photoData(file)); } catch (error) { setMessage(error.message); } }} /></label>{form.photo && <button type="button" className="link" onClick={() => set('photo', '')}>{t('Remove photo')}</button>}</div>

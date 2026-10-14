@@ -9,6 +9,17 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private val accounts = AccountService(db, identityProvider, this, clock)
     private val emails = EmailService(db, clock, emailEnabled)
     private val notifications = NotificationService(db, clock)
+    private val spending = SpendingService(db,clock)
+    internal fun preserveSpending(roomId: String, orderNumber: Long? = null) {
+        var offset=0
+        while(true) {
+            val page=db.history(roomId,offset,10)
+            if(page.isEmpty()) break
+            page.filter { orderNumber == null || it.orderNumber == orderNumber }.forEach { spending.record(it) }
+            offset+=page.size
+        }
+        db.room(roomId)?.takeIf { orderNumber == null || it.orderNumber == orderNumber }?.let { spending.record(it) }
+    }
     private val wallets = WalletService(db, accounts, notifications, clock, ::signalRoom)
     private val friends = FriendGroupService(db, accounts, emails, notifications, clock)
     private val support = SupportSessions(db, clock)
@@ -92,7 +103,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     }
     @Synchronized fun touch(memberId: String) { if (memberId.isNotEmpty()) presence[memberId] = clock() }
     private fun signalRoom(roomId: String) {
-        db.room(roomId)?.let(::scheduleTransferConfirmation)
+        db.room(roomId)?.let { spending.record(it); scheduleTransferConfirmation(it) }
         roomEvents[roomId] = ++eventSequence
         homeEvents = eventSequence
     }
@@ -114,22 +125,22 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         }
         else if(c.kind == CommandKind.COMMAND_STATUS) commandStatus(c)
         else if (c.kind == CommandKind.QUICK_CHOICE) {
-            val home = requireNotNull(accounts.home(c.identityToken).home)
+            val home = requireNotNull(accounts.home(c.identityToken,c.spendingTimeZone).home)
             val selected = quickChoices.execute(home.profile.userId,home,requireNotNull(c.quickChoice))
             RoomReply(code="QUICK_CHOICE_LIVE",quickChoice=selected,serverTime=clock())
         }
-        else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken).let { reply ->
+        else if (c.kind == CommandKind.HOME) accounts.home(c.identityToken,c.spendingTimeZone).let { reply ->
             if(c.name == "quick-choice-v1") reply.copy(code="QUICK_CHOICE_LIVE",quickChoice=quickChoices.view(requireNotNull(reply.home).profile.userId)) else reply
         }
         else if (c.kind in listOf(CommandKind.ADD_MENU_ITEMS, CommandKind.PUBLISH_RESTAURANT)) db.transaction {
             val uid = accounts.userId(c.identityToken)
             val restaurant = requireNotNull(c.restaurant) { "Choose a restaurant and menu." }
             val digest = hash("$uid:${c.kind}:" + orderJson.encodeToString(restaurant))
-            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
+            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken,c.spendingTimeZone) } ?: run {
                 val catalog = AdminService(db, this, clock, identityProvider)
                 if (c.kind == CommandKind.ADD_MENU_ITEMS) catalog.addMenuItems(c.identityToken, restaurant)
                 else catalog.contributeRestaurant(CatalogRestaurantMutation(c.identityToken, c.roomId, c.token, restaurant))
-                val reply = accounts.home(c.identityToken)
+                val reply = accounts.home(c.identityToken,c.spendingTimeZone)
                 db.record(c.commandId, digest, reply); support.record(c); signalHome(); reply
             }
         }
@@ -137,17 +148,17 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             val uid = accounts.userId(c.identityToken)
             val preferences = requireNotNull(c.notificationPreferences) { "Choose your notification preferences." }
             val digest = hash("$uid:preferences:" + orderJson.encodeToString(preferences))
-            db.previous(c.commandId,digest)?.let { accounts.home(c.identityToken) } ?: run {
+            db.previous(c.commandId,digest)?.let { accounts.home(c.identityToken,c.spendingTimeZone) } ?: run {
                 db.putRecord("notification-preferences:$uid",orderJson.encodeToString(preferences))
-                val reply = accounts.home(c.identityToken)
+                val reply = accounts.home(c.identityToken,c.spendingTimeZone)
                 db.record(c.commandId,digest,reply); support.record(c); signalHome(); reply
             }
         }
         else if (c.kind == CommandKind.SNAPSHOT) snapshot(c.roomId, c.token, c.historyOffset)
         else if(c.kind in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH, CommandKind.SAVE_FRIEND_GROUP, CommandKind.DELETE_FRIEND_GROUP, CommandKind.LEAVE_FRIEND_GROUP)) db.transaction {
             val uid = accounts.userId(c.identityToken)
-            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
-            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken) } ?: run {
+            val digest = hash("$uid:" + orderJson.encodeToString(c.copy(identityToken = "", friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false, spendingDetails = false, spendingTimeZone = "")))
+            db.previous(c.commandId, digest)?.let { accounts.home(c.identityToken,c.spendingTimeZone) } ?: run {
                 val reply = friends.execute(c)
                 if(c.kind !in listOf(CommandKind.FRIEND_LOOKUP, CommandKind.FRIEND_SEARCH)) { db.record(c.commandId, digest, reply); support.record(c); signalHome() }
                 reply
@@ -157,9 +168,9 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             val uid = accounts.userId(c.identityToken)
             val actor = if(c.kind == CommandKind.PAY_WITH_WALLET || (c.kind == CommandKind.WALLET_DECLARE_BATCH && c.flag)) authenticate(c.roomId, c.token) else null
             val digest = hash("$uid:${actor.orEmpty()}:" + orderJson.encodeToString(c.copy(identityToken = "", token = "", selectionDetails = false,
-                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
+                visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false, spendingDetails = false, spendingTimeZone = "")))
             db.previous(c.commandId, digest)?.let {
-                val current = accounts.home(c.identityToken)
+                val current = accounts.home(c.identityToken,c.spendingTimeZone)
                 if(actor != null) projection(requireNotNull(db.room(c.roomId)), actor).copy(home = current.home) else current
             } ?: run {
                 val result = wallets.execute(c, actor)
@@ -184,7 +195,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             if (c.identityToken.isNotEmpty()) accounts.userId(c.identityToken)
             if (c.kind !in listOf(CommandKind.CREATE, CommandKind.JOIN, CommandKind.CREATE_PAYMENT_ROOM)) authenticate(c.roomId, c.token)
             if (c.kind in listOf(CommandKind.UNLOCK_SELECTION_OVERRIDE, CommandKind.SET_SELECTION_OVERRIDE)) requireSelectionAdministrator(c)
-            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false)))
+            val digest = hash(orderJson.encodeToString(c.copy(selectionDetails = false, visualSelectionDetails = false, liveRoomDetails = false, multiplePaymentDetails = false, wheelProtectionDetails = false, autoArchiveDetails = false, walletDetails = false, halfItemDetails = false, friendsDetails = false, friendMembershipDetails = false, notificationPreferencesDetails = false, restaurantOrderDetails = false, spendingDetails = false, spendingTimeZone = "")))
             db.previous(c.commandId, digest) ?: run {
                 val reply = when(c.kind) {
                     CommandKind.CREATE_PAYMENT_ROOM -> createPaymentRoom(c)
@@ -380,7 +391,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
         val savedUser = saved.home?.profile?.userId?.takeIf { it.isNotEmpty() }
             ?: saved.room?.let { db.record("member-user:${it.id}:${saved.memberId}") }
         require(savedUser != null && AccountAliases.resolve(db,savedUser) == uid) { "This saved request belongs to another account." }
-        val home = accounts.home(c.identityToken).home!!
+        val home = accounts.home(c.identityToken,c.spendingTimeZone).home!!
         val membership = saved.room?.let { room -> home.rooms.singleOrNull { it.roomId == room.id } }
         val room = membership?.let { db.room(it.roomId) }
         val result = if(room != null) projection(room,membership.memberId).copy(token = membership.token,home = home)

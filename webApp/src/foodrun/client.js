@@ -54,7 +54,7 @@ export async function request(hub, command, signal) {
     signal?.removeEventListener('abort', cancel);
   }
 }
-export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true, liveRoomDetails: true, multiplePaymentDetails: true, wheelProtectionDetails: true, autoArchiveDetails: true, walletDetails: true, halfItemDetails: true, friendsDetails: true, friendMembershipDetails: true, notificationPreferencesDetails:true, restaurantOrderDetails:true }; }
+export function command(kind, fields = {}) { return { protocolVersion: 1, commandId: crypto.randomUUID(), kind, ...fields, selectionDetails: true, visualSelectionDetails: true, liveRoomDetails: true, multiplePaymentDetails: true, wheelProtectionDetails: true, autoArchiveDetails: true, walletDetails: true, halfItemDetails: true, friendsDetails: true, friendMembershipDetails: true, notificationPreferencesDetails:true, restaurantOrderDetails:true, spendingDetails:true, spendingTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone }; }
 export function watch(hub, payload, onReply, onStatus, { events = globalThis.window,
   visibility = globalThis.document, isOnline = () => globalThis.navigator?.onLine !== false } = {}) {
   let socket, stopped = false, timer, watchdog, retry = 1000;

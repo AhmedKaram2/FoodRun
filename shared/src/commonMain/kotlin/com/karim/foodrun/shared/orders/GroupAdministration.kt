@@ -247,7 +247,7 @@ internal class GroupAdministration(private val c: GroupController) {
         return GroupFlowContent(searchableFields, searchableCards, buttons)
     }
     private fun userContent(): GroupFlowContent {
-        val fields = mutableListOf(field(GroupFieldKey.ADMIN_NAME, "Name", "الاسم"), field(GroupFieldKey.ADMIN_PHONE, "Phone", "رقم الهاتف"), field(GroupFieldKey.ADMIN_LANGUAGE, "Language", "اللغة", choices = listOf(GroupChoice("en", "English"), GroupChoice("ar-EG", "العربية المصرية"), GroupChoice("ar-AE", "العربية الإماراتية"), GroupChoice("ar-001", "العربية الفصحى"))))
+        val fields = mutableListOf(field(GroupFieldKey.ADMIN_NAME, "Name", "الاسم"), field(GroupFieldKey.ADMIN_PHONE, "Phone", "رقم الهاتف"), field(GroupFieldKey.ADMIN_LANGUAGE, "Language", "اللغة", choices = listOf(GroupChoice("en", "English"), GroupChoice("ar-EG", "العربية المصرية"), GroupChoice("ar-AE", "العربية الإماراتية"), GroupChoice("ar-SD", "العربية السودانية"), GroupChoice("ar-001", "العربية الفصحى"))))
         if(userId.isEmpty()) fields += listOf(field(GroupFieldKey.ADMIN_EMAIL, "Email", "البريد الإلكتروني"), field(GroupFieldKey.ADMIN_PASSWORD, "Initial password", "كلمة المرور الأولية", secret = true))
         else fields += listOf(field(GroupFieldKey.ADMIN_PHOTO, "Profile photo", "صورة الملف"), field(GroupFieldKey.ADMIN_DISCOVERABLE, "Allow invitations", "السماح بالدعوات", toggle = true),
             field(GroupFieldKey.ADMIN_METHOD, "Payment method", "طريقة الدفع", choices = listOf(GroupChoice("none", tr("None", "بدون")), GroupChoice("aani", "Aani"), GroupChoice("bank", tr("Bank", "بنك")))),

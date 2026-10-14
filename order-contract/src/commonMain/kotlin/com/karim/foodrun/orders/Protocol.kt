@@ -20,6 +20,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
     val protocolVersion: Int = 1, val commandId: String, val kind: CommandKind,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val spendingDetails: Boolean = false,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val spendingTimeZone: String = "",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val quickChoice: QuickChoiceRequest? = null,
     val roomId: String = "", val token: String = "", val expectedRevision: Long = -1,
     val name: String = "", val code: String = "", val memberId: String = "", val text: String = "",

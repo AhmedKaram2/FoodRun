@@ -1,5 +1,6 @@
 import {guideArabicStandard} from './guideArabicStandard.js';
 import {guideArabicEmirati} from './guideArabicEmirati.js';
+import {guideArabicSudanese} from './guideArabicSudanese.js';
 // Keep button names and responsibilities aligned with the actual room and settlement flows.
 export const guideContent = {
   en: {
@@ -87,6 +88,6 @@ export const guideContent = {
 export function localizedGuide(language) {
   if(language === 'en') return guideContent.en;
   if(language === 'ar' || language === 'ar-EG') return guideContent.ar;
-  const wording=language === 'ar-AE' ? guideArabicEmirati : guideArabicStandard;
+  const wording=language === 'ar-SD' ? guideArabicSudanese : language === 'ar-AE' ? guideArabicEmirati : guideArabicStandard;
   return {...guideContent.ar,...wording,sections:guideContent.ar.sections.map(section=>({...section,...wording.sections[section.id]}))};
 }

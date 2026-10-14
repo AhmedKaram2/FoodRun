@@ -142,6 +142,7 @@ final class GroupNativeTests: XCTestCase {
 }
 
 private final class MemoryGroupPlatform: GroupPlatform {
+    func spendingTimeZone() -> String { "UTC" }
     func accountSignedOut() {}
     func adminRequest(hub: HubPairing, body: String, callback: GroupReplyCallback) { callback.complete(body: "", error: "Not configured in this fixture") }
     func disablePush() {}

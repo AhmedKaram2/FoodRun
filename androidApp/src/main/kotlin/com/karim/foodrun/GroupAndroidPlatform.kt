@@ -32,6 +32,7 @@ import java.util.concurrent.Executors
 
 /** Retained native services; the current Activity is attached only while it exists. */
 class GroupAndroidPlatform(context: Context) : GroupPlatform {
+    override fun spendingTimeZone(): String = java.util.TimeZone.getDefault().id
     private var photoPicker: ActivityResultLauncher<String>? = null
     private var photoCallback: GroupReplyCallback? = null
     private var receiptPhoto = false

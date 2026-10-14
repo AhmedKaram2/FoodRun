@@ -242,7 +242,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.DISMISS_WALLET_ANNOUNCEMENT -> walletAnnouncement.dismiss()
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }
             GroupAction.SET_LANGUAGE -> {
-                require(value in listOf("en", "ar", "ar-EG", "ar-AE", "ar-001")) { "Choose a supported language." }
+                require(value in listOf("en", "ar", "ar-EG", "ar-AE", "ar-SD", "ar-001")) { "Choose a supported language." }
                 draft.remove(GroupFieldKey.ORDER_COPY_LANGUAGE)
                 replaceLibrary(library.copy(language = value, languagePreference = value))
             }
@@ -260,7 +260,7 @@ class GroupController(val platform: GroupPlatform) {
             }
             GroupAction.SIGN_IN -> identity(IdentityAction.SIGN_IN)
             GroupAction.REGISTER -> identity(IdentityAction.REGISTER, profileOverride = FoodProfile(name = text(GroupFieldKey.NAME).trim(),
-                language = if(library.language.startsWith("ar")) "ar" else "en").also { it.validate() })
+                language = library.language).also { it.validate() })
             GroupAction.SAVE_PROFILE -> identity(IdentityAction.SAVE_PROFILE, returnPage = GroupPage.PROFILE)
             GroupAction.RESET_PASSWORD -> identity(IdentityAction.RESET_PASSWORD)
             GroupAction.SIGN_OUT -> if(supportActive) endSupport() else identity(IdentityAction.SIGN_OUT)
@@ -776,7 +776,7 @@ class GroupController(val platform: GroupPlatform) {
                 method = if(flag(GroupFieldKey.AANI)) PaymentMethod.AANI else PaymentMethod.BANK)
         }
         return FoodProfile(name = name, phone = CountryDialCodes.combine(text(GroupFieldKey.PROFILE_COUNTRY).ifBlank { "AE" }, text(GroupFieldKey.PROFILE_PHONE)), photo = text(GroupFieldKey.PHOTO).trim(), payment = account,
-            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = if(library.language.startsWith("ar")) "ar" else "en",
+            discoverable = text(GroupFieldKey.DISCOVERABLE) != "false", language = library.language,
             favoriteOrders = library.home?.profile?.favoriteOrders.orEmpty()).normalized().also { it.validate() }
     }
     internal fun saveProfileUpdate(profile: FoodProfile) = identity(IdentityAction.SAVE_PROFILE, profileOverride = profile, returnPage = page)
@@ -1016,7 +1016,7 @@ class GroupController(val platform: GroupPlatform) {
         }) } catch (_: Exception) { recoveringCommand = null }
     }
     fun tickAccessBlock() { if(supportActive && platform.now() >= supportExpiresAt) endSupport(); recoverPending(); if (accessBlock != null || reply?.room?.joinDeadlineAt?.let { it > 0 } == true) publish() }
-    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true, notificationPreferencesDetails = true, restaurantOrderDetails = true))
+    private fun encodeCommand(command: RoomCommand): String = orderJson.encodeToString(command.copy(selectionDetails = true, visualSelectionDetails = true, liveRoomDetails = true, wheelProtectionDetails = true, autoArchiveDetails = true, walletDetails = true, multiplePaymentDetails = true, halfItemDetails = true, friendsDetails = true, friendMembershipDetails = true, notificationPreferencesDetails = true, restaurantOrderDetails = true, spendingDetails = true, spendingTimeZone = platform.spendingTimeZone()))
     private fun decodeReply(body: String): RoomReply = try { orderJson.decodeFromString<RoomReply>(body).also {
         if (it.accessBlock != null && (it.accessBlock!!.roomId == session?.roomId || page in listOf(GroupPage.SETUP, GroupPage.CONNECT))) { accessBlock = it.accessBlock; blockClockOffset = it.serverTime - platform.now(); publish() }
         else if (it.ok && it.room != null && accessBlock?.roomId == it.room!!.id) accessBlock = null

@@ -95,7 +95,7 @@ internal class NotificationService(private val db: RoomDatabase, private val clo
         val id = RoomService.hash("${room?.id ?: "wallet"}:${room?.orderNumber ?: 0}:$eventId:$uid").take(40)
         val key = "notification:$uid:$id"
         if (db.record(key) != null) return
-        val ar = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it).language == "ar" } == true
+        val ar = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it).language.startsWith("ar") } == true
         val labels = mapOf("open" to ("Open room" to "فتح الغرفة"), "order" to ("Review & send order" to "مراجعة وإرسال الطلب"),
             "copy" to ("Copy order" to "نسخ الطلب"), "share" to ("Share order" to "مشاركة الطلب"), "pay" to ("Payment sent" to "أرسلت الدفع"),
             "confirm" to ("Payment received" to "استلمت الدفع"), "accept" to ("Accept selection" to "قبول الاختيار"), "wallet" to ("Open wallet" to "فتح المحفظة"), "join" to ("Join room" to "الانضمام للغرفة"), "groups" to ("View group" to "عرض المجموعة"))

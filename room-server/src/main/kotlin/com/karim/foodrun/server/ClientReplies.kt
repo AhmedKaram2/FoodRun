@@ -8,7 +8,7 @@ private fun Receipt.withoutHalfDetails(): Receipt = copy(lines = lines.map {
 })
 
 /** Preserve the wire schema accepted by each released generation of native clients. */
-internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false, halfItemDetails: Boolean = false, friendsDetails: Boolean = false, friendMembershipDetails: Boolean = false, notificationPreferencesDetails: Boolean = false, restaurantOrderDetails: Boolean = false): RoomReply = copy(
+internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetails: Boolean = false, liveRoomDetails: Boolean = false, multiplePaymentDetails: Boolean = false, wheelProtectionDetails: Boolean = false, autoArchiveDetails: Boolean = false, walletDetails: Boolean = false, halfItemDetails: Boolean = false, friendsDetails: Boolean = false, friendMembershipDetails: Boolean = false, notificationPreferencesDetails: Boolean = false, restaurantOrderDetails: Boolean = false, spendingDetails: Boolean = false): RoomReply = copy(
     restaurantOrder = restaurantOrder.takeIf { restaurantOrderDetails },
     friendContact = friendContact.takeIf { friendsDetails }, friendContacts = friendContacts.takeIf { friendsDetails },
     receipts = if (halfItemDetails) receipts else receipts.map { it.withoutHalfDetails() },
@@ -16,7 +16,7 @@ internal fun RoomReply.forClient(selectionDetails: Boolean, visualSelectionDetai
     walletRecipient = walletRecipient.takeIf { walletDetails }, walletPeople = walletPeople.takeIf { walletDetails },
     walletHistory = walletHistory.takeIf { walletDetails },
     home = home?.let { it.copy(profile = if (multiplePaymentDetails) it.profile else it.profile.copy(paymentAccounts = emptyList()),
-        wallet = it.wallet.takeIf { walletDetails }, notificationPreferences = it.notificationPreferences.takeIf { notificationPreferencesDetails },
+        wallet = it.wallet.takeIf { walletDetails }, spending = it.spending.takeIf { spendingDetails }, notificationPreferences = it.notificationPreferences.takeIf { notificationPreferencesDetails },
         friendGroups = if(friendsDetails) it.friendGroups.map { group -> if(friendMembershipDetails) group else group.copy(revision = 0) } else emptyList(),
         joinedFriendGroups = if(friendMembershipDetails) it.joinedFriendGroups else emptyList(),
         rooms = it.rooms.map { member -> member.copy(phase = member.phase.takeIf { liveRoomDetails }, orderNumber = if (liveRoomDetails) member.orderNumber else 0, paymentsPending = autoArchiveDetails && member.paymentsPending) }) },

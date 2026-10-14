@@ -26,7 +26,7 @@ internal class GroupWalletFunds(private val c: GroupController) {
             roomId=saved?.roomId.orEmpty(),token=saved?.token.orEmpty(),expectedRevision=room?.revision ?: 0,expectedOrderNumber=room?.orderNumber ?: 0), returnPage = returnPage)
     }
     fun accept(reply: RoomReply, command: RoomCommand) {
-        reply.walletPeople?.takeIf { c.page == GroupPage.WALLET_TOP_UP && command.text.trim().isNotEmpty() && command.text.trim() == c.text(GroupFieldKey.WALLET_SEARCH).trim() }?.let { people = it; searched = true }
+        reply.walletPeople?.takeIf { c.page == GroupPage.WALLET_TOP_UP && command.text.trim().isNotEmpty() && command.text.trim() == c.text(GroupFieldKey.WALLET_SEARCH).trim() && command.currency == currency() }?.let { people = it; searched = true }
         reply.walletRecipient?.takeIf { c.page in listOf(GroupPage.WALLET_TOP_UP, GroupPage.WALLET_BATCH) && command.currency == currency() && command.userId == if(c.page == GroupPage.WALLET_BATCH) batchRecipient else selectedUser }?.let { recipient = it; c.draft[GroupFieldKey.WALLET_ACCOUNT] = it.accounts.firstOrNull()?.id.orEmpty() }
     }
     fun searchChanged() { people = emptyList(); searched = false; recipient = null; selectedUser = ""; c.draft.remove(GroupFieldKey.WALLET_ACCOUNT) }

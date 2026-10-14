@@ -9,6 +9,7 @@ import Illustration from "../components/Illustration";
 import ScrollArea from "../components/ScrollArea";
 
 function group(card:Card):string {
+  if(/wallet-spending/.test(card.id))return "spending";
   if(card.paymentGroup)return card.paymentGroup;
   if(/payment-history/.test(card.id))return "history";
   if(/wallet-(funds|held:|holding:|balance)/.test(card.id))return "balance";
@@ -20,7 +21,7 @@ export default function WalletScreen({snapshot}:{snapshot:Snapshot}) {
   const {rtl,busy}=snapshot.state, cards=[...snapshot.topCards,...snapshot.sections.flatMap(section=>section.cards)];
   const entries=cards.filter(card=>!/(wallet-summary$|wallet-direction:|payment-history$)/.test(card.id));
   const [selected,setSelected]=useState(()=>entries.some(card=>group(card)==="pay") ? "pay" : entries.some(card=>group(card)==="waiting") ? "waiting" : "balance");
-  const tabs=[{id:"balance",title:tx(rtl,"Balance","الرصيد")},{id:"pay",title:tx(rtl,"To pay","للدفع")},{id:"waiting",title:tx(rtl,"Waiting","بانتظار التأكيد")},{id:"receive",title:tx(rtl,"To receive","للاستلام")},{id:"history",title:tx(rtl,"History","السجل")}];
+  const tabs=[{id:"balance",title:tx(rtl,"Balance","الرصيد")},{id:"spending",title:tx(rtl,"Spending","المصروفات")},{id:"pay",title:tx(rtl,"To pay","للدفع")},{id:"waiting",title:tx(rtl,"Waiting","بانتظار التأكيد")},{id:"receive",title:tx(rtl,"To receive","للاستلام")},{id:"history",title:tx(rtl,"History","السجل")}];
   const visible=entries.filter(card=>group(card)===selected).sort((a,b)=>Number(b.buttons.some(button=>button.primary)) - Number(a.buttons.some(button=>button.primary)));
   return <View style={{flex:1}}>
     <View style={{flexDirection:rtl ? "row-reverse":"row",alignItems:"center",paddingHorizontal:18,gap:8}}><Text accessibilityRole="header" style={[textStyle(rtl,"bold"),styles.heading,{flex:1,paddingHorizontal:0}]}>{tx(rtl,"Wallet & payments","المحفظة والمدفوعات")}</Text><Illustration kind="wallet" size={50}/></View>

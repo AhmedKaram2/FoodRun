@@ -336,6 +336,7 @@ fun Application.hubRoutes(
             var friendMembershipDetails = false
             var notificationPreferencesDetails = false
             var restaurantOrderDetails = false
+            var spendingDetails = false
             val reply = try {
                 val bytes = call.receiveChannel().readRemaining(2 * 1024 * 1024L + 1).readByteArray()
                 require(bytes.size <= 2 * 1024 * 1024) { "Request too large." }
@@ -354,6 +355,7 @@ fun Application.hubRoutes(
                 friendMembershipDetails = command.friendMembershipDetails
                 notificationPreferencesDetails = command.notificationPreferencesDetails
                 restaurantOrderDetails = command.restaurantOrderDetails
+                spendingDetails = command.spendingDetails
                 withContext(Dispatchers.IO) {
                     val result = service.execute(command)
                     if (command.kind == CommandKind.REMIND_PAYMENT && result.ok && result.code == "REMINDER_QUEUED" && reminderSender != null)
@@ -366,7 +368,7 @@ fun Application.hubRoutes(
                 log.error("Room request failed: ${failure.javaClass.simpleName}")
                 RoomReply(ok = false, error = "The hub could not save this request. Reconnect and retry the same action.", code = "HUB_UNAVAILABLE")
             }
-            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails, friendMembershipDetails, notificationPreferencesDetails, restaurantOrderDetails)), ContentType.Application.Json)
+            call.respondText(orderJson.encodeToString(reply.forClient(selectionDetails, visualSelectionDetails, liveRoomDetails, multiplePaymentDetails, wheelProtectionDetails, autoArchiveDetails, walletDetails, halfItemDetails, friendsDetails, friendMembershipDetails, notificationPreferencesDetails, restaurantOrderDetails, spendingDetails)), ContentType.Application.Json)
         }
         webSocket("/events") {
             // Credentials are sent inside the encrypted socket, never in URLs or access logs.
@@ -406,7 +408,7 @@ fun Application.hubRoutes(
                     }
                     // Room edits signal HOME globally. Do not resend the whole catalog when
                     // this user's home payload did not actually change.
-                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails, request.friendMembershipDetails, request.notificationPreferencesDetails, request.restaurantOrderDetails)
+                    val projected = snapshot.forClient(request.selectionDetails, request.visualSelectionDetails, request.liveRoomDetails, request.multiplePaymentDetails, request.wheelProtectionDetails, request.autoArchiveDetails, request.walletDetails, request.halfItemDetails, request.friendsDetails, request.friendMembershipDetails, request.notificationPreferencesDetails, request.restaurantOrderDetails, request.spendingDetails)
                     if (request.kind != CommandKind.HOME || !snapshot.ok || projected.home != lastHome || projected.quickChoice != lastQuickChoice) {
                         send(Frame.Text(orderJson.encodeToString(projected)))
                         lastHome = projected.home

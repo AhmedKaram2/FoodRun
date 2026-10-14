@@ -903,5 +903,18 @@
   "Copy all payment details": "نسخ كل بيانات الدفع",
   "Food arrived · order closed": "وصل الطعام · تم إغلاق الطلب",
   "Notes for the restaurant (optional)": "ملاحظات للمطعم (اختياري)",
-  "Add notes / customize": "إضافة ملاحظات وتخصيص الصنف"
+  "Add notes / customize": "إضافة ملاحظات وتخصيص الصنف",
+  "Spending": "المصروفات",
+  "My spending": "مصروفاتي",
+  "This week": "هذا الأسبوع",
+  "This month": "هذا الشهر",
+  "Net spending": "صافي المصروفات",
+  "Refunds": "المبالغ المرتجعة",
+  "Confirmed payments for your own food. Wallet top-ups and money covering others are excluded.": "الدفعات المؤكدة لطعامك فقط، دون شحن المحفظة أو المبالغ التي تدفعها عن الآخرين.",
+  "Week: Monday–Sunday. Meals follow the room name; unlabeled meals appear under Other.": "الأسبوع من الاثنين إلى الأحد. تُصنّف الوجبات حسب اسم الغرفة، وتظهر الوجبات غير المحددة ضمن أخرى.",
+  "Confirmed payments, by recorded payment date.": "الدفعات المؤكدة حسب تاريخ تسجيل الدفع.",
+  "Refresh to load spending statistics.": "حدّث الصفحة لتحميل إحصاءات المصروفات.",
+  "Other": "أخرى",
+  "Is ordering": "مسؤول عن الطلب",
+  "Was selected": "تم اختياره"
 }

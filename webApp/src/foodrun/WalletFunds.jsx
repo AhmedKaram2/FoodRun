@@ -26,12 +26,12 @@ function TopUp({ data, onClose }) {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
-      try { const reply = await data.walletQuery('WALLET_PEOPLE', { text: query }, controller.signal); if (!controller.signal.aborted) { setPeople(reply.walletPeople || []); setSearched(true); } }
+      try { const reply = await data.walletQuery('WALLET_PEOPLE', { text: query, currency }, controller.signal); if (!controller.signal.aborted) { setPeople(reply.walletPeople || []); setSearched(true); } }
       catch (failure) { if (!controller.signal.aborted) setError(failure.message); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [search, data.identityToken]);
+  }, [search, currency, data.identityToken]);
   useEffect(() => {
     if (!person) return;
     const controller = new AbortController(); setRecipient(null); setAccountId(''); setLoading(true); setError('');
@@ -53,7 +53,7 @@ function TopUp({ data, onClose }) {
   };
   return <form className="card stack wallet-top-up" onSubmit={submit}>
     <div className="section-title compact"><h3>{tx('Charge my wallet', 'شحن محفظتي')}</h3><button type="button" className="secondary" onClick={onClose}>{t('Cancel')}</button></div>
-    <div className="form-grid two"><label>{tx('Top-up amount', 'مبلغ الشحن')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Currency')}<select value={currency} onChange={event => setCurrency(event.target.value)}>{CURRENCIES.map(item => <option key={item}>{item}</option>)}</select></label></div>
+    <div className="form-grid two"><label>{tx('Top-up amount', 'مبلغ الشحن')}<input inputMode="decimal" value={value} onChange={event => setValue(event.target.value)} required /></label><label>{t('Currency')}<select value={currency} onChange={event => { setCurrency(event.target.value); setPerson(null); setRecipient(null); setAccountId(''); }}>{CURRENCIES.map(item => <option key={item}>{item}</option>)}</select></label></div>
     <label>{tx('Choose who will hold your money', 'اختر الشخص الذي سيحتفظ بأموالك')}<input type="search" value={search} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={254} onChange={event => { setSearch(event.target.value); setPeople([]); setPerson(null); setRecipient(null); setAccountId(''); }} placeholder={tx('Search by name or email', 'ابحث بالاسم أو البريد الإلكتروني')} /></label>
     {!search.trim() && <p className="field-help">{tx('Start typing a name or email to find someone.', 'ابدأ بكتابة اسم أو بريد إلكتروني للبحث عن شخص.')}</p>}
     {search.trim() && people.length > 0 && <div className="wallet-people" role="group" aria-label={tx('Search results', 'نتائج البحث')}>{people.map(value => <button type="button" className={`secondary ${person?.userId === value.userId ? 'selected' : ''}`} aria-pressed={person?.userId === value.userId} key={value.userId} onClick={() => setPerson(value)}>{value.name}</button>)}</div>}

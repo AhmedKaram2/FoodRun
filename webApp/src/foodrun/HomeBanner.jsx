@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { TogetherArt } from './Brand.jsx';
+import { t } from './i18n.js';
 
 function BannerIcon({ kind }) {
   const paths = {
@@ -13,7 +14,7 @@ function BannerIcon({ kind }) {
 
 export default function HomeBanner({ rtl = false, allowRoomCreation = true, onCreate, onJoin, onRestaurants }) {
   const [index, setIndex] = useState(0);
-  const copy = (en, ar) => rtl ? ar : en;
+  const copy = (en, ar) => rtl ? (t(en) === en ? ar : t(en)) : en;
   const slides = [
     { tone: 'together', eyebrow: copy('GOOD FOOD BRINGS PEOPLE CLOSER', 'الأكل الحلو يقرّبنا'),
       first: copy('Food is better', 'الأكل أحلى'), accent: copy('together.', 'مع بعض.'),

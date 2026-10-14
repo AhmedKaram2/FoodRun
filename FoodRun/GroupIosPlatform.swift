@@ -9,6 +9,7 @@ import FoodRunShared
 
 /// The shared controller calls this adapter on the UI thread; callbacks return there too.
 final class GroupIosPlatform: NSObject, GroupPlatform, UNUserNotificationCenterDelegate, MessagingDelegate {
+    func spendingTimeZone() -> String { TimeZone.current.identifier }
     var onNotification: ((String, String) -> Void)? {
         didSet { if let pending = pendingNotification, let onNotification { pendingNotification = nil; onNotification(pending.0, pending.1) } }
     }

@@ -18,6 +18,7 @@ import HomeBanner from './HomeBanner.jsx';
 import Illustration from './Illustration.jsx';
 import Icon from './Icon.jsx';
 import WalletAnnouncement from './WalletAnnouncement.jsx';
+import SpendingSummary from './SpendingSummary.jsx';
 import { BrandLogo, BrandMark, TogetherArt } from './Brand.jsx';
 import RunningNames from './RunningNames.jsx';
 import { mealRoomName, roomDefaults, rememberRoomDefaults } from './smartDefaults.js';
@@ -52,7 +53,7 @@ import WalletFunds, { WalletPaymentOption } from './WalletFunds.jsx';
 import WalletCustody from './WalletCustody.jsx';
 import { roomCashReceived, roomWalletPending } from './wallet.js';
 import { settlementOpen } from './roomLifecycle.js';
-import { t, tf, languageOptions, normalizeLanguage, baseLanguage, setLanguage as setTranslationLanguage } from './i18n.js';
+import { t, tf, languageOptions, normalizeLanguage, setLanguage as setTranslationLanguage } from './i18n.js';
 import { selectionKey, uniquePreviousOrders, uniqueRoomPreviousOrders, userDashboard } from './orderHistory';
 import { createContext, useContext, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -89,8 +90,8 @@ const phaseLabel = {
   PLACED: 'Order placed', FULFILLED: 'Food arrived · order closed', ARCHIVED: 'Complete', CANCELLED: 'Cancelled',
 };
 
-const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.13/FoodRun-Android-1.7.13.apk';
-const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.13/FoodRun-iOS-RegisteredDevices-1.7.13.ipa';
+const ANDROID_DOWNLOAD_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.14/FoodRun-Android-1.7.14.apk';
+const IOS_IPA_URL = 'https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.14/FoodRun-iOS-RegisteredDevices-1.7.14.ipa';
 const IOS_STORE_URL = import.meta.env.VITE_FOODRUN_IOS_URL?.trim() || '';
 const PUBLIC_API_URL = import.meta.env.VITE_FOODRUN_API_URL?.trim().replace(/\/$/, '') || 'https://foodrun-api-q6b9.onrender.com';
 const RESTAURANT_LIBRARY_KEY = 'foodrun-restaurants-v1';
@@ -322,7 +323,7 @@ function WinnerReveal({ winner, selected, me, room, data }) {
     <div className="winner-confetti" aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i style={{ '--confetti-x': `${(index * 43) % 100}%`, '--confetti-delay': `${(index % 7) * -0.12}s`, '--confetti-color': WHEEL_PALETTE[index % WHEEL_PALETTE.length] }} key={index} />)}</div>
     <div className="winner-food-icon" aria-hidden="true"><span>🥡</span><b>★</b></div>
     <p className="eyebrow">{t("TODAY’S PICK")}</p>
-    <h2>{winner.name}{t("is ordering!")}</h2>
+    <h2>{winner.name}{" "}{t("is ordering!")}</h2>
     <p>{t("Everyone sees the same selected person live.")}</p>
     {selected && winner.id === me.id && <div className="hero-actions"><button className="primary" onClick={() => data.send('ACCEPT_DUTY', {}, room.id)}>{t("I’ll take care of it")}</button><button className="secondary" onClick={() => data.send('DECLINE_DUTY', { text: t("Unavailable this time") }, room.id)}>{t("I can’t this time")}</button></div>}
   </div>;
@@ -496,6 +497,7 @@ function UserDashboard({ data, openRoom, compact = false, openProfile }) {
     </div>
     <div className="page-tabs-slot wallet-tabs-slot" data-page-tabs-slot />
     <div data-mobile-section="funds" data-mobile-label={tx('Balance','الرصيد')}><WalletFunds data={data} mode="balances" /></div>
+    <SpendingSummary summary={data.home.spending} />
     <section data-mobile-section="wallet-pay" data-mobile-label={tx('To pay','للدفع')} className="card wallet-direction pay"><h3>{t('I need to pay')}</h3><WalletFunds data={data} mode="actions" filter="pay"/>{!pay.length && <p className="muted">{tx('No direct payments due.','لا توجد دفعات مباشرة مستحقة.')}</p>}{rows(pay)}</section>
     <section data-mobile-section="wallet-waiting" data-mobile-label={tx('Waiting','بانتظار التأكيد')} className="card wallet-direction"><h3>{tx('Waiting for confirmation','بانتظار التأكيد')}</h3><WalletFunds data={data} mode="actions" filter="waiting"/>{!waiting.length && <p className="muted">{tx('No direct payments waiting for confirmation.','لا توجد دفعات مباشرة بانتظار التأكيد.')}</p>}{rows(waiting,true)}</section>
     <section data-mobile-section="wallet-receive" data-mobile-label={tx('To receive','للاستلام')} className="card wallet-direction receive"><h3>{t('I need to receive')}</h3><WalletFunds data={data} mode="actions" filter="receive"/>{!receive.length && <p className="muted">{tx('No direct payments to receive.','لا توجد دفعات مباشرة للاستلام.')}</p>}{rows(receive)}</section>
@@ -528,7 +530,7 @@ function ProfileScreen({ data, onBack, openRoom, onSaved }) {
     try {
       const reply = await send('IDENTITY', { identity: { action: 'SAVE_PROFILE', profile: {
         ...profile, userId: '', name: form.name.trim(), phone: form.phone.trim() ? internationalPhone(form.phone) : '', photo: form.photo,
-        payment: profile.payment, discoverable: form.discoverable, language: baseLanguage(uiLanguage), favoriteOrders: profile?.favoriteOrders || [],
+        payment: profile.payment, discoverable: form.discoverable, language: normalizeLanguage(uiLanguage), favoriteOrders: profile?.favoriteOrders || [],
       } } });
       if (reply) { setDirty(false); data.setNotice(t("Profile and payment details saved.")); onSaved?.(); }
     } catch (error) { setMessage(error.message); }
@@ -614,7 +616,7 @@ function Home({ data, setPage, openRoom, openRestaurants = () => setPage('restau
       {roomCards.length ? <div className="grid two"><PagedList items={roomCards}>{({ session, reply }) => {
         const room = reply?.room, member = room?.members.find(m => m.id === session.memberId), winner = room?.members.find(m => m.id === (room.payerId || room.spin?.winnerId));
         const receipt = reply?.receipts.find(r => r.memberId === session.memberId);
-        return <article className="card room-card" key={session.roomId} onClick={() => openRoom(session.roomId)}><div className="room-card-top"><span className={`status ${online[session.roomId] ? 'live' : ''}`}>{online[session.roomId] ? t("● Live") : t("Offline")}</span><span>#{room?.orderNumber || 1}</span></div><h3>{session.roomName}</h3><p>{room ? t(phaseLabel[room.phase]) : t("Connecting…")}</p>{winner && <div className="winner-row"><span className="avatar initials small">{initials(winner.name)}</span><span><b>{winner.name}</b><small>{room.payerId ? ' is ordering' : ' was selected'}</small></span></div>}{receipt && ['REVIEW','PLACED','FULFILLED'].includes(room.phase) && <div className="amount-row"><span>{t("Your total")}</span><b>{receipt.totalText}</b></div>}<button className="secondary">{room?.phase === 'LOBBY' && !member?.participating ? t("Join this order") : t("Open room")} →</button></article>;
+        return <article className="card room-card" key={session.roomId} onClick={() => openRoom(session.roomId)}><div className="room-card-top"><span className={`status ${online[session.roomId] ? 'live' : ''}`}>{online[session.roomId] ? t("● Live") : t("Offline")}</span><span>#{room?.orderNumber || 1}</span></div><h3>{session.roomName}</h3><p>{room ? t(phaseLabel[room.phase]) : t("Connecting…")}</p>{winner && <div className="winner-row"><span className="avatar initials small">{initials(winner.name)}</span><span><b>{winner.name}</b><small>{room.payerId ? t('Is ordering') : t('Was selected')}</small></span></div>}{receipt && ['REVIEW','PLACED','FULFILLED'].includes(room.phase) && <div className="amount-row"><span>{t("Your total")}</span><b>{receipt.totalText}</b></div>}<button className="secondary">{room?.phase === 'LOBBY' && !member?.participating ? t("Join this order") : t("Open room")} →</button></article>;
       }}</PagedList></div> : <div className="card empty"><Illustration kind="room"/><h3>{t("No saved rooms yet")}</h3><p>{t("Create a room and invite your people, or join with a six-digit code.")}</p></div>}
     </section>
     <UserDashboard data={data} openRoom={openRoom} compact openProfile={() => setPage('profile')} />

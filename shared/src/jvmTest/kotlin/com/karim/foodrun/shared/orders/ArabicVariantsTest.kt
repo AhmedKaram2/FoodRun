@@ -11,7 +11,7 @@ class ArabicVariantsTest {
         }
     }
     @Test fun allArabicStylesUseRtlAndKeepRestaurantNamesArabic() {
-        for((locale,word) in listOf("ar-EG" to "مبلغ تاني","ar-AE" to "مبلغ ثاني","ar-001" to "مبلغ آخر")) {
+        for((locale,word) in listOf("ar-EG" to "مبلغ تاني","ar-AE" to "مبلغ ثاني","ar-SD" to "مبلغ تاني","ar-001" to "مبلغ آخر")) {
             assertEquals(word,GroupUiText.translate("Another amount",locale))
             val restaurant=Restaurant("r","Kitchen",nameAr="المطبخ")
             assertEquals("المطبخ",restaurant.localizedName(locale))
@@ -19,6 +19,20 @@ class ArabicVariantsTest {
             c.library=c.library.copy(language=locale)
             assertTrue(c.state.rtl); assertEquals(locale,c.state.language)
         }
+    }
+    @Test fun sudaneseHomeActionsAndSavedPreferenceUseTheSameLocaleAfterRestart() {
+        val device=GroupSettlementPresentationTestDevice()
+        val c=GroupController(device)
+        c.dispatch(GroupAction.SET_LANGUAGE,"ar-SD")
+        assertEquals("ar-SD",c.library.languagePreference)
+        val restored=GroupController(device)
+        assertEquals("ar-SD",restored.state.language)
+        assertTrue(restored.state.rtl)
+        for((key,word) in listOf("Create a room" to "افتح غرفة","Join a room" to "ادخل غرفة",
+            "What would you like?" to "داير تطلب شنو؟","Mark paid" to "حوّلت القروش",
+            "Confirm received" to "استلمت القروش")) assertEquals(word,GroupUiText.translate(key,restored.state.language))
+        FoodProfile(name="أمل",language="ar-SD").validate()
+        assertFailsWith<IllegalArgumentException> { FoodProfile(name="أمل",language="unsupported").validate() }
     }
     @Test fun aSavedLocalLanguageChoiceSurvivesAccountRefresh() {
         val device=GroupSettlementPresentationTestDevice()

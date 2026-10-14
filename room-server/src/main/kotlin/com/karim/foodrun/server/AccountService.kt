@@ -101,7 +101,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             memberships.save(uid, room, restored.memberId, restored.token)
         return restored
     }
-    fun home(token: String): RoomReply = db.transaction {
+    fun home(token: String, spendingTimeZone: String = ""): RoomReply = db.transaction {
         val uid = userId(token)
         val memberships = memberships.all(uid).map { member ->
             if(support.requireActive(token) != null) support.roomToken(token, member) else restoreSession(uid, requireNotNull(db.room(member.roomId)), member)
@@ -117,7 +117,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             buildMap {
                 AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
                 memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }
-            }, wallet = WalletService.snapshot(db, uid), friendGroups = FriendGroupService.groups(db, uid), joinedFriendGroups = FriendGroupService.joined(db, uid), notificationPreferences = NotificationPreferencesStore.read(db,uid)), serverTime = clock())
+            }, wallet = WalletService.snapshot(db, uid), friendGroups = FriendGroupService.groups(db, uid), joinedFriendGroups = FriendGroupService.joined(db, uid), notificationPreferences = NotificationPreferencesStore.read(db,uid), spending = SpendingService(db,clock).summary(uid,spendingTimeZone)), serverTime = clock())
     }
     fun execute(c: RoomCommand): RoomReply {
         val request = requireNotNull(c.identity)
@@ -159,7 +159,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             EmailContacts.capture(db, identity.copy(userId = uid), clock())
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))
-            return home(token).copy(identityToken = token)
+            return home(token,c.spendingTimeZone).copy(identityToken = token)
         }
         if (request.action == IdentityAction.SIGN_OUT) {
             if(support.find(c.identityToken) != null) { support.end(c.identityToken); return RoomReply() }
@@ -177,7 +177,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 ).normalized()
                 updated.validate()
                 rooms.adminChanged(ProfileUpdates(db, clock).save(updated))
-                home(c.identityToken)
+                home(c.identityToken,c.spendingTimeZone)
             }
             IdentityAction.INVITE -> {
                 val snapshot = rooms.snapshot(c.roomId, c.token)
@@ -186,7 +186,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 require(db.record("profile:${request.userId}") != null && profile(request.userId).discoverable) { "This person is not available for invitations on this hub." }
                 val invitation = FoodInvitation("${room.id}-${room.orderNumber}", request.userId, room.id, room.name, profile(uid).name, room.orderNumber)
                 db.putRecord("invitation:${request.userId}:${invitation.id}", orderJson.encodeToString(invitation))
-                home(c.identityToken)
+                home(c.identityToken,c.spendingTimeZone)
             }
             IdentityAction.ACCEPT_INVITE -> {
                 val key = "invitation:$uid:${request.invitationId}"
@@ -198,7 +198,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 result
             }
             IdentityAction.ENABLE_CLOUD -> {
-                if (db.cloudDurable) return home(c.identityToken)
+                if (db.cloudDurable) return home(c.identityToken,c.spendingTimeZone)
                 requireNotNull(saved) { "Return to your own account to connect cloud storage." }
                 require(saved.refreshToken.isNotEmpty()) { "Sign in from the mobile app with email and password before connecting persistent hub storage." }
                 val owner = db.record("cloud-owner")?.let { orderJson.decodeFromString<CloudOwner>(it) }
@@ -212,7 +212,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
                 db.putRecord("cloud-owner", orderJson.encodeToString(next))
                 db.allRooms().forEach { db.enqueueCloud("room-${it.id}", orderJson.encodeToString(it)) }
                 cloudStatus = "Connected to Firebase · syncing room data"
-                home(c.identityToken)
+                home(c.identityToken,c.spendingTimeZone)
             }
             else -> error("Unsupported account action.")
         }

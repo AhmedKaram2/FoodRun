@@ -7,6 +7,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AccountServiceTest {
+    @Test fun homeSpendingTracksRestaurantPaymentAndConfirmedMemberPaymentFromRoomCommands() = RoomFixture(FakeIdentityProvider()).use { f ->
+        val member=f.placed();f.pay()
+        f.send(f.owner,CommandKind.RECORD_PAYMENT) { it.copy(memberId=member.memberId,amount=3000,text="Received") }
+        fun home(user: String)=f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.IDENTITY,spendingTimeZone="Asia/Dubai",
+            identity=IdentityRequest(IdentityAction.FIREBASE_SIGN_IN,firebaseToken="firebase-$user"))).home!!
+        assertEquals(4500,home("fixture-owner").spending!!.periods.first().total)
+        assertEquals(3000,home("Member").spending!!.periods.first().total)
+    }
     @Test fun newGoogleMemberCanJoinAndSaveAaniWithoutASeparateContactPhone() = RoomFixture(FakeIdentityProvider()).use { f ->
         val signed = f.execute(RoomCommand(commandId = f.id(), kind = CommandKind.IDENTITY,
             identity = IdentityRequest(IdentityAction.FIREBASE_SIGN_IN, firebaseToken = "firebase-new-google")))
@@ -31,6 +39,31 @@ class AccountServiceTest {
         override fun resetPassword(email: String) = Unit
         override fun saveHubRecord(identity: CloudIdentity, hubId: String, key: String, value: String) = Unit
         private fun identity(uid: String) = CloudIdentity(uid, "id-$uid", "refresh-$uid", uid)
+    }
+
+    @Test fun sudaneseProfileLanguageSurvivesSavingAndServerRestart() = RoomFixture(FakeIdentityProvider()).use { f ->
+        val signed=f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.IDENTITY,
+            identity=IdentityRequest(IdentityAction.FIREBASE_SIGN_IN,firebaseToken="firebase-sudanese-user")))
+        val saved=f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.IDENTITY,identityToken=signed.identityToken,
+            identity=IdentityRequest(IdentityAction.SAVE_PROFILE,profile=signed.home!!.profile.copy(language="ar-SD"))))
+        assertEquals("ar-SD",saved.home!!.profile.language)
+        f.restart()
+        val home=f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.HOME,identityToken=signed.identityToken))
+        assertEquals("ar-SD",home.home!!.profile.language)
+    }
+
+    @Test fun walletSearchOnlyOffersCanonicalHoldersWhoCanReceiveTheSelectedCurrency() = RoomFixture(FakeIdentityProvider()).use { f ->
+        fun register(email: String, profile: FoodProfile) = f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.IDENTITY,
+            identity=IdentityRequest(IdentityAction.REGISTER,email=email,password="fixture-password",profile=profile)))
+        val searcher=register("searcher@example.test",FoodProfile(name="Searcher"))
+        val correct=register("correct-holder@example.test",FoodProfile(name="Ahmed Karam",payment=f.account))
+        register("old-holder@example.test",FoodProfile(name="ahmed karam"))
+        fun search(currency: String) = f.execute(RoomCommand(commandId=f.id(),kind=CommandKind.WALLET_PEOPLE,
+            identityToken=searcher.identityToken,text="Ahmed Karam",currency=currency)).walletPeople!!
+        assertEquals(listOf(FoodPerson(correct.home!!.profile.userId,"Ahmed Karam")),search("AED"))
+        assertTrue(search("USD").isEmpty())
+        f.restart()
+        assertEquals(1,search("AED").size)
     }
 
     @Test fun configuredServerRequiresAccountForRoomCreationAndJoining() = RoomFixture(FakeIdentityProvider()).use { fixture ->

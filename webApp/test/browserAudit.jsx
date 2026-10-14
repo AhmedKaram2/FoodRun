@@ -129,12 +129,12 @@ export async function runSimpleTransferAudit() {
 export async function runLanguageOptionsAudit() {
   await mountAudit('home');
   const selector=host.querySelector('.language-picker select');
-  assert(selector?.options.length===4,'Language selector must include all four options');
-  assert([...selector.options].map(option=>option.value).join(',')==='en,ar-EG,ar-AE,ar-001','Arabic variants missing');
+  assert(selector?.options.length===5,'Language selector must include all five options');
+  assert([...selector.options].map(option=>option.value).join(',')==='en,ar-EG,ar-AE,ar-SD,ar-001','Arabic variants missing');
   assert(selector.value===getLanguage(),'Selected language was lost');
   assert(document.documentElement.dir===(getLanguage().startsWith('ar')?'rtl':'ltr'),'Arabic direction was lost');
   assert(!measureAudit().overflow,'Language selector overflows phone');
-  return {language:getLanguage(),width:innerWidth,passed:['four choices','selected preference','RTL','small-screen layout'],overflow:false};
+  return {language:getLanguage(),width:innerWidth,passed:['five choices','selected preference','RTL','small-screen layout'],overflow:false};
 }
 export async function runWheelProtectionAudit() {
   commands.length = 0;

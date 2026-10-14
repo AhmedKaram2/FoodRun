@@ -17,6 +17,7 @@ internal class WalletService(private val db: RoomDatabase, private val accounts:
                 if (query.isEmpty()) return RoomReply(walletPeople = emptyList())
                 return RoomReply(walletPeople = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
                     .filter { it.userId != uid && it.discoverable && it.name.isNotBlank() && AccountRestrictions.current(db, it.userId, clock()) == null }
+                    .filter { AccountAliases.resolve(db, it.userId) == it.userId && runCatching { methods(it, c.currency).isNotEmpty() }.getOrDefault(false) }
                     .filter { it.name.contains(query, true) || EmailContacts.searchAddress(db, it.userId)?.contains(query, true) == true }
                     .sortedBy { it.name.lowercase() }.take(50).map { FoodPerson(it.userId, it.name) })
             }

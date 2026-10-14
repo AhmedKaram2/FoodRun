@@ -280,6 +280,22 @@ test("compact Home keeps create join menus and profile actions reachable", async
   fireEvent.press(view.getByLabelText("My profile"));
   expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_PROFILE", "");
 });
+
+test("Sudanese Home shows its greeting, wallet labels, shortcuts and language action", async () => {
+  const value = snapshot({profile:{name:"أمل أحمد",photo:""},primaryAction:action("افتح غرفة","CREATE"),
+    inlineButtons:[action("ادخل غرفة","JOIN"),action("قوائم الأكل","OPEN_LIBRARY"),action("المجموعات","FRIENDS_ACTION"),action("اختيار سريع","QUICK_SPIN")]});
+  value.state.rtl=true;value.state.language="ar-SD";
+  (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+  const view=render(<App/>);
+  await view.findByText("أهلاً بيك، أمل");
+  expect(view.getByText("طلبك الجاي يبدأ بضغطة.")).toBeTruthy();
+  expect(view.getByText("المحفظة والقروش")).toBeTruthy();
+  expect(view.getByText("قوائم الأكل")).toBeTruthy();
+  fireEvent.press(view.getByText("افتح غرفة"));
+  expect(native.dispatch).toHaveBeenLastCalledWith("CREATE","");
+  fireEvent.press(view.getByText("ع"));
+  expect(view.getByText(/العربية السودانية/)).toBeTruthy();
+});
 test("Home prioritizes the current order without duplicating it and keeps live invitations and wallet totals",()=>{
  const create={...action("Create a room","CREATE"),enabled:false},join=action("Join a room","JOIN");
  const current={...card("continue-order","Continue your order"),detail:"Lunch room",buttons:[action("Continue order","RESUME","lunch")]};
@@ -511,6 +527,14 @@ test("Wallet separates payments approvals balances and history without changing 
  fireEvent.press(view.getByText("Approve received amount"));expect(native.dispatch).toHaveBeenLastCalledWith("WALLET_FUNDS_ACTION","batch-yes|incoming");
  fireEvent.press(view.getByRole("tab",{name:"Balance"}));expect(view.getByText("Available AED 50")).toBeTruthy();
  fireEvent.press(view.getByRole("tab",{name:"History"}));expect(view.queryByText("Available AED 50")).toBeNull();
+});
+test("Wallet spending tab shows the localized totals without mixing payment actions",async()=>{
+ const value=snapshot();value.state={...value.state,page:"WALLET",language:"ar-SD",rtl:true};
+ value.topCards=[{...card("profile-dashboard:wallet-spending:week:AED","الأسبوع ده"),badge:"AED 70.00",detail:"الفطور · AED 20.00\nالغداء · AED 50.00"},{...card("profile-dashboard:wallet-spending:month:AED","الشهر ده"),badge:"AED 240.00"},card("wallet-balance","رصيدك")];
+ (native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));const view=render(<App/>);
+ await view.findByText("رصيدك");fireEvent.press(view.getByRole("tab",{name:"المصاريف"}));
+ expect(view.getByText("الأسبوع ده")).toBeTruthy();expect(view.getByText("الشهر ده")).toBeTruthy();
+ expect(view.getByText("AED 70.00")).toBeTruthy();expect(view.queryByText("رصيدك")).toBeNull();
 });
 test("room payments move a resolved transfer to history while keeping receipts and account details reachable",()=>{
  const account={...card("account","Recipient bank details"),detail:"Chosen person · Test Bank · GB82WEST12345698765432",buttons:[action("Copy IBAN","COPY_PAYMENT_DETAILS"),action("Copy all payment details","COPY_PAYMENT_DETAILS","all")]},receipt=card("receipt:me","My receipt");

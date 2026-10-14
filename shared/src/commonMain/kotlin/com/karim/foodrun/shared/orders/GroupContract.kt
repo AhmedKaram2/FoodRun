@@ -63,6 +63,7 @@ enum class GroupFieldKey { TRANSFER_AMOUNT_MODE, CUSTOM_UNIT_PRICE, ITEM_UNIT_PR
     val orderingPersonPending: Boolean = false,
     val joinedCount: Int = 0,
     val historyNextOffset: Int = -1,
+    val walletSection: String = "",
 ) {
     val profileDetailsFolded: Boolean get() = page == GroupPage.PROFILE && profileReady
     val primaryAction: GroupButton? get() = buttons.firstOrNull { it.primary && !(profileDetailsFolded && it.action == GroupAction.SAVE_PROFILE) }

@@ -1,8 +1,8 @@
 {
   "android": {
-    "versionCode": 32,
-    "versionName": "1.7.14",
-    "url": "https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.14/FoodRun-Android-1.7.14.apk",
-    "sha256": "ac91e84615495be77daa80efbe13cbd7296d38655e79ee87e8d328dcdfa2e8f4"
+    "versionCode": 33,
+    "versionName": "1.7.15",
+    "url": "https://github.com/AhmedKaram2/FoodRun/releases/download/v1.7.15/FoodRun-Android-1.7.15.apk",
+    "sha256": "a65a70aa5c8cc7319b1cb923882fa1f3cbfe0a6e3e5e5c3b3cca47cb0b889fd2"
   }
 }

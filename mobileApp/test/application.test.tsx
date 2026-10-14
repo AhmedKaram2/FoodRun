@@ -325,6 +325,29 @@ test("Home keeps Arabic empty state and busy actions safe",()=>{
  expect(view.getByText("أنشئ غرفة أو انضم لغرفة بالأعلى، وستظهر غرفك هنا.")).toBeTruthy();
  fireEvent.press(view.getByText("دخول غرفة"));fireEvent.press(view.getByLabelText("فتح المحفظة والمدفوعات"));expect(native.dispatch).not.toHaveBeenCalled();
 });
+test("Home shows compact horizontal recent rooms and opens every feature from its grid",()=>{
+ const features=[action("Quick Choice","QUICK_SPIN"),action("Create payment room","CREATE_PAYMENT_ROOM"),action("Menus","OPEN_LIBRARY"),action("Groups","FRIENDS_ACTION","open"),action("Add restaurant","NEW_RESTAURANT")];
+ const rooms=Array.from({length:8},(_,i)=>({...card(`session:${i}`,`Room ${i}`),detail:"Order #1 · Collecting orders",buttons:[action("Open room","RESUME",String(i))]}));
+ const view=render(<HomeScreen snapshot={snapshot({inlineButtons:features,topCards:rooms})}/>);
+ expect(view.getByTestId("home-recent-rooms").props.horizontal).toBe(true);
+ expect(view.getByText("Room 5")).toBeTruthy();expect(view.queryByText("Room 6")).toBeNull();
+ for(const [kind,value] of [["QUICK_SPIN",""],["CREATE_PAYMENT_ROOM",""],["OPEN_WALLET",""],["OPEN_LIBRARY",""],["FRIENDS_ACTION","open"],["NEW_RESTAURANT",""]]) {
+  fireEvent.press(view.getByTestId(`home-feature:${kind}`));expect(native.dispatch).toHaveBeenLastCalledWith(kind,value);
+ }
+ fireEvent.press(view.getByLabelText("View all rooms"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_ROOMS","");
+});
+test("Home spending summary opens the spending tab and does not claim zero when totals are unavailable",()=>{
+ const weekly={...card("home-spending:week","This week"),badge:"AED 75.00"},monthly={...card("home-spending:month","This month"),badge:"AED 315.00"};
+ const view=render(<HomeScreen snapshot={snapshot({topCards:[weekly,monthly]})}/>);
+ fireEvent.press(view.getByLabelText("This week · AED 75.00"));expect(native.dispatch).toHaveBeenLastCalledWith("OPEN_WALLET","spending");
+ expect(view.getByText("AED 315.00")).toBeTruthy();
+ view.rerender(<HomeScreen snapshot={snapshot()}/>);expect(view.getByText("Refresh to load spending statistics.")).toBeTruthy();expect(view.queryByText("AED 0.00")).toBeNull();
+});
+test("Wallet opens directly on spending when reached from Home statistics",async()=>{
+ const value=snapshot({topCards:[{...card("profile-dashboard:wallet-spending:week:AED","This week"),badge:"AED 75.00"}]});
+ value.state={...value.state,page:"WALLET",walletSection:"spending"};(native.getSnapshot as jest.Mock).mockResolvedValue(JSON.stringify(value));
+ const view=render(<App/>);await view.findByText("AED 75.00");expect(view.getByRole("tab",{name:"Spending"}).props.accessibilityState.selected).toBe(true);
+});
 test("room tabs separate food, payments and members and survive live updates", async () => {
   const value = snapshot();
   value.state.page = "ROOM";

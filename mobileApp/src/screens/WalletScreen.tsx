@@ -20,7 +20,7 @@ function group(card:Card):string {
 export default function WalletScreen({snapshot}:{snapshot:Snapshot}) {
   const {rtl,busy}=snapshot.state, cards=[...snapshot.topCards,...snapshot.sections.flatMap(section=>section.cards)];
   const entries=cards.filter(card=>!/(wallet-summary$|wallet-direction:|payment-history$)/.test(card.id));
-  const [selected,setSelected]=useState(()=>entries.some(card=>group(card)==="pay") ? "pay" : entries.some(card=>group(card)==="waiting") ? "waiting" : "balance");
+  const [selected,setSelected]=useState(()=>snapshot.state.walletSection === "spending" ? "spending" : entries.some(card=>group(card)==="pay") ? "pay" : entries.some(card=>group(card)==="waiting") ? "waiting" : "balance");
   const tabs=[{id:"balance",title:tx(rtl,"Balance","الرصيد")},{id:"spending",title:tx(rtl,"Spending","المصروفات")},{id:"pay",title:tx(rtl,"To pay","للدفع")},{id:"waiting",title:tx(rtl,"Waiting","بانتظار التأكيد")},{id:"receive",title:tx(rtl,"To receive","للاستلام")},{id:"history",title:tx(rtl,"History","السجل")}];
   const visible=entries.filter(card=>group(card)===selected).sort((a,b)=>Number(b.buttons.some(button=>button.primary)) - Number(a.buttons.some(button=>button.primary)));
   return <View style={{flex:1}}>

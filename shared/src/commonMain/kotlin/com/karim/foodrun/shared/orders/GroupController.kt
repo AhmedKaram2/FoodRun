@@ -43,6 +43,7 @@ class GroupController(val platform: GroupPlatform) {
     private var recoveringCommand: String? = null
     private var recoveryAt = 0L
     internal var page = GroupPage.HOME
+    internal var walletSection = ""
     internal var draft = mutableMapOf<GroupFieldKey, String>()
     internal val formDrafts = GroupDraftMemory()
     internal val restaurantSend = GroupRestaurantSend(this)
@@ -237,7 +238,7 @@ class GroupController(val platform: GroupPlatform) {
             GroupAction.OPEN_HOME -> { walletHistory.dismiss(); repeat(8) { if(page != GroupPage.HOME) back() } }
             GroupAction.OPEN_ROOMS -> { page = GroupPage.ROOMS }
             GroupAction.OPEN_PROFILE -> { openProfile() }
-            GroupAction.OPEN_WALLET -> { openProfile(); if (library.home != null) page = GroupPage.WALLET }
+            GroupAction.OPEN_WALLET -> { openProfile(); if (library.home != null) { page = GroupPage.WALLET; walletSection = value.takeIf { it == "spending" }.orEmpty() } }
             GroupAction.OPEN_WALLET_ANNOUNCEMENT -> { walletAnnouncement.dismiss(); openProfile() }
             GroupAction.DISMISS_WALLET_ANNOUNCEMENT -> walletAnnouncement.dismiss()
             GroupAction.OPEN_ORDER_PRICES -> { require(room().payerId == me() || room().ownerId == me()); page = GroupPage.PRICES }

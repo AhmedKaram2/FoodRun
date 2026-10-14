@@ -74,6 +74,7 @@ export type Snapshot = {
   supportActive: boolean;
   accountId: string;
   state: {
+    walletSection?: string;
     page: string;
     title: string;
     subtitle: string;

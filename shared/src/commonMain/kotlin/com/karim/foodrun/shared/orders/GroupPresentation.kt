@@ -59,6 +59,10 @@ internal class GroupPresentation(private val c: GroupController) {
     private val ar get() = language.startsWith("ar")
     private fun ui(value: String) = GroupUiText.translate(value, language)
     private fun tr(en: String, ar: String) = if(this.ar) GroupUiText.translate(en, language).takeIf { it != en } ?: ar else en
+    private fun tf(en: String, ar: String, vararg values: Pair<String,String>): String {
+        val parameters=values.toMap()
+        return Regex("\\{([A-Za-z0-9_]+)\\}").replace(tr(en,ar)) { parameters[it.groupValues[1]] ?: it.value }
+    }
     private fun field(key: GroupFieldKey, label: String, multiline: Boolean = false, toggle: Boolean = false) { fields += GroupField(key, ui(label), c.text(key), multiline, toggle, secret = key == GroupFieldKey.PASSWORD) }
     private fun choiceField(key: GroupFieldKey, label: String, choices: List<GroupChoice>) { fields += GroupField(key, ui(label), c.text(key), choices = choices) }
     private fun button(title: String, action: GroupAction, value: String = "", primary: Boolean = false, enabled: Boolean = true) { buttons += GroupButton(ui(title), action, value, primary, enabled = enabled) }
@@ -182,6 +186,7 @@ internal class GroupPresentation(private val c: GroupController) {
             orderingPersonPending = orderingPerson.isNotEmpty() && room?.phase == RoomPhase.ACCEPTING,
             joinedCount = if(c.page == GroupPage.ROOM) room?.activeMembers?.size ?: 0 else 0,
             historyNextOffset = if(c.page == GroupPage.HISTORY) c.reply?.historyNextOffset ?: -1 else -1,
+            walletSection = c.walletSection,
             hasPendingEmailReminders = c.paymentReminders.hasPending,
             feedback = c.feedbacks.current?.let { it.copy(message = ui(it.message)) },
             hasJoinTimer = c.page == GroupPage.ROOM && (room?.joinDeadlineAt ?: 0) > c.platform.now() + c.serverOffset(),
@@ -208,20 +213,26 @@ internal class GroupPresentation(private val c: GroupController) {
         if(c.administration.allowed) button(tr("Administration", "الإدارة"), GroupAction.OPEN_ADMIN)
         button(tr("Groups", "المجموعات"), GroupAction.FRIENDS_ACTION, "open")
         button(tr("Create payment room", "إنشاء غرفة دفع"), GroupAction.CREATE_PAYMENT_ROOM)
+        button(tr("Add restaurant", "إضافة مطعم"), GroupAction.NEW_RESTAURANT)
         button(tr("Quick Choice", "الاختيار السريع"), GroupAction.QUICK_SPIN); button(tr("Restaurant library", "المطاعم والقوائم"), GroupAction.OPEN_LIBRARY)
         button("English", GroupAction.SET_LANGUAGE, "en", enabled = ar); button("العربية", GroupAction.SET_LANGUAGE, "ar", enabled = !ar)
         card("about", tr("Your table, always here", "مجموعتك دائماً هنا"), tr("Join a room once. Return for tomorrow's order. Downloaded receipts stay with you offline.", "انضم مرة واحدة وعد للطلبات القادمة. تبقى الإيصالات المحفوظة متاحة دون إنترنت."))
-        c.library.home?.invitations?.forEach { invite -> card("invitation:${invite.id}", "Join ${invite.roomName}", "${invite.invitedBy} invited you to order #${invite.orderNumber}", "Invitation", listOf(GroupButton(ui("Join"), GroupAction.ACCEPT_INVITE, invite.id, primary = true))) }
+        c.library.home?.invitations?.forEach { invite -> card("invitation:${invite.id}", tf("Join {room}","ادخل غرفة {room}","room" to invite.roomName), tf("{name} invited you to order #{number}","{name} دعاك للطلب رقم {number}","name" to invite.invitedBy,"number" to invite.orderNumber.toString()), ui("Invitation"), listOf(GroupButton(ui("Join"), GroupAction.ACCEPT_INVITE, invite.id, primary = true))) }
         c.library.sessions.sortedByDescending { c.library.snapshots[it.roomId]?.room?.createdAt ?: 0L }.forEach { s ->
             val snapshot = c.library.snapshots[s.roomId]; val room = snapshot?.room
             val winner = room?.spin?.takeIf { room.phase !in listOf(RoomPhase.LOBBY, RoomPhase.PREPARING_SPIN, RoomPhase.SPINNING) }?.winnerId
             val person = room?.members?.singleOrNull { it.id == (room.payerId ?: winner) }
             val receipt = snapshot?.receipts?.singleOrNull { it.memberId == s.memberId }
-            val detail = listOfNotNull(room?.let { "Order #${it.orderNumber} · ${stage(it.phase)}" }, person?.let { "${it.name} is selected to order" }, receipt?.takeIf { room?.phase in listOf(RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED) }?.let { if(room?.transfers?.any { t -> t.memberId == it.memberId && t.status == TransferStatus.DECLARED } == true) "Your total ${it.totalText} · ${tr("Awaiting recipient confirmation", "بانتظار تأكيد المستلم")}" else "Your total ${it.totalText} · To pay ${it.balanceText}" }).joinToString("\n").ifEmpty { "Saved room · tap to reconnect" }
+            val detail = listOfNotNull(room?.let { tf("Order #{number} · {stage}","طلب #{number} · {stage}","number" to it.orderNumber.toString(),"stage" to stage(it.phase)) }, person?.let { tf("{name} is selected to order","{name} مسؤول الطلب","name" to it.name) }, receipt?.takeIf { room?.phase in listOf(RoomPhase.REVIEW, RoomPhase.PLACED, RoomPhase.FULFILLED) }?.let { "${ui("Your total")} ${it.totalText} · " + if(room?.transfers?.any { t -> t.memberId == it.memberId && t.status == TransferStatus.DECLARED } == true) tr("Awaiting recipient confirmation", "بانتظار تأكيد المستلم") else "${ui("To pay")} ${it.balanceText}" }).joinToString("\n").ifEmpty { ui("Saved room · tap to reconnect") }
             val selectedMe = room?.phase == RoomPhase.ACCEPTING && winner == s.memberId
             card("session:${s.roomId}", s.roomName, detail, if(selectedMe) "You're selected!" else "", listOf(GroupButton(if(selectedMe) "Join & accept" else if(room?.phase == RoomPhase.LOBBY) "Join this order" else "Open room", GroupAction.RESUME, s.roomId)))
         }
         dashboardCards("dashboard:")
+        c.library.home?.spending?.periods?.groupBy { it.period }?.forEach { (period,values) ->
+            card("home-spending:$period", if(period == "week") tr("This week", "هذا الأسبوع") else tr("This month", "هذا الشهر"),
+                tr("Net spending", "صافي المصروفات"), values.joinToString("\n") { Money.format(it.total,it.currency) },
+                listOf(GroupButton(tr("View spending", "عرض المصروفات"),GroupAction.OPEN_WALLET,"spending")))
+        }
     }
     private fun profile() {
         title = if(c.library.home == null) tr("Your FoodRun account", "حساب FoodRun") else tr("Your profile", "ملفك الشخصي")

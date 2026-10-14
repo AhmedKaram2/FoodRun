@@ -215,5 +215,12 @@
   "Dinner": "العشاء",
   "Other": "أخرى",
   "Is ordering": "مسؤول عن الطلب",
-  "Was selected": "تم اختياره"
+  "Was selected": "تم اختياره",
+  "Recent rooms": "أحدث الغرف",
+  "View spending": "عرض المصروفات",
+  "Order #{number} · {stage}": "طلب #{number} · {stage}",
+  "{name} is selected to order": "{name} مسؤول الطلب",
+  "Join {room}": "ادخل غرفة {room}",
+  "{name} invited you to order #{number}": "{name} دعاك للطلب رقم {number}",
+  "Quick actions": "إجراءات سريعة"
 }

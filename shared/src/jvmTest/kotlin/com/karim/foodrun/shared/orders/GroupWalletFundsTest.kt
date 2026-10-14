@@ -4,6 +4,28 @@ import com.karim.foodrun.orders.*
 import kotlin.test.*
 
 class GroupWalletFundsTest {
+    @Test fun sudaneseHomeLocalizesRoomStatusAndInvitationsWithoutRewritingUserNames() {
+        val c=controller(Device());c.page=GroupPage.HOME
+        val room=Room("room","123456","me","الفطور",Restaurant("r","Kitchen"),phase=RoomPhase.PLACED,payerId="me",members=listOf(Member("me","أمل {number}",approved=true)))
+        c.library=c.library.copy(language="ar-SD",sessions=listOf(StoredSession(hub,"room","token","me","الفطور")),snapshots=mapOf("room" to RoomReply(room=room)),home=home.copy(invitations=listOf(FoodInvitation("invite","me","other","غرفة {name}","نور {number}",22))))
+        val card=c.state.cards.single { it.id=="session:room" }
+        assertTrue(card.detail.contains("طلب رقم 1"));assertTrue(card.detail.contains("أمل {number} الزول البيطلب"));assertFalse(card.detail.contains("is selected"))
+        val invitation=c.state.cards.single { it.id=="invitation:invite" }
+        assertEquals("ادخل غرفة غرفة {name}",invitation.title);assertEquals("نور {number} عزمك للطلب رقم 22",invitation.detail)
+    }
+    @Test fun homeOffersPaymentAndRestaurantCreationAndShowsOwnSpendingInEachCurrency() {
+        val c=controller(Device());c.page=GroupPage.HOME
+        val periods=listOf("week","month").flatMap { period -> listOf("AED","USD").map { currency -> SpendingPeriod(period,"2026-10-01","2026-10-31",currency,7500,0,7500,emptyList()) } }
+        c.library=c.library.copy(home=home.copy(spending=SpendingSummary(10000,"Asia/Dubai",periods)))
+        assertTrue(c.state.buttons.any { it.action==GroupAction.CREATE_PAYMENT_ROOM });assertTrue(c.state.buttons.any { it.action==GroupAction.NEW_RESTAURANT })
+        val week=c.state.cards.single { it.id=="home-spending:week" }
+        assertEquals("AED 75.00\nUSD 75.00",week.badge)
+        assertEquals("spending",week.buttons.single().value)
+        c.dispatch(GroupAction.OPEN_WALLET,"spending")
+        assertEquals(GroupPage.WALLET,c.page);assertEquals("spending",c.state.walletSection)
+        c.dispatch(GroupAction.OPEN_WALLET)
+        assertEquals("",c.state.walletSection)
+    }
     @Test fun walletTrackingKeepsCompletedActivityAndSeparatesOutstandingCustodyFromIncomingMoney() {
         val c=controller(Device());c.page=GroupPage.WALLET
         val incoming=WalletPayment("incoming","alice","Alice","holder","Holder","me","Me","room","Lunch",1,"alice",1500,"AED",createdAt=10000)

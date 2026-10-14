@@ -1189,7 +1189,7 @@
   "Payment recorded.": "الدفعة اتسجّلت.",
   "Payment reference or cash note": "مرجع التحويل أو ملاحظة الدفع النقدي",
   "Payment required": "مطلوب تدفع",
-  "Payment room": "غرفة الدفع",
+  "Payment room": "غرفة دفع",
   "Payment room completed": "تمت تسوية غرفة الحسابات",
   "Payment room · split and settle an existing bill": "غرفة حسابات · تقسيم وتسوية فاتورة موجودة",
   "Payment sent by": "دفعة مرسلة من",
@@ -2078,5 +2078,12 @@
   "Refresh to load spending statistics.": "حدّث الصفحة عشان تشوف إحصاءات مصاريفك.",
   "Other": "أخرى",
   "Is ordering": "بطلب ليكم",
-  "Was selected": "اتختار"
+  "Was selected": "اتختار",
+  "Recent rooms": "آخر الغرف",
+  "View spending": "شوف مصاريفك",
+  "Order #{number} · {stage}": "طلب رقم {number} · {stage}",
+  "{name} is selected to order": "{name} الزول البيطلب",
+  "Join {room}": "ادخل غرفة {room}",
+  "{name} invited you to order #{number}": "{name} عزمك للطلب رقم {number}",
+  "Quick actions": "تعمل شنو؟"
 }

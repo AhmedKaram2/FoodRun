@@ -48,7 +48,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     @Synchronized internal fun finishPush(delivery: PushDelivery, result: PushResult) = db.transaction { notifications.delivered(delivery, result) }
     fun validateFirebaseSignIn(token: String) { requireNotNull(identityProvider) { "Firebase is unavailable." }.exchange(token) }
     val storageAvailable: Boolean get() = db.available
-    val storageMode: String get() = if (db.cloudDurable) "firestore" else "sqlite"
+    val storageMode: String get() = db.storageMode
     @Synchronized fun syncCloud() = accounts.syncCloud()
     @Synchronized fun adminCancel(roomId: String) {
         val room = requireNotNull(db.room(roomId)) { "Room was not found." }

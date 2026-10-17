@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -37,6 +38,39 @@ disks = get('disks?limit=100')
 matched = [value.get('disk', value) for value in disks if value.get('disk', value).get('serviceId') == args.service_id]
 envs = get('services/' + args.service_id + '/env-vars?limit=100')
 variables = {value['envVar']['key']: value['envVar']['value'] for value in envs}
+if variables.get('FOODRUN_STORAGE') == 'turso':
+    required = ('FOODRUN_TURSO_URL', 'FOODRUN_TURSO_AUTH_TOKEN', 'FOODRUN_TURSO_NAMESPACE')
+    if any(not variables.get(key, '').strip() for key in required):
+        sys.exit('STOP: Turso storage configuration is incomplete.')
+    url = variables['FOODRUN_TURSO_URL'].strip()
+    url = re.sub(r'^(libsql|turso)://', 'https://', url)
+    parsed = urllib.parse.urlparse(url)
+    if (parsed.scheme != 'https' or not (parsed.hostname or '').endswith('.turso.io') or
+            parsed.username or parsed.password or parsed.port or parsed.query or parsed.fragment or
+            parsed.path not in ('', '/') or
+            not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', variables['FOODRUN_TURSO_NAMESPACE']) or
+            variables.get('FOODRUN_TURSO_BOOTSTRAP') == 'true'):
+        sys.exit('STOP: Turso configuration must use a database URL, a stable namespace and bootstrap disabled.')
+    statement = {'sql': 'SELECT format,initialized FROM foodrun_hubs WHERE namespace=?',
+                 'args': [{'type': 'text', 'value': variables['FOODRUN_TURSO_NAMESPACE']}]}
+    body = json.dumps({'requests': [{'type': 'execute', 'stmt': statement}, {'type': 'close'}]}).encode()
+    try:
+        request = urllib.request.Request(url.rstrip('/') + '/v2/pipeline', data=body,
+            headers={'Authorization': 'Bearer ' + variables['FOODRUN_TURSO_AUTH_TOKEN'], 'Content-Type': 'application/json'})
+        # Reject redirects so a configuration error cannot forward a database token.
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=25) as response:
+            result = json.loads(response.read(65_537))
+        results = result['results']
+        assert len(results) == 2 and all(item['type'] == 'ok' for item in results)
+        rows = results[0]['response']['result']['rows']
+        assert len(rows) == 1 and [cell['value'] for cell in rows[0]] == ['1', '1']
+    except Exception:
+        sys.exit('STOP: Turso access or initialized migration could not be verified. No database values were printed.')
+    print('PASS: initialized Turso durable storage is configured. Verify free plan and X-FoodRun-Storage: turso after deployment.')
+    sys.exit(0)
 if variables.get('FOODRUN_STORAGE') == 'firestore':
     required = ('FOODRUN_FIRESTORE_NAMESPACE', 'FOODRUN_FIRESTORE_CREDENTIALS', 'FOODRUN_FIREBASE_PROJECT_ID')
     if any(not variables.get(key) for key in required):
@@ -53,7 +87,7 @@ if variables.get('FOODRUN_STORAGE') == 'firestore':
     print('PASS: Firestore durable storage is configured. Verify initialized cloud records, billing disabled, and X-FoodRun-Storage: firestore after deployment.')
     sys.exit(0)
 if service.get('serviceDetails', {}).get('plan') in (None, 'free'):
-    sys.exit('STOP: SQLite requires a persistent disk. Configure Firestore for the free server.')
+    sys.exit('STOP: SQLite requires a persistent disk. Configure Firestore or migrated Turso storage for the free server.')
 data_path = variables.get('FOODRUN_DATA', '')
 if not data_path.startswith('/') or not any(data_path == disk.get('mountPath') or data_path.startswith(disk.get('mountPath', '').rstrip('/') + '/') for disk in matched if disk.get('mountPath')):
     sys.exit('STOP: FOODRUN_DATA is not covered by a persistent disk. Deployment is not cleared.')

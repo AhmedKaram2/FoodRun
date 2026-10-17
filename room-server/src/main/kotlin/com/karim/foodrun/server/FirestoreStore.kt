@@ -281,17 +281,17 @@ class FirestoreStore(
             if (raw.size > 16 * 1024 * 1024) throw StorageUnavailable("Stored row is too large.")
             return orderJson.decodeFromString(raw.toString(Charsets.UTF_8))
         }
-        fun configured(): FirestoreStore? {
-            val mode = System.getenv("FOODRUN_STORAGE") ?: "sqlite"
+        fun configured(environment: Map<String, String> = System.getenv()): FirestoreStore? {
+            val mode = environment["FOODRUN_STORAGE"] ?: "sqlite"
             require(mode in listOf("sqlite", "firestore")) { "Unsupported FOODRUN_STORAGE." }
             if (mode != "firestore") return null
-            val project = requireNotNull(System.getenv("FOODRUN_FIREBASE_PROJECT_ID"))
-            require(System.getenv("FIRESTORE_EMULATOR_HOST").isNullOrBlank()) { "Production storage cannot use an emulator." }
-            val credential = requireNotNull(System.getenv("FOODRUN_FIRESTORE_CREDENTIALS")) { "Firestore service credentials are required." }
+            val project = requireNotNull(environment["FOODRUN_FIREBASE_PROJECT_ID"])
+            require(environment["FIRESTORE_EMULATOR_HOST"].isNullOrBlank()) { "Production storage cannot use an emulator." }
+            val credential = requireNotNull(environment["FOODRUN_FIRESTORE_CREDENTIALS"]) { "Firestore service credentials are required." }
             val credentials = ServiceAccountCredentials.fromStream(credential.byteInputStream())
             require(credentials.projectId == project) { "Firestore credentials belong to a different project." }
             val client = FirestoreOptions.newBuilder().setProjectId(project).setCredentials(credentials).build().service
-            return FirestoreStore(client, requireNotNull(System.getenv("FOODRUN_FIRESTORE_NAMESPACE")), System.getenv("FOODRUN_FIRESTORE_BOOTSTRAP") == "true")
+            return FirestoreStore(client, requireNotNull(environment["FOODRUN_FIRESTORE_NAMESPACE"]), environment["FOODRUN_FIRESTORE_BOOTSTRAP"] == "true")
         }
     }
 }

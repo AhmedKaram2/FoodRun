@@ -13,7 +13,7 @@ import java.util.Base64
 class AccountService(private val db: RoomDatabase, private val provider: IdentityProvider?, private val rooms: RoomService, private val clock: () -> Long) {
     private val memberships = AccountMemberships(db)
     private val support = SupportSessions(db, clock)
-    private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved to Firebase" else "Cloud storage has not been connected for this hub."
+    private var cloudStatus = if (db.cloudDurable) "Room and wallet changes are saved online" else "Cloud storage has not been connected for this hub."
     private var lastProfileSyncKey = ""
     private fun cloud() = requireNotNull(provider) { "Configure this hub with the existing Intrvioo Firebase project to use accounts." }
     private fun session(token: String): AccountSession {
@@ -143,19 +143,26 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
             val pendingProfile = db.record("profile-sync:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) }
             val mergedProfile = if (uid != identity.userId || db.records("account-alias:").any { it.second == uid })
                 requireNotNull(db.record("profile:$uid")) { "The unified account profile is missing." }.let { orderJson.decodeFromString<FoodProfile>(it) } else null
-            val savedProfile = (mergedProfile ?: pendingProfile ?: cloud().profile(identity) ?: db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) } ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = uid).let {
+            val localProfile = db.record("profile:$uid")?.let { orderJson.decodeFromString<FoodProfile>(it) }
+            // Turso is authoritative after migration. Optional legacy profile sync
+            // must not make Firebase Auth depend on Firestore's document quota.
+            val importedProfile = if (db.storageMode == "turso") localProfile ?: runCatching { cloud().profile(identity) }.getOrNull()
+                else if (mergedProfile == null && pendingProfile == null) cloud().profile(identity) else null
+            val savedProfile = (mergedProfile ?: pendingProfile ?: importedProfile ?: localProfile ?: (request.profile ?: FoodProfile(name = identity.name))).copy(userId = uid).let {
                 // Imported contact data must not prevent authentication or room access.
                 // Invalid phones are left blank; supplied numbers are validated when saved.
                 it.copy(phone = runCatching { InternationalPhone.normalize(it.phone) }.getOrDefault(""))
             }.let { if (pendingAdminName == null) it else it.copy(name = pendingAdminName) }
             AccountRestrictions.requireAllowed(db, identity.userId, clock())
             AccountRestrictions.requireAllowed(db, uid, clock())
-            if (request.action == IdentityAction.REGISTER) cloud().saveProfile(identity, savedProfile)
+            if (request.action == IdentityAction.REGISTER && db.storageMode != "turso") cloud().saveProfile(identity, savedProfile)
             else if ((pendingProfile != null || pendingAdminName != null) && runCatching { cloud().saveProfile(identity, savedProfile) }.isSuccess) {
                 db.deleteRecord("admin:profile-name:$uid")
                 db.deleteRecord("profile-sync:$uid")
             }
             db.putRecord("profile:$uid", orderJson.encodeToString(savedProfile))
+            if (request.action == IdentityAction.REGISTER && db.storageMode == "turso")
+                db.putRecord("profile-sync:$uid", orderJson.encodeToString(savedProfile))
             EmailContacts.capture(db, identity.copy(userId = uid), clock())
             val token = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))
             db.putRecord("identity:${RoomService.hash(token)}", orderJson.encodeToString(AccountSession(identity.userId, identity.refreshToken, identity.idToken, clock() + 30L * 86400_000, clock() + 3_300_000)))

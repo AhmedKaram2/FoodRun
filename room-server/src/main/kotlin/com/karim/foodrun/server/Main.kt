@@ -66,7 +66,7 @@ fun main() {
     println("Food Run API: ${publicUrl ?: "https://$host:$port"}\nPairing link: $pairing\nCertificate SHA-256: ${if (proxyMode) "managed by public HTTPS" else fingerprint}\nPairing QR: ${qrFile.absolutePath}\nData: ${directory.absolutePath}")
     File(directory, "pairing.txt").writeText(pairing)
     val discoveries = if (proxyMode) emptyList() else addresses.mapNotNull { address -> runCatching { JmDNS.create(address).apply { registerService(ServiceInfo.create("_foodrun._tcp.local.", "Food Run", port, "version=1")) } }.getOrElse { System.err.println("Discovery unavailable on ${address.hostAddress}; use pairing link."); null } }
-    val db = RoomDatabase(directory, FirestoreStore.configured())
+    val db = RoomDatabase(directory, configuredDurableStore())
     AccountMergeRepair.configured(db)
     InitialFriendGroup.configured(db)?.let { println("Initial friend group created with $it current users.") }
     SessionReset.apply(db, SessionReset.cutoff())?.let { (accounts, rooms) ->

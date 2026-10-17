@@ -22,6 +22,7 @@ internal val storedTables = listOf(
     StoredTable("account_records", listOf("key", "body"), 1, 1),
 )
 interface DurableStore : AutoCloseable {
+    val mode: String get() = "firestore"
     /** False after another writer takes ownership; stale cached reads must stop too. */
     val available: Boolean get() = true
     /** Atomically claims this single-writer hub. Null means a newly initialized empty store. */
@@ -36,3 +37,11 @@ interface DurableStore : AutoCloseable {
     fun commit(changes: Map<String, StoredRow?>)
     override fun close() {}
 }
+
+internal fun configuredDurableStore(environment: Map<String, String> = System.getenv()): DurableStore? =
+    when (environment["FOODRUN_STORAGE"] ?: "sqlite") {
+        "sqlite" -> null
+        "firestore" -> FirestoreStore.configured(environment)
+        "turso" -> TursoStore.configured(environment)
+        else -> error("Unsupported FOODRUN_STORAGE.")
+    }

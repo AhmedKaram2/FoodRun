@@ -13,6 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 
 class RoomDatabase(directory: File, private val durable: DurableStore? = null) : AutoCloseable {
     val cloudDurable: Boolean get() = durable != null
+    val storageMode: String get() = durable?.mode ?: "sqlite"
     @Volatile private var failed = false
     val available: Boolean get() = !failed && durable?.available != false
     private var transactionDepth = 0

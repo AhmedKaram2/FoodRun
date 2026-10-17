@@ -77,6 +77,18 @@ class TursoStore internal constructor(
 
     @Synchronized override fun commit(changes: Map<String, StoredRow?>) = write(changes, initialized = true)
 
+    @Synchronized override fun canCommitMaintenance(changes: Map<String, StoredRow?>): Boolean = runCatching {
+        if (!available || revision < 0 || changes.size > 100) return@runCatching false
+        val writes = if (writeDay == clockDay()) written else 0L
+        if (writes + 450 + 1_000 > dailyWriteLimit) return@runCatching false
+        val encoded = changes.mapValues { (_, row) -> row?.let(::encode) }
+        if (encoded.values.sumOf { it?.size?.toLong() ?: 0L } > 3_000_000) return@runCatching false
+        val next = sizes.toMutableMap().apply { encoded.forEach { (id, bytes) ->
+            if (bytes == null) remove(id) else put(id, bytes.size + 128)
+        } }
+        next.size <= 15_000 && next.values.sumOf { it.toLong() } <= MAX_STORE_BYTES
+    }.getOrDefault(false)
+
     /** Import is deliberately unpublished until a complete read-back matches every source row. */
     @Synchronized internal fun importFrom(source: DurableStore): Int = protect {
         initializeSchema()

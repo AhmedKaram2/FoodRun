@@ -5,7 +5,8 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 
-class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null, emailEnabled: Boolean = false) {
+class RoomService(private val db: RoomDatabase, private val clock: () -> Long = System::currentTimeMillis, private val random: SecureRandom = SecureRandom(), private val identityProvider: IdentityProvider? = null, emailEnabled: Boolean = false,
+    private val historyCleanupEnabled: Boolean = false) {
     private val accounts = AccountService(db, identityProvider, this, clock)
     private val emails = EmailService(db, clock, emailEnabled)
     private val notifications = NotificationService(db, clock)
@@ -63,6 +64,7 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
     private var eventSequence = 1L
     private var nextExpiryScanAt = 0L
     private var nextTimerScanAt = 0L
+    private var nextHistoryCleanupAt = 0L
     private val timedRoomIds = mutableSetOf<String>()
     private val transferDeadlines = mutableMapOf<String,Long>()
     private val selectionHistory = SelectionHistory(db, clock)
@@ -273,6 +275,10 @@ class RoomService(private val db: RoomDatabase, private val clock: () -> Long = 
             } else finalizeSpin(room)
         } }
         presence.entries.removeIf { clock() - it.value > 5 * 60_000 }
+        if (historyCleanupEnabled && clock() >= nextHistoryCleanupAt) {
+            nextHistoryCleanupAt = clock() + 60 * 60_000
+            if (RoomHistoryRetention(db, clock).cleanupStep() != null) signalHome()
+        }
     }
     private fun scheduleTransferConfirmation(room: Room) {
         val deadline = PaymentConfirmation.nextDeadline(room)

@@ -28,6 +28,8 @@ The migration claims the old writer, streams existing rows into a new Turso name
 
 After a verified migration, set Render's `FOODRUN_STORAGE=turso`, keep `FOODRUN_TURSO_BOOTSTRAP=false`, run `Scripts/verify-render-storage.py` with the service ID, and deploy the tested commit. Verify the deployed commit, HTTP 200 from `/health`, and `X-FoodRun-Storage: turso`. Do not remove the source until a real account's rooms, wallet, history and sign-in are verified.
 
+Keep `FOODRUN_HISTORY_CLEANUP` unset or `false` while recovering the existing Firestore data. The per-user six-completed-room history limit does not delete source records by itself. Physical cleanup can be enabled only after the verified copy, and preserves shared rooms and financial obligations as described in [storage and room history](payment-rooms-and-storage.md).
+
 ## Persistence and failure behavior
 
 Remote rows are authoritative. Startup restores bounded compressed pages into one encrypted local SQLite transaction. Every change commits its metadata revision and all affected rows in one conditional SQL transaction. A failed statement skips COMMIT and rolls back. A lost response is checked against a unique commit marker rather than replaying the mutation. A new server atomically claims writer ownership; commits from the old server fail, and cached reads stop on its next ownership check (at most one second between checks). Connection or ownership failures make the cache unavailable until a fresh restore.

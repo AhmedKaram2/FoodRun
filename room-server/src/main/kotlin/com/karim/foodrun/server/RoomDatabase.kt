@@ -17,6 +17,8 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
     @Volatile private var failed = false
     val available: Boolean get() = !failed && durable?.available != false
     private var transactionDepth = 0
+    private var maintenanceTransaction = false
+    private class MaintenanceSkipped : RuntimeException()
     // Reuse decrypted data only inside one atomic request. No cached data crosses requests.
     private val transactionRooms = mutableMapOf<String, Room?>()
     private val transactionRecords = mutableMapOf<String, String?>()
@@ -128,6 +130,7 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
             val result = block()
             if (durable != null) {
                 val changes = trackedChanges()
+                if (maintenanceTransaction && changes.isNotEmpty() && !durable.canCommitMaintenance(changes)) throw MaintenanceSkipped()
                 if (changes.isNotEmpty()) { durable.commit(changes); cloudCommitted = true }
                 connection.createStatement().use { it.executeUpdate("DELETE FROM durable_changes") }
             }
@@ -138,6 +141,12 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
             runCatching { sqlConnection.rollback() }
             throw if (cloudCommitted) StorageUnavailable("Reload the durable store before retrying.", error) else error
         } finally { transactionDepth--; transactionRooms.clear(); transactionRecords.clear(); sqlConnection.autoCommit = true }
+    }
+    internal fun maintenance(block: () -> Unit): Boolean {
+        check(transactionDepth == 0)
+        maintenanceTransaction = true
+        return try { transaction(block); true } catch (_: MaintenanceSkipped) { false }
+        finally { maintenanceTransaction = false }
     }
     private fun query(sql: String, value: String): String? = connection.prepareStatement(sql).use { it.setString(1, value); it.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null } }
     fun archive(room: Room) { transaction { enqueueCloud("order-${room.id}-${room.orderNumber}", orderJson.encodeToString(room)); connection.prepareStatement("INSERT OR REPLACE INTO orders VALUES(?,?,?)").use { it.setString(1, room.id); it.setLong(2, room.orderNumber); it.setString(3, encrypt(orderJson.encodeToString(room))); it.executeUpdate() }  } }
@@ -198,7 +207,11 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
     fun deleteRoom(roomId: String) { transaction {
         transactionRooms.remove(roomId)
         putRecord("admin:deleted-room:$roomId", "true")
-        allHistory().filter { it.id == roomId }.forEach { deleteHistory(it.id, it.orderNumber) }
+        var previous = history(roomId, limit = 10)
+        while (previous.isNotEmpty()) {
+            previous.forEach { deleteHistory(it.id, it.orderNumber) }
+            previous = history(roomId, limit = 10)
+        }
         for (table in listOf("sessions", "rooms")) {
             val column = if (table == "rooms") "id" else "room_id"
             connection.prepareStatement("DELETE FROM $table WHERE $column=?").use { it.setString(1, roomId); it.executeUpdate() }
@@ -213,6 +226,32 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
         commandIds.forEach { id -> connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use { it.setString(1, encrypt(orderJson.encodeToString(RoomReply(ok = false, code = "REMOVED", error = "This room was deleted by the administrator.")))); it.setString(2, id); it.executeUpdate() } }
         enqueueCloud("room-$roomId", "{\"deleted\":true}")
      } }
+    internal fun deleteRoomSessionBatch(roomId: String, limit: Int): Int =
+        connection.prepareStatement("DELETE FROM sessions WHERE hash IN (SELECT hash FROM sessions WHERE room_id=? LIMIT ?)").use {
+            it.setString(1, roomId); it.setInt(2, limit); it.executeUpdate()
+        }
+    internal fun retireRoomCommandBatch(roomId: String, limit: Int): Int {
+        val commands = connection.createStatement().use { statement -> statement.executeQuery("SELECT id,body FROM commands").use { rows ->
+            buildList {
+                while (rows.next() && size < limit) {
+                    val saved = orderJson.decodeFromString<RoomReply>(decrypt(rows.getString(2)))
+                    if (saved.room?.id == roomId) {
+                        val uid = saved.home?.profile?.userId?.takeIf { it.isNotBlank() }
+                            ?: record("member-user:$roomId:${saved.memberId}")
+                        add(rows.getString(1) to uid)
+                    }
+                }
+            }
+        } }
+        commands.forEach { (id, uid) ->
+            val retired = RoomReply(ok = false, code = "REMOVED", error = "This completed room is no longer kept in room history.",
+                home = uid?.let { HomePayload(FoodProfile(userId = it)) })
+            connection.prepareStatement("UPDATE commands SET body=? WHERE id=?").use {
+                it.setString(1, encrypt(orderJson.encodeToString(retired))); it.setString(2, id); it.executeUpdate()
+            }
+        }
+        return commands.size
+    }
     internal fun deleteSessionBatch(): Int = transaction {
         connection.createStatement().use { it.executeUpdate("DELETE FROM sessions WHERE hash IN (SELECT hash FROM sessions LIMIT 50)") }
     }

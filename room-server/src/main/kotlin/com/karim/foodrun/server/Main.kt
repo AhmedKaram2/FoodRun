@@ -75,7 +75,8 @@ fun main() {
     val emailSender = GmailEmailSender.configured()
     val emailDailyLimit = System.getenv("FOODRUN_EMAIL_DAILY_LIMIT")?.toInt() ?: 100
     require(emailDailyLimit in 1..450) { "FOODRUN_EMAIL_DAILY_LIMIT must be between 1 and 450." }
-    val service = RoomService(db, identityProvider = FirebaseIdentity.configured(), emailEnabled = emailSender != null)
+    val service = RoomService(db, identityProvider = FirebaseIdentity.configured(), emailEnabled = emailSender != null,
+        historyCleanupEnabled = System.getenv("FOODRUN_HISTORY_CLEANUP") == "true")
     val admin = AdminService(db, service)
     val applicationJob = AtomicReference<Job?>()
     val server = embeddedServer(Netty, configure = {

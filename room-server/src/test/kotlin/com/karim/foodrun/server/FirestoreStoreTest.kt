@@ -15,6 +15,23 @@ class FirestoreStoreTest {
         return FirestoreOptions.newBuilder().setProjectId("demo-foodrun").setEmulatorHost(host).build().service
     }
     private fun namespace() = "test-${UUID.randomUUID()}"
+    @Test fun optionalMaintenanceLeavesDailyAllowanceForPaymentsAndResumesNextDay() {
+        var day = "2026-10-17"
+        FirestoreStore(client(), namespace(), true, 1452, { day }).use { store ->
+            store.load()
+            val payment = StoredRow("account_records", listOf("payment", "confirmed"))
+            val changes = mapOf(payment.id to payment)
+            assertTrue(store.canCommitMaintenance(changes))
+            assertFalse(store.canCommitMaintenance((0..100).associate { StoredRow("account_records", listOf("too-many:$it", "value")).let { value -> value.id to value } }))
+            store.commit(changes)
+            assertFalse(store.canCommitMaintenance(changes))
+            assertTrue(store.available)
+            store.commit(changes)
+            day = "2026-10-18"
+            assertTrue(store.canCommitMaintenance(changes))
+        }
+    }
+
     @Test fun firestoreRestoresFullMealWalletAfterCompleteDiskLoss() {
         val namespace = namespace()
         RoomFixture(durableFactory = { FirestoreStore(client(), namespace, true) }).use { f ->

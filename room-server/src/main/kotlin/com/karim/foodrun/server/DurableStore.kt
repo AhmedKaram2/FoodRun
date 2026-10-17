@@ -35,6 +35,8 @@ interface DurableStore : AutoCloseable {
     }
     /** Atomic durable commit; null rows are deletions. Returns only after persistence is confirmed. */
     fun commit(changes: Map<String, StoredRow?>)
+    /** Optional cleanup must leave room for account/payment writes and may be skipped. */
+    fun canCommitMaintenance(changes: Map<String, StoredRow?>): Boolean = false
     override fun close() {}
 }
 

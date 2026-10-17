@@ -13,6 +13,25 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class TursoStoreTest {
+    @Test fun optionalMaintenanceLeavesDailyAllowanceForPaymentsAndResumesNextDay() {
+        TursoFixture().use { remote ->
+            var day = "2026-10-17"
+            remote.store(create = true, dailyLimit = 1454, day = { day }).use { store ->
+                store.load()
+                val payment = row("payment", "confirmed")
+                val changes = mapOf(payment.id to payment)
+                assertTrue(store.canCommitMaintenance(changes))
+                assertFalse(store.canCommitMaintenance((0..100).associate { row("too-many:$it", "value").let { value -> value.id to value } }))
+                store.commit(changes)
+                assertFalse(store.canCommitMaintenance(changes))
+                assertTrue(store.available)
+                store.commit(changes) // Optional cleanup must not consume the payment reserve.
+                day = "2026-10-18"
+                assertTrue(store.canCommitMaintenance(changes))
+            }
+        }
+    }
+
     @Test fun reusedSqlConnectionsDoNotAccumulateTemporaryWriterFenceTables() {
         TursoFixture().use { remote ->
             remote.store(create = true).use { store ->

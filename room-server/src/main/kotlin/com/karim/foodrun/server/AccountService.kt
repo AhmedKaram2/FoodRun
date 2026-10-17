@@ -103,8 +103,9 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
     }
     fun home(token: String, spendingTimeZone: String = ""): RoomReply = db.transaction {
         val uid = userId(token)
-        val memberships = memberships.all(uid).map { member ->
-            if(support.requireActive(token) != null) support.roomToken(token, member) else restoreSession(uid, requireNotNull(db.room(member.roomId)), member)
+        val history = RoomHistoryRetention(db, clock).forUser(uid)
+        val memberships = history.entries.map { (member, room) ->
+            if(support.requireActive(token) != null) support.roomToken(token, member) else restoreSession(uid, room, member)
         }
             .map { member -> val room = requireNotNull(db.room(member.roomId)); member.copy(phase = room.phase, orderNumber = room.orderNumber, paymentsPending = RoomExpiry.paymentsPending(room)) }
             .sortedByDescending { db.room(it.roomId)?.createdAt ?: 0L }
@@ -113,7 +114,7 @@ class AccountService(private val db: RoomDatabase, private val provider: Identit
         val people = db.records("profile:").map { orderJson.decodeFromString<FoodProfile>(it.second) }
             .filter { it.discoverable && it.userId != uid && it.name.isNotBlank() && AccountRestrictions.current(db, it.userId, clock())?.removed != true }.take(100).map { FoodPerson(it.userId, it.name) }
         val restaurants = db.record(AdminService.RESTAURANTS)?.let { orderJson.decodeFromString<List<Restaurant>>(it) } ?: BuiltInRestaurants.all.map { it.restaurant }
-        RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db), db.records("admin:deleted-room:").map { it.first.removePrefix("admin:deleted-room:") }.toSet(),
+        RoomReply(home = HomePayload(profile(uid), people, invitations, memberships, cloudStatus, restaurants, AdminService.deletedRestaurantIds(db), db.records("admin:deleted-room:").map { it.first.removePrefix("admin:deleted-room:") }.toSet() + history.excludedIds,
             buildMap {
                 AccountRestrictions.current(db, uid, clock())?.let { put("*", AccountRestrictions.block(it)) }
                 memberships.forEach { member -> AccountRestrictions.forRoom(db, uid, member.roomId, clock())?.let { put(member.roomId, AccountRestrictions.block(it, member.roomId)) } }

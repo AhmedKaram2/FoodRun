@@ -209,6 +209,20 @@ class FirestoreStore(
         restoreCache = cache
     }
 
+    override fun canCommitMaintenance(changes: Map<String, StoredRow?>): Boolean = runCatching {
+        if (!usable || revision < 0 || changes.size > 100) return@runCatching false
+        val encoded = changes.mapValues { (_, row) -> row?.let(::encode) }
+        val operations = 1L + encoded.entries.sumOf { (id, bytes) -> maxOf(bytes?.let { (it.size + CHUNK_BYTES - 1) / CHUNK_BYTES } ?: 0, sizes[id]?.size ?: 0) }
+        if (operations > 100 || encoded.values.sumOf { it?.size?.toLong() ?: 0L } > 3_000_000) return@runCatching false
+        val nextSizes = sizes.toMutableMap().apply { encoded.forEach { (id, bytes) ->
+            if (bytes == null) remove(id) else put(id, split(bytes).map { it.size })
+        } }
+        if (nextSizes.values.sumOf { parts -> parts.sumOf { it.toLong() + 1024 } } > 600L * 1024 * 1024 || nextSizes.values.sumOf { it.size } > 15_000) return@runCatching false
+        val meta = metadata.get().get(15, TimeUnit.SECONDS)
+        val writes = if (meta.getString("day") == clockDay()) meta.getLong("writes") ?: 0L else 0L
+        meta.getString("writer") == writerId && meta.getLong("revision") == revision && writes + 450 + 1_000 <= dailyWriteLimit
+    }.getOrDefault(false)
+
     override fun commit(changes: Map<String, StoredRow?>) = protect<Unit> {
         if (!usable || revision < 0) throw StorageUnavailable("Firestore storage must be reloaded.")
         if (changes.isEmpty()) return@protect

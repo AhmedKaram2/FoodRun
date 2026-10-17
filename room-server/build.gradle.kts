@@ -20,7 +20,10 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
     testImplementation("io.ktor:ktor-server-test-host:3.5.2")
 }
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("foodrun.test.runtimeClasspath", sourceSets["test"].runtimeClasspath.asPath)
+}
 
 distributions { main { contents { from("README.md"); from("AUDIT.md") } } }
 

@@ -43,7 +43,12 @@ class FirestoreStore(
         require(dailyWriteLimit in 10..12_000)
     }
 
-    override fun load(): List<StoredRow>? = protect {
+    override fun load(): List<StoredRow>? {
+        val rows = mutableListOf<StoredRow>()
+        return if (restore(rows::add)) rows else null
+    }
+
+    override fun restore(accept: (StoredRow) -> Unit): Boolean = protect {
         val claim = UUID.randomUUID().toString()
         // Claim only the metadata in a transaction. A retry must never repeat a
         // scan of every stored row, and the old writer is fenced before restore.
@@ -68,7 +73,9 @@ class FirestoreStore(
         revision = meta["revision"] as Long
         restoreGeneration = meta["restoreGeneration"] as? String
         val loadedSizes = mutableMapOf<String, List<Int>>()
-        val rows = if (restoreGeneration != null) {
+        var rowCount = 0L
+        fun acceptRow(row: StoredRow) { rowCount++; accept(row) }
+        if (restoreGeneration != null) {
             val manifest = meta["restoreBuckets"] as Map<*, *>
             val references = manifest.flatMap { (key, value) ->
                 val bucket = key as? String ?: throw StorageUnavailable("Invalid restore manifest.")
@@ -83,47 +90,53 @@ class FirestoreStore(
             val buckets = parts.groupBy { it.getString("bucket") ?: throw StorageUnavailable("Invalid restore bucket.") }
                 .mapValues { (_, parts) -> joinParts(parts) }
             restoreCache = FirestoreRestoreCache.fromBuckets(buckets)
-            restoreCache!!.rows().also { values ->
-                if (values.size.toLong() != meta["restoreRows"]) throw StorageUnavailable("Incomplete Firestore restore cache.")
-                values.forEach { row ->
-                    if (row.cells.size != row.schema.columns.size) throw StorageUnavailable("Invalid Firestore row identity.")
-                    val bytes = encode(row)
-                    loadedSizes[row.id] = split(bytes).map { it.size }
-                }
+            restoreCache!!.forEachRow { row ->
+                if (row.cells.size != row.schema.columns.size) throw StorageUnavailable("Invalid Firestore row identity.")
+                val bytes = encode(row)
+                loadedSizes[row.id] = split(bytes).map { it.size }
+                acceptRow(row)
             }
+            if (rowCount != meta["restoreRows"]) throw StorageUnavailable("Incomplete Firestore restore cache.")
         } else {
-            val restored = mutableListOf<StoredRow>()
-            val parts = mutableListOf<QueryDocumentSnapshot>()
-            var rowId: String? = null
-            fun finishRow() {
-                if (parts.isEmpty()) return
-                val row = decode(joinParts(parts))
-                if (row.id != rowId || row.cells.size != row.schema.columns.size) throw StorageUnavailable("Invalid Firestore row identity.")
-                loadedSizes[row.id] = parts.sortedBy { it.getLong("part") }.map { it.getBlob("payload")!!.toBytes().size }
-                restored.add(row)
-                parts.clear()
+            FirestoreRestoreCache.Builder().use { builder ->
+                val parts = mutableListOf<QueryDocumentSnapshot>()
+                var rowId: String? = null
+                fun finishRow() {
+                    if (parts.isEmpty()) return
+                    val row = decode(joinParts(parts))
+                    if (row.id != rowId || row.cells.size != row.schema.columns.size) throw StorageUnavailable("Invalid Firestore row identity.")
+                    loadedSizes[row.id] = parts.sortedBy { it.getLong("part") }.map { it.getBlob("payload")!!.toBytes().size }
+                    builder.add(row)
+                    acceptRow(row)
+                    parts.clear()
+                }
+                readPages(documents, 15_000) { page -> page.forEach { part ->
+                    val id = part.getString("row") ?: throw StorageUnavailable("Invalid stored row.")
+                    if (part.id != "$id-${part.getLong("part")}") throw StorageUnavailable("Invalid stored row identity.")
+                    if (id != rowId) { finishRow(); rowId = id }
+                    parts.add(part)
+                } }
+                finishRow()
+                restoreCache = if (rowCount >= FirestoreRestoreCache.MIN_ROWS) builder.finish() else null
             }
-            readPages(documents, 15_000) { page -> page.forEach { part ->
-                val id = part.getString("row") ?: throw StorageUnavailable("Invalid stored row.")
-                if (part.id != "$id-${part.getLong("part")}") throw StorageUnavailable("Invalid stored row identity.")
-                if (id != rowId) { finishRow(); rowId = id }
-                parts.add(part)
-            } }
-            finishRow()
-            restored
         }
-        if (meta["initialized"] != true && rows.isNotEmpty()) throw StorageUnavailable("Firestore metadata is missing; restore the complete store.")
+        if (meta["initialized"] != true && rowCount != 0L) throw StorageUnavailable("Firestore metadata is missing; restore the complete store.")
         val current = metadata.get().get(15, TimeUnit.SECONDS)
         if (current.getString("writer") != writerId || current.getLong("revision") != revision) throw StorageUnavailable("Another server has taken over. Reconnect to the active server.")
         sizes = loadedSizes
-        if (restoreCache == null && rows.size >= FirestoreRestoreCache.MIN_ROWS) publishRestoreCache(rows)
+        if (restoreGeneration == null && restoreCache != null) {
+            val cache = restoreCache!!
+            restoreCache = null
+            publishRestoreCache(cache, rowCount)
+        }
         ownershipListener?.remove()
         ownershipListener = metadata.addSnapshotListener { value, error ->
             // One small metadata listener fences old instances during deployments. Menus,
             // wallet rows and photos continue to load only once on the active writer.
             if (error != null || value?.exists() != true || value.getString("writer") != writerId) usable = false
         }
-        if (meta["initialized"] == true) rows else null
+        org.slf4j.LoggerFactory.getLogger(FirestoreStore::class.java).info("Firestore restore complete: rows={} compactParts={}", rowCount, restoreCache?.parts ?: 0)
+        meta["initialized"] == true
     }
 
     private fun readPages(query: Query, limit: Int, receive: (List<QueryDocumentSnapshot>) -> Unit) {
@@ -160,9 +173,7 @@ class FirestoreStore(
         ((bytes.size + CHUNK_BYTES - 1) / CHUNK_BYTES).toLong()
     }
 
-    private fun publishRestoreCache(rows: List<StoredRow>) {
-        val cache = FirestoreRestoreCache.fromRows(rows)
-        if (!cache.bounded) return
+    private fun publishRestoreCache(cache: FirestoreRestoreCache, rowCount: Long) {
         // Reuse bounded slots. Retired parts are ignored by the manifest, so
         // repeated upgrades cannot accumulate entire obsolete cache generations.
         val generation = "v1"
@@ -191,7 +202,7 @@ class FirestoreStore(
             val writes = if (meta.getString("day") == clockDay()) meta.getLong("writes") ?: 0L else 0L
             if (writes + 1 > dailyWriteLimit) throw StorageUnavailable("Daily storage allowance reached. Try again tomorrow.")
             tx.update(metadata, mapOf("revision" to expected + 1, "day" to clockDay(), "writes" to writes + 1,
-                "restoreGeneration" to generation, "restoreRevision" to expected + 1, "restoreRows" to rows.size.toLong(), "restoreParts" to cache.parts.toLong(), "restoreBuckets" to cacheManifest(cache)))
+                "restoreGeneration" to generation, "restoreRevision" to expected + 1, "restoreRows" to rowCount, "restoreParts" to cache.parts.toLong(), "restoreBuckets" to cacheManifest(cache)))
         }.get(45, TimeUnit.SECONDS)
         revision++
         restoreGeneration = generation

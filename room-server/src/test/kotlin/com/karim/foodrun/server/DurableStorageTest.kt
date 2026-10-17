@@ -5,6 +5,39 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class DurableStorageTest {
+    @Test fun partialStreamingRestoreRollsBackTheLocalCache() {
+        val directory = Files.createTempDirectory("foodrun-stream-rollback").toFile()
+        try {
+            RoomDatabase(directory).use { it.putRecord("previous", "preserved") }
+            val broken = object : DurableStore {
+                override fun load(): List<StoredRow>? = error("Streaming restore must not call load")
+                override fun restore(accept: (StoredRow) -> Unit): Boolean {
+                    accept(StoredRow("account_records", listOf("replacement", "unconfirmed")))
+                    throw StorageUnavailable("Restore interrupted")
+                }
+                override fun commit(changes: Map<String, StoredRow?>) = error("Failed restore must not commit")
+            }
+            assertFailsWith<StorageUnavailable> { RoomDatabase(directory, broken) }
+            RoomDatabase(directory).use { db ->
+                assertEquals("preserved", db.record("previous"))
+                assertNull(db.record("replacement"))
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun initializedEmptyStreamingRestoreClearsStaleLocalRows() {
+        val directory = Files.createTempDirectory("foodrun-stream-empty").toFile()
+        try {
+            RoomDatabase(directory).use { it.putRecord("previous", "stale") }
+            val empty = object : DurableStore {
+                override fun load(): List<StoredRow>? = error("Streaming restore must not call load")
+                override fun restore(accept: (StoredRow) -> Unit) = true
+                override fun commit(changes: Map<String, StoredRow?>) = error("An initialized store must not bootstrap")
+            }
+            RoomDatabase(directory, empty).use { assertNull(it.record("previous")) }
+        } finally { directory.deleteRecursively() }
+    }
+
     internal class MemoryStore : DurableStore {
         var rows: MutableMap<String, StoredRow>? = null
         var commits = 0

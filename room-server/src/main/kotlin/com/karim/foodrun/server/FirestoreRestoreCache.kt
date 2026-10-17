@@ -12,10 +12,58 @@ internal class FirestoreRestoreCache private constructor(val buckets: Map<String
     val parts: Int get() = buckets.values.sumOf { (it.size + FirestoreStore.CHUNK_BYTES - 1) / FirestoreStore.CHUNK_BYTES }
     val bounded: Boolean get() = bytes <= MAX_BYTES && parts <= MAX_PARTS && buckets.values.none { it.isEmpty() }
 
-    fun rows(): List<StoredRow> = buckets.flatMap { (bucket, bytes) ->
-        decode(bytes).also { rows ->
+    fun rows(): List<StoredRow> = buildList { forEachRow { add(it) } }
+
+    fun forEachRow(accept: (StoredRow) -> Unit) {
+        buckets.forEach { (bucket, bytes) ->
+            val rows = decode(bytes)
             if (rows.any { bucket(it.id) != bucket } || rows.map { it.id }.distinct().size != rows.size)
                 throw StorageUnavailable("Invalid Firestore restore cache.")
+            rows.forEach(accept)
+        }
+    }
+
+    /** Compress rows as they arrive; never retain the complete decoded store. */
+    class Builder : AutoCloseable {
+        private val values = linkedMapOf<String, Bucket>()
+        private var valid = true
+        fun add(row: StoredRow) {
+            if (!valid) return
+            if (!values.getOrPut(bucket(row.id)) { Bucket() }.add(row) || values.values.sumOf { it.output.size().toLong() } > MAX_BYTES) {
+                valid = false
+                close()
+                values.clear()
+            }
+        }
+        fun finish(): FirestoreRestoreCache? {
+            if (!valid) return null
+            val cache = FirestoreRestoreCache(values.mapValues { (_, value) -> value.finish() })
+            return cache.takeIf { it.bounded }
+        }
+        override fun close() { values.values.forEach { it.close() } }
+    }
+
+    private class Bucket : AutoCloseable {
+        val output = ByteArrayOutputStream()
+        private val gzip = GZIPOutputStream(output).also { it.write('['.code) }
+        private var size = 2L
+        private var first = true
+        private var closed = false
+        fun add(row: StoredRow): Boolean {
+            val raw = orderJson.encodeToString(row).toByteArray()
+            size += raw.size + if (first) 0 else 1
+            if (size > MAX_DECODED_BYTES) return false
+            if (!first) gzip.write(','.code)
+            gzip.write(raw)
+            first = false
+            return true
+        }
+        fun finish(): ByteArray { close(); return output.toByteArray() }
+        override fun close() {
+            if (closed) return
+            closed = true
+            gzip.write(']'.code)
+            gzip.close()
         }
     }
 
@@ -33,22 +81,22 @@ internal class FirestoreRestoreCache private constructor(val buckets: Map<String
         const val MIN_ROWS = 128
         const val MAX_BYTES = 32L * 1024 * 1024
         const val MAX_PARTS = 128
+        private const val MAX_DECODED_BYTES = 64 * 1024 * 1024
         fun bucket(id: String): String = (id.take(2).toInt(16) % 64).toString(16).padStart(2, '0')
-        fun fromRows(rows: List<StoredRow>) = FirestoreRestoreCache(rows.groupBy { bucket(it.id) }
-            .mapValues { (_, values) -> encode(values.sortedBy { it.id }) })
+        fun fromRows(rows: List<StoredRow>): FirestoreRestoreCache = Builder().use { builder ->
+            rows.forEach(builder::add)
+            builder.finish() ?: FirestoreRestoreCache(mapOf("00" to byteArrayOf()))
+        }
         fun fromBuckets(buckets: Map<String, ByteArray>) = FirestoreRestoreCache(buckets).also {
             if (!it.bounded) throw StorageUnavailable("Firestore restore cache exceeds its size limit.")
         }
-        private fun encode(rows: List<StoredRow>): ByteArray {
-            val raw = orderJson.encodeToString(rows).toByteArray()
-            // A highly compressible bucket must still fit the decoder's limit.
-            // The empty sentinel makes the optional cache ineligible for publication.
-            if (raw.size > 64 * 1024 * 1024) return byteArrayOf()
-            return ByteArrayOutputStream().also { output -> GZIPOutputStream(output).use { it.write(raw) } }.toByteArray()
+        private fun encode(rows: List<StoredRow>): ByteArray = Bucket().use { value ->
+            for (row in rows) if (!value.add(row)) return byteArrayOf()
+            value.finish()
         }
         private fun decode(bytes: ByteArray): List<StoredRow> {
-            val raw = GZIPInputStream(bytes.inputStream()).use { it.readNBytes(64 * 1024 * 1024 + 1) }
-            if (raw.size > 64 * 1024 * 1024) throw StorageUnavailable("Firestore restore bucket is too large.")
+            val raw = GZIPInputStream(bytes.inputStream()).use { it.readNBytes(MAX_DECODED_BYTES + 1) }
+            if (raw.size > MAX_DECODED_BYTES) throw StorageUnavailable("Firestore restore bucket is too large.")
             return orderJson.decodeFromString(raw.toString(Charsets.UTF_8))
         }
     }

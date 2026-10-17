@@ -26,6 +26,12 @@ interface DurableStore : AutoCloseable {
     val available: Boolean get() = true
     /** Atomically claims this single-writer hub. Null means a newly initialized empty store. */
     fun load(): List<StoredRow>?
+    /** Stream a restored store into a caller-owned transaction; false means new storage. */
+    fun restore(accept: (StoredRow) -> Unit): Boolean {
+        val rows = load() ?: return false
+        rows.forEach(accept)
+        return true
+    }
     /** Atomic durable commit; null rows are deletions. Returns only after persistence is confirmed. */
     fun commit(changes: Map<String, StoredRow?>)
     override fun close() {}

@@ -56,25 +56,32 @@ class RoomDatabase(directory: File, private val durable: DurableStore? = null) :
         }
         restrict(File(directory, "rooms.sqlite"))
         if (durable != null) {
-            val restored = durable.load()
-            if (restored != null) {
-                connection.autoCommit = false
-                try {
+            sqlConnection.autoCommit = false
+            try {
+                var replacing = false
+                fun prepareRestore() {
+                    if (replacing) return
                     storedTables.forEach { table -> connection.createStatement().use { it.executeUpdate("DELETE FROM ${table.name}") } }
                     connection.createStatement().use { it.executeUpdate("DELETE FROM cloud_outbox") }
-                    restored.forEach(::restoreRow)
-                    connection.commit()
-                } catch (error: Throwable) { connection.rollback(); throw error }
-                finally { connection.autoCommit = true }
-            } else {
-                connection.prepareStatement("INSERT OR IGNORE INTO account_records VALUES(?,?)").use { it.setString(1, "storage:format"); it.setString(2, encrypt("1")); it.executeUpdate() }
-                val rows = storedTables.flatMap { table -> connection.createStatement().use { statement ->
-                    statement.executeQuery("SELECT ${table.columns.joinToString(",")} FROM ${table.name}").use { result ->
-                        buildList { while (result.next()) add(readRow(table, result)) }
+                    replacing = true
+                }
+                val restored = durable.restore { row -> prepareRestore(); restoreRow(row) }
+                if (restored) prepareRestore() // An initialized empty store also replaces stale local rows.
+                else {
+                    check(!replacing) { "New durable storage returned existing rows." }
+                    connection.prepareStatement("INSERT OR IGNORE INTO account_records VALUES(?,?)").use { it.setString(1, "storage:format"); it.setString(2, encrypt("1")); it.executeUpdate() }
+                    val rows = storedTables.flatMap { table ->
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT ${table.columns.joinToString(",")} FROM ${table.name}").use { result ->
+                                buildList { while (result.next()) add(readRow(table, result)) }
+                            }
+                        }
                     }
-                } }
-                durable.commit(rows.associateBy { it.id })
-            }
+                    durable.commit(rows.associateBy { it.id })
+                }
+                sqlConnection.commit()
+            } catch (error: Throwable) { sqlConnection.rollback(); throw error }
+            finally { sqlConnection.autoCommit = true }
             installTracking()
         }
     }

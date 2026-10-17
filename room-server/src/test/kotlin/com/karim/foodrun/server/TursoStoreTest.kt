@@ -13,6 +13,38 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class TursoStoreTest {
+    @Test fun reusedSqlConnectionsDoNotAccumulateTemporaryWriterFenceTables() {
+        TursoFixture().use { remote ->
+            remote.store(create = true).use { store ->
+                store.load()
+                repeat(10) { index ->
+                    val value = row("probe", index.toString())
+                    store.commit(mapOf(value.id to value))
+                }
+                assertFalse(remote.hasTemporaryFence())
+            }
+        }
+    }
+
+    @Test fun dailyWriteGuardPreservesConfirmedRowsAndResetsOnTheNextDay() {
+        TursoFixture().use { remote ->
+            remote.store(create = true, dailyLimit = 10, day = { "2026-10-17" }).use { store ->
+                store.load()
+                val first = row("first", "confirmed")
+                val second = row("second", "confirmed")
+                store.commit(mapOf(first.id to first))
+                store.commit(mapOf(second.id to second))
+                assertFailsWith<StorageUnavailable> { store.commit(mapOf(first.id to null)) }
+            }
+            remote.store(dailyLimit = 10, day = { "2026-10-18" }).use { store ->
+                assertEquals(setOf(row("first", "confirmed"), row("second", "confirmed")), store.load()!!.toSet())
+                val newer = row("first", "updated")
+                store.commit(mapOf(newer.id to newer))
+                assertEquals(setOf(newer, row("second", "confirmed")), store.load()!!.toSet())
+            }
+        }
+    }
+
     @Test fun tursoSignInAndRegistrationDoNotDependOnLegacyFirestoreProfiles() {
         val identity = object : IdentityProvider {
             override fun signIn(email: String, password: String, register: Boolean) = CloudIdentity(email.substringBefore('@'), "id", "refresh", name = email.substringBefore('@'))
@@ -176,6 +208,7 @@ class TursoStoreTest {
     private class TursoFixture : AutoCloseable {
         private val directory = Files.createTempDirectory("foodrun-turso-test").toFile()
         private val file = directory.resolve("remote.sqlite")
+        private val connection = DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}")
         private val executor = Executors.newSingleThreadExecutor()
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         var failAt: String? = null
@@ -189,12 +222,10 @@ class TursoStoreTest {
                     check(exchange.requestHeaders.getFirst("Authorization") == "Bearer fixture-secret")
                     val body = orderJson.parseToJsonElement(exchange.requestBody.bufferedReader().readText()).jsonObject
                     val operation = body["requests"]!!.jsonArray.first().jsonObject
-                    val response = DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { connection ->
-                        when (operation["type"]!!.jsonPrimitive.content) {
-                            "execute" -> buildJsonObject { put("type", "execute"); put("result", execute(connection, operation["stmt"]!!.jsonObject)) }
-                            "batch" -> batch(connection, operation["batch"]!!.jsonObject)
-                            else -> error("Unsupported fixture request")
-                        }
+                    val response = when (operation["type"]!!.jsonPrimitive.content) {
+                        "execute" -> buildJsonObject { put("type", "execute"); put("result", execute(connection, operation["stmt"]!!.jsonObject)) }
+                        "batch" -> batch(connection, operation["batch"]!!.jsonObject)
+                        else -> error("Unsupported fixture request")
                     }
                     val drop = dropNextCommitResponse && operation["type"]!!.jsonPrimitive.content == "batch"
                     if (drop) dropNextCommitResponse = false
@@ -212,8 +243,12 @@ class TursoStoreTest {
             }
             server.start()
         }
-        fun store(create: Boolean = false, namespace: String = "test", clock: () -> Long = System::currentTimeMillis) =
-            TursoStore(TursoSql("http://127.0.0.1:${server.address.port}", "fixture-secret", allowLocalhost = true), namespace, create, clock)
+        fun store(create: Boolean = false, namespace: String = "test", clock: () -> Long = System::currentTimeMillis,
+            dailyLimit: Int = 12_000, day: () -> String = { "2026-10-17" }) =
+            TursoStore(TursoSql("http://127.0.0.1:${server.address.port}", "fixture-secret", allowLocalhost = true), namespace, create, clock, dailyLimit, day)
+        fun hasTemporaryFence(): Boolean = connection.createStatement().use { statement ->
+            statement.executeQuery("SELECT 1 FROM sqlite_temp_master WHERE name='foodrun_writer_fence'").use { it.next() }
+        }
 
         private fun batch(connection: Connection, batch: JsonObject): JsonObject {
             val results = mutableListOf<JsonElement>()
@@ -272,6 +307,6 @@ class TursoStoreTest {
                 buildJsonObject { put("cols", JsonArray(columns)); put("rows", JsonArray(rows)); put("affected_row_count", affected); put("last_insert_rowid", JsonNull) }
             }
         }
-        override fun close() { server.stop(0); executor.shutdownNow(); directory.deleteRecursively() }
+        override fun close() { server.stop(0); executor.shutdownNow(); connection.close(); directory.deleteRecursively() }
     }
 }

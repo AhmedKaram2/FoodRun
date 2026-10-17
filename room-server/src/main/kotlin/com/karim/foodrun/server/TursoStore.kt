@@ -2,6 +2,8 @@ package com.karim.foodrun.server
 
 import com.karim.foodrun.orders.orderJson
 import java.io.ByteArrayOutputStream
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Base64
 import java.util.UUID
 import java.util.zip.GZIPInputStream
@@ -15,11 +17,16 @@ class TursoStore internal constructor(
     private val namespace: String,
     private val allowCreate: Boolean = false,
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val dailyWriteLimit: Int = 12_000,
+    private val clockDay: () -> String = { LocalDate.now(ZoneId.of("America/Los_Angeles")).toString() },
 ) : DurableStore {
     private val writer = UUID.randomUUID().toString()
     private var revision = -1L
     private var usable = true
     private var checkedAt = 0L
+    private var sizes = emptyMap<String, Int>()
+    private var writeDay = ""
+    private var written = 0L
     override val mode: String get() = "turso"
     override val available: Boolean @Synchronized get() {
         if (usable && revision >= 0 && clock() - checkedAt >= 1_000) {
@@ -27,7 +34,10 @@ class TursoStore internal constructor(
         }
         return usable
     }
-    init { require(namespace.matches(Regex("[a-zA-Z0-9_-]{1,80}"))) { "Invalid Turso namespace." } }
+    init {
+        require(namespace.matches(Regex("[a-zA-Z0-9_-]{1,80}"))) { "Invalid Turso namespace." }
+        require(dailyWriteLimit in 10..12_000) { "Turso daily write guard must be between 10 and 12000." }
+    }
 
     override fun load(): List<StoredRow>? {
         val rows = mutableListOf<StoredRow>()
@@ -39,22 +49,28 @@ class TursoStore internal constructor(
         var meta = metadata()
         if (meta == null) {
             if (!allowCreate) throw StorageUnavailable("Turso has not been initialized. Migrate the existing store first.")
-            sql.execute("INSERT OR IGNORE INTO foodrun_hubs(namespace,format,initialized,revision,writer,commit_id) VALUES(?,1,0,0,'','')", namespace)
+            sql.execute("INSERT OR IGNORE INTO foodrun_hubs(namespace,format,initialized,revision,writer,commit_id,day,writes,bytes) VALUES(?,1,0,0,'','',?,0,0)", namespace, clockDay())
             meta = metadata() ?: throw StorageUnavailable("Turso metadata is unavailable.")
         }
         if (meta[0].sqlText() != "1") throw StorageUnavailable("Unsupported Turso storage format.")
         val initialized = meta[1].sqlText() == "1"
         if (!initialized && !allowCreate) throw StorageUnavailable("Turso migration is incomplete.")
+        val today = clockDay()
+        val nextWrites = (if (meta[5].sqlText() == today) meta[6].sqlText().toLong() else 0L) + 2
+        if (nextWrites > dailyWriteLimit) throw StorageUnavailable("Daily storage allowance reached. Try again tomorrow.")
         // A single atomic claim fences every previous writer before reading any data.
         sql.transaction(listOf(
-            stmt("UPDATE foodrun_hubs SET writer=?,revision=revision+1,commit_id=? WHERE namespace=? AND revision=?", writer, UUID.randomUUID().toString(), namespace, meta[2].sqlText().toLong()),
+            stmt("UPDATE foodrun_hubs SET writer=?,revision=revision+1,commit_id=?,day=?,writes=? WHERE namespace=? AND revision=?", writer, UUID.randomUUID().toString(), today, nextWrites, namespace, meta[2].sqlText().toLong()),
         ) + fence())
         val claimed = metadata() ?: throw StorageUnavailable("Turso metadata is unavailable.")
         if (claimed[3].sqlText() != writer) throw StorageUnavailable("Another server has taken over.")
         revision = claimed[2].sqlText().toLong(); checkedAt = clock()
+        writeDay = claimed[5].sqlText(); written = claimed[6].sqlText().toLong()
         if (!initialized && sql.execute("SELECT 1 FROM foodrun_rows WHERE namespace=? LIMIT 1", namespace).sqlRows().isNotEmpty())
             throw StorageUnavailable("Turso contains an incomplete import; preserve it and use a fresh migration namespace.")
-        readRows(accept)
+        val restoredSizes = readRows(accept)
+        if (restoredSizes.values.sumOf { it.toLong() } != claimed[7].sqlText().toLong()) throw StorageUnavailable("Turso stored size does not match its metadata.")
+        sizes = restoredSizes
         verifyOwner()
         initialized
     }
@@ -91,15 +107,26 @@ class TursoStore internal constructor(
         if (changes.size > 450) throw StorageUnavailable("This change exceeds the atomic storage limit.")
         val commit = UUID.randomUUID().toString()
         val expected = revision
-        val statements = mutableListOf(stmt("UPDATE foodrun_hubs SET revision=revision+1,commit_id=?,initialized=? WHERE namespace=? AND writer=? AND revision=?", commit, if (initialized) 1 else 0, namespace, writer, expected))
-        statements.addAll(fence())
-        changes.forEach { (id, row) ->
-            if (row == null) statements.add(stmt("DELETE FROM foodrun_rows WHERE namespace=? AND id=?", namespace, id))
-            else {
+        val today = clockDay()
+        val nextWrites = (if (writeDay == today) written else 0L) + changes.size + 2
+        if (nextWrites > dailyWriteLimit) throw StorageUnavailable("Daily storage allowance reached. Try again tomorrow.")
+        val nextSizes = sizes.toMutableMap()
+        val mutations = changes.map { (id, row) ->
+            if (row == null) {
+                nextSizes.remove(id)
+                stmt("DELETE FROM foodrun_rows WHERE namespace=? AND id=?", namespace, id)
+            } else {
                 if (row.cells.size != row.schema.columns.size || row.id != id) throw StorageUnavailable("Invalid storage mutation.")
-                statements.add(stmt("INSERT INTO foodrun_rows(namespace,id,payload) VALUES(?,?,?) ON CONFLICT(namespace,id) DO UPDATE SET payload=excluded.payload", namespace, id, encode(row)))
+                val payload = encode(row)
+                nextSizes[id] = payload.size + 128
+                stmt("INSERT INTO foodrun_rows(namespace,id,payload) VALUES(?,?,?) ON CONFLICT(namespace,id) DO UPDATE SET payload=excluded.payload", namespace, id, payload)
             }
         }
+        val totalBytes = nextSizes.values.sumOf { it.toLong() }
+        if (totalBytes > MAX_STORE_BYTES || nextSizes.size > 15_000) throw StorageUnavailable("FoodRun's free storage allowance is full.")
+        val statements = mutableListOf(stmt("UPDATE foodrun_hubs SET revision=revision+1,commit_id=?,initialized=?,day=?,writes=?,bytes=? WHERE namespace=? AND writer=? AND revision=?", commit, if (initialized) 1 else 0, today, nextWrites, totalBytes, namespace, writer, expected))
+        statements.addAll(fence())
+        statements.addAll(mutations)
         try { sql.transaction(statements) }
         catch (_: Exception) {
             // Never replay an ambiguous mutation. Confirm its unique commit marker instead.
@@ -108,14 +135,17 @@ class TursoStore internal constructor(
                 throw StorageUnavailable("Storage could not confirm this change. Reconnect before retrying.")
         }
         revision = expected + 1; checkedAt = clock()
+        sizes = nextSizes; writeDay = today; written = nextWrites
     }
 
-    private fun readRows(accept: (StoredRow) -> Unit) {
+    private fun readRows(accept: (StoredRow) -> Unit): Map<String, Int> {
         var after = ""
         var count = 0
+        val loadedSizes = mutableMapOf<String, Int>()
+        var loadedBytes = 0L
         while (true) {
             val candidates = sql.execute("SELECT id,length(payload) FROM foodrun_rows WHERE namespace=? AND id>? ORDER BY id LIMIT 128", namespace, after).sqlRows()
-            if (candidates.isEmpty()) return
+            if (candidates.isEmpty()) return loadedSizes
             var bytes = 0L
             val selected = candidates.takeWhile { value ->
                 val size = value[1].sqlText().toLong()
@@ -128,6 +158,9 @@ class TursoStore internal constructor(
                 val id = value[0].sqlText()
                 if (id <= after || !id.matches(Regex("[a-f0-9]{64}")) || ++count > 15_000) throw StorageUnavailable("Invalid Turso row identity.")
                 val payload = Base64.getDecoder().decode(value[1]["base64"]!!.jsonPrimitive.content)
+                loadedSizes[id] = payload.size + 128
+                loadedBytes += payload.size + 128
+                if (loadedBytes > MAX_STORE_BYTES) throw StorageUnavailable("FoodRun's free storage allowance is full.")
                 val raw = GZIPInputStream(payload.inputStream()).use { it.readNBytes(MAX_ROW_BYTES + 1) }
                 if (raw.size > MAX_ROW_BYTES) throw StorageUnavailable("Stored row is too large.")
                 val row = orderJson.decodeFromString<StoredRow>(raw.toString(Charsets.UTF_8))
@@ -136,20 +169,22 @@ class TursoStore internal constructor(
             }
         }
     }
-    private fun metadata() = sql.execute("SELECT format,initialized,revision,writer,commit_id FROM foodrun_hubs WHERE namespace=?", namespace).sqlRows().singleOrNull()
+    private fun metadata() = sql.execute("SELECT format,initialized,revision,writer,commit_id,day,writes,bytes FROM foodrun_hubs WHERE namespace=?", namespace).sqlRows().singleOrNull()
     private fun verifyOwner() {
         val meta = metadata()
         if (meta == null || meta[3].sqlText() != writer || meta[2].sqlText().toLong() != revision)
             throw StorageUnavailable("Another server has taken over. Reconnect to the active server.")
     }
     private fun initializeSchema() {
-        sql.execute("CREATE TABLE IF NOT EXISTS foodrun_hubs(namespace TEXT PRIMARY KEY,format INTEGER NOT NULL,initialized INTEGER NOT NULL,revision INTEGER NOT NULL,writer TEXT NOT NULL,commit_id TEXT NOT NULL)")
+        sql.execute("CREATE TABLE IF NOT EXISTS foodrun_hubs(namespace TEXT PRIMARY KEY,format INTEGER NOT NULL,initialized INTEGER NOT NULL,revision INTEGER NOT NULL,writer TEXT NOT NULL,commit_id TEXT NOT NULL,day TEXT NOT NULL,writes INTEGER NOT NULL,bytes INTEGER NOT NULL)")
         sql.execute("CREATE TABLE IF NOT EXISTS foodrun_rows(namespace TEXT NOT NULL,id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(namespace,id))")
     }
     private fun fence() = listOf(
-        stmt("CREATE TEMP TABLE foodrun_writer_fence(valid INTEGER NOT NULL CHECK(valid=1))"),
+        stmt("CREATE TEMP TABLE IF NOT EXISTS foodrun_writer_fence(valid INTEGER NOT NULL CHECK(valid=1))"),
         // changes() still refers to the metadata UPDATE; CREATE TABLE does not change it.
         stmt("INSERT INTO foodrun_writer_fence(valid) VALUES(changes())"),
+        // Turso may pool closed SQL connections, so release the temporary table explicitly.
+        stmt("DROP TABLE foodrun_writer_fence"),
     )
     private fun <T> protect(block: () -> T): T = try { block() }
         catch (error: StorageUnavailable) { usable = false; throw error }
@@ -159,6 +194,7 @@ class TursoStore internal constructor(
     companion object {
         private const val MAX_ROW_BYTES = 16 * 1024 * 1024
         private const val MAX_COMPRESSED_BYTES = 5L * 1024 * 1024
+        private const val MAX_STORE_BYTES = 512L * 1024 * 1024
         private fun stmt(sql: String, vararg args: Any) = TursoSql.Statement(sql, args.toList())
         private fun encode(row: StoredRow): ByteArray {
             val raw = orderJson.encodeToString(row).toByteArray()
@@ -170,7 +206,8 @@ class TursoStore internal constructor(
         fun configured(environment: Map<String, String> = System.getenv()): TursoStore {
             val url = requireNotNull(environment["FOODRUN_TURSO_URL"]) { "FOODRUN_TURSO_URL is required." }
             val token = requireNotNull(environment["FOODRUN_TURSO_AUTH_TOKEN"]) { "FOODRUN_TURSO_AUTH_TOKEN is required." }
-            return TursoStore(TursoSql(url, token), requireNotNull(environment["FOODRUN_TURSO_NAMESPACE"]) { "FOODRUN_TURSO_NAMESPACE is required." }, environment["FOODRUN_TURSO_BOOTSTRAP"] == "true")
+            return TursoStore(TursoSql(url, token), requireNotNull(environment["FOODRUN_TURSO_NAMESPACE"]) { "FOODRUN_TURSO_NAMESPACE is required." }, environment["FOODRUN_TURSO_BOOTSTRAP"] == "true",
+                dailyWriteLimit = environment["FOODRUN_TURSO_DAILY_WRITES"]?.toInt() ?: 12_000)
         }
     }
 }

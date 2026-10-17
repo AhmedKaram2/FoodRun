@@ -8,6 +8,7 @@ The server supports `FOODRUN_STORAGE=turso` with these server-only settings:
 - `FOODRUN_TURSO_AUTH_TOKEN`: a database read/write token.
 - `FOODRUN_TURSO_NAMESPACE`: a stable namespace such as `foodrun-production`.
 - `FOODRUN_TURSO_BOOTSTRAP`: leave unset or `false` for an existing production app.
+- `FOODRUN_TURSO_DAILY_WRITES`: optional guard, default and maximum `12000`, reset at midnight Pacific. Migration and writer claims count too.
 
 Firebase Auth, existing Firebase identities and Intrvioo integration remain configured. Rooms, wallet entries, payment idempotency records, sessions, profiles and account records persist in Turso. Legacy Firestore profile synchronization is optional background work; its quota does not block Turso sign-in or registration. Render stays on its Free instance; its idle cold start still applies.
 
@@ -30,6 +31,8 @@ After a verified migration, set Render's `FOODRUN_STORAGE=turso`, keep `FOODRUN_
 ## Persistence and failure behavior
 
 Remote rows are authoritative. Startup restores bounded compressed pages into one encrypted local SQLite transaction. Every change commits its metadata revision and all affected rows in one conditional SQL transaction. A failed statement skips COMMIT and rolls back. A lost response is checked against a unique commit marker rather than replaying the mutation. A new server atomically claims writer ownership; commits from the old server fail, and cached reads stop on its next ownership check (at most one second between checks). Connection or ownership failures make the cache unavailable until a fresh restore.
+
+Rows are compressed independently and indexed by namespace and row ID. Startup first reads bounded payload sizes, then fetches only a bounded compressed page. Writes update only changed rows; idle room ticks do not rewrite the store. A persisted guard caps counted write operations at 12,000 per Pacific day, compressed rows plus estimated per-row overhead at 512 MiB, and total rows at 15,000. The database also has a 600 MiB provider size limit to leave space for SQLite indexes and metadata. A refused write never replaces a previously confirmed record. These are application guards; Turso's account quotas are shared with any other databases, and paid overages must remain disabled.
 
 The source defaults in `render.yaml` stay on Firestore until the actual migration has been verified and the live configuration is switched. No billing plan is upgraded by this change.
 
